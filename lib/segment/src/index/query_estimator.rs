@@ -64,14 +64,30 @@ pub fn adjust_to_available_vectors(
     // It is possible, all deleted vectors are selected in worst case
     let min = estimation.min.saturating_sub(number_of_deleted_vectors);
     // Another extreme case - all deleted vectors are not selected
-    let max = estimation.max.min(available_vectors);
+    let max = estimation.max.min(available_vectors).min(available_points);
 
-    let availability_prob = available_vectors as f64 / available_points as f64;
+    let availability_prob = (available_vectors as f64 / available_points as f64).min(1.0);
 
     let exp = (estimation.exp as f64 * availability_prob).round() as usize;
 
-    debug_assert!(min <= exp);
-    debug_assert!(exp <= max);
+    debug_assert!(
+        min <= exp,
+        "estimation: {:?}, available_vectors: {}, available_points: {}, min: {}, exp: {}",
+        estimation,
+        available_vectors,
+        available_points,
+        min,
+        exp
+    );
+    debug_assert!(
+        exp <= max,
+        "estimation: {:?}, available_vectors: {}, available_points: {}, exp: {}, max: {}",
+        estimation,
+        available_vectors,
+        available_points,
+        exp,
+        max
+    );
 
     CardinalityEstimation {
         primary_clauses: estimation.primary_clauses,

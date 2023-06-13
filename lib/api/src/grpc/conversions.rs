@@ -8,7 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::CompressionRatio;
+use super::qdrant::{CompressionRatio, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -19,14 +19,13 @@ use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
-    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, GroupId, HasIdCondition,
-    HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
-    ListValue, Match, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointGroup,
-    PointId, QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams,
-    TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector,
-    WithVectorsSelector,
+    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
+    HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match,
+    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
+    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig,
+    QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization,
+    ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
+    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -420,15 +419,6 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score: point.score,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
-        }
-    }
-}
-
-impl From<segment::types::PointGroup> for PointGroup {
-    fn from(group: segment::types::PointGroup) -> Self {
-        Self {
-            hits: group.hits.into_iter().map(ScoredPoint::from).collect(),
-            id: Some(group.id.into()),
         }
     }
 }

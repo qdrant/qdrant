@@ -5,24 +5,29 @@ import pytest
 from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 
-collection_name = 'test_collection_groups'
+collection_name = "test_collection_groups"
+lookup_collection_name = "test_collection_groups_lookup"
+
+POINTS_API = "/collections/{collection_name}/points"
+SEARCH_GROUPS_API = "/collections/{collection_name}/points/search/groups"
+RECO_GROUPS_API = "/collections/{collection_name}/points/recommend/groups"
 
 
 def upsert_chunked_docs(collection_name, docs=50, chunks=5):
     points = []
     for doc in range(docs):
         for chunk in range(chunks):
-            doc_id = f"doc_{doc}"
+            doc_id = doc
             i = doc * chunks + chunk
             p = {"id": i, "vector": [1.0, 0.0, 0.0, 0.0], "payload": {"docId": doc_id}}
             points.append(p)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points',
+        api=POINTS_API,
         method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={"points": points}
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={"points": points},
     )
 
     assert response.ok
@@ -34,15 +39,19 @@ def upsert_points_with_array_fields(collection_name, docs=3, chunks=5, id_offset
         for chunk in range(chunks):
             doc_ids = [f"valid_{doc}", f"valid_too_{doc}"]
             i = doc * chunks + chunk + id_offset
-            p = {"id": i, "vector": [0.0, 1.0, 0.0, 0.0], "payload": {"multiId": doc_ids}}
+            p = {
+                "id": i,
+                "vector": [0.0, 1.0, 0.0, 0.0],
+                "payload": {"multiId": doc_ids},
+            }
             points.append(p)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points',
+        api="/collections/{collection_name}/points",
         method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={"points": points}
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={"points": points},
     )
 
     assert response.ok
@@ -62,11 +71,11 @@ def upsert_with_heterogenous_fields(collection_name):
     ]
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points',
+        api="/collections/{collection_name}/points",
         method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={"points": points}
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={"points": points},
     )
 
     assert response.ok
@@ -82,11 +91,28 @@ def upsert_multi_value_payload(collection_name):
     ]
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points',
+        api="/collections/{collection_name}/points",
         method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={"points": points}
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={"points": points},
+    )
+
+    assert response.ok
+    
+
+def upsert_doc_points(collection_name, docs=50):
+    points = [
+        {"id": i, "vector": [1.0, 0.0, 0.0, 0.0], "payload": {"body": f"doc body {i}"}}
+        for i in range(100)
+    ]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={"points": points},
     )
 
     assert response.ok
@@ -99,22 +125,25 @@ def setup():
     upsert_points_with_array_fields(collection_name=collection_name)
     upsert_with_heterogenous_fields(collection_name=collection_name)
     upsert_multi_value_payload(collection_name=collection_name)
+    basic_collection_setup(collection_name=lookup_collection_name)
+    upsert_doc_points(collection_name=lookup_collection_name)
     yield
     drop_collection(collection_name=collection_name)
+    drop_collection(collection_name=lookup_collection_name)
 
 
 def test_search_with_multiple_groups():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
+        api="/collections/{collection_name}/points/search/groups",
         method="POST",
-        path_params={'collection_name': collection_name},
+        path_params={"collection_name": collection_name},
         body={
             "vector": [0.0, 0.0, 1.0, 1.0],
             "limit": 2,
             "with_payload": True,
             "group_by": "mkey",
             "group_size": 2,
-        }
+        },
     )
     assert response.ok
     groups = response.json()["result"]["groups"]
@@ -126,16 +155,16 @@ def test_search_with_multiple_groups():
 
 def test_search():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
+        api=SEARCH_GROUPS_API,
         method="POST",
-        path_params={'collection_name': collection_name},
+        path_params={"collection_name": collection_name},
         body={
             "vector": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",
             "group_size": 3,
-        }
+        },
     )
     assert response.ok
 
@@ -150,9 +179,9 @@ def test_search():
 
 def test_recommend():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend/groups',
+        api=RECO_GROUPS_API,
         method="POST",
-        path_params={'collection_name': collection_name},
+        path_params={"collection_name": collection_name},
         body={
             "positive": [5, 10, 15],
             "negative": [6, 11, 16],
@@ -160,7 +189,7 @@ def test_recommend():
             "with_payload": True,
             "group_by": "docId",
             "group_size": 3,
-        }
+        },
     )
     assert response.ok
 
@@ -175,9 +204,9 @@ def test_recommend():
 
 def test_with_vectors():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
+        api=SEARCH_GROUPS_API,
         method="POST",
-        path_params={'collection_name': collection_name},
+        path_params={"collection_name": collection_name},
         body={
             "vector": [1.0, 0.0, 0.0, 0.0],
             "limit": 5,
@@ -185,7 +214,7 @@ def test_with_vectors():
             "with_vector": True,
             "group_by": "docId",
             "group_size": 3,
-        }
+        },
     )
     assert response.ok
 
@@ -201,9 +230,9 @@ def test_with_vectors():
 
 def test_inexistent_group_by():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
+        api=SEARCH_GROUPS_API,
         method="POST",
-        path_params={'collection_name': collection_name},
+        path_params={"collection_name": collection_name},
         body={
             "vector": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
@@ -211,7 +240,7 @@ def test_inexistent_group_by():
             "with_vector": True,
             "group_by": "inexistentDocId",
             "group_size": 3,
-        }
+        },
     )
     assert response.ok
 
@@ -222,16 +251,16 @@ def test_inexistent_group_by():
 
 def search_array_group_by(group_by: str):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
+        api=SEARCH_GROUPS_API,
         method="POST",
-        path_params={'collection_name': collection_name},
+        path_params={"collection_name": collection_name},
         body={
             "vector": [0.0, 1.0, 0.0, 0.0],
             "limit": 6,
             "with_payload": True,
             "group_by": group_by,
             "group_size": 3,
-        }
+        },
     )
     assert response.ok
 
@@ -252,16 +281,16 @@ def test_multi_value_group_by():
 
 def test_groups_by_heterogenous_fields():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
+        api=SEARCH_GROUPS_API,
         method="POST",
-        path_params={'collection_name': collection_name},
+        path_params={"collection_name": collection_name},
         body={
             "vector": [0.0, 0.0, 1.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "heterogenousId",
             "group_size": 3,
-        }
+        },
     )
     assert response.ok
 
@@ -280,3 +309,195 @@ def test_groups_by_heterogenous_fields():
     assert "string" in group_ids
     assert "b" in group_ids
     assert "a" in group_ids
+
+
+lookup_params = [
+    pytest.param(lookup_collection_name, id="string name"),
+    pytest.param({"collection": lookup_collection_name}, id="only collection name"),
+    pytest.param(
+        {
+            "collection": lookup_collection_name,
+            "with_payload": True,
+            "with_vectors": False,
+        },
+        id="explicit with_payload and with_vectors",
+    )
+]
+
+
+def assert_group_with_default_lookup(group, group_size=3):
+    assert group["hits"]
+    assert len(group["hits"]) == group_size
+
+    assert group["lookup"]
+    assert group["id"] == group["lookup"]["id"]
+
+    lookup = group["lookup"]
+    assert lookup["payload"]
+    assert not lookup["vector"]
+
+
+@pytest.mark.parametrize("with_lookup", lookup_params)
+def test_search_groups_with_lookup(with_lookup):
+    response = request_with_validation(
+        api=SEARCH_GROUPS_API,
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+            "with_lookup": with_lookup,
+        },
+    )
+
+    assert response.ok
+
+    groups = response.json()["result"]["groups"]
+
+    assert len(groups) == 10
+    for group in groups:
+        assert_group_with_default_lookup(group, 3)
+
+
+@pytest.mark.parametrize("with_lookup", lookup_params)
+def test_recommend_groups_with_lookup(with_lookup):
+    response = request_with_validation(
+        api=RECO_GROUPS_API,
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [5, 10, 15],
+            "negative": [6, 11, 16],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+            "with_lookup": with_lookup,
+        },
+    )
+
+    assert response.ok
+
+    groups = response.json()["result"]["groups"]
+
+    assert len(groups) == 10
+    for group in groups:
+        assert_group_with_default_lookup(group, 3)
+
+@pytest.mark.parametrize(
+    "with_lookup", 
+    [
+        pytest.param(
+            {
+                "collection": lookup_collection_name,
+                "with_payload": False,
+                "with_vectors": False,
+            },
+            id="with_payload and with_vectors",
+        ),
+        pytest.param(
+            {
+                "collection": lookup_collection_name,
+                "with_payload": False,
+                "with_vector": False,
+            },
+            id="with_vector is alias of with_vectors",
+        ),
+    ]
+)
+def test_search_groups_with_lookup_without_payload_nor_vectors(with_lookup):
+    response = request_with_validation(
+        api=SEARCH_GROUPS_API,
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+            "with_lookup": with_lookup,
+        },
+    )
+
+    assert response.ok
+
+    groups = response.json()["result"]["groups"]
+
+    assert len(groups) == 10
+    for group in groups:
+        assert group["hits"]
+        assert len(group["hits"]) == 3
+
+        assert group["lookup"]
+        assert group["id"] == group["lookup"]["id"]
+
+        lookup = group["lookup"]
+        assert not lookup["payload"]
+        assert not lookup["vector"]
+
+
+def test_search_groups_lookup_with_non_existing_collection():
+    non_existing_collection = "non_existing_collection"
+    response = request_with_validation(
+        api=SEARCH_GROUPS_API,
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+            "with_lookup": {
+                "collection": non_existing_collection,
+                "with_payload": True,
+                "with_vector": True,
+            },
+        },
+    )
+
+    assert response.status_code == 404
+
+    assert (
+        f"Collection {non_existing_collection} not found"
+        in response.json()["status"]["error"]
+    )
+
+def test_search_groups_with_full_lookup():
+    response = request_with_validation(
+        api=SEARCH_GROUPS_API,
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+            "with_lookup": {
+                "collection": lookup_collection_name,
+                "with_payload": True,
+                "with_vector": True,
+            },
+        },
+    )
+
+    assert response.ok
+
+    groups = response.json()["result"]["groups"]
+
+    assert len(groups) == 10
+    for group in groups:
+        assert group["hits"]
+        assert len(group["hits"]) == 3
+
+        assert group["lookup"]
+        assert group["id"] == group["lookup"]["id"]
+
+        lookup = group["lookup"]
+        assert lookup["payload"]
+        assert lookup["vector"]

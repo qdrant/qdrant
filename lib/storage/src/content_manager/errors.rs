@@ -161,7 +161,16 @@ impl<T> From<std::sync::mpsc::SendError<T>> for StorageError {
 impl From<tokio::sync::oneshot::error::RecvError> for StorageError {
     fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
         StorageError::ServiceError {
-            description: format!("Channel sender dropped: {err}"),
+            description: format!("Oneshot channel sender dropped: {err}"),
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
+impl From<tokio::sync::broadcast::error::RecvError> for StorageError {
+    fn from(err: tokio::sync::broadcast::error::RecvError) -> Self {
+        StorageError::ServiceError {
+            description: format!("Broadcast channel sender dropped: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }

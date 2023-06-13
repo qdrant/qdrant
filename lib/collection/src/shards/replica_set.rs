@@ -1311,8 +1311,8 @@ impl ShardReplicaSet {
     pub fn leader_peer_for_update(&self, ordering: WriteOrdering) -> Option<PeerId> {
         match ordering {
             WriteOrdering::Weak => Some(self.this_peer_id()), // no requirement for consistency
-            WriteOrdering::Medium => self.highest_replica_peer_id(), // consistency with highest replica
-            WriteOrdering::Strong => self.highest_alive_replica_peer_id(), // consistency with highest alive replica
+            WriteOrdering::Medium => self.highest_alive_replica_peer_id(), // consistency with highest alive replica
+            WriteOrdering::Strong => self.highest_replica_peer_id(), // consistency with highest replica
         }
     }
 

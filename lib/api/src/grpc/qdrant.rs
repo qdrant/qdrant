@@ -256,7 +256,10 @@ pub mod quantization_config {
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom = "crate::grpc::validate::validate_collection_name"
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index
     #[prost(message, optional, tag = "4")]
@@ -270,7 +273,7 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "6")]
     #[validate]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Number of shards in the collection, default = 1
+    /// Number of shards in the collection, default is 1 for standalone, otherwise equal to the number of nodes. Minimum is 1
     #[prost(uint32, optional, tag = "7")]
     pub shard_number: ::core::option::Option<u32>,
     /// If true - point's payload will not be stored in memory
@@ -2871,6 +2874,19 @@ pub struct SearchBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WithLookup {
+    /// Name of the collection to use for points lookup
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    /// Options for specifying which payload to include (or not)
+    #[prost(message, optional, tag = "2")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Options for specifying which vectors to include (or not)
+    #[prost(message, optional, tag = "3")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+}
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2916,6 +2932,9 @@ pub struct SearchPointGroups {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "13")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3063,6 +3082,9 @@ pub struct RecommendPointGroups {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "15")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3148,6 +3170,9 @@ pub struct PointGroup {
     /// Points in the group
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Point(s) from the lookup collection that matches the group id
+    #[prost(message, optional, tag = "3")]
+    pub lookup: ::core::option::Option<RetrievedPoint>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

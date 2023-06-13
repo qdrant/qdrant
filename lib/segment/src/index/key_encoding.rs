@@ -18,7 +18,7 @@ const I64_KEY_LEN: usize = 12;
 /// A single-byte prefix tag is appended to the front of the encoding slice to ensures that
 /// NaNs are always sorted first.
 ///
-/// This approach was inspired by https://github.com/cockroachdb/cockroach/blob/master/pkg/util/encoding/float.go
+/// This approach was inspired by <https://github.com/cockroachdb/cockroach/blob/master/pkg/util/encoding/float.go>
 ///
 ///
 /// #f64 encoding format

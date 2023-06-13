@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
@@ -22,20 +21,11 @@ pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &HashSet<PointIdType>,
 ) -> CollectionResult<usize> {
-    let unprocessed_points = points
-        .iter()
-        .cloned()
-        .filter(|p| !processed.contains(p))
-        .collect_vec();
-    let missed_point = unprocessed_points.iter().cloned().next();
+    let first_missed_point = points.iter().copied().find(|p| !processed.contains(p));
 
-    // ToDo: check pre-existing points
-
-    match missed_point {
+    match first_missed_point {
         None => Ok(processed.len()),
-        Some(missed_point) => Err(CollectionError::PointNotFound {
-            missed_point_id: missed_point,
-        }),
+        Some(missed_point_id) => Err(CollectionError::PointNotFound { missed_point_id }),
     }
 }
 

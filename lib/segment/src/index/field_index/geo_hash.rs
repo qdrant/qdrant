@@ -237,11 +237,11 @@ pub fn rectangle_hashes(rectangle: &GeoBoundingBox, max_regions: usize) -> Vec<G
 }
 
 /// A globally-average value is usually considered to be 6,371 kilometres (3,959 mi) with a 0.3% variability (±10 km).
-/// https://en.wikipedia.org/wiki/Earth_radius.
+/// <https://en.wikipedia.org/wiki/Earth_radius>.
 const EARTH_RADIUS_METERS: f64 = 6371.0 * 1000.;
 
 /// Returns the GeoBoundingBox that defines the MBR
-/// http://janmatuschek.de/LatitudeLongitudeBoundingCoordinates#Longitude
+/// <http://janmatuschek.de/LatitudeLongitudeBoundingCoordinates#Longitude>
 fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
     // circle.radius is in meter
     let angular_radius: f64 = circle.radius / EARTH_RADIUS_METERS;

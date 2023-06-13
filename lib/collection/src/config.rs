@@ -99,7 +99,7 @@ pub fn default_write_consistency_factor() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 
-fn default_on_disk_payload() -> bool {
+const fn default_on_disk_payload() -> bool {
     false
 }
 
@@ -182,7 +182,11 @@ impl CollectionParams {
                         // Disabled quantization
                         quantization_config: None,
                         // Default to in memory storage
-                        storage_type: VectorStorageType::Memory,
+                        storage_type: if params.on_disk.unwrap_or_default() {
+                            VectorStorageType::ChunkedMmap
+                        } else {
+                            VectorStorageType::Memory
+                        },
                     },
                 )
             })

@@ -11,7 +11,8 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
-use super::graph_links::GraphLinks;
+use super::graph_links::{GraphLinks, GraphLinksMmap};
+use crate::common::mmap_ops;
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -156,6 +157,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let points_to_index: Vec<_> = payload_index
             .query_points(&filter)
+            .into_iter()
             .filter(|&point_id| {
                 !deleted_bitslice
                     .get(point_id as usize)
@@ -266,7 +268,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
         if let Some(graph) = &self.graph {
-            let mut search_result = graph.search(top, ef, points_scorer);
+            let search_result = graph.search(top, ef, points_scorer);
             let if_rescore = params
                 .and_then(|p| p.quantization)
                 .map(|q| q.rescore)
@@ -277,10 +279,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     &vector_storage,
                     id_tracker.deleted_point_bitslice(),
                 );
-                search_result.iter_mut().for_each(|scored_point| {
-                    scored_point.score = raw_scorer.score_point(scored_point.idx);
-                });
-                search_result
+                let mut ids_iterator = search_result.iter().map(|x| x.idx);
+                let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
+                re_scored.sort_unstable();
+                re_scored
             } else {
                 search_result
             }
@@ -312,7 +314,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let mut filtered_iter = payload_index.query_points(filter);
+        let filtered_points = payload_index.query_points(filter);
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -326,7 +328,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                         &vector_storage,
                         id_tracker.deleted_point_bitslice(),
                     )
-                    .peek_top_iter(filtered_iter.as_mut(), top)
+                    .peek_top_iter(&mut filtered_points.iter().copied(), top)
                 })
                 .collect()
         } else {
@@ -340,18 +342,24 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
                             )
-                            .peek_top_iter(filtered_iter.as_mut(), top)
+                            .peek_top_iter(&mut filtered_points.iter().copied(), top)
                     } else {
                         new_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
                         )
-                        .peek_top_iter(filtered_iter.as_mut(), top)
+                        .peek_top_iter(&mut filtered_points.iter().copied(), top)
                     }
                 })
                 .collect()
         }
+    }
+}
+
+impl HNSWIndex<GraphLinksMmap> {
+    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
+        self.graph.as_ref()?.prefault_mmap_pages(&self.path)
     }
 }
 

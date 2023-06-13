@@ -6,6 +6,8 @@ mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
+use std::io;
+use std::path::Path;
 use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
@@ -17,7 +19,6 @@ use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Res
 use collection::operations::validation;
 use storage::dispatcher::Dispatcher;
 
-use self::certificate_helpers::build_ssl_acceptor;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
@@ -31,6 +32,9 @@ use crate::actix::api_key::ApiKey;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
+const DEFAULT_STATIC_DIR: &str = "./static";
+const WEB_UI_PATH: &str = "/dashboard";
+
 #[get("/")]
 pub async fn index() -> impl Responder {
     HttpResponse::Ok().json(VersionInfo::default())
@@ -41,7 +45,7 @@ pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     settings: Settings,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::from(dispatcher.toc().clone());
         let dispatcher_data = web::Data::from(dispatcher);
@@ -52,6 +56,37 @@ pub fn init(
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let api_key = settings.service.api_key.clone();
+        let static_folder = settings
+            .service
+            .static_content_dir
+            .clone()
+            .unwrap_or(DEFAULT_STATIC_DIR.to_string());
+
+        let web_ui_enabled = settings.service.enable_static_content.unwrap_or(true);
+        // validate that the static folder exists IF the web UI is enabled
+        let web_ui_available = if web_ui_enabled {
+            let static_folder = Path::new(&static_folder);
+            if !static_folder.exists() || !static_folder.is_dir() {
+                // enabled BUT folder does not exist
+                log::warn!(
+                    "Static content folder for Web UI '{}' does not exist",
+                    static_folder.display(),
+                );
+                false
+            } else {
+                // enabled AND folder exists
+                true
+            }
+        } else {
+            // not enabled
+            false
+        };
+        let skip_api_key_prefixes = if web_ui_available {
+            vec![WEB_UI_PATH.to_string()]
+        } else {
+            vec![]
+        };
+
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -65,13 +100,16 @@ pub fn init(
                 .limit(settings.service.max_request_size_mb * 1024 * 1024)
                 .error_handler(|err, rec| validation_error_handler("JSON body", err, rec));
 
-            App::new()
+            let mut app = App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(Condition::new(
                     api_key.is_some(),
-                    ApiKey::new(&api_key.clone().unwrap_or_default()),
+                    ApiKey::new(
+                        &api_key.clone().unwrap_or_default(),
+                        skip_api_key_prefixes.clone(),
+                    ),
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests
@@ -97,15 +135,37 @@ pub fn init(
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)
-                .service(count_points)
+                .service(count_points);
+
+            if web_ui_available {
+                app = app.service(
+                    actix_files::Files::new(WEB_UI_PATH, &static_folder).index_file("index.html"),
+                )
+            }
+            app
         })
         .workers(max_web_workers(&settings));
 
         let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
 
+        // With TLS enabled, bind with certificate helper and Rustls, or bind regularly
         server = if settings.service.enable_tls {
-            server.bind_openssl(bind_addr, build_ssl_acceptor(&settings)?)?
+            log::info!(
+                "TLS enabled for REST API (TTL: {})",
+                settings
+                    .tls
+                    .as_ref()
+                    .and_then(|tls| tls.cert_ttl)
+                    .map(|ttl| ttl.to_string())
+                    .unwrap_or_else(|| "none".into()),
+            );
+
+            let config = certificate_helpers::actix_tls_server_config(&settings)
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+            server.bind_rustls(bind_addr, config)?
         } else {
+            log::info!("TLS disabled for REST API");
+
             server.bind(bind_addr)?
         };
 

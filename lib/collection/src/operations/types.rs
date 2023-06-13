@@ -1,5 +1,8 @@
 use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap};
+use std::error::Error as _;
+use std::fmt::Write as _;
+use std::iter;
 use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
@@ -8,13 +11,14 @@ use futures::io;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
+use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
     NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointGroup, PointIdType,
-    QuantizationConfig, ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
+    ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -27,6 +31,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
+use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
@@ -406,6 +411,17 @@ pub struct RecommendGroupsRequest {
     pub group_request: BaseGroupRequest,
 }
 
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+pub struct PointGroup {
+    /// Scored points that have the same value of the group_by key
+    pub hits: Vec<ScoredPoint>,
+    /// Value of the group_by key, shared across all the hits in the group
+    pub id: GroupId,
+    /// Record that has been looked up using the group id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lookup: Option<Record>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct GroupsResult {
     pub groups: Vec<PointGroup>,
@@ -425,7 +441,7 @@ pub struct CountRequest {
     pub exact: bool,
 }
 
-pub fn default_exact_count() -> bool {
+pub const fn default_exact_count() -> bool {
     true
 }
 
@@ -674,7 +690,13 @@ impl From<RequestError<tonic::Status>> for CollectionError {
     fn from(err: RequestError<tonic::Status>) -> Self {
         match err {
             RequestError::FromClosure(status) => status.into(),
-            RequestError::Tonic(err) => CollectionError::service_error(format!("{err}")),
+            RequestError::Tonic(err) => {
+                let mut msg = err.to_string();
+                for src in iter::successors(err.source(), |&src| src.source()) {
+                    write!(&mut msg, ": {src}").unwrap();
+                }
+                CollectionError::service_error(msg)
+            }
         }
     }
 }
@@ -875,4 +897,7 @@ pub struct BaseGroupRequest {
     /// Maximum amount of groups to return
     #[validate(range(min = 1))]
     pub limit: u32,
+
+    /// Look for points in another collection using the group ids
+    pub with_lookup: Option<WithLookupInterface>,
 }

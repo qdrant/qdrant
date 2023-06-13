@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
 use parking_lot::{Mutex, RwLock};
@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_vector_name, check_vectors_set};
+use crate::common::{check_vector_name, check_vectors_set, mmap_ops};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -93,6 +93,20 @@ impl VectorData {
     pub fn is_appendable(&self) -> bool {
         self.vector_index.borrow().is_appendable() && self.vector_storage.borrow().is_appendable()
     }
+
+    pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
+        let index_task = match &*self.vector_index.borrow() {
+            VectorIndexEnum::HnswMmap(index) => index.prefault_mmap_pages(),
+            _ => None,
+        };
+
+        let storage_task = match &*self.vector_storage.borrow() {
+            VectorStorageEnum::Memmap(storage) => storage.prefault_mmap_pages(),
+            _ => None,
+        };
+
+        index_task.into_iter().chain(storage_task)
+    }
 }
 
 impl Segment {
@@ -104,7 +118,7 @@ impl Segment {
     /// - existing named vectors are replaced
     /// - existing named vectors not specified are deleted
     ///
-    /// This differs with [`update_vectors`], because this deletes unspecified vectors.
+    /// This differs with [`Segment::update_vectors`], because this deletes unspecified vectors.
     ///
     /// # Warning
     ///
@@ -141,7 +155,7 @@ impl Segment {
     /// - existing named vectors are replaced
     /// - existing named vectors not specified are untouched and kept as-is
     ///
-    /// This differs with [`replace_all_vectors`], because this keeps unspecified vectors as-is.
+    /// This differs with [`Segment::replace_all_vectors`], because this keeps unspecified vectors as-is.
     ///
     /// # Warning
     ///
@@ -285,7 +299,8 @@ impl Segment {
     {
         match op_point_offset {
             None => {
-                // Not a point operation, use global version to check if already applied
+                // Not a point operation *or* point does not exist.
+                // Use global version to check if operation has been already applied.
                 if self.version.unwrap_or(0) > op_num {
                     return Ok(false); // Skip without execution
                 }
@@ -303,17 +318,17 @@ impl Segment {
             }
         }
 
-        let res = operation(self);
+        let (applied, point_id) = operation(self)?;
 
-        if res.is_ok() {
-            self.version = Some(max(op_num, self.version.unwrap_or(0)));
-            if let Ok((_, Some(point_id))) = res {
-                self.id_tracker
-                    .borrow_mut()
-                    .set_internal_version(point_id, op_num)?;
-            }
+        self.version = Some(max(op_num, self.version.unwrap_or(0)));
+
+        if let Some(point_id) = point_id {
+            self.id_tracker
+                .borrow_mut()
+                .set_internal_version(point_id, op_num)?;
         }
-        res.map(|(res, _)| res)
+
+        Ok(applied)
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
@@ -570,6 +585,7 @@ impl Segment {
 
         let ids_iterator = payload_index
             .query_points(condition)
+            .into_iter()
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {
@@ -657,6 +673,21 @@ impl Segment {
 
     pub fn total_point_count(&self) -> usize {
         self.id_tracker.borrow().total_point_count()
+    }
+
+    pub fn prefault_mmap_pages(&self) {
+        let tasks: Vec<_> = self
+            .vector_data
+            .values()
+            .flat_map(|data| data.prefault_mmap_pages())
+            .collect();
+
+        let _ = thread::Builder::new()
+            .name(format!(
+                "segment-{:?}-prefault-mmap-pages",
+                self.current_path,
+            ))
+            .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
 }
 

@@ -10,6 +10,7 @@ mod settings;
 mod snapshots;
 mod startup;
 mod tonic;
+mod tracing;
 
 use std::io::Error;
 use std::sync::Arc;
@@ -100,12 +101,14 @@ struct Args {
 
     /// Disable telemetry sending to developers
     /// If provided - telemetry collection will be disabled.
-    /// Read more: https://qdrant.tech/documentation/telemetry
+    /// Read more: <https://qdrant.tech/documentation/guides/telemetry>
     #[arg(long, action, default_value_t = false)]
     disable_telemetry: bool,
 }
 
 fn main() -> anyhow::Result<()> {
+    tracing::setup()?;
+
     remove_started_file_indicator();
 
     let args = Args::parse();
@@ -119,12 +122,15 @@ fn main() -> anyhow::Result<()> {
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
     segment::madvise::set_global(settings.storage.mmap_advice);
+    segment::vector_storage::raw_scorer::set_async_scorer(settings.storage.async_scorer);
 
-    welcome();
+    welcome(&settings);
 
     if let Some(recovery_warning) = &settings.storage.recovery_mode {
         log::warn!("Qdrant is loaded in recovery mode: {}", recovery_warning);
-        log::warn!("Read more: https://qdrant.tech/documentation/administration/#recovery-mode");
+        log::warn!(
+            "Read more: https://qdrant.tech/documentation/guides/administration/#recovery-mode"
+        );
     }
 
     // Validate as soon as possible, but we must initialize logging first
@@ -334,6 +340,15 @@ fn main() -> anyhow::Result<()> {
         log::info!("Telemetry reporting disabled");
     }
 
+    // Helper to better log start errors
+    let log_err_if_any = |server_name, result| match result {
+        Err(err) => {
+            log::error!("Error while starting {} server: {}", server_name, err);
+            Err(err)
+        }
+        ok => ok,
+    };
+
     //
     // REST API server
     //
@@ -344,7 +359,12 @@ fn main() -> anyhow::Result<()> {
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
-            .spawn(move || actix::init(dispatcher_arc.clone(), telemetry_collector, settings))
+            .spawn(move || {
+                log_err_if_any(
+                    "REST",
+                    actix::init(dispatcher_arc.clone(), telemetry_collector, settings),
+                )
+            })
             .unwrap();
         handles.push(handle);
     }
@@ -358,12 +378,15 @@ fn main() -> anyhow::Result<()> {
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
-                tonic::init(
-                    dispatcher_arc,
-                    tonic_telemetry_collector,
-                    settings,
-                    grpc_port,
-                    runtime_handle,
+                log_err_if_any(
+                    "gRPC",
+                    tonic::init(
+                        dispatcher_arc,
+                        tonic_telemetry_collector,
+                        settings,
+                        grpc_port,
+                        runtime_handle,
+                    ),
                 )
             })
             .unwrap();

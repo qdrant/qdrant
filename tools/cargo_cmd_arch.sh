@@ -1,8 +1,8 @@
 case $TARGETARCH in
   "amd64")
-    echo "x86_64"
+    echo "./mold/bin/mold -run cargo"
     ;;
   "arm64")
-    echo "aarch64"
+    echo "cargo"
     ;;
 esac

@@ -54,6 +54,24 @@ pub fn open_memmap_vector_storage(
     ))))
 }
 
+impl MemmapVectorStorage {
+    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
+        Some(
+            self.mmap_store
+                .as_ref()?
+                .prefault_mmap_pages(&self.vectors_path),
+        )
+    }
+
+    pub fn vector_path(&self) -> &Path {
+        &self.vectors_path
+    }
+
+    pub fn get_mmap_vectors(&self) -> &MmapVectors {
+        self.mmap_store.as_ref().unwrap()
+    }
+}
+
 impl VectorStorage for MemmapVectorStorage {
     fn vector_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim

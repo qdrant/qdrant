@@ -4,6 +4,7 @@ use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
 
+use segment::common::file_operations::{atomic_save_json, read_json};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -44,6 +45,17 @@ enum TestRecord {
 
 type Result<T> = result::Result<T, WalError>;
 
+#[derive(Debug, Deserialize, Serialize)]
+struct WalState {
+    pub ack_index: u64,
+}
+
+impl WalState {
+    pub fn new(ack_index: u64) -> Self {
+        Self { ack_index }
+    }
+}
+
 /// Write-Ahead-Log wrapper with built-in type parsing.
 /// Stores sequences of records of type `R` in binary files.
 ///
@@ -54,16 +66,37 @@ pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
     options: WalOptions,
+    first_index: Option<u64>,
 }
+
+const FIRST_INDEX_FILE: &str = "first-index";
 
 impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn new(dir: &str, wal_options: WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, &wal_options)
             .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
+
+        let first_index_path = Path::new(dir).join(FIRST_INDEX_FILE);
+
+        let first_index = if first_index_path.exists() {
+            let wal_state: WalState = read_json(&first_index_path).map_err(|err| {
+                WalError::InitWalError(format!("failed to read first-index file: {err}"))
+            })?;
+
+            let first_index = wal_state
+                .ack_index
+                .max(wal.first_index())
+                .min(wal.last_index());
+            Some(first_index)
+        } else {
+            None
+        };
+
         Ok(SerdeWal {
             record: PhantomData,
             wal,
             options: wal_options,
+            first_index,
         })
     }
 
@@ -77,7 +110,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     pub fn read_all(&'s self) -> impl Iterator<Item = (u64, R)> + 's {
-        self.read(self.wal.first_index())
+        self.read(self.first_index())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -85,14 +118,36 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     pub fn len(&self) -> u64 {
-        self.wal.num_entries()
+        self.wal
+            .num_entries()
+            .saturating_sub(self.truncated_prefix_entries_num())
+    }
+
+    // WAL operates in *segments*, so when `Wal::prefix_truncate` is called (during `SerdeWal::ack`),
+    // WAL is not truncated precisely up to the `until_index`, but up to the nearest segment with
+    // `last_index` that is less-or-equal than `until_index`.
+    //
+    // Consider the pseudo-graphic illustration of the WAL that was truncated up to index 35:
+    //
+    // | -------- | -------- | ===='++++ | ++++++++ | ++++++++ | ++++++++ |
+    // 10         20         30    35    40         50         60         70
+    //
+    // - ' marks the index 35 that has been truncated-to
+    // - --- marks segments 10-30 that has been physically deleted
+    // - +++ marks segments 35-70 that are still valid
+    // - and === marks part of segment 30-35, that is still physically present on disk,
+    //   but that is "logically" deleted
+    //
+    // `truncated_prefix_entries_num` returns the length of the "logically deleted" part of the WAL.
+    fn truncated_prefix_entries_num(&self) -> u64 {
+        self.first_index().saturating_sub(self.wal.first_index())
     }
 
     pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
-        let first_index = self.wal.first_index();
-        let num_entries = self.wal.num_entries();
+        let first_index = self.first_index();
+        let len = self.len();
 
-        (start_from..(first_index + num_entries)).map(move |idx| {
+        (start_from..(first_index + len)).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
             let record: R = serde_cbor::from_slice(&record_bin)
                 .or_else(|_err| rmp_serde::from_slice(&record_bin))
@@ -109,9 +164,43 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     /// * `until_index` - the newest no longer required record sequence number
     ///
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
+        // Truncate WAL
         self.wal
             .prefix_truncate(until_index)
-            .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))
+            .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))?;
+
+        // Acknowledge index should not decrease
+        let minimal_first_index = self.first_index.unwrap_or(self.wal.first_index());
+        let new_first_index = Some(
+            until_index
+                .max(minimal_first_index)
+                .min(self.wal.last_index()),
+        );
+        // Update current `first_index`
+        if self.first_index != new_first_index {
+            self.first_index = new_first_index;
+            // Persist current `first_index` value on disk
+            // TODO: Should we log this error and continue instead of failing?
+            self.flush_first_index()?;
+        }
+
+        Ok(())
+    }
+
+    fn flush_first_index(&self) -> Result<()> {
+        let Some(first_index) = self.first_index else {
+            return Ok(());
+        };
+
+        atomic_save_json(
+            &self.path().join(FIRST_INDEX_FILE),
+            &WalState::new(first_index),
+        )
+        .map_err(|err| {
+            WalError::TruncateWalError(format!("failed to write first-index file: {err:?}"))
+        })?;
+
+        Ok(())
     }
 
     pub fn flush(&mut self) -> Result<()> {
@@ -126,6 +215,10 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
     pub fn path(&self) -> &Path {
         self.wal.path()
+    }
+
+    pub fn first_index(&self) -> u64 {
+        self.first_index.unwrap_or_else(|| self.wal.first_index())
     }
 
     pub fn last_index(&self) -> u64 {

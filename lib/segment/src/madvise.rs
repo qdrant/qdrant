@@ -6,24 +6,24 @@ use std::io;
 use serde::Deserialize;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
-/// used by all memmaps created by the [`segment`] crate.
+/// used by all memmaps created by the `segment` crate.
 ///
-/// See [`store_global`] and [`load_global`].
+/// See [`set_global`] and [`get_global`].
 static ADVICE: parking_lot::RwLock<Advice> = parking_lot::RwLock::new(Advice::Random);
 
 /// Set global [`Advice`] value.
 ///
-/// When [`segment`] crate creates [`memmap2::Mmap`] or [`memmap2::MmapMut`]
-/// _for a memmapeped, on-disk HNSW index or vector storage access_
-/// it will "advise" created memmap with the current global [`Advice`] value
-/// (obtained with [`load_global`]).
+/// When the `segment` crate creates [`memmap2::Mmap`] or [`memmap2::MmapMut`]
+/// _for a memory-mapped, on-disk HNSW index or vector storage access_
+/// it will "advise" the created memmap with the current global [`Advice`] value
+/// (obtained with [`get_global`]).
 ///
 /// It is recommended to set the desired [`Advice`] value before calling any other function
-/// from the [`segment`] crate and not to change it afterwards.
+/// from the `segment` crate and not to change it afterwards.
 ///
-/// The [`segment`] crate itself does not modify global [`Advice`] value.
+/// The `segment` crate itself does not modify the global [`Advice`] value.
 ///
-/// Default global [`Advice`] value is [`Advice::Random`].
+/// The default global [`Advice`] value is [`Advice::Random`].
 pub fn set_global(advice: Advice) {
     *ADVICE.write() = advice;
 }
@@ -34,9 +34,9 @@ pub fn get_global() -> Advice {
 }
 
 /// Platform-independent version of [`memmap2::Advice`].
-/// See [`memmap2::Advice`] and [madvise()] man page.
+/// See [`memmap2::Advice`] and [`madvise(2)`] man page.
 ///
-/// [madvice()]: https://man7.org/linux/man-pages/man2/madvise.2.html
+/// [`madvise(2)`]: https://man7.org/linux/man-pages/man2/madvise.2.html
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Advice {

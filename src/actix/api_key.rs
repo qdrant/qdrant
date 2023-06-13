@@ -8,12 +8,14 @@ use futures_util::future::LocalBoxFuture;
 
 pub struct ApiKey {
     api_key: String,
+    skip_prefixes: Vec<String>,
 }
 
 impl ApiKey {
-    pub fn new(api_key: &str) -> Self {
+    pub fn new(api_key: &str, skip_prefixes: Vec<String>) -> Self {
         Self {
             api_key: api_key.to_string(),
+            skip_prefixes,
         }
     }
 }
@@ -33,6 +35,7 @@ where
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(ApiKeyMiddleware {
             api_key: self.api_key.clone(),
+            skip_prefixes: self.skip_prefixes.clone(),
             service,
         }))
     }
@@ -40,6 +43,7 @@ where
 
 pub struct ApiKeyMiddleware<S> {
     api_key: String,
+    skip_prefixes: Vec<String>,
     service: S,
 }
 
@@ -56,6 +60,14 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
+        if self
+            .skip_prefixes
+            .iter()
+            .any(|prefix| req.path().starts_with(prefix))
+        {
+            return Box::pin(self.service.call(req));
+        }
+
         if let Some(key) = req.headers().get("api-key") {
             if let Ok(key) = key.to_str() {
                 if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {

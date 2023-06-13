@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+/// Value of the group_by key, shared across all the hits in the group
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Eq, PartialEq, Clone, Hash)]
 #[serde(untagged)]
 pub enum GroupId {
@@ -52,10 +53,10 @@ impl TryFrom<&serde_json::Value> for GroupId {
         match value {
             serde_json::Value::String(s) => Ok(Self::String(s.to_string())),
             serde_json::Value::Number(n) => {
-                if let Some(n_i64) = n.as_i64() {
-                    Ok(Self::NumberI64(n_i64))
-                } else if let Some(n_u64) = n.as_u64() {
+                if let Some(n_u64) = n.as_u64() {
                     Ok(Self::NumberU64(n_u64))
+                } else if let Some(n_i64) = n.as_i64() {
+                    Ok(Self::NumberI64(n_i64))
                 } else {
                     Err(())
                 }

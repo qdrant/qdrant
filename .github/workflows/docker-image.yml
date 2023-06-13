@@ -36,7 +36,7 @@ jobs:
 
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
 
-        docker buildx build --build-arg='RUST_BUILD_PROFILE=release' --platform='linux/amd64,linux/arm64' $TAGS --push .
+        docker buildx build --platform='linux/amd64,linux/arm64' $TAGS --push .
 
         docker pull $DOCKERHUB_TAG
 

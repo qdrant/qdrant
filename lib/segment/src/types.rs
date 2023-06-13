@@ -19,7 +19,6 @@ use validator::{Validate, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
-use crate::data_types::groups::GroupId;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
@@ -199,14 +198,6 @@ impl PartialEq for ScoredPoint {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-pub struct PointGroup {
-    /// Scored points that have the same value of the group_by key
-    pub hits: Vec<ScoredPoint>,
-    /// Value of the group_by key shared by all the hits
-    pub id: GroupId,
-}
-
 /// Type of segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -354,7 +345,7 @@ pub struct HnswConfig {
     pub payload_m: Option<usize>,
 }
 
-fn default_max_indexing_threads() -> usize {
+const fn default_max_indexing_threads() -> usize {
     0
 }
 
@@ -1395,6 +1386,12 @@ pub enum WithPayloadInterface {
     Fields(Vec<String>),
     /// Specify included or excluded fields
     Selector(PayloadSelector),
+}
+
+impl From<bool> for WithPayloadInterface {
+    fn from(b: bool) -> Self {
+        WithPayloadInterface::Bool(b)
+    }
 }
 
 /// Options for specifying which vector to include

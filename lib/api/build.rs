@@ -80,7 +80,7 @@ fn configure_validation(builder: Builder) -> Builder {
         // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),
-            ("CreateCollection.collection_name", "length(min = 1, max = 255)"),
+            ("CreateCollection.collection_name", "length(min = 1, max = 255), custom = \"crate::grpc::validate::validate_collection_name\""),
             ("CreateCollection.hnsw_config", ""),
             ("CreateCollection.wal_config", ""),
             ("CreateCollection.optimizers_config", ""),

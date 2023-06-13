@@ -413,6 +413,10 @@ impl GraphLayersBuilder {
                         )
                     };
 
+                    if let Some(the_nearest) = nearest_points.iter().max() {
+                        level_entry = *the_nearest;
+                    }
+
                     let scorer = |a, b| points_scorer.score_internal(a, b);
 
                     if self.use_heuristic {
@@ -514,9 +518,6 @@ impl GraphLayersBuilder {
                                     level_m,
                                     scorer,
                                 );
-                            }
-                            if nearest_point.score > level_entry.score {
-                                level_entry = *nearest_point;
                             }
                         }
                     }

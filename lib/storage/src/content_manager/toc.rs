@@ -12,7 +12,8 @@ use collection::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams,
 };
-use collection::grouping::group_by::{group_by, GroupRequest};
+use collection::grouping::group_by::GroupRequest;
+use collection::grouping::GroupBy;
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
@@ -215,11 +216,18 @@ impl TableOfContent {
         snapshots_path.join(collection_name)
     }
 
-    async fn create_snapshots_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
-        let snapshots_path = Self::collection_snapshots_path(
+    pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
+        Self::collection_snapshots_path(
             Path::new(&self.storage_config.snapshots_path),
             collection_name,
-        );
+        )
+    }
+
+    pub async fn create_snapshots_path(
+        &self,
+        collection_name: &str,
+    ) -> Result<PathBuf, StorageError> {
+        let snapshots_path = self.snapshots_path_for_collection(collection_name);
         tokio::fs::create_dir_all(&snapshots_path)
             .await
             .map_err(|err| {
@@ -1190,16 +1198,21 @@ impl TableOfContent {
 
         let collection_by_name = |name| self.get_collection_opt(name);
 
-        group_by(
-            request,
-            &collection,
-            collection_by_name,
-            read_consistency,
-            shard_selection,
-        )
-        .await
-        .map(|groups| GroupsResult { groups })
-        .map_err(|err| err.into())
+        let mut group_by = GroupBy::new(request, &collection, collection_by_name);
+
+        if let Some(read_consistency) = read_consistency {
+            group_by = group_by.with_read_consistency(read_consistency);
+        }
+
+        if let Some(shard_selection) = shard_selection {
+            group_by = group_by.with_shard_selection(shard_selection);
+        }
+
+        group_by
+            .execute()
+            .await
+            .map(|groups| GroupsResult { groups })
+            .map_err(|err| err.into())
     }
 
     /// List of all collections

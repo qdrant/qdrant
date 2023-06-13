@@ -3,6 +3,7 @@ use std::fs::OpenOptions;
 use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use memmap2::{Mmap, MmapMut};
 
@@ -482,7 +483,7 @@ impl GraphLinks for GraphLinksRam {
 
 #[derive(Default)]
 pub struct GraphLinksMmap {
-    mmap: Option<Mmap>,
+    mmap: Option<Arc<Mmap>>,
     header: GraphLinksFileHeader,
     level_offsets: Vec<u64>,
 }
@@ -511,6 +512,10 @@ impl GraphLinksMmap {
             panic!("{}", MMAP_PANIC_MESSAGE);
         }
     }
+
+    pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
+        mmap_ops::PrefaultMmapPages::new(self.mmap.clone()?, Some(path)).into()
+    }
 }
 
 impl GraphLinks for GraphLinksMmap {
@@ -528,7 +533,7 @@ impl GraphLinks for GraphLinksMmap {
         let level_offsets = get_level_offsets(&mmap, &header).to_vec();
 
         Ok(Self {
-            mmap: Some(mmap),
+            mmap: Some(Arc::new(mmap)),
             header,
             level_offsets,
         })

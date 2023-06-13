@@ -52,11 +52,10 @@ pub struct HnswConfigDiff {
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    #[validate(range(min = 1000))]
+    #[validate(range(min = 10))]
     pub full_scan_threshold: Option<usize>,
     /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1000))]
     pub max_indexing_threads: Option<usize>,
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]

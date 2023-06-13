@@ -1,14 +1,17 @@
 [package]
 name = "collection"
 version = "0.4.2"
-authors = ["Qdrant Team <info@qdrant.tech>"]
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dev-dependencies]
-tempfile = "3.5.0"
-criterion = "0.4"
+tempfile = "3.6.0"
+criterion = "0.5"
+rstest = "0.17.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
@@ -23,7 +26,7 @@ serde = { version = "~1.0", features = ["derive"] }
 serde_json = { version = "~1.0", features = ["std"] }
 serde_cbor = "0.11.2"
 rmp-serde = "~1.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "f3029ad0e1632d5e375db55695e33121df54aa5c"}
+wal = { git = "https://github.com/qdrant/wal.git", rev = "e034a1814ee15941134d442198dc1fd87d767594"}
 ordered-float = "3.7"
 hashring = "0.3.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
@@ -47,7 +50,7 @@ segment = {path = "../segment"}
 api = {path = "../api"}
 
 itertools = "0.10"
-indicatif = "0.17.3"
+indicatif = "0.17.5"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono", "url"] }
 num_cpus = "1.15.0"

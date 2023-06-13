@@ -78,6 +78,10 @@ fn describe_error(
                 None => msg,
             }
         }
+        "does_not_contain" => match params.get("pattern") {
+            Some(pattern) => format!("cannot contain {pattern}"),
+            None => err.to_string(),
+        },
         "not_empty" => match params.get("value") {
             Some(value) => format!("value {value} invalid, must not be empty"),
             None => err.to_string(),

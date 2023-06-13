@@ -4257,14 +4257,14 @@
             "description": "Minimal size (in kilobytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 1000,
+            "minimum": 10,
             "nullable": true
           },
           "max_indexing_threads": {
             "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1000,
+            "minimum": 0,
             "nullable": true
           },
           "on_disk": {
@@ -7823,10 +7823,22 @@
           },
           "id": {
             "$ref": "#/components/schemas/GroupId"
+          },
+          "lookup": {
+            "description": "Record that has been looked up using the group id",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Record"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
       "GroupId": {
+        "description": "Value of the group_by key, shared across all the hits in the group",
         "anyOf": [
           {
             "type": "string"
@@ -7921,6 +7933,63 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 1
+          },
+          "with_lookup": {
+            "description": "Look for points in another collection using the group ids",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithLookupInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "WithLookupInterface": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/WithLookup"
+          }
+        ]
+      },
+      "WithLookup": {
+        "type": "object",
+        "required": [
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "description": "Name of the collection to use for points lookup",
+            "type": "string"
+          },
+          "with_payload": {
+            "description": "Options for specifying which payload to include (or not)",
+            "default": true,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_vectors": {
+            "description": "Options for specifying which vectors to include (or not)",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8039,6 +8108,17 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 1
+          },
+          "with_lookup": {
+            "description": "Look for points in another collection using the group ids",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithLookupInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

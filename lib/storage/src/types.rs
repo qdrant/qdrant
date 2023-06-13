@@ -25,7 +25,7 @@ pub struct PerformanceConfig {
     pub update_rate_limit: Option<usize>,
 }
 
-fn default_max_optimization_threads() -> usize {
+const fn default_max_optimization_threads() -> usize {
     1
 }
 
@@ -56,6 +56,8 @@ pub struct StorageConfig {
     pub update_queue_size: Option<usize>,
     #[serde(default)]
     pub handle_collection_load_errors: bool,
+    #[serde(default)]
+    pub async_scorer: bool,
     /// If provided - qdrant will start in recovery mode, which means that it will not accept any new data.
     /// Only collection metadata will be available, and it will only process collection delete requests.
     /// Provided value will be used error message for unavailable requests.
@@ -78,11 +80,11 @@ fn default_snapshots_path() -> String {
     "./snapshots".to_string()
 }
 
-fn default_on_disk_payload() -> bool {
+const fn default_on_disk_payload() -> bool {
     false
 }
 
-fn default_mmap_advice() -> madvise::Advice {
+const fn default_mmap_advice() -> madvise::Advice {
     madvise::Advice::Random
 }
 

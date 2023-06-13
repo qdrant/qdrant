@@ -1,126 +1,187 @@
-use std::fs;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use openssl::error::ErrorStack;
-use openssl::ssl::{
-    SniError, SslAcceptor, SslAcceptorBuilder, SslContext, SslContextBuilder, SslFiletype,
-    SslMethod, SslVerifyMode,
-};
-use openssl::x509::store::X509StoreBuilder;
-use openssl::x509::X509;
 use parking_lot::RwLock;
+use rustls::server::{AllowAnyAuthenticatedClient, ClientHello, ResolvesServerCert};
+use rustls::sign::CertifiedKey;
+use rustls::{Certificate, RootCertStore, ServerConfig};
+use rustls_pemfile::Item;
 
 use crate::settings::{Settings, TlsConfig};
 
-struct SslContextHolder {
-    ssl_context: SslContext,
+type Result<T> = std::result::Result<T, Error>;
+
+/// A TTL based rotating server certificate resolver
+struct RotatingCertificateResolver {
+    /// TLS configuration used for loading/refreshing certified key
     tls_config: TlsConfig,
-    verify_client_cert: bool,
-    refresh_interval: Duration,
-    last_updated: Instant,
+
+    /// TTL for each rotation
+    ttl: Option<Duration>,
+
+    /// Current certified key
+    key: RwLock<CertifiedKeyWithAge>,
 }
 
-impl SslContextHolder {
-    fn new(
-        tls_config: &TlsConfig,
-        verify_client_cert: bool,
-        refresh_interval: Duration,
-    ) -> Result<SslContextHolder, ErrorStack> {
-        let ssl_context = build_ssl_context(tls_config, verify_client_cert)?;
-        Ok(SslContextHolder {
-            ssl_context,
-            tls_config: tls_config.clone(),
-            verify_client_cert,
-            refresh_interval,
-            last_updated: Instant::now(),
+impl RotatingCertificateResolver {
+    pub fn new(tls_config: TlsConfig, ttl: Option<Duration>) -> Result<Self> {
+        let certified_key = load_certified_key(&tls_config)?;
+
+        Ok(Self {
+            tls_config,
+            ttl,
+            key: RwLock::new(CertifiedKeyWithAge::from(certified_key)),
         })
     }
 
-    fn try_get_ssl_context(&self) -> Option<&SslContext> {
-        (self.last_updated.elapsed() < self.refresh_interval).then_some(&self.ssl_context)
-    }
+    /// Get certificate key or refresh
+    ///
+    /// The key is automatically refreshed when the TTL is reached.
+    /// If refreshing fails, an error is logged and the old key is persisted.
+    fn get_key_or_refresh(&self) -> Arc<CertifiedKey> {
+        // Get read-only lock to the key. If TTL is not configured or is not expired, return key.
+        let key = self.key.read();
+        let ttl = match self.ttl {
+            Some(ttl) if key.is_expired(ttl) => ttl,
+            _ => return key.key.clone(),
+        };
+        drop(key);
 
-    fn get_ssl_context_or_refresh(&mut self) -> Result<&SslContext, ()> {
-        if self.last_updated.elapsed() >= self.refresh_interval {
-            self.refresh()?;
-        }
-        Ok(&self.ssl_context)
-    }
-
-    fn refresh(&mut self) -> Result<(), ()> {
-        log::info!("Refreshing TLS certificates for actix!");
-        self.ssl_context =
-            build_ssl_context(&self.tls_config, self.verify_client_cert).map_err(|_| ())?;
-        Ok(())
-    }
-}
-
-pub fn build_ssl_acceptor(settings: &Settings) -> std::io::Result<SslAcceptorBuilder> {
-    let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
-
-    let tls_config = settings
-        .tls
-        .clone()
-        .ok_or_else(Settings::tls_config_is_undefined_error)?;
-
-    let verify_client_cert = settings.service.verify_https_client_certificate;
-    let ssl_context_holder = RwLock::new(SslContextHolder::new(
-        &tls_config,
-        verify_client_cert,
-        Duration::from_secs(tls_config.cert_ttl),
-    )?);
-
-    // Use set_servername_callback to implement dynamic certificate loading and refresh
-    acceptor.set_servername_callback(move |ssl, _alert| -> Result<(), SniError> {
-        {
-            let reader = ssl_context_holder.read();
-            if let Some(ssl_context) = reader.try_get_ssl_context() {
-                ssl.set_ssl_context(ssl_context).map_err(|error_stack| {
-                    log::error!("Failed to set SSL context: {}", error_stack);
-                    SniError::ALERT_FATAL
-                })?;
-                return Ok(());
+        // If TTL is expired:
+        // - get read-write lock to the key
+        // - *re-check that TTL is expired* (to avoid refreshing the key multiple times from concurrent threads)
+        // - refresh and return the key
+        let mut key = self.key.write();
+        if key.is_expired(ttl) {
+            if let Err(err) = key.refresh(&self.tls_config) {
+                log::error!("Failed to refresh TLS certificate, keeping current: {err}");
             }
         }
 
-        // If getting the SSL context failed, try to get it again with refreshing
-        let mut writer = ssl_context_holder.write();
-        let ssl_context = writer
-            .get_ssl_context_or_refresh()
-            .map_err(|_refresh_error| {
-                log::error!("Failed to refresh certificates!");
-                SniError::ALERT_FATAL
-            })?;
-        ssl.set_ssl_context(ssl_context).map_err(|error_stack| {
-            log::error!("Failed to set SSL context: {}", error_stack);
-            SniError::ALERT_FATAL
-        })?;
-        Ok(())
-    });
-    Ok(acceptor)
+        key.key.clone()
+    }
 }
 
-fn build_ssl_context(
-    tls_config: &TlsConfig,
-    verify_client_cert: bool,
-) -> Result<SslContext, ErrorStack> {
-    let mut ssl_context_builder = SslContextBuilder::new(SslMethod::tls_server())?;
-    // Server TLS config
-    ssl_context_builder.set_private_key_file(&tls_config.key, SslFiletype::PEM)?;
-    ssl_context_builder.set_certificate_chain_file(&tls_config.cert)?;
-    ssl_context_builder.check_private_key()?;
-
-    // Verify client TLS certification
-    if verify_client_cert {
-        let client_ca =
-            fs::read_to_string(&tls_config.ca_cert).expect("Failed to load CA certificate");
-        let client_ca = X509::from_pem(client_ca.as_bytes())?;
-
-        let mut x509_client_store_builder = X509StoreBuilder::new()?;
-        x509_client_store_builder.add_cert(client_ca)?;
-        let client_cert_store = x509_client_store_builder.build();
-        ssl_context_builder.set_verify_cert_store(client_cert_store)?;
-        ssl_context_builder.set_verify(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT);
+impl ResolvesServerCert for RotatingCertificateResolver {
+    fn resolve(&self, _client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(self.get_key_or_refresh())
     }
-    Ok(ssl_context_builder.build())
+}
+
+struct CertifiedKeyWithAge {
+    /// Last time the certificate was updated/replaced
+    last_update: Instant,
+
+    /// Current certified key
+    key: Arc<CertifiedKey>,
+}
+
+impl CertifiedKeyWithAge {
+    pub fn from(key: Arc<CertifiedKey>) -> Self {
+        Self {
+            last_update: Instant::now(),
+            key,
+        }
+    }
+
+    pub fn refresh(&mut self, tls_config: &TlsConfig) -> Result<()> {
+        *self = Self::from(load_certified_key(tls_config)?);
+        Ok(())
+    }
+
+    pub fn age(&self) -> Duration {
+        self.last_update.elapsed()
+    }
+
+    pub fn is_expired(&self, ttl: Duration) -> bool {
+        self.age() >= ttl
+    }
+}
+
+/// Load TLS configuration and construct certified key.
+fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
+    // Load certificates
+    let certs: Vec<Certificate> = with_buf_read(&tls_config.cert, rustls_pemfile::read_all)?
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::X509Certificate(data) => Some(Certificate(data)),
+            _ => None,
+        })
+        .collect();
+    if certs.is_empty() {
+        return Err(Error::NoServerCert);
+    }
+
+    // Load private key
+    let private_key_item =
+        with_buf_read(&tls_config.key, rustls_pemfile::read_one)?.ok_or(Error::NoPrivateKey)?;
+    let (Item::RSAKey(pkey) | Item::PKCS8Key(pkey) | Item::ECKey(pkey)) = private_key_item else {
+        return Err(Error::InvalidPrivateKey);
+    };
+    let private_key = rustls::PrivateKey(pkey);
+    let signing_key = rustls::sign::any_supported_type(&private_key).map_err(Error::Sign)?;
+
+    // Construct certified key
+    let certified_key = CertifiedKey::new(certs, signing_key);
+    Ok(Arc::new(certified_key))
+}
+
+/// Generate an actix server configuration with TLS
+///
+/// Uses TLS settings as configured in configuration by user.
+pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
+    let config = ServerConfig::builder().with_safe_defaults();
+    let tls_config = settings
+        .tls
+        .clone()
+        .ok_or_else(Settings::tls_config_is_undefined_error)
+        .map_err(Error::Io)?;
+
+    // Verify client CA or not
+    let config = if settings.service.verify_https_client_certificate {
+        let mut root_cert_store = RootCertStore::empty();
+        let ca_certs: Vec<Vec<u8>> = with_buf_read(&tls_config.ca_cert, rustls_pemfile::certs)?;
+        root_cert_store.add_parsable_certificates(&ca_certs[..]);
+        config.with_client_cert_verifier(AllowAnyAuthenticatedClient::new(root_cert_store))
+    } else {
+        config.with_no_client_auth()
+    };
+
+    // Configure rotating certificate resolver
+    let ttl = match tls_config.cert_ttl {
+        None | Some(0) => None,
+        Some(seconds) => Some(Duration::from_secs(seconds)),
+    };
+    let cert_resolver = RotatingCertificateResolver::new(tls_config, ttl)?;
+    let config = config.with_cert_resolver(Arc::new(cert_resolver));
+
+    Ok(config)
+}
+
+fn with_buf_read<T>(path: &str, f: impl FnOnce(&mut dyn BufRead) -> io::Result<T>) -> Result<T> {
+    let file = File::open(path).map_err(|err| Error::OpenFile(err, path.into()))?;
+    let mut reader = BufReader::new(file);
+    let dyn_reader: &mut dyn BufRead = &mut reader;
+    f(dyn_reader).map_err(|err| Error::ReadFile(err, path.into()))
+}
+
+/// Actix TLS errors.
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("TLS file could not be opened: {1}")]
+    OpenFile(#[source] io::Error, String),
+    #[error("TLS file could not be read: {1}")]
+    ReadFile(#[source] io::Error, String),
+    #[error("general TLS IO error")]
+    Io(#[source] io::Error),
+    #[error("no server certificate found")]
+    NoServerCert,
+    #[error("no private key found")]
+    NoPrivateKey,
+    #[error("invalid private key")]
+    InvalidPrivateKey,
+    #[error("TLS signing error")]
+    Sign(#[source] rustls::sign::SignError),
 }
