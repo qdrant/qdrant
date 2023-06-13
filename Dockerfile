@@ -10,10 +10,10 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
 FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.70.0 AS chef
 
 
-# FROM chef AS planner
-# WORKDIR /qdrant
-# COPY . .
-# RUN cargo chef prepare --recipe-path recipe.json
+FROM chef AS planner
+WORKDIR /qdrant
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
 
 FROM chef as builder
@@ -76,27 +76,17 @@ ARG RUSTFLAGS
 # Select linker (e.g., `mold`, `lld` or an empty string for the default linker)
 ARG LINKER=mold
 
-# COPY --from=planner /qdrant/recipe.json recipe.json
-# RUN --mount=type=cache,target=/usr/local/cargo/git/db \
-#     --mount=type=cache,target=/usr/local/cargo/registry/cache \
-#     --mount=type=cache,target=/usr/local/cargo/registry/index \
-#     PATH="$PATH:/opt/mold/bin" \
-#     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-#     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --recipe-path recipe.json
+COPY --from=planner /qdrant/recipe.json recipe.json
+RUN PATH="$PATH:/opt/mold/bin" \
+    RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
+    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --recipe-path recipe.json
 
 COPY . .
-RUN mv target-docker target || :
-RUN --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/usr/local/cargo/registry/cache \
-    --mount=type=cache,target=/usr/local/cargo/registry/index \
-    PATH="$PATH:/opt/mold/bin" \
+RUN PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-    xx-cargo build --tests
-
-
-FROM scratch AS cache
-
-COPY --from=builder /qdrant/target /target-docker
+    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --bin qdrant \
+    && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
+    && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
 
 # Download and extract web UI
