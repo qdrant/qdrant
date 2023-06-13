@@ -38,6 +38,8 @@ pub fn condition_converter<'a>(
                     })
                 })
             }),
+        // We can use index for `is_empty` condition effectively only when it is not empty.
+        // If the index says it is "empty", we still need to check the payload.
         Condition::IsEmpty(is_empty) => {
             let fallback = Box::new(move |point_id| {
                 payload_provider.with_payload(point_id, |payload| {
@@ -54,7 +56,7 @@ pub fn condition_converter<'a>(
                 .unwrap_or(fallback)
         }
 
-        // TODO: apply same logic as in IsEmpty
+        // Applies same logic as in IsEmpty
         Condition::IsNull(is_null) => {
             let fallback = Box::new(move |point_id| {
                 payload_provider.with_payload(point_id, |payload| {
@@ -294,11 +296,6 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
     }
 }
 
-/// Returns a checker that checks if the field is empty
-///
-/// IsEmpty has a special case because when the index does not have any value for a point,
-/// it does not mean it is actually empty, it can just mean that an index with the correct type
-/// has not been created for it. We still need to check if the field is really empty with a fallback.
 #[inline]
 fn get_is_empty_checker<'a>(
     index: &'a FieldIndex,
