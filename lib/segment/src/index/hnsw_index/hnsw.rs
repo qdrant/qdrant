@@ -493,7 +493,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         debug!("building HNSW for {} vectors", total_vector_count);
         let indexing_threshold = self.config.full_scan_threshold;
-        let mut graph_layers_builder = GraphLayersBuilder::new(
+        let mut graph_layers_builder = GraphLayersBuilder::new_with_params(
             total_vector_count,
             self.config.m,
             self.config.m0,
@@ -504,6 +504,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 * 10)
                 .max(1),
             HNSW_USE_HEURISTIC,
+            true,
+            true,
         );
 
         let pool = rayon::ThreadPoolBuilder::new()
@@ -589,6 +591,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         self.config.ef_construct,
                         1,
                         HNSW_USE_HEURISTIC,
+                        true,
                         false,
                     );
                     self.build_filtered_graph(

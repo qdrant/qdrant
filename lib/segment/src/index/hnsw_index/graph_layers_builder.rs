@@ -37,6 +37,8 @@ pub struct GraphLayersBuilder {
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
+    // Use optimized heuristic calculation
+    use_optimized_heuristic: bool,
     links_layers: Vec<LockedLayersContainer>,
     entry_points: Mutex<EntryPoints>,
 
@@ -107,6 +109,7 @@ impl GraphLayersBuilder {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_params(
         num_vectors: usize, // Initial number of points in index
         m: usize,           // Expected M for non-first layer
@@ -114,6 +117,7 @@ impl GraphLayersBuilder {
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
+        use_optimized_heuristic: bool,
         reserve: bool,
     ) -> Self {
         let mut links_layers: Vec<LockedLayersContainer> = vec![];
@@ -133,6 +137,7 @@ impl GraphLayersBuilder {
             ef_construct,
             level_factor: 1.0 / (max(m, 2) as f64).ln(),
             use_heuristic,
+            use_optimized_heuristic,
             links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
             visited_pool: VisitedPool::new(),
@@ -154,6 +159,7 @@ impl GraphLayersBuilder {
             ef_construct,
             entry_points_num,
             use_heuristic,
+            true,
             true,
         )
     }
@@ -452,7 +458,7 @@ impl GraphLayersBuilder {
                     );
 
                     if let Some(selected_candidates) = selected_candidates {
-                        other_links.checked_heuristic = true;
+                        other_links.checked_heuristic = self.use_optimized_heuristic;
                         other_links.links = selected_candidates;
                     }
                 } else {
@@ -473,7 +479,7 @@ impl GraphLayersBuilder {
                         scorer,
                     );
                     other_links.links = selected_candidates;
-                    other_links.checked_heuristic = true;
+                    other_links.checked_heuristic = self.use_optimized_heuristic;
                 }
             }
         } else {
@@ -912,5 +918,70 @@ mod tests {
         let mut result = Vec::new();
         graph_layers_builder.links_map(0, 0, |link| result.push(link));
         assert_eq!(&result, &vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn test_optimized_heuristic() {
+        let num_vectors = 1000;
+        let m = M;
+        let ef_construct = 16;
+        let entry_points_num = 10;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(16, num_vectors, &mut rng);
+
+        let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
+            num_vectors,
+            m,
+            m * 2,
+            ef_construct,
+            entry_points_num,
+            true,
+            false,
+            true,
+        );
+        let mut graph_layers_2 = GraphLayersBuilder::new_with_params(
+            num_vectors,
+            m,
+            m * 2,
+            ef_construct,
+            entry_points_num,
+            true,
+            true,
+            true,
+        );
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let level = graph_layers_1.get_random_layer(&mut rng);
+            graph_layers_1.set_levels(idx, level);
+            graph_layers_2.set_levels(idx, level);
+        }
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let fake_filter_context = FakeFilterContext {};
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers_1.link_new_point(idx, scorer);
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers_2.link_new_point(idx, scorer);
+        }
+
+        assert_eq!(
+            graph_layers_1.links_layers.len(),
+            graph_layers_2.links_layers.len(),
+        );
+        for (links_1, links_2) in graph_layers_1
+            .links_layers
+            .iter()
+            .zip(graph_layers_2.links_layers.iter())
+        {
+            assert_eq!(links_1.len(), links_2.len());
+            for (links_1, links_2) in links_1.iter().zip(links_2.iter()) {
+                assert_eq!(links_1.read().links, links_2.read().links);
+            }
+        }
     }
 }
