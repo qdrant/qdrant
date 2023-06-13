@@ -108,12 +108,12 @@ impl SimpleVectorStorage {
         was_deleted
     }
 
-    /// Grow deleted flags to number of vectors.
+    /// Grow deleted flags to `new_len`.
     ///
     /// New flags are `false`, meaning their vectors are considered not deleted.
     #[inline]
-    fn grow_deleted(&mut self) {
-        bitvec_grow_deleted_to(&mut self.deleted, self.vectors.len());
+    fn grow_deleted_to(&mut self, new_len: usize) {
+        bitvec_grow_deleted_to(&mut self.deleted, new_len);
     }
 
     /// Grow the deleted flags to fit the given `key` offset, and mark it as deleted.
@@ -188,6 +188,10 @@ impl VectorStorage for SimpleVectorStorage {
         other_ids: &mut dyn Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
+        // Grow deleted flags so we can flag new vectors
+        // Grows to maximum number of added vectors, may be bigger than actual amount
+        self.grow_deleted_to(self.total_vector_count() + other.total_vector_count());
+
         let start_index = self.vectors.len() as PointOffsetType;
         for point_id in other_ids {
             check_process_stopped(stopped)?;
@@ -195,15 +199,13 @@ impl VectorStorage for SimpleVectorStorage {
             let other_vector = other.get_vector(point_id);
             let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector)?;
-            if other_deleted {
-                self.grow_deleted_and_set(new_id, true);
-            }
+            self.set_deleted(new_id, other_deleted);
             self.update_stored(new_id, other_deleted, Some(other_vector))?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
 
-        // Have enough deleted flags for all vectors
-        self.grow_deleted();
+        // Truncate deleted flags to exact number of vectors we have
+        self.deleted.truncate(self.total_vector_count());
 
         Ok(start_index..end_index)
     }
