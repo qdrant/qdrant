@@ -105,16 +105,18 @@ where
         point < self.points_count
             // Deleted points propagate to vectors; check vector deletion for possible early return
             && !self
-            .vec_deleted
-            .get(point as usize)
-            .map(|x| *x)
-            .unwrap_or(false)
+                .vec_deleted
+                .get(point as usize)
+                .map(|x| *x)
+                // Default to not deleted if our deleted flags failed grow
+                .unwrap_or(false)
             // Additionally check point deletion for integrity if delete propagation to vector failed
             && !self
-            .point_deleted
-            .get(point as usize)
-            .map(|x| *x)
-            .unwrap_or(false)
+                .point_deleted
+                .get(point as usize)
+                .map(|x| *x)
+                // Default to deleted if the point mapping was removed from the ID tracker
+                .unwrap_or(true)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {

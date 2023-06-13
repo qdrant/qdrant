@@ -60,8 +60,8 @@ pub fn open_simple_vector_storage(
 
         // Propagate deleted flag
         if stored_record.deleted {
-            deleted_count += 1;
             bitvec_set_deleted(&mut deleted, point_id, true);
+            deleted_count += 1;
         }
         vectors.insert(point_id, &stored_record.vector)?;
     }
@@ -93,16 +93,18 @@ impl SimpleVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
-        if self.vectors.len() <= key as usize {
+        if key as usize >= self.vectors.len() {
             return false;
         }
-        let previous = bitvec_set_deleted(&mut self.deleted, key, deleted);
-        if !previous && deleted {
-            self.deleted_count += 1;
-        } else if previous && !deleted {
-            self.deleted_count -= 1;
+        let was_deleted = bitvec_set_deleted(&mut self.deleted, key, deleted);
+        if was_deleted != deleted {
+            if !was_deleted {
+                self.deleted_count += 1;
+            } else {
+                self.deleted_count -= 1;
+            }
         }
-        previous
+        was_deleted
     }
 
     fn update_stored(
@@ -166,8 +168,8 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_deleted = other.is_deleted_vector(point_id);
             let other_vector = other.get_vector(point_id);
+            let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted);
             self.update_stored(new_id, other_deleted, Some(other_vector))?;
