@@ -47,7 +47,9 @@ pub fn condition_converter<'a>(
             field_indexes
                 .get(&is_empty.is_empty.key)
                 .and_then(|indexes| {
-                    indexes.first().map(|index| get_is_empty_checker(index, fallback.clone()))
+                    indexes
+                        .first()
+                        .map(|index| get_is_empty_checker(index, fallback.clone()))
                 })
                 .unwrap_or(fallback)
         }
@@ -59,12 +61,15 @@ pub fn condition_converter<'a>(
                     check_is_null_condition(is_null, &payload)
                 })
             });
-            field_indexes.get(&is_null.is_null.key).and_then(|indexes| {
-                indexes
-                    .first()
-                    .map(|index| get_is_null_checker(index, fallback.clone()))
-            }).unwrap_or(fallback)
-        },
+            field_indexes
+                .get(&is_null.is_null.key)
+                .and_then(|indexes| {
+                    indexes
+                        .first()
+                        .map(|index| get_is_null_checker(index, fallback.clone()))
+                })
+                .unwrap_or(fallback)
+        }
         // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
         Condition::HasId(has_id) => {
             let segment_ids: HashSet<_> = has_id
@@ -300,15 +305,22 @@ fn get_is_empty_checker<'a>(
     fallback: ConditionCheckerFn<'a>,
 ) -> ConditionCheckerFn<'a> {
     Box::new(move |point_id: PointOffsetType| {
-        index.values_is_empty(point_id).then(|| fallback(point_id)).unwrap_or(false)
+        index
+            .values_is_empty(point_id)
+            .then(|| fallback(point_id))
+            .unwrap_or(false)
     })
 }
 
 #[inline]
-fn get_is_null_checker<'a>( index: &'a FieldIndex,
+fn get_is_null_checker<'a>(
+    index: &'a FieldIndex,
     fallback: Box<(dyn std::ops::Fn(u32) -> bool + 'a)>,
 ) -> ConditionCheckerFn<'a> {
     Box::new(move |point_id: PointOffsetType| {
-        index.values_is_none(point_id).then(|| fallback(point_id)).unwrap_or(false)
+        index
+            .values_is_none(point_id)
+            .then(|| fallback(point_id))
+            .unwrap_or(false)
     })
 }
