@@ -87,7 +87,7 @@ impl UringReader {
         let mut submitted = 0;
 
         let disk_parallelism = self.disk_parallelism.min(uring.cq.capacity());
-        let max_sq_len = disk_parallelism.min(uring.sq.len());
+        let max_sq_len = disk_parallelism.min(uring.sq.capacity());
 
         for (buffer_index, point) in (&mut points).enumerate().take(disk_parallelism) {
             push_sqe(
