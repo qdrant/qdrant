@@ -62,6 +62,15 @@ cgroups-rs = "0.3"
 procfs = { version = "0.15", default-features = false }
 io-uring = "0.6.0"
 
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.48"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+]
+
 [[bench]]
 name = "vector_search"
 harness = false
