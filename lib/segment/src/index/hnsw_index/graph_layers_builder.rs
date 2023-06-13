@@ -26,16 +26,6 @@ pub struct LinkContainer {
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 
-impl LinkContainer {
-    pub fn pass_heuristic(&self, m: usize) -> bool {
-        self.checked_heuristic && self.links.len() == m
-    }
-
-    pub fn heuristic_sorted(&self, m: usize) -> bool {
-        self.checked_heuristic && self.links.len() == m
-    }
-}
-
 /// Same as `GraphLayers`,  but allows to build in parallel
 /// Convertable to `GraphLayers`
 pub struct GraphLayersBuilder {
@@ -399,131 +389,120 @@ impl GraphLayersBuilder {
                 let linking_level = min(level, entry_point.level);
 
                 for curr_level in (0..=linking_level).rev() {
-                    let level_m = self.get_m(curr_level);
-
-                    let nearest_points = {
-                        let existing_links =
-                            self.links_layers[point_id as usize][curr_level].read();
-                        self.search_on_level(
-                            level_entry,
-                            curr_level,
-                            self.ef_construct,
-                            &mut points_scorer,
-                            &existing_links.links,
-                        )
-                    };
-
-                    if let Some(the_nearest) = nearest_points.iter().max() {
-                        level_entry = *the_nearest;
-                    }
-
-                    let scorer = |a, b| points_scorer.score_internal(a, b);
-
-                    if self.use_heuristic {
-                        let selected_nearest =
-                            Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
-                        self.links_layers[point_id as usize][curr_level]
-                            .write()
-                            .links
-                            .clone_from(&selected_nearest);
-
-                        for &other_point in &selected_nearest {
-                            let other_point_links_read =
-                                self.links_layers[other_point as usize][curr_level].read();
-                            if other_point_links_read.links.len() < level_m {
-                                drop(other_point_links_read);
-                                let mut other_point_links =
-                                    self.links_layers[other_point as usize][curr_level].write();
-                                // If linked point is lack of neighbours
-                                other_point_links.links.push(point_id);
-                                other_point_links.checked_heuristic = false;
-                            } else if other_point_links_read.pass_heuristic(level_m) {
-                                let mut candidates = Vec::with_capacity(level_m);
-                                for other_point_link in
-                                    other_point_links_read.links.iter().take(level_m).copied()
-                                {
-                                    candidates.push(ScoredPointOffset {
-                                        idx: other_point_link,
-                                        score: scorer(other_point_link, other_point),
-                                    });
-                                }
-
-                                let selected_candidates =
-                                    Self::select_one_candidate_with_heuristic_from_sorted(
-                                        &candidates,
-                                        ScoredPointOffset {
-                                            idx: point_id,
-                                            score: scorer(point_id, other_point),
-                                        },
-                                        scorer,
-                                    );
-
-                                if let Some(selected_candidates) = selected_candidates {
-                                    drop(other_point_links_read);
-                                    let mut other_point_links =
-                                        self.links_layers[other_point as usize][curr_level].write();
-                                    other_point_links.checked_heuristic = true;
-                                    other_point_links.links = selected_candidates;
-                                }
-                            } else {
-                                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
-                                candidates.push(ScoredPointOffset {
-                                    idx: point_id,
-                                    score: scorer(point_id, other_point),
-                                });
-                                for other_point_link in
-                                    other_point_links_read.links.iter().take(level_m).copied()
-                                {
-                                    candidates.push(ScoredPointOffset {
-                                        idx: other_point_link,
-                                        score: scorer(other_point_link, other_point),
-                                    });
-                                }
-                                let selected_candidates =
-                                    Self::select_candidate_with_heuristic_from_sorted(
-                                        candidates.into_sorted_vec().into_iter().rev(),
-                                        level_m,
-                                        scorer,
-                                    );
-
-                                drop(other_point_links_read);
-                                let mut other_point_links =
-                                    self.links_layers[other_point as usize][curr_level].write();
-                                other_point_links.links = selected_candidates;
-                                other_point_links.checked_heuristic = true;
-                            }
-                        }
-                    } else {
-                        for nearest_point in &nearest_points {
-                            {
-                                let mut links =
-                                    self.links_layers[point_id as usize][curr_level].write();
-                                Self::connect_new_point(
-                                    &mut links,
-                                    nearest_point.idx,
-                                    point_id,
-                                    level_m,
-                                    scorer,
-                                );
-                            }
-
-                            {
-                                let mut links = self.links_layers[nearest_point.idx as usize]
-                                    [curr_level]
-                                    .write();
-                                Self::connect_new_point(
-                                    &mut links,
-                                    point_id,
-                                    nearest_point.idx,
-                                    level_m,
-                                    scorer,
-                                );
-                            }
-                        }
+                    if let Some(the_nearest) =
+                        self.link_on_level(point_id, &mut points_scorer, curr_level, level_entry)
+                    {
+                        level_entry = the_nearest;
                     }
                 }
             }
         }
+    }
+
+    fn link_on_level(
+        &self,
+        point_id: PointOffsetType,
+        points_scorer: &mut FilteredScorer,
+        level: usize,
+        entry: ScoredPointOffset,
+    ) -> Option<ScoredPointOffset> {
+        let level_m = self.get_m(level);
+        let links = |point_id: PointOffsetType| &self.links_layers[point_id as usize][level];
+
+        let nearest_points = {
+            let existing_links = links(point_id).read();
+            self.search_on_level(
+                entry,
+                level,
+                self.ef_construct,
+                points_scorer,
+                &existing_links.links,
+            )
+        };
+        let nearest_point = nearest_points.iter().copied().max();
+        let scorer = |a, b| points_scorer.score_internal(a, b);
+
+        if self.use_heuristic {
+            let selected_nearest =
+                Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
+            links(point_id).write().links.clone_from(&selected_nearest);
+
+            for &other_point in &selected_nearest {
+                let mut other_links = links(other_point).write();
+                if other_links.links.len() < level_m {
+                    // If linked point is lack of neighbours
+                    other_links.links.push(point_id);
+                    other_links.checked_heuristic = false;
+                } else if other_links.checked_heuristic {
+                    let mut candidates = Vec::with_capacity(level_m);
+                    for other_point_link in other_links.links.iter().take(level_m).copied() {
+                        candidates.push(ScoredPointOffset {
+                            idx: other_point_link,
+                            score: scorer(other_point_link, other_point),
+                        });
+                    }
+
+                    let selected_candidates = Self::select_one_candidate_with_heuristic_from_sorted(
+                        &candidates,
+                        ScoredPointOffset {
+                            idx: point_id,
+                            score: scorer(point_id, other_point),
+                        },
+                        scorer,
+                    );
+
+                    if let Some(selected_candidates) = selected_candidates {
+                        other_links.checked_heuristic = true;
+                        other_links.links = selected_candidates;
+                    }
+                } else {
+                    let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                    candidates.push(ScoredPointOffset {
+                        idx: point_id,
+                        score: scorer(point_id, other_point),
+                    });
+                    for other_point_link in other_links.links.iter().take(level_m).copied() {
+                        candidates.push(ScoredPointOffset {
+                            idx: other_point_link,
+                            score: scorer(other_point_link, other_point),
+                        });
+                    }
+                    let selected_candidates = Self::select_candidate_with_heuristic_from_sorted(
+                        candidates.into_sorted_vec().into_iter().rev(),
+                        level_m,
+                        scorer,
+                    );
+                    other_links.links = selected_candidates;
+                    other_links.checked_heuristic = true;
+                }
+            }
+        } else {
+            for nearest_point in &nearest_points {
+                {
+                    let mut links = links(point_id).write();
+                    Self::connect_new_point(
+                        &mut links,
+                        nearest_point.idx,
+                        point_id,
+                        level_m,
+                        scorer,
+                    );
+                }
+
+                {
+                    let mut links = links(nearest_point.idx).write();
+                    Self::connect_new_point(
+                        &mut links,
+                        point_id,
+                        nearest_point.idx,
+                        level_m,
+                        scorer,
+                    );
+                }
+            }
+        }
+
+        nearest_point
     }
 }
 
