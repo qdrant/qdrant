@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -274,7 +275,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         if quantized && quantization_params.rescore {
             let oversampled_top = quantization_params
                 .oversampling
-                .map(|x| (top as f64 * x.max(1.0)) as usize)
+                .map(|x| (top as f64 * max(x, 1.0)) as usize)
                 .unwrap_or(top);
 
             let search_result = graph.search(oversampled_top, ef, points_scorer);
