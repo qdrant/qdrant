@@ -98,10 +98,12 @@ impl SimpleVectorStorage {
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         let was_deleted = self.deleted.replace(key as usize, deleted);
-        if !was_deleted && deleted {
-            self.deleted_count += 1;
-        } else if was_deleted && !deleted {
-            self.deleted_count -= 1;
+        if was_deleted != deleted {
+            if deleted {
+                self.deleted_count += 1;
+            } else {
+                self.deleted_count -= 1;
+            }
         }
         was_deleted
     }
@@ -119,10 +121,12 @@ impl SimpleVectorStorage {
     /// New flags added as a result of growing are `false`, meaning their vectors are considered not deleted.
     fn grow_deleted_and_set(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         let was_deleted = bitvec_grow_deleted_and_set(&mut self.deleted, key, deleted);
-        if !was_deleted && deleted {
-            self.deleted_count += 1;
-        } else if was_deleted && !deleted {
-            self.deleted_count -= 1;
+        if was_deleted != deleted {
+            if deleted {
+                self.deleted_count += 1;
+            } else {
+                self.deleted_count -= 1;
+            }
         }
         was_deleted
     }
