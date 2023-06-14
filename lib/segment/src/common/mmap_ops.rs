@@ -111,7 +111,7 @@ impl PrefaultableMmap {
         // The `cfg!(...)` runtime check could have been expressed as `#[cfg(...)]` conditional
         // compilation directive, but ergonomics of `cfg!(...)` check is better. 🤷‍♀️
 
-        if cfg!(target_os = "linux") {
+        if !cfg!(target_os = "linux") {
             return false;
         }
 
