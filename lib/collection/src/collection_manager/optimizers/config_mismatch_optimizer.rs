@@ -173,3 +173,174 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         self.telemetry_durations_aggregator.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use parking_lot::RwLock;
+    use segment::entry::entry_point::SegmentEntry;
+    use segment::types::Distance;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::collection_manager::fixtures::random_multi_vec_segment;
+    use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+    use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
+    use crate::operations::types::{VectorParams, VectorsConfig};
+
+    /// This test the config mismatch optimizer for a changed HNSW config.
+    ///
+    /// It tests whether:
+    /// - the condition check for HNSW mismatches works
+    /// - optimized segments (and vector storages) use the updated configuration
+    ///
+    /// In short, this is what happens in this test:
+    /// - create randomized multi segment as base
+    /// - use indexing optimizer to build index for our segment
+    /// - test config mismatch condition: should not trigger yet
+    /// - change collection HNSW config
+    /// - test config mismatch condition: should trigger due to HNSW change
+    /// - optimize segment with config mismatch optimizer
+    /// - assert segment uses changed configuration
+    #[test]
+    fn test_hnsw_config_mismatch() {
+        // Collection configuration
+        let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
+        let thresholds_config = OptimizerThresholds {
+            max_segment_size: std::usize::MAX,
+            memmap_threshold: std::usize::MAX,
+            indexing_threshold: 10,
+        };
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Multi(BTreeMap::from([
+                (
+                    "vector1".into(),
+                    VectorParams {
+                        size: vector1_dim.try_into().unwrap(),
+                        distance: Distance::Dot,
+                        hnsw_config: None,
+                        quantization_config: None,
+                        on_disk: None,
+                    },
+                ),
+                (
+                    "vector2".into(),
+                    VectorParams {
+                        size: vector2_dim.try_into().unwrap(),
+                        distance: Distance::Dot,
+                        hnsw_config: None,
+                        quantization_config: None,
+                        on_disk: None,
+                    },
+                ),
+            ])),
+            shard_number: 1.try_into().unwrap(),
+            on_disk_payload: false,
+            replication_factor: 1.try_into().unwrap(),
+            write_consistency_factor: 1.try_into().unwrap(),
+        };
+
+        // Base segment
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+
+        let segment = random_multi_vec_segment(
+            dir.path(),
+            100,
+            point_count,
+            vector1_dim as usize,
+            vector2_dim as usize,
+        );
+
+        let segment_id = holder.add(segment);
+        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+
+        let hnsw_config = HnswConfig {
+            m: 16,
+            ef_construct: 100,
+            full_scan_threshold: 10, // Force to build HNSW links for payload
+            max_indexing_threads: 0,
+            on_disk: None,
+            payload_m: None,
+        };
+
+        // Optimizers used in test
+        let index_optimizer = IndexingOptimizer::new(
+            thresholds_config.clone(),
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params.clone(),
+            hnsw_config.clone(),
+            Default::default(),
+        );
+        let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
+            thresholds_config,
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params,
+            hnsw_config.clone(),
+            Default::default(),
+        );
+
+        // Use indexing optimizer to build index for HNSW mismatch test
+        let changed = index_optimizer
+            .optimize(locked_holder.clone(), vec![segment_id], &false.into())
+            .unwrap();
+        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(
+            locked_holder.read().get(segment_id).is_none(),
+            "optimized segment should be gone",
+        );
+        assert_eq!(locked_holder.read().len(), 2, "index must be built");
+
+        // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
+        let suggested_to_optimize =
+            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        assert_eq!(suggested_to_optimize.len(), 0);
+
+        // Create changed HNSW config with other m/ef_construct value, update it in the optimizer
+        let mut changed_hnsw_config = hnsw_config;
+        changed_hnsw_config.m /= 2;
+        changed_hnsw_config.ef_construct /= 5;
+        config_mismatch_optimizer.hnsw_config = changed_hnsw_config.clone();
+
+        // Run mismatch optimizer again, make sure it optimizes now
+        let suggested_to_optimize =
+            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        assert_eq!(suggested_to_optimize.len(), 1);
+        let changed = config_mismatch_optimizer
+            .optimize(locked_holder.clone(), suggested_to_optimize, &false.into())
+            .unwrap();
+        assert!(changed, "optimizer should have rebuilt this segment");
+
+        // Ensure new segment has changed HNSW config
+        locked_holder
+            .read()
+            .iter()
+            .map(|(_, segment)| match segment {
+                LockedSegment::Original(s) => s.read(),
+                LockedSegment::Proxy(_) => unreachable!(),
+            })
+            .filter(|segment| segment.total_point_count() > 0)
+            .for_each(|segment| {
+                segment
+                    .config()
+                    .vector_data
+                    .values()
+                    .map(|vector_data| &vector_data.index)
+                    .filter_map(|index| match index {
+                        Indexes::Plain {} => None,
+                        Indexes::Hnsw(hnsw) => Some(hnsw),
+                    })
+                    .for_each(|hnsw| {
+                        assert_eq!(
+                            hnsw, &changed_hnsw_config,
+                            "segment must be optimized with changed HNSW config",
+                        );
+                    });
+            });
+    }
+}
