@@ -717,22 +717,31 @@ impl LocalShard {
             .params
             .vectors
             .params_iter()
-            .map(|(_, value)| value.size.get() as usize)
+            .map(|(_, value)| {
+                let vector_size = value.size.get() as usize;
+
+                let quantization_config = value
+                    .quantization_config
+                    .as_ref()
+                    .or(info.config.quantization_config.as_ref());
+
+                let quantized_size_bytes = match quantization_config {
+                    None => 0,
+                    Some(QuantizationConfig::Scalar(_)) => vector_size,
+                    Some(QuantizationConfig::Product(pq)) => match pq.product.compression {
+                        CompressionRatio::X4 => vector_size,
+                        CompressionRatio::X8 => vector_size / 2,
+                        CompressionRatio::X16 => vector_size / 4,
+                        CompressionRatio::X32 => vector_size / 8,
+                        CompressionRatio::X64 => vector_size / 16,
+                    },
+                };
+
+                vector_size * size_of::<VectorElementType>() + quantized_size_bytes
+            })
             .sum();
 
-        let quantized_size_bytes = match info.config.quantization_config {
-            None => 0,
-            Some(QuantizationConfig::Scalar(_)) => vector_size * info.points_count,
-            Some(QuantizationConfig::Product(pq)) => match pq.product.compression {
-                CompressionRatio::X4 => vector_size * info.points_count,
-                CompressionRatio::X8 => vector_size * info.points_count / 2,
-                CompressionRatio::X16 => vector_size * info.points_count / 4,
-                CompressionRatio::X32 => vector_size * info.points_count / 8,
-                CompressionRatio::X64 => vector_size * info.points_count / 16,
-            },
-        };
-
-        vector_size * info.points_count * size_of::<VectorElementType>() + quantized_size_bytes
+        vector_size * info.points_count
     }
 
     pub async fn local_shard_info(&self) -> CollectionInfo {
