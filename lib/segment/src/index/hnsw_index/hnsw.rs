@@ -272,10 +272,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         };
 
         if quantized && quantization_params.rescore {
-            let oversampled_top = quantization_params
-                .oversampling
-                .map(|x| (top as f64 * x.max(1.0)) as usize)
-                .unwrap_or(top);
+            let oversampling = quantization_params.oversampling.unwrap_or(1.0);
+
+            let oversampled_top = if oversampling > 1.0 {
+                (oversampling * top as f64) as usize
+            } else {
+                top
+            };
 
             let search_result = graph.search(oversampled_top, ef, points_scorer);
 
