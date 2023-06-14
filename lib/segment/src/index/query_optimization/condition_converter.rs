@@ -41,19 +41,20 @@ pub fn condition_converter<'a>(
         // We can use index for `is_empty` condition effectively only when it is not empty.
         // If the index says it is "empty", we still need to check the payload.
         Condition::IsEmpty(is_empty) => {
+            let first_field_index = field_indexes
+                .get(&is_empty.is_empty.key)
+                .and_then(|indexes| indexes.first());
+
             let fallback = Box::new(move |point_id| {
                 payload_provider.with_payload(point_id, |payload| {
                     check_is_empty_condition(is_empty, &payload)
                 })
             });
-            field_indexes
-                .get(&is_empty.is_empty.key)
-                .and_then(|indexes| {
-                    indexes
-                        .first()
-                        .map(|index| get_is_empty_checker(index, fallback.clone()))
-                })
-                .unwrap_or(fallback)
+
+            match first_field_index {
+                Some(index) => get_is_empty_checker(index, fallback),
+                None => fallback,
+            }
         }
 
         Condition::IsNull(is_null) => Box::new(move |point_id| {
@@ -285,12 +286,18 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
     }
 }
 
+/// Get a checker that checks if the field is empty
+///
+/// * `index` - index to check first
+/// * `fallback` - Check if it is empty using plain payload
 #[inline]
 fn get_is_empty_checker<'a>(
     index: &'a FieldIndex,
     fallback: ConditionCheckerFn<'a>,
 ) -> ConditionCheckerFn<'a> {
     Box::new(move |point_id: PointOffsetType| {
+        // Counting on the short-circuit of the `&&` operator
+        // Only check the fallback if the index seems to be empty
         index.values_is_empty(point_id) && fallback(point_id)
     })
 }
