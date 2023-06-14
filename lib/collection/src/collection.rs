@@ -1114,6 +1114,12 @@ impl Collection {
             let mut config = self.collection_config.write().await;
             config.hnsw_config = hnsw_config_diff.update(&config.hnsw_config)?;
         }
+        {
+            let shard_holder = self.shards_holder.read().await;
+            for replica_set in shard_holder.all_shards() {
+                replica_set.on_optimizer_config_update().await?;
+            }
+        }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
