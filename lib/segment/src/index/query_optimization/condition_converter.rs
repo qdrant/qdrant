@@ -56,22 +56,11 @@ pub fn condition_converter<'a>(
                 .unwrap_or(fallback)
         }
 
-        // Applies same logic as in IsEmpty
-        Condition::IsNull(is_null) => {
-            let fallback = Box::new(move |point_id| {
-                payload_provider.with_payload(point_id, |payload| {
-                    check_is_null_condition(is_null, &payload)
-                })
-            });
-            field_indexes
-                .get(&is_null.is_null.key)
-                .and_then(|indexes| {
-                    indexes
-                        .first()
-                        .map(|index| get_is_null_checker(index, fallback.clone()))
-                })
-                .unwrap_or(fallback)
-        }
+        Condition::IsNull(is_null) => Box::new(move |point_id| {
+            payload_provider.with_payload(point_id, |payload| {
+                check_is_null_condition(is_null, &payload)
+            })
+        }),
         // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
         Condition::HasId(has_id) => {
             let segment_ids: HashSet<_> = has_id
@@ -302,22 +291,6 @@ fn get_is_empty_checker<'a>(
     fallback: ConditionCheckerFn<'a>,
 ) -> ConditionCheckerFn<'a> {
     Box::new(move |point_id: PointOffsetType| {
-        index
-            .values_is_empty(point_id)
-            .then(|| fallback(point_id))
-            .unwrap_or(false)
-    })
-}
-
-#[inline]
-fn get_is_null_checker<'a>(
-    index: &'a FieldIndex,
-    fallback: Box<(dyn std::ops::Fn(u32) -> bool + 'a)>,
-) -> ConditionCheckerFn<'a> {
-    Box::new(move |point_id: PointOffsetType| {
-        index
-            .values_is_none(point_id)
-            .then(|| fallback(point_id))
-            .unwrap_or(false)
+        index.values_is_empty(point_id) && fallback(point_id)
     })
 }

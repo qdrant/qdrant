@@ -303,10 +303,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             .map(|x| x.is_empty())
             .unwrap_or(true)
     }
-
-    pub fn values_is_none(&self, point_id: PointOffsetType) -> bool {
-        self.get_values(point_id).is_none()
-    }
 }
 
 impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
