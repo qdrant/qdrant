@@ -309,4 +309,15 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.values_count(point_id),
         }
     }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            FieldIndex::IntIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::IntMapIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::FloatIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
+        }
+    }
 }
