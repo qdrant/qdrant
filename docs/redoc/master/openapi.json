@@ -5889,6 +5889,17 @@
                 "nullable": true
               }
             ]
+          },
+          "hnsw_config": {
+            "description": "New HNSW parameters for the collection index. If none - values from service configuration file are used.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
