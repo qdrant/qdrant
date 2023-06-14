@@ -1112,10 +1112,15 @@ impl SegmentEntry for Segment {
                 (key, PayloadIndexInfo::new(index_schema, points_count))
             })
             .collect();
+        let num_vectors = self
+            .vector_data
+            .values()
+            .map(|data| data.vector_storage.borrow().available_vector_count())
+            .sum();
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.available_point_count() * self.vector_data.len(),
+            num_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
@@ -1905,5 +1910,165 @@ mod tests {
             segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn test_point_vector_count() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 1;
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                },
+            )]),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+        // Insert point ID 4 and 6, assert counts
+        segment
+            .upsert_point(100, 4.into(), &only_default_vector(&[0.4]))
+            .unwrap();
+        segment
+            .upsert_point(101, 6.into(), &only_default_vector(&[0.6]))
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 2);
+        assert_eq!(segment_info.num_vectors, 2);
+
+        // Delete non-existant point, counts should remain the same
+        segment.delete_point(102, 1.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 2);
+        assert_eq!(segment_info.num_vectors, 2);
+
+        // Delete point 4, counts should derease by 1
+        segment.delete_point(103, 4.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 1);
+        assert_eq!(segment_info.num_vectors, 1);
+
+        // Delete vector of point 6, vector count should now be zero
+        segment
+            .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 1);
+        assert_eq!(segment_info.num_vectors, 0);
+    }
+
+    #[test]
+    fn test_point_vector_count_multivec() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 1;
+        let config = SegmentConfig {
+            vector_data: HashMap::from([
+                (
+                    "a".into(),
+                    VectorDataConfig {
+                        size: dim,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+                (
+                    "b".into(),
+                    VectorDataConfig {
+                        size: dim,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+            ]),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+        // Insert point ID 4 and 6 fully, 8 and 10 partially, assert counts
+        segment
+            .upsert_point(
+                100,
+                4.into(),
+                &NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+            )
+            .unwrap();
+        segment
+            .upsert_point(
+                101,
+                6.into(),
+                &NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+            )
+            .unwrap();
+        segment
+            .upsert_point(
+                102,
+                8.into(),
+                &NamedVectors::from([("a".into(), vec![0.0])]),
+            )
+            .unwrap();
+        segment
+            .upsert_point(
+                103,
+                10.into(),
+                &NamedVectors::from([("b".into(), vec![1.0])]),
+            )
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 6);
+
+        // Delete non-existant point, counts should remain the same
+        segment.delete_point(104, 1.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 6);
+
+        // Delete point 4, counts should derease by 1
+        segment.delete_point(105, 4.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 4);
+
+        // Delete vector 'a' of point 6, vector count should decrease by 1
+        segment.delete_vector(106, 6.into(), "a").unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Deleting it again shouldn't chain anything
+        segment.delete_vector(107, 6.into(), "a").unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Replace vector 'a' for point 8, counts should remain the same
+        let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
+        segment
+            .replace_all_vectors(internal_8, NamedVectors::from([("a".into(), vec![0.1])]))
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Replace both vectors for point 8, adding a new vector
+        segment
+            .replace_all_vectors(
+                internal_8,
+                NamedVectors::from([("a".into(), vec![0.1]), ("b".into(), vec![0.1])]),
+            )
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 4);
     }
 }
