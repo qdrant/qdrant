@@ -122,6 +122,10 @@ impl FullTextIndex {
         // Maybe we want number of documents in the future?
         self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
     }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_doc(point_id).map(|x| x.is_empty()).unwrap_or(true)
+    }
 }
 
 impl ValueIndexer<String> for FullTextIndex {

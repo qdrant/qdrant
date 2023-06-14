@@ -256,7 +256,7 @@ fn test_is_empty_conditions() {
 
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
-            key: "flicking".to_string(),
+            key: FLICKING_KEY.to_string(),
         },
     }));
 
@@ -270,11 +270,13 @@ fn test_is_empty_conditions() {
         .borrow()
         .estimate_cardinality(&filter);
 
-    let real_number = plain_segment
-        .payload_index
-        .borrow()
-        .query_points(&filter)
-        .len();
+    let plain_result = plain_segment.payload_index.borrow().query_points(&filter);
+
+    let real_number = plain_result.len();
+
+    let struct_result = struct_segment.payload_index.borrow().query_points(&filter);
+
+    assert_eq!(plain_result, struct_result);
 
     eprintln!("estimation_plain = {estimation_plain:#?}");
     eprintln!("estimation_struct = {estimation_struct:#?}");
