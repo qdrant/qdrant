@@ -347,6 +347,7 @@ impl From<segment::types::QuantizationSearchParams> for QuantizationSearchParams
         Self {
             ignore: Some(params.ignore),
             rescore: Some(params.rescore),
+            oversampling: params.oversampling,
         }
     }
 }
