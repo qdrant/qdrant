@@ -25,7 +25,7 @@ use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
-use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
+use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff, HnswConfigDiff};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -1101,6 +1101,18 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
             config.params = params_diff.update(&config.params)?;
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
+    pub async fn update_hnsw_config_from_diff(
+        &self,
+        hnsw_config_diff: HnswConfigDiff,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            config.hnsw_config = hnsw_config_diff.update(&config.hnsw_config)?;
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())

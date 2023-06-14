@@ -185,6 +185,9 @@ pub struct UpdateCollection {
     pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
     /// Collection base params.  If none - values from service configuration file are used.
     pub params: Option<CollectionParamsDiff>,
+    /// New HNSW parameters for the collection index. If none - values from service configuration file are used.
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -203,6 +206,7 @@ impl UpdateCollectionOperation {
             update_collection: UpdateCollection {
                 optimizers_config: None,
                 params: None,
+                hnsw_config: None,
             },
             shard_replica_changes: None,
         }
