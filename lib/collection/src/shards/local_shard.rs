@@ -236,6 +236,12 @@ impl LocalShard {
 
         collection.load_from_wal(collection_id)?;
 
+        for (_, segment) in collection.segments.read().iter() {
+            if let LockedSegment::Original(segment) = segment {
+                segment.read().prefault_mmap_pages();
+            }
+        }
+
         Ok(collection)
     }
 
