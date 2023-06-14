@@ -25,7 +25,9 @@ use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
-use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff, HnswConfigDiff};
+use crate::operations::config_diff::{
+    CollectionParamsDiff, DiffConfig, HnswConfigDiff, OptimizersConfigDiff,
+};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shared_storage_config::SharedStorageConfig;
