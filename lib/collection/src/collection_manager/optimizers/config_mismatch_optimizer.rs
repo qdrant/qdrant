@@ -13,6 +13,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
+use crate::operations::config_diff::DiffConfig;
 
 /// Looks for segments having a mismatch between configured and actual parameters
 ///
@@ -83,16 +84,32 @@ impl ConfigMismatchOptimizer {
                     segment_config
                         .vector_data
                         .iter()
-                        .any(|(_vector_name, vector_data)| {
+                        .any(|(vector_name, vector_data)| {
                             // Check HNSW mismatch
                             match &vector_data.index {
                                 Indexes::Plain {} => {}
                                 Indexes::Hnsw(effective_hnsw) => {
-                                    let target_hnsw = &self.hnsw_config;
+                                    // Select vector specific target HNSW config
+                                    let target_hnsw_collection = &self.hnsw_config;
+                                    let target_hnsw_vector = self
+                                        .collection_params
+                                        .vectors
+                                        .get_params(vector_name)
+                                        .and_then(|vector_params| vector_params.hnsw_config)
+                                        .map(|vector_hnsw| vector_hnsw.update(target_hnsw_collection))
+                                        .and_then(|hnsw| match hnsw {
+                                            Ok(hnsw) => Some(hnsw),
+                                            Err(err) => {
+                                                log::warn!("Failed to merge collection and vector HNSW config, ignoring: {err}");
+                                                None
+                                            }
+                                        });
+                                    let target_hnsw = target_hnsw_vector
+                                        .as_ref()
+                                        .unwrap_or(target_hnsw_collection);
 
-                                    let is_mismatch =
-                                        target_hnsw.mismatch_requires_rebuild(effective_hnsw);
-                                    if is_mismatch {
+                                    // Select segment if we have an HNSW mismatch that requires rebuild
+                                    if effective_hnsw.mismatch_requires_rebuild(target_hnsw) {
                                         return true;
                                     }
                                 }
@@ -105,7 +122,7 @@ impl ConfigMismatchOptimizer {
             })
             .collect();
 
-        // Select the largest unindexed segment
+        // Select segment with largest vector size
         candidates
             .into_iter()
             .max_by_key(|(_, vector_size)| *vector_size)
