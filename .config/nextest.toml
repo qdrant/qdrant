@@ -1,0 +1,13 @@
+[profile.ci]
+# Retry tests before failing them.
+retries = { backoff = "exponential", count = 5, delay = "2s" }
+# Do not cancel the test run on the first failure.
+fail-fast = false
+# Print out output for failing tests as soon as they fail, and also at the end
+# of the run (for easy scrollability).
+failure-output = "immediate-final"
+
+[[profile.ci.overrides]]
+# This test is flaky when run in parallel, so this makes sure to run it on its own.
+filter = "test(segment_builder_test::test_building_cancellation)"
+threads-required = "num-test-threads"
