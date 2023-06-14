@@ -320,6 +320,9 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "4")]
     #[validate]
     pub params: ::core::option::Option<CollectionParamsDiff>,
+    /// New HNSW parameters for the collection index
+    #[prost(message, optional, tag = "5")]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

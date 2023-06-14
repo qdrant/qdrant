@@ -80,8 +80,7 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
             UpdateCollection {
                 optimizers_config: value.optimizers_config.map(Into::into),
                 params: value.params.map(TryInto::try_into).transpose()?,
-                // TODO: implement conversion once field is added in gRPC
-                hnsw_config: None,
+                hnsw_config: value.hnsw_config.map(Into::into),
             },
         )))
     }

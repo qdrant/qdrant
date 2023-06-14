@@ -220,6 +220,7 @@ message UpdateCollection {
   optional OptimizersConfigDiff optimizers_config = 2; // New configuration parameters for the collection
   optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
   optional CollectionParamsDiff params = 4; // New configuration parameters for the collection
+  optional HnswConfigDiff hnsw_config = 5; // New HNSW parameters for the collection index
 }
 
 message DeleteCollection {
