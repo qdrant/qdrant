@@ -1882,6 +1882,11 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | ignore | [bool](#bool) | optional | If set to true, search will ignore quantized vector data |
 | rescore | [bool](#bool) | optional | If true, use original vectors to re-score top-k results. Default is true. |
+| oversampling | [double](#double) | optional | Oversampling factor for quantization.
+
+Defines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.
+
+For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring. |
 
 
 
