@@ -16,6 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
+        partition: [ 1, 2 ]
 
     steps:
     - name: Install minimal stable
@@ -29,4 +30,5 @@ jobs:
     - name: Install cargo nextest
       uses: taiki-e/install-action@nextest
     - name: Run tests
-      run: cargo nextest run --all --profile ci # Profile "ci" is configured in .config/nextest.toml
+      # Profile "ci" is configured in .config/nextest.toml
+      run: cargo nextest run --workspace --profile ci --partition hash:${{ matrix.partition }}/2
