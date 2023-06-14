@@ -176,7 +176,6 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use parking_lot::RwLock;
@@ -185,19 +184,19 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::random_multi_vec_segment;
+    use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
     use crate::operations::types::{VectorParams, VectorsConfig};
 
-    /// This test the config mismatch optimizer for a changed HNSW config.
+    /// This test the config mismatch optimizer for a changed HNSW config
     ///
     /// It tests whether:
     /// - the condition check for HNSW mismatches works
     /// - optimized segments (and vector storages) use the updated configuration
     ///
     /// In short, this is what happens in this test:
-    /// - create randomized multi segment as base
+    /// - create randomized segment as base
     /// - use indexing optimizer to build index for our segment
     /// - test config mismatch condition: should not trigger yet
     /// - change collection HNSW config
@@ -207,35 +206,20 @@ mod tests {
     #[test]
     fn test_hnsw_config_mismatch() {
         // Collection configuration
-        let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
+        let (point_count, dim) = (1000, 10);
         let thresholds_config = OptimizerThresholds {
             max_segment_size: std::usize::MAX,
             memmap_threshold: std::usize::MAX,
             indexing_threshold: 10,
         };
         let collection_params = CollectionParams {
-            vectors: VectorsConfig::Multi(BTreeMap::from([
-                (
-                    "vector1".into(),
-                    VectorParams {
-                        size: vector1_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: None,
-                        quantization_config: None,
-                        on_disk: None,
-                    },
-                ),
-                (
-                    "vector2".into(),
-                    VectorParams {
-                        size: vector2_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: None,
-                        quantization_config: None,
-                        on_disk: None,
-                    },
-                ),
-            ])),
+            vectors: VectorsConfig::Single(VectorParams {
+                size: dim.try_into().unwrap(),
+                distance: Distance::Dot,
+                hnsw_config: None,
+                quantization_config: None,
+                on_disk: None,
+            }),
             shard_number: 1.try_into().unwrap(),
             on_disk_payload: false,
             replication_factor: 1.try_into().unwrap(),
@@ -247,13 +231,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut holder = SegmentHolder::default();
 
-        let segment = random_multi_vec_segment(
-            dir.path(),
-            100,
-            point_count,
-            vector1_dim as usize,
-            vector2_dim as usize,
-        );
+        let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
         let segment_id = holder.add(segment);
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
@@ -261,7 +239,7 @@ mod tests {
         let hnsw_config = HnswConfig {
             m: 16,
             ef_construct: 100,
-            full_scan_threshold: 10, // Force to build HNSW links for payload
+            full_scan_threshold: 10,
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
@@ -326,21 +304,11 @@ mod tests {
             })
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
-                segment
-                    .config()
-                    .vector_data
-                    .values()
-                    .map(|vector_data| &vector_data.index)
-                    .filter_map(|index| match index {
-                        Indexes::Plain {} => None,
-                        Indexes::Hnsw(hnsw) => Some(hnsw),
-                    })
-                    .for_each(|hnsw| {
-                        assert_eq!(
-                            hnsw, &changed_hnsw_config,
-                            "segment must be optimized with changed HNSW config",
-                        );
-                    });
+                assert_eq!(
+                    segment.config().vector_data[""].index,
+                    Indexes::Hnsw(changed_hnsw_config.clone()),
+                    "segment must be optimized with changed HNSW config",
+                );
             });
     }
 }
