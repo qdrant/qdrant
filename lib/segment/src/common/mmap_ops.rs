@@ -106,12 +106,12 @@ impl PrefaultableMmap {
     }
 
     fn prefault_with_madv_populate_read(&self, sep: &str, path: &Path) -> bool {
-        // Prefaulting memmapped pages with `MADV_POPULATE_READ` is only supported on Linux
+        // Prefaulting memmapped pages with `MADV_POPULATE_READ` is only supported on Linux and Windows
         //
         // The `cfg!(...)` runtime check could have been expressed as `#[cfg(...)]` conditional
         // compilation directive, but ergonomics of `cfg!(...)` check is better. 🤷‍♀️
 
-        if !cfg!(target_os = "linux") {
+        if !cfg!(any(target_os = "linux", windows)) {
             return false;
         }
 
@@ -166,14 +166,14 @@ impl TryFrom<Arc<MmapMut>> for PrefaultableMmap {
     type Error = Unsupported;
 
     fn try_from(mmap: Arc<MmapMut>) -> Result<Self, Self::Error> {
-        // Prefaulting `MmapMut` pages is only supported on Linux:
-        // - because prefaulting with `MADV_POPULATE_READ` is only supported on Linux
+        // Prefaulting `MmapMut` pages is only supported on Linux and Windows:
+        // - because prefaulting with `MADV_POPULATE_READ` is only supported on Linux and Windows
         // - and prefaulting with explicit read is not supported for `MmapMut`
         //
         // The `cfg!(...)` runtime check could have been expressed as `#[cfg(...)]` conditional
         // compilation directive, but ergonomics of `cfg!(...)` check is better. 🤷‍♀️
 
-        if cfg!(target_os = "linux") {
+        if cfg!(any(target_os = "linux", windows)) {
             Ok(Self::MmapMut(mmap))
         } else {
             Err(Unsupported)
@@ -182,7 +182,7 @@ impl TryFrom<Arc<MmapMut>> for PrefaultableMmap {
 }
 
 #[derive(Copy, Clone, Debug, thiserror::Error)]
-#[error("prefaulting MmapMut pages is only supported on Linux")]
+#[error("prefaulting MmapMut pages is only supported on Linux and Windows")]
 pub struct Unsupported;
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
