@@ -179,13 +179,13 @@ impl CreateCollectionOperation {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
-    /// Custom params for Optimizers.  If none - values from service configuration file are used.
+    /// Custom params for Optimizers.  If none - it is left unchanged.
     /// This operation is blocking, it will only proceed ones all current optimizations are complete
     #[serde(alias = "optimizer_config")]
-    pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
-    /// Collection base params.  If none - values from service configuration file are used.
+    pub optimizers_config: Option<OptimizersConfigDiff>, // TODO: Allow updates for other configuration params as well
+    /// Collection base params. If none - it is left unchanged.
     pub params: Option<CollectionParamsDiff>,
-    /// New HNSW parameters for the collection index. If none - values from service configuration file are used.
+    /// HNSW parameters to update for the collection index. If none - it is left unchanged.
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
 }

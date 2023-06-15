@@ -308,11 +308,11 @@ pub struct UpdateCollection {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// New configuration parameters for the collection
+    /// New configuration parameters for the collection. This operation is blocking, it will only proceed ones all current optimizations are complete
     #[prost(message, optional, tag = "2")]
     #[validate]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "3")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
