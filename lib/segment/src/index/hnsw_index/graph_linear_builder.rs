@@ -130,94 +130,96 @@ impl GraphLinearBuilder {
                 let linking_level = std::cmp::min(level, entry_point.level);
 
                 for curr_level in (0..=linking_level).rev() {
-                    let level_m = self.get_m(curr_level);
-
-                    let nearest_points = {
-                        let existing_links = &self.links_layers[point_id as usize][curr_level];
-                        self.search_on_level(
-                            level_entry,
-                            curr_level,
-                            self.ef_construct,
-                            &mut points_scorer,
-                            &existing_links,
-                        )
-                    };
-
-                    if let Some(the_nearest) = nearest_points.iter().max() {
-                        level_entry = *the_nearest;
-                    }
-
-                    if self.use_heuristic {
-                        let selected_nearest = Self::select_candidates_with_heuristic(
-                            nearest_points,
-                            level_m,
-                            &mut points_scorer,
-                        );
-                        self.links_layers[point_id as usize][curr_level]
-                            .clone_from(&selected_nearest);
-
-                        for &other_point in &selected_nearest {
-                            let other_point_links =
-                                &mut self.links_layers[other_point as usize][curr_level];
-                            if other_point_links.len() < level_m {
-                                // If linked point is lack of neighbours
-                                other_point_links.push(point_id);
-                            } else {
-                                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
-                                candidates.push(ScoredPointOffset {
-                                    idx: point_id,
-                                    score: points_scorer.score_internal(point_id, other_point),
-                                });
-                                for other_point_link in
-                                    other_point_links.iter().take(level_m).copied()
-                                {
-                                    candidates.push(ScoredPointOffset {
-                                        idx: other_point_link,
-                                        score: points_scorer
-                                            .score_internal(other_point_link, other_point),
-                                    });
-                                }
-                                let selected_candidates =
-                                    Self::select_candidate_with_heuristic_from_sorted(
-                                        candidates.into_sorted_vec().into_iter().rev(),
-                                        level_m,
-                                        &mut points_scorer,
-                                    );
-                                other_point_links.clear(); // this do not free memory, which is good
-                                for selected in selected_candidates.iter().copied() {
-                                    other_point_links.push(selected);
-                                }
-                            }
-                        }
-                    } else {
-                        for nearest_point in &nearest_points {
-                            {
-                                let links = &mut self.links_layers[point_id as usize][curr_level];
-                                Self::connect_new_point(
-                                    links,
-                                    nearest_point.idx,
-                                    point_id,
-                                    level_m,
-                                    &mut points_scorer,
-                                );
-                            }
-
-                            {
-                                let links =
-                                    &mut self.links_layers[nearest_point.idx as usize][curr_level];
-                                Self::connect_new_point(
-                                    links,
-                                    point_id,
-                                    nearest_point.idx,
-                                    level_m,
-                                    &mut points_scorer,
-                                );
-                            }
-                        }
+                    if let Some(the_nearest) =
+                        self.link_on_level(point_id, &mut points_scorer, curr_level, level_entry)
+                    {
+                        level_entry = the_nearest;
                     }
                 }
             }
         }
+    }
+
+    fn link_on_level(
+        &mut self,
+        point_id: PointOffsetType,
+        points_scorer: &mut FilteredScorer,
+        level: usize,
+        entry: ScoredPointOffset,
+    ) -> Option<ScoredPointOffset> {
+        let nearest_points = {
+            let existing_links = &self.links_layers[point_id as usize][level];
+            self.search_on_level(
+                entry,
+                level,
+                self.ef_construct,
+                points_scorer,
+                &existing_links,
+            )
+        };
+
+        let nearest_point = nearest_points.iter().copied().max();
+        let level_m = self.get_m(level);
+
+        if self.use_heuristic {
+            let selected_nearest =
+                Self::select_candidates_with_heuristic(nearest_points, level_m, points_scorer);
+            self.links_layers[point_id as usize][level].clone_from(&selected_nearest);
+
+            for &other_point in &selected_nearest {
+                let other_point_links = &mut self.links_layers[other_point as usize][level];
+                if other_point_links.len() < level_m {
+                    // If linked point is lack of neighbours
+                    other_point_links.push(point_id);
+                } else {
+                    let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                    candidates.push(ScoredPointOffset {
+                        idx: point_id,
+                        score: points_scorer.score_internal(point_id, other_point),
+                    });
+                    for other_point_link in other_point_links.iter().take(level_m).copied() {
+                        candidates.push(ScoredPointOffset {
+                            idx: other_point_link,
+                            score: points_scorer.score_internal(other_point_link, other_point),
+                        });
+                    }
+                    let selected_candidates = Self::select_candidate_with_heuristic_from_sorted(
+                        candidates.into_sorted_vec().into_iter().rev(),
+                        level_m,
+                        points_scorer,
+                    );
+                    other_point_links.clear(); // this do not free memory, which is good
+                    for selected in selected_candidates.iter().copied() {
+                        other_point_links.push(selected);
+                    }
+                }
+            }
+        } else {
+            for nearest_point in &nearest_points {
+                {
+                    let links = &mut self.links_layers[point_id as usize][level];
+                    Self::connect_new_point(
+                        links,
+                        nearest_point.idx,
+                        point_id,
+                        level_m,
+                        points_scorer,
+                    );
+                }
+
+                {
+                    let links = &mut self.links_layers[nearest_point.idx as usize][level];
+                    Self::connect_new_point(
+                        links,
+                        point_id,
+                        nearest_point.idx,
+                        level_m,
+                        points_scorer,
+                    );
+                }
+            }
+        }
+        nearest_point
     }
 
     /// Connect new point to links, so that links contains only closest points
