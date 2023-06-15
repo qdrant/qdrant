@@ -11,6 +11,7 @@ message VectorParams {
 
 message VectorParamsDiff {
   optional HnswConfigDiff hnsw_config = 1; // Update params for HNSW index. If empty object - it will be unset
+  optional QuantizationConfig quantization_config = 2; // Update quantization params. If none - it is left unchanged.Quantization configuration of vector
 }
 
 message VectorParamsMap {

@@ -386,13 +386,11 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             })?,
             distance: from_grpc_dist(vector_params.distance)?,
             hnsw_config: vector_params.hnsw_config.map(Into::into),
-            quantization_config: match vector_params.quantization_config {
-                Some(config) => Some(
-                    grpc_to_segment_quantization_config(config)
-                        .map_err(Status::invalid_argument)?,
-                ),
-                None => None,
-            },
+            quantization_config: vector_params
+                .quantization_config
+                .map(grpc_to_segment_quantization_config)
+                .transpose()
+                .map_err(Status::invalid_argument)?,
             on_disk: vector_params.on_disk,
         })
     }
@@ -404,7 +402,11 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
     fn try_from(vector_params: api::grpc::qdrant::VectorParamsDiff) -> Result<Self, Self::Error> {
         Ok(Self {
             hnsw_config: vector_params.hnsw_config.map(Into::into),
-            quantization_config: None,
+            quantization_config: vector_params
+                .quantization_config
+                .map(grpc_to_segment_quantization_config)
+                .transpose()
+                .map_err(Status::invalid_argument)?,
         })
     }
 }
