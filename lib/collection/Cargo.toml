@@ -30,7 +30,6 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "e034a1814ee15941134d44
 ordered-float = "3.7"
 hashring = "0.3.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
-ahash = "0.8.3"
 
 tokio = {version = "~1.28", features = ["full"]}
 futures = "0.3.28"

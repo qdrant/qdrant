@@ -956,7 +956,6 @@ name = "collection"
 version = "0.4.2"
 dependencies = [
  "actix-web-validator",
- "ahash 0.8.3",
  "api",
  "arc-swap",
  "async-trait",
