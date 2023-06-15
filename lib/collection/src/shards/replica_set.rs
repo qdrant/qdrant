@@ -149,7 +149,7 @@ impl ReplicaSetState {
 /// Prefers local shard for read-only operations.
 /// Perform updates on all replicas and report error if there is at least one failure.
 ///
-pub struct ShardReplicaSet {
+pub struct ReplicaSetShard {
     local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     remotes: RwLock<Vec<RemoteShard>>,
     replica_state: Arc<SaveOnDisk<ReplicaSetState>>,
@@ -173,7 +173,7 @@ pub struct ShardReplicaSet {
     write_ordering_lock: Mutex<()>,
 }
 
-impl ShardReplicaSet {
+impl ReplicaSetShard {
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Local(_) | Dummy(_)))
@@ -1595,7 +1595,7 @@ mod tests {
         Arc::new(move |_peer_id, _shard_id| {})
     }
 
-    async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
+    async fn new_shard_replica_set(collection_dir: &TempDir) -> ReplicaSetShard {
         let update_runtime = Handle::current();
         let wal_config = WalConfig {
             wal_capacity_mb: 1,
@@ -1626,7 +1626,7 @@ mod tests {
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
         let remotes = HashSet::from([2, 3, 4, 5]);
-        ShardReplicaSet::build(
+        ReplicaSetShard::build(
             1,
             "test_collection".to_string(),
             1,

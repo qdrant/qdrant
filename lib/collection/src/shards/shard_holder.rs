@@ -15,7 +15,7 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
+use crate::shards::replica_set::{ChangePeerState, ReplicaSetShard, ReplicaState};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
@@ -25,7 +25,7 @@ use crate::shards::CollectionId;
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 
 pub struct ShardHolder {
-    shards: HashMap<ShardId, ShardReplicaSet>,
+    shards: HashMap<ShardId, ReplicaSetShard>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     ring: HashRing<ShardId>,
 }
@@ -42,12 +42,12 @@ impl ShardHolder {
         })
     }
 
-    pub fn add_shard(&mut self, shard_id: ShardId, shard: ShardReplicaSet) {
+    pub fn add_shard(&mut self, shard_id: ShardId, shard: ReplicaSetShard) {
         self.shards.insert(shard_id, shard);
         self.ring.add(shard_id);
     }
 
-    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<ShardReplicaSet> {
+    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<ReplicaSetShard> {
         let shard = self.shards.remove(&shard_id);
         self.ring.remove(&shard_id);
         shard
@@ -56,7 +56,7 @@ impl ShardHolder {
     /// Take shard
     ///
     /// remove shard and return ownership
-    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<ShardReplicaSet> {
+    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<ReplicaSetShard> {
         self.shards.remove(&shard_id)
     }
 
@@ -66,8 +66,8 @@ impl ShardHolder {
     pub fn replace_shard(
         &mut self,
         shard_id: ShardId,
-        shard: ShardReplicaSet,
-    ) -> Option<ShardReplicaSet> {
+        shard: ReplicaSetShard,
+    ) -> Option<ReplicaSetShard> {
         self.shards.insert(shard_id, shard)
     }
 
@@ -75,26 +75,26 @@ impl ShardHolder {
         self.shards.contains_key(shard_id)
     }
 
-    pub fn get_shard(&self, shard_id: &ShardId) -> Option<&ShardReplicaSet> {
+    pub fn get_shard(&self, shard_id: &ShardId) -> Option<&ReplicaSetShard> {
         self.shards.get(shard_id)
     }
 
-    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut ShardReplicaSet> {
+    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut ReplicaSetShard> {
         self.shards.get_mut(shard_id)
     }
 
-    pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &ShardReplicaSet)> {
+    pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &ReplicaSetShard)> {
         self.shards.iter()
     }
 
-    pub fn all_shards(&self) -> impl Iterator<Item = &ShardReplicaSet> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &ReplicaSetShard> {
         self.shards.values()
     }
 
     pub fn split_by_shard<O: SplitByShard + Clone>(
         &self,
         operation: O,
-    ) -> Vec<(&ShardReplicaSet, O)> {
+    ) -> Vec<(&ReplicaSetShard, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
             OperationToShard::ByShard(by_shard) => by_shard
@@ -158,7 +158,7 @@ impl ShardHolder {
     pub fn target_shard(
         &self,
         shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<&ShardReplicaSet>> {
+    ) -> CollectionResult<Vec<&ReplicaSetShard>> {
         match shard_selection {
             None => Ok(self.all_shards().collect()),
             Some(shard_selection) => {
@@ -207,7 +207,7 @@ impl ShardHolder {
             for (path, _shard_version, shard_type) in
                 latest_shard_paths(collection_path, shard_id).await.unwrap()
             {
-                let replica_set = ShardReplicaSet::load(
+                let replica_set = ReplicaSetShard::load(
                     shard_id,
                     collection_id.clone(),
                     &path,
