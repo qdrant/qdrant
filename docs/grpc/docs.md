@@ -858,6 +858,7 @@ Note: 1kB = 1 vector of size 256. |
 | params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | New HNSW parameters for the collection index |
 | vectors_config | [VectorsConfigDiff](#qdrant-VectorsConfigDiff) | optional | New vector parameters |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 
 
 
@@ -927,6 +928,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Update params for HNSW index. If empty object - it will be unset |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Update quantization params. If none - it is left unchanged.Quantization configuration of vector |
 
 
 
