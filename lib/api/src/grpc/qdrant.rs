@@ -322,6 +322,7 @@ pub struct UpdateCollection {
     pub params: ::core::option::Option<CollectionParamsDiff>,
     /// New HNSW parameters for the collection index
     #[prost(message, optional, tag = "5")]
+    #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
 }
 #[derive(validator::Validate)]
