@@ -16,6 +16,10 @@ use crate::optimizers_builder::OptimizersConfig;
 // TODO: make auto-generated somehow...
 
 pub trait DiffConfig<T: DeserializeOwned + Serialize> {
+    /// Update the given `config` with fields in this diff
+    ///
+    /// This diff has higher priority, meaning that fields specified in this diff will always be in
+    /// the returned object.
     fn update(self, config: &T) -> CollectionResult<T>
     where
         Self: Sized + Serialize + DeserializeOwned + Merge,
@@ -193,6 +197,8 @@ impl PartialEq for OptimizersConfigDiff {
 impl Eq for OptimizersConfigDiff {}
 
 impl DiffConfig<HnswConfig> for HnswConfigDiff {}
+
+impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {}
 
 impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
 
