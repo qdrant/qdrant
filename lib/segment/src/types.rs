@@ -373,7 +373,6 @@ impl HnswConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self.m != other.m
             || self.ef_construct != other.ef_construct
-            || self.on_disk != other.on_disk
             || self.payload_m != other.payload_m
     }
 }
