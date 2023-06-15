@@ -127,14 +127,20 @@ impl ConfigMismatchOptimizer {
                             }
 
                             // Check quantization mismatch
-                            let quantization_mismatch = vector_data
-                                .quantization_config
+                            let target_quantization_collection = self.quantization_config.as_ref();
+                            let target_quantization_vector = self
+                                        .collection_params
+                                        .vectors
+                                        .get_params(vector_name)
+                                        .and_then(|vector_params| vector_params.quantization_config.clone());
+                            let target_quantization = target_quantization_vector.as_ref().or(target_quantization_collection);
+                            let quantization_mismatch = vector_data.quantization_config
                                 .as_ref()
-                                .zip(self.quantization_config.as_ref())
+                                .zip(target_quantization)
                                 // Rebuild if current parameters differ from new parameters
                                 .map(|(a, b)| a.mismatch_requires_rebuild(b))
                                 // Or rebuild if we currently have quantization but now disabled it
-                                .unwrap_or_else(|| vector_data.quantization_config.is_some() && self.quantization_config.is_none());
+                                .unwrap_or_else(|| vector_data.quantization_config.is_some() && target_quantization.is_none());
                             if quantization_mismatch {
                                 return true;
                             }
