@@ -14,7 +14,7 @@ use tonic::Status;
 
 use super::types::{
     BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
-    UpdateVectorParams,
+    UpdateVectorParams, UpdateVectorsConfig,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -332,6 +332,46 @@ impl From<api::grpc::qdrant::WalConfigDiff> for WalConfig {
             wal_capacity_mb: wal_config.wal_capacity_mb.unwrap_or_default() as usize,
             wal_segments_ahead: wal_config.wal_segments_ahead.unwrap_or_default() as usize,
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::vectors_config::Config> for VectorsConfig {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::vectors_config::Config) -> Result<Self, Self::Error> {
+        Ok(match value {
+            api::grpc::qdrant::vectors_config::Config::Params(vector_params) => {
+                VectorsConfig::Single(vector_params.try_into()?)
+            }
+            api::grpc::qdrant::vectors_config::Config::ParamsMap(vectors_params) => {
+                let mut params_map = BTreeMap::new();
+                for (name, params) in vectors_params.map {
+                    params_map.insert(name, params.try_into()?);
+                }
+                VectorsConfig::Multi(params_map)
+            }
+        })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::update_vectors_config::Config> for UpdateVectorsConfig {
+    type Error = Status;
+
+    fn try_from(
+        value: api::grpc::qdrant::update_vectors_config::Config,
+    ) -> Result<Self, Self::Error> {
+        Ok(match value {
+            api::grpc::qdrant::update_vectors_config::Config::Params(vector_params) => {
+                UpdateVectorsConfig::Single(vector_params.try_into()?)
+            }
+            api::grpc::qdrant::update_vectors_config::Config::ParamsMap(vectors_params) => {
+                let mut params_map = BTreeMap::new();
+                for (name, params) in vectors_params.map {
+                    params_map.insert(name, params.try_into()?);
+                }
+                UpdateVectorsConfig::Multi(params_map)
+            }
+        })
     }
 }
 
