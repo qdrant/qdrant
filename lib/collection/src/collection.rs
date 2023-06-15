@@ -1141,7 +1141,7 @@ impl Collection {
             for (vector_name, update_params) in update_vectors_diff.params_iter() {
                 let vector_params = config.params.get_vector_params_mut(vector_name)?;
                 if let Some(diff) = update_params.hnsw_config {
-                    vector_params.hnsw_config.replace(diff);
+                    vector_params.hnsw_config = diff.into_option();
                 }
             }
         }

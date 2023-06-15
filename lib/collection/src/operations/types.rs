@@ -774,7 +774,7 @@ pub struct VectorParams {
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Custom params for HNSW index. If none - values from collection configuration are used.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for quantization. If none - values from collection configuration are used.
@@ -789,6 +789,14 @@ pub struct VectorParams {
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+/// Is considered empty if `None` or if diff has no field specified
+fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
+    hnsw_config
+        .as_ref()
+        .map(HnswConfigDiff::is_empty)
+        .unwrap_or(true)
 }
 
 impl Anonymize for VectorParams {
@@ -954,7 +962,7 @@ impl From<VectorParams> for VectorsConfig {
 #[serde(rename_all = "snake_case")]
 pub struct UpdateVectorParams {
     /// Custom params for HNSW index. If none - values from collection configuration are used.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
 }

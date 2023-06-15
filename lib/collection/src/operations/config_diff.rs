@@ -76,6 +76,25 @@ pub struct HnswConfigDiff {
     pub payload_m: Option<usize>,
 }
 
+impl HnswConfigDiff {
+    /// Whether this diff has no field specified
+    pub fn is_empty(&self) -> bool {
+        self.m.is_none()
+            && self.ef_construct.is_none()
+            && self.full_scan_threshold.is_none()
+            && self.max_indexing_threads.is_none()
+            && self.on_disk.is_none()
+            && self.payload_m.is_none()
+    }
+
+    /// Transform into an option
+    ///
+    /// Will be `Some` if not `is_empty`.
+    pub fn into_option(self) -> Option<Self> {
+        (!self.is_empty()).then_some(self)
+    }
+}
+
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
 )]
