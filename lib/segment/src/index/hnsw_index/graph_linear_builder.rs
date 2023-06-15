@@ -127,10 +127,7 @@ impl<'a> GraphLinearBuilder<'a> {
         level: usize,
         entry: ScoredPointOffset,
     ) -> GraphLinkResponse {
-        let nearest_points = {
-            let existing_links = &self.links_layers[point_id as usize][level];
-            self.search_on_level(point_id, entry, level, self.ef_construct, existing_links)
-        };
+        let nearest_points = self.search_on_level(point_id, entry, level);
 
         let mut response = GraphLinkResponse {
             point_id,
@@ -142,7 +139,8 @@ impl<'a> GraphLinearBuilder<'a> {
         };
         let level_m = self.get_m(level);
 
-        response.links = self.select_candidates_with_heuristic(nearest_points, level_m);
+        response.links =
+            self.select_candidate_with_heuristic_from_sorted(nearest_points.into_iter(), level_m);
         for &other_point in &response.links {
             response.neighbor_ids.push(other_point);
 
@@ -206,28 +204,16 @@ impl<'a> GraphLinearBuilder<'a> {
         result_list
     }
 
-    /// <https://github.com/nmslib/hnswlib/issues/99>
-    fn select_candidates_with_heuristic(
-        &self,
-        candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
-        m: usize,
-    ) -> Vec<PointOffsetType> {
-        let closest_iter = candidates.into_iter();
-        self.select_candidate_with_heuristic_from_sorted(closest_iter, m)
-    }
-
     fn search_on_level(
         &self,
         id: PointOffsetType,
         level_entry: ScoredPointOffset,
         level: usize,
-        ef: usize,
-        existing_links: &[PointOffsetType],
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.visited_pool.get(self.links_layers.len());
         visited_list.check_and_update_visited(level_entry.idx);
 
-        let mut nearest = FixedLengthPriorityQueue::<ScoredPointOffset>::new(ef);
+        let mut nearest = FixedLengthPriorityQueue::<ScoredPointOffset>::new(self.ef_construct);
         nearest.push(level_entry);
         let mut candidates = BinaryHeap::<ScoredPointOffset>::from_iter([level_entry]);
 
@@ -253,7 +239,7 @@ impl<'a> GraphLinearBuilder<'a> {
             }
         }
 
-        for &existing_link in existing_links {
+        for &existing_link in &self.links_layers[id as usize][level] {
             if !visited_list.check(existing_link) {
                 Self::process_candidate(
                     &mut nearest,
