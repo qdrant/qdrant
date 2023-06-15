@@ -21,8 +21,12 @@ def test_collection_update():
         body={
             "optimizers_config": {
                 "default_segment_number": 6,
-                "indexing_threshold": 10_000,
-            }
+                "indexing_threshold": 10000,
+            },
+            "hnsw": {
+                "m": 42,
+                "ef_construct": 123,
+            },
         }
     )
     assert response.ok
