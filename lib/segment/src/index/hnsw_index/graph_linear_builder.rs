@@ -154,7 +154,7 @@ impl GraphLinearBuilder {
                 level,
                 self.ef_construct,
                 points_scorer,
-                &existing_links,
+                existing_links,
             )
         };
 
@@ -310,11 +310,12 @@ impl GraphLinearBuilder {
             }
 
             points_ids.clear();
-            self.links_map(candidate.idx, level, |link| {
+            let links = &self.links_layers[candidate.idx as usize][level];
+            for &link in links.iter() {
                 if !visited_list.check_and_update_visited(link) {
                     points_ids.push(link);
                 }
-            });
+            }
 
             let scores = points_scorer.score_points(&mut points_ids, limit);
             scores
@@ -357,9 +358,9 @@ impl GraphLinearBuilder {
                 changed = false;
 
                 links.clear();
-                self.links_map(current_point.idx, level, |link| {
+                for &link in &self.links_layers[current_point.idx as usize][level] {
                     links.push(link);
-                });
+                }
 
                 let scores = points_scorer.score_points(&mut links, limit);
                 scores.iter().copied().for_each(|score_point| {
@@ -378,16 +379,6 @@ impl GraphLinearBuilder {
             self.m0
         } else {
             self.m
-        }
-    }
-
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
-    where
-        F: FnMut(PointOffsetType),
-    {
-        let links = &self.links_layers[point_id as usize][level];
-        for link in links.iter() {
-            f(*link);
         }
     }
 
