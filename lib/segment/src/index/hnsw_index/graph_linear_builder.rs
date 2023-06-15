@@ -2,8 +2,6 @@ use std::collections::BinaryHeap;
 
 use itertools::Itertools;
 use num_traits::float::FloatCore;
-use rand::distributions::Uniform;
-use rand::Rng;
 
 use super::entry_points::EntryPoints;
 use super::graph_layers::LinkContainer;
@@ -17,11 +15,9 @@ use crate::vector_storage::ScoredPointOffset;
 pub type LayersContainer = Vec<LinkContainer>;
 
 pub struct GraphLinearBuilder {
-    max_level: usize,
     m: usize,
     m0: usize,
     ef_construct: usize,
-    level_factor: f64,
     use_heuristic: bool,
     links_layers: Vec<LayersContainer>,
     entry_points: EntryPoints,
@@ -30,7 +26,7 @@ pub struct GraphLinearBuilder {
 
 impl GraphLinearBuilder {
     pub fn new(
-        num_vectors: usize, // Initial number of points in index
+        levels: impl Iterator<Item = usize>, // Initial number of points in index
         m: usize,           // Expected M for non-first layer
         m0: usize,          // Expected M for first layer
         ef_construct: usize,
@@ -40,20 +36,24 @@ impl GraphLinearBuilder {
     ) -> Self {
         let mut links_layers: Vec<LayersContainer> = vec![];
 
-        for _i in 0..num_vectors {
+        for level in levels {
             let mut links = Vec::new();
             if reserve {
                 links.reserve(m0);
             }
-            links_layers.push(vec![links]);
+            let mut point_layers = vec![links];
+            while point_layers.len() <= level {
+                let mut links = vec![];
+                links.reserve(m);
+                point_layers.push(links);
+            }
+            links_layers.push(point_layers);
         }
 
         Self {
-            max_level: 0,
             m,
             m0,
             ef_construct,
-            level_factor: 1.0 / (std::cmp::max(m, 2) as f64).ln(),
             use_heuristic,
             links_layers,
             entry_points: EntryPoints::new(entry_points_num),
@@ -406,34 +406,8 @@ impl GraphLinearBuilder {
         }
     }
 
-    /// Generate random level for a new point, according to geometric distribution
-    pub fn get_random_layer<R>(&self, rng: &mut R) -> usize
-    where
-        R: Rng + ?Sized,
-    {
-        let distribution = Uniform::new(0.0, 1.0);
-        let sample: f64 = rng.sample(distribution);
-        let picked_level = -sample.ln() * self.level_factor;
-        picked_level.round() as usize
-    }
-
     fn get_point_level(&self, point_id: PointOffsetType) -> usize {
         self.links_layers[point_id as usize].len() - 1
-    }
-
-    pub fn set_levels(&mut self, point_id: PointOffsetType, level: usize) {
-        if self.links_layers.len() <= point_id as usize {
-            while self.links_layers.len() <= point_id as usize {
-                self.links_layers.push(vec![]);
-            }
-        }
-        let point_layers = &mut self.links_layers[point_id as usize];
-        while point_layers.len() <= level {
-            let mut links = vec![];
-            links.reserve(self.m);
-            point_layers.push(links);
-        }
-        self.max_level = std::cmp::max(self.max_level, level);
     }
 }
 
@@ -470,8 +444,17 @@ mod tests {
             true,
             true,
         );
+
+        let levels = (0..(num_vectors as PointOffsetType))
+            .map(|idx| {
+                let level = graph_layers_1.get_random_layer(&mut rng);
+                graph_layers_1.set_levels(idx, level);
+                level
+            })
+            .collect_vec();
+
         let mut graph_layers_2 = GraphLinearBuilder::new(
-            num_vectors,
+            levels.iter().copied(),
             m,
             m * 2,
             ef_construct,
@@ -479,12 +462,6 @@ mod tests {
             true,
             true,
         );
-
-        for idx in 0..(num_vectors as PointOffsetType) {
-            let level = graph_layers_1.get_random_layer(&mut rng);
-            graph_layers_1.set_levels(idx, level);
-            graph_layers_2.set_levels(idx, level);
-        }
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
