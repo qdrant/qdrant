@@ -163,6 +163,21 @@ impl CollectionParams {
             })
     }
 
+    pub fn get_vector_params_mut(
+        &mut self,
+        vector_name: &str,
+    ) -> CollectionResult<&mut VectorParams> {
+        self.vectors
+            .get_params_mut(vector_name)
+            .ok_or_else(|| CollectionError::BadInput {
+                description: if vector_name == DEFAULT_VECTOR_NAME {
+                    "Default vector params are not specified in config".into()
+                } else {
+                    format!("Vector params for {vector_name} are not specified in config")
+                },
+            })
+    }
+
     /// Convert into unoptimized named vector data configs
     ///
     /// It is the job of the segment optimizer to change this configuration with optimized settings

@@ -826,6 +826,13 @@ impl VectorsConfig {
         }
     }
 
+    pub fn get_params_mut(&mut self, name: &str) -> Option<&mut VectorParams> {
+        match self {
+            VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            VectorsConfig::Multi(params) => params.get_mut(name),
+        }
+    }
+
     /// Iterate over the named vector parameters.
     ///
     /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
