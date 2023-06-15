@@ -29,7 +29,7 @@ jobs:
     - name: Install cargo nextest
       uses: taiki-e/install-action@nextest
     - name: Build and archive tests
-      run: cargo nextest archive --archive-file nextest-archive.tar.zst
+      run: cargo nextest archive --archive-file nextest-archive-${{ matrix.os }}.tar.zst --workspace
     - name: Upload archive to workflow
       uses: actions/upload-artifact@v3
       with:
@@ -45,8 +45,6 @@ jobs:
         partition: [ 1, 2 ]
 
     steps:
-    - name: Run tests
-      run: cargo nextest run --workspace --profile ci --partition hash:${{ matrix.partition }}/2
     # nextest does not require cargo to run the tests, instead, create ~/.cargo/bin required by install action.
     - run: mkdir -p ~/.cargo/bin
     - name: Install nextest
@@ -58,5 +56,5 @@ jobs:
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: |
-        ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-archive${{ matrix.os }}.tar.zst \
-          --partition hash:${{ matrix.partition }}/2
+        ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-archive-${{ matrix.os }}.tar.zst \
+          --partition hash:${{ matrix.partition }}/2 --profile ci
