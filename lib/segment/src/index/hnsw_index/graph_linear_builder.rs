@@ -27,8 +27,8 @@ pub struct GraphLinearBuilder {
 impl GraphLinearBuilder {
     pub fn new(
         levels: impl Iterator<Item = usize>, // Initial number of points in index
-        m: usize,           // Expected M for non-first layer
-        m0: usize,          // Expected M for first layer
+        m: usize,                            // Expected M for non-first layer
+        m0: usize,                           // Expected M for first layer
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
