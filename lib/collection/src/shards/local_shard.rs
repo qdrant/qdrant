@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
+use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,14 +10,16 @@ use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
-    Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType, SegmentConfig,
-    SegmentType,
+    CompressionRatio, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType,
+    QuantizationConfig, SegmentConfig, SegmentType,
 };
+use segment::utils::mem::Mem;
 use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -236,9 +239,24 @@ impl LocalShard {
 
         collection.load_from_wal(collection_id)?;
 
-        for (_, segment) in collection.segments.read().iter() {
-            if let LockedSegment::Original(segment) = segment {
-                segment.read().prefault_mmap_pages();
+        let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
+        let vectors_size_bytes = collection.estimate_vector_data_size().await;
+
+        // Simple heuristic to exclude mmap prefaulting for colletions that won't benefit from it.
+        //
+        // We assume that mmap prefaulting is beneficial if we can put significant part of data
+        // into RAM in advance. However, if we can see tha the data is too big to fit into RAM,
+        // it is better to avoid prefaulting, because it will only cause extra disk IO.
+        //
+        // This heuristic is not perfect, but it exclude cases when we don't have enough RAM
+        // even to store half of the vector data.
+        let do_mmap_prefault = available_memory_bytes * 2 > vectors_size_bytes;
+
+        if do_mmap_prefault {
+            for (_, segment) in collection.segments.read().iter() {
+                if let LockedSegment::Original(segment) = segment {
+                    segment.read().prefault_mmap_pages();
+                }
             }
         }
 
@@ -688,6 +706,42 @@ impl LocalShard {
                 log::error!("Collection `before_drop` was not called.")
             }
         }
+    }
+
+    /// Returns estimated size of vector data in bytes
+    async fn estimate_vector_data_size(&self) -> usize {
+        let info = self.local_shard_info().await;
+
+        let vector_size: usize = info
+            .config
+            .params
+            .vectors
+            .params_iter()
+            .map(|(_, value)| {
+                let vector_size = value.size.get() as usize;
+
+                let quantization_config = value
+                    .quantization_config
+                    .as_ref()
+                    .or(info.config.quantization_config.as_ref());
+
+                let quantized_size_bytes = match quantization_config {
+                    None => 0,
+                    Some(QuantizationConfig::Scalar(_)) => vector_size,
+                    Some(QuantizationConfig::Product(pq)) => match pq.product.compression {
+                        CompressionRatio::X4 => vector_size,
+                        CompressionRatio::X8 => vector_size / 2,
+                        CompressionRatio::X16 => vector_size / 4,
+                        CompressionRatio::X32 => vector_size / 8,
+                        CompressionRatio::X64 => vector_size / 16,
+                    },
+                };
+
+                vector_size * size_of::<VectorElementType>() + quantized_size_bytes
+            })
+            .sum();
+
+        vector_size * info.points_count
     }
 
     pub async fn local_shard_info(&self) -> CollectionInfo {
