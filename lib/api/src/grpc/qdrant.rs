@@ -21,6 +21,13 @@ pub struct VectorParams {
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateVectorParams {
+    /// Update params for HNSW index. If empty object - it will be unset
+    #[prost(message, optional, tag = "1")]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+}
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -28,6 +35,15 @@ pub struct VectorParamsMap {
     #[prost(map = "string, message", tag = "1")]
     #[validate]
     pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateVectorParamsMap {
+    #[prost(map = "string, message", tag = "1")]
+    pub map: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        UpdateVectorParams,
+    >,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -46,6 +62,23 @@ pub mod vectors_config {
         Params(super::VectorParams),
         #[prost(message, tag = "2")]
         ParamsMap(super::VectorParamsMap),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateVectorsConfig {
+    #[prost(oneof = "update_vectors_config::Config", tags = "1, 2")]
+    pub config: ::core::option::Option<update_vectors_config::Config>,
+}
+/// Nested message and enum types in `UpdateVectorsConfig`.
+pub mod update_vectors_config {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Config {
+        #[prost(message, tag = "1")]
+        Params(super::UpdateVectorParams),
+        #[prost(message, tag = "2")]
+        ParamsMap(super::UpdateVectorParamsMap),
     }
 }
 #[derive(validator::Validate)]
@@ -324,6 +357,9 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "5")]
     #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+    /// Configuration for vectors
+    #[prost(message, optional, tag = "6")]
+    pub vectors_config: ::core::option::Option<UpdateVectorsConfig>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

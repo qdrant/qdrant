@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use collection::operations::types::VectorsConfig;
+use collection::operations::types::{UpdateVectorsConfig, VectorsConfig};
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -78,7 +78,26 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
         Ok(Self::UpdateCollection(UpdateCollectionOperation::new(
             value.collection_name,
             UpdateCollection {
-                vectors: None,
+                vectors: match value.vectors_config {
+                    Some(vectors) => match vectors.config {
+                        Some(params) => Some(match params {
+                            api::grpc::qdrant::update_vectors_config::Config::Params(
+                                vector_params,
+                            ) => UpdateVectorsConfig::Single(vector_params.try_into()?),
+                            api::grpc::qdrant::update_vectors_config::Config::ParamsMap(
+                                vectors_params,
+                            ) => {
+                                let mut params_map = BTreeMap::new();
+                                for (name, params) in vectors_params.map {
+                                    params_map.insert(name, params.try_into()?);
+                                }
+                                UpdateVectorsConfig::Multi(params_map)
+                            }
+                        }),
+                        None => None,
+                    },
+                    None => return Err(Status::invalid_argument("vectors config is required")),
+                },
                 hnsw_config: value.hnsw_config.map(Into::into),
                 params: value.params.map(TryInto::try_into).transpose()?,
                 optimizers_config: value.optimizers_config.map(Into::into),
