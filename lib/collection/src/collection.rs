@@ -12,7 +12,7 @@ use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
-    ExtendedPointId, Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector, QuantizationConfig,
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
@@ -1125,6 +1125,23 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
             config.hnsw_config = hnsw_config_diff.update(&config.hnsw_config)?;
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
+    /// Updates quantization config:
+    /// Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
+    pub async fn update_quantization_config_from_diff(
+        &self,
+        quantization_config: QuantizationConfig,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            config.quantization_config.replace(quantization_config);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
