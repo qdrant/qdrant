@@ -32,15 +32,12 @@ impl GraphLinearBuilder {
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
-        reserve: bool,
     ) -> Self {
         let mut links_layers: Vec<LayersContainer> = vec![];
 
         for level in levels {
             let mut links = Vec::new();
-            if reserve {
-                links.reserve(m0);
-            }
+            links.reserve(m0);
             let mut point_layers = vec![links];
             while point_layers.len() <= level {
                 let mut links = vec![];
@@ -459,7 +456,6 @@ mod tests {
             m * 2,
             ef_construct,
             entry_points_num,
-            true,
             true,
         );
 
