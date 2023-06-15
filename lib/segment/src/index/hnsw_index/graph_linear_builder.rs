@@ -64,37 +64,6 @@ impl GraphLinearBuilder {
         }
     }
 
-    pub fn search(
-        &self,
-        top: usize,
-        ef: usize,
-        mut points_scorer: FilteredScorer,
-    ) -> Vec<ScoredPointOffset> {
-        let entry_point = match self
-            .entry_points
-            .get_entry_point(|point_id| points_scorer.check_vector(point_id))
-        {
-            None => return vec![],
-            Some(ep) => ep,
-        };
-
-        let zero_level_entry = self.search_entry(
-            entry_point.point_id,
-            entry_point.level,
-            0,
-            &mut points_scorer,
-        );
-
-        let nearest = self.search_on_level(
-            zero_level_entry,
-            0,
-            std::cmp::max(top, ef),
-            &mut points_scorer,
-            &[],
-        );
-        nearest.into_iter().take(top).collect_vec()
-    }
-
     pub fn apply_link_response(&mut self, response: &GraphLinkResponse) {
         self.links_layers[response.point_id as usize][response.level] = response.links.clone();
         for (id, links) in response
