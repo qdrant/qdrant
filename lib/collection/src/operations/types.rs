@@ -961,7 +961,7 @@ impl From<VectorParams> for VectorsConfig {
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateVectorParams {
-    /// Custom params for HNSW index. If none - values from collection configuration are used.
+    /// Update params for HNSW index. If empty object - it will be unset.
     #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,

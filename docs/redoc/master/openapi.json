@@ -5933,7 +5933,7 @@
         "type": "object",
         "properties": {
           "hnsw_config": {
-            "description": "Custom params for HNSW index. If none - values from collection configuration are used.",
+            "description": "Update params for HNSW index. If empty object - it will be unset.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/HnswConfigDiff"
