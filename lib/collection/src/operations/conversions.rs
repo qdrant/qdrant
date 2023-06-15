@@ -404,6 +404,7 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
     fn try_from(vector_params: api::grpc::qdrant::VectorParamsDiff) -> Result<Self, Self::Error> {
         Ok(Self {
             hnsw_config: vector_params.hnsw_config.map(Into::into),
+            quantization_config: None,
         })
     }
 }

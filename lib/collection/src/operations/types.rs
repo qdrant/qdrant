@@ -993,6 +993,14 @@ pub struct VectorParamsDiff {
     #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
+    /// Update params for quantization. If none - it is left unchanged.
+    #[serde(
+        default,
+        alias = "quantization",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Vector update params for multiple vectors
