@@ -92,6 +92,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("UpdateCollection.hnsw_config", ""),
             ("UpdateCollection.vectors_config", ""),
+            ("UpdateCollection.quantization_config", ""),
             ("DeleteCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("CollectionConfig.params", ""),

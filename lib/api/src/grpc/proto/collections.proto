@@ -237,6 +237,7 @@ message UpdateCollection {
   optional CollectionParamsDiff params = 4; // New configuration parameters for the collection
   optional HnswConfigDiff hnsw_config = 5; // New HNSW parameters for the collection index
   optional VectorsConfigDiff vectors_config = 6; // New vector parameters
+  optional QuantizationConfig quantization_config = 7; // Quantization configuration of vector
 }
 
 message DeleteCollection {

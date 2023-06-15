@@ -367,6 +367,10 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "6")]
     #[validate]
     pub vectors_config: ::core::option::Option<VectorsConfigDiff>,
+    /// Quantization configuration of vector
+    #[prost(message, optional, tag = "7")]
+    #[validate]
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

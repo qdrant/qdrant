@@ -65,7 +65,10 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                 hnsw_config: value.hnsw_config.map(Into::into),
                 params: value.params.map(TryInto::try_into).transpose()?,
                 optimizers_config: value.optimizers_config.map(Into::into),
-                quantization_config: None,
+                quantization_config: value
+                    .quantization_config
+                    .map(TryInto::try_into)
+                    .transpose()?,
             },
         )))
     }
