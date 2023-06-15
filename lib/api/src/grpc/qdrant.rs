@@ -2800,6 +2800,16 @@ pub struct QuantizationSearchParams {
     /// If true, use original vectors to re-score top-k results. Default is true.
     #[prost(bool, optional, tag = "2")]
     pub rescore: ::core::option::Option<bool>,
+    ///
+    /// Oversampling factor for quantization.
+    ///
+    /// Defines how many extra vectors should be pre-selected using quantized index,
+    /// and then re-scored using original vectors.
+    ///
+    /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
+    /// and then top-100 will be returned after re-scoring.
+    #[prost(double, optional, tag = "3")]
+    pub oversampling: ::core::option::Option<f64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

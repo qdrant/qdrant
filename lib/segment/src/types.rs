@@ -256,7 +256,7 @@ pub struct SegmentInfo {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct QuantizationSearchParams {
     /// If true, quantized vectors are ignored. Default is false.
@@ -268,6 +268,16 @@ pub struct QuantizationSearchParams {
     /// Default is false.
     #[serde(default = "default_quantization_rescore_value")]
     pub rescore: bool,
+
+    /// Oversampling factor for quantization. Default is 1.0.
+    ///
+    /// Defines how many extra vectors should be pre-selected using quantized index,
+    /// and then re-scored using original vectors.
+    ///
+    /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
+    /// and then top-100 will be returned after re-scoring.
+    #[serde(default = "default_quantization_oversampling_value")]
+    pub oversampling: Option<f64>,
 }
 
 pub const fn default_quantization_ignore_value() -> bool {
@@ -278,8 +288,12 @@ pub const fn default_quantization_rescore_value() -> bool {
     false
 }
 
+pub const fn default_quantization_oversampling_value() -> Option<f64> {
+    None
+}
+
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
