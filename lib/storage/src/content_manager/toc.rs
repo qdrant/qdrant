@@ -799,7 +799,9 @@ impl TableOfContent {
             recreate_optimizers = true;
         }
         if let Some(diff) = quantization_config {
-            collection.update_quantization_config_from_diff(diff).await?;
+            collection
+                .update_quantization_config_from_diff(diff)
+                .await?;
             recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {

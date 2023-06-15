@@ -12,7 +12,8 @@ use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
-    ExtendedPointId, Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector, QuantizationConfig,
+    ExtendedPointId, Order, QuantizationConfig, ScoredPoint, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
