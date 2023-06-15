@@ -19,12 +19,16 @@ def test_collection_update():
         method="PATCH",
         path_params={'collection_name': collection_name},
         body={
+            "vectors": {
+                "hnsw": {
+                    "m": 16,
+                },
+            },
             "optimizers_config": {
                 "default_segment_number": 6,
                 "indexing_threshold": 10000,
             },
             "hnsw": {
-                "m": 42,
                 "ef_construct": 123,
             },
         }
