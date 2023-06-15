@@ -337,6 +337,7 @@ impl From<QuantizationSearchParams> for segment::types::QuantizationSearchParams
             rescore: params
                 .rescore
                 .unwrap_or(default_quantization_rescore_value()),
+            oversampling: None, // TODO: Add `oversampling` to gRPC!
         }
     }
 }
@@ -346,6 +347,7 @@ impl From<segment::types::QuantizationSearchParams> for QuantizationSearchParams
         Self {
             ignore: Some(params.ignore),
             rescore: Some(params.rescore),
+            oversampling: params.oversampling,
         }
     }
 }
