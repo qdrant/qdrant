@@ -793,6 +793,9 @@ impl TableOfContent {
             collection.update_hnsw_config_from_diff(diff).await?;
             recreate_optimizers = true;
         }
+        if let Some(diff) = vectors {
+            collection.update_vectors_from_diff(diff).await?;
+        }
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;
         }

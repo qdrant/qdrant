@@ -37,7 +37,7 @@ use crate::operations::snapshot_ops::{
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
-    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
+    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, UpdateVectorsConfig,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
@@ -1126,6 +1126,26 @@ impl Collection {
             let mut config = self.collection_config.write().await;
             config.hnsw_config = hnsw_config_diff.update(&config.hnsw_config)?;
         }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
+    pub async fn update_vectors_from_diff(
+        &self,
+        update_vectors_diff: UpdateVectorsConfig,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+
+            // For each vector, update params
+            for (vector_name, update_params) in update_vectors_diff.params_iter() {
+                let vector_params = config.params.get_vector_params_mut(vector_name)?;
+                if let Some(diff) = update_params.hnsw_config {
+                    vector_params.hnsw_config.replace(diff);
+                }
+            }
+        }
+        self.trigger_optimizers().await?;
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
