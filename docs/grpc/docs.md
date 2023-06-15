@@ -45,6 +45,10 @@
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
     - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
+    - [UpdateVectorParams](#qdrant-UpdateVectorParams)
+    - [UpdateVectorParamsMap](#qdrant-UpdateVectorParamsMap)
+    - [UpdateVectorParamsMap.MapEntry](#qdrant-UpdateVectorParamsMap-MapEntry)
+    - [UpdateVectorsConfig](#qdrant-UpdateVectorsConfig)
     - [VectorParams](#qdrant-VectorParams)
     - [VectorParamsMap](#qdrant-VectorParamsMap)
     - [VectorParamsMap.MapEntry](#qdrant-VectorParamsMap-MapEntry)
@@ -853,6 +857,7 @@ Note: 1kB = 1 vector of size 256. |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied |
 | params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | New HNSW parameters for the collection index |
+| vectors_config | [UpdateVectorsConfig](#qdrant-UpdateVectorsConfig) | optional | Configuration for vectors |
 
 
 
@@ -888,6 +893,68 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | result | [bool](#bool) |  |  |
+
+
+
+
+
+
+<a name="qdrant-UpdateVectorParams"></a>
+
+### UpdateVectorParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Update params for HNSW index. If empty object - it will be unset |
+
+
+
+
+
+
+<a name="qdrant-UpdateVectorParamsMap"></a>
+
+### UpdateVectorParamsMap
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| map | [UpdateVectorParamsMap.MapEntry](#qdrant-UpdateVectorParamsMap-MapEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-UpdateVectorParamsMap-MapEntry"></a>
+
+### UpdateVectorParamsMap.MapEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [UpdateVectorParams](#qdrant-UpdateVectorParams) |  |  |
+
+
+
+
+
+
+<a name="qdrant-UpdateVectorsConfig"></a>
+
+### UpdateVectorsConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| params | [UpdateVectorParams](#qdrant-UpdateVectorParams) |  |  |
+| params_map | [UpdateVectorParamsMap](#qdrant-UpdateVectorParamsMap) |  |  |
 
 
 
