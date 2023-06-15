@@ -1,17 +1,17 @@
 use std::collections::BinaryHeap;
 
 use itertools::Itertools;
+use num_traits::float::FloatCore;
 use rand::distributions::Uniform;
 use rand::Rng;
 
 use super::entry_points::EntryPoints;
 use super::graph_layers::LinkContainer;
 use super::point_scorer::FilteredScorer;
-use super::search_context::SearchContext;
 use crate::common::utils::rev_range;
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
-use crate::types::PointOffsetType;
+use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
 
 pub type LayersContainer = Vec<LinkContainer>;
@@ -299,13 +299,20 @@ impl GraphLinearBuilder {
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.visited_pool.get(self.links_layers.len());
         visited_list.check_and_update_visited(level_entry.idx);
-        let mut searcher = SearchContext::new(level_entry, ef);
+
+        let mut nearest = FixedLengthPriorityQueue::<ScoredPointOffset>::new(ef);
+        nearest.push(level_entry);
+        let mut candidates = BinaryHeap::<ScoredPointOffset>::from_iter([level_entry]);
 
         let limit = self.get_m(level);
         let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
 
-        while let Some(candidate) = searcher.candidates.pop() {
-            if candidate.score < searcher.lower_bound() {
+        while let Some(candidate) = candidates.pop() {
+            let lower_bound = match nearest.top() {
+                None => ScoreType::min_value(),
+                Some(worst_of_the_best) => worst_of_the_best.score,
+            };
+            if candidate.score < lower_bound {
                 break;
             }
 
@@ -318,23 +325,40 @@ impl GraphLinearBuilder {
             }
 
             let scores = points_scorer.score_points(&mut points_ids, limit);
-            scores
-                .iter()
-                .copied()
-                .for_each(|score_point| searcher.process_candidate(score_point));
+            scores.iter().copied().for_each(|score_point| {
+                Self::process_candidate(&mut nearest, &mut candidates, score_point)
+            });
         }
 
         for &existing_link in existing_links {
             if !visited_list.check(existing_link) {
-                searcher.process_candidate(ScoredPointOffset {
-                    idx: existing_link,
-                    score: points_scorer.score_point(existing_link),
-                });
+                Self::process_candidate(
+                    &mut nearest,
+                    &mut candidates,
+                    ScoredPointOffset {
+                        idx: existing_link,
+                        score: points_scorer.score_point(existing_link),
+                    },
+                );
             }
         }
 
         self.visited_pool.return_back(visited_list);
-        searcher.nearest
+        nearest
+    }
+
+    fn process_candidate(
+        nearest: &mut FixedLengthPriorityQueue<ScoredPointOffset>,
+        candidates: &mut BinaryHeap<ScoredPointOffset>,
+        score_point: ScoredPointOffset,
+    ) {
+        let was_added = match nearest.push(score_point) {
+            None => true,
+            Some(removed) => removed.idx != score_point.idx,
+        };
+        if was_added {
+            candidates.push(score_point);
+        }
     }
 
     fn search_entry(
