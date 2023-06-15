@@ -2,7 +2,7 @@ use collection::config::CollectionConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
-use collection::operations::types::VectorsConfig;
+use collection::operations::types::{UpdateVectorsConfig, VectorsConfig};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
@@ -179,6 +179,10 @@ impl CreateCollectionOperation {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
+    /// Vector data parameters to update.
+    /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
+    #[validate]
+    pub vectors: Option<UpdateVectorsConfig>,
     /// Custom params for Optimizers.  If none - it is left unchanged.
     /// This operation is blocking, it will only proceed once all current optimizations are complete
     #[serde(alias = "optimizer_config")]
@@ -204,9 +208,10 @@ impl UpdateCollectionOperation {
         Self {
             collection_name,
             update_collection: UpdateCollection {
-                optimizers_config: None,
-                params: None,
+                vectors: None,
                 hnsw_config: None,
+                params: None,
+                optimizers_config: None,
             },
             shard_replica_changes: None,
         }

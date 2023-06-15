@@ -103,6 +103,7 @@ pub mod consensus_ops {
             let mut operation = UpdateCollectionOperation::new(
                 collection_name,
                 UpdateCollection {
+                    vectors: None,
                     optimizers_config: None,
                     params: None,
                     hnsw_config: None,

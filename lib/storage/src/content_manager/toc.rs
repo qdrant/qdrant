@@ -773,9 +773,10 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         let replica_changes = operation.take_shard_replica_changes();
         let UpdateCollection {
-            optimizers_config,
-            params,
+            vectors,
             hnsw_config,
+            params,
+            optimizers_config,
         } = operation.update_collection;
         let collection = self.get_collection(&operation.collection_name).await?;
         let mut recreate_optimizers = false;
