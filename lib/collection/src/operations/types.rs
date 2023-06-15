@@ -942,6 +942,80 @@ impl From<VectorParams> for VectorsConfig {
     }
 }
 
+/// Update params of single vector data storage
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct UpdateVectorParams {
+    /// Custom params for HNSW index. If none - values from collection configuration are used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
+}
+
+/// Vector update params separator for single and multiple vector modes
+///
+/// Single mode:
+///
+/// { "hnsw_config": { "m": 8 } }
+///
+/// or multiple mode:
+///
+/// {
+///     "default": {
+///         "hnsw_config": { "m": 8 }
+///     }
+/// }
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum UpdateVectorsConfig {
+    Single(UpdateVectorParams),
+    Multi(BTreeMap<String, UpdateVectorParams>),
+}
+
+impl UpdateVectorsConfig {
+    pub fn get_params(&self, name: &str) -> Option<&UpdateVectorParams> {
+        match self {
+            UpdateVectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            UpdateVectorsConfig::Multi(params) => params.get(name),
+        }
+    }
+
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &UpdateVectorParams)> + 'a> {
+        match self {
+            UpdateVectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            UpdateVectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
+}
+
+impl Validate for UpdateVectorsConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            UpdateVectorsConfig::Single(single) => single.validate(),
+            UpdateVectorsConfig::Multi(multi) => {
+                let errors = multi
+                    .values()
+                    .filter_map(|v| v.validate().err())
+                    .fold(Err(ValidationErrors::new()), |bag, err| {
+                        ValidationErrors::merge(bag, "?", Err(err))
+                    })
+                    .unwrap_err();
+                errors.errors().is_empty().then_some(()).ok_or(errors)
+            }
+        }
+    }
+}
+
+impl From<UpdateVectorParams> for UpdateVectorsConfig {
+    fn from(params: UpdateVectorParams) -> Self {
+        UpdateVectorsConfig::Single(params)
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct AliasDescription {
