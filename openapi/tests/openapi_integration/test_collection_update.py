@@ -27,6 +27,12 @@ def test_collection_update():
                         "ef_construct": 123,
                     },
                 },
+                "quantization_config": {
+                    "scalar": {
+                        "type": "int8",
+                        "quantile": 0.8
+                    }
+                },
             },
             "optimizers_config": {
                 "default_segment_number": 6,
@@ -47,8 +53,8 @@ def test_collection_update():
                     "id": 7,
                     "vector": [0.15, 0.31, 0.76, 0.74],
                     "payload": {"city": "Rome"}
-                }
-            ]
+                },
+            ],
         }
     )
     assert response.ok
@@ -71,8 +77,10 @@ def test_hnsw_update():
     result = response.json()["result"]
     config = result["config"]
     assert "hnsw_config" not in config["params"]["vectors"]
+    assert "quantization_config" not in config["params"]["vectors"]
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 100
+    assert config["quantization_config"] is None
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -85,9 +93,22 @@ def test_hnsw_update():
                         "m": 32,
                     },
                 },
+                "quantization_config": {
+                    "scalar": {
+                        "type": "int8",
+                        "quantile": 0.8
+                    }
+                },
             },
             "hnsw_config": {
                 "ef_construct": 123,
+            },
+            "quantization_config": {
+                "scalar": {
+                    "type": "int8",
+                    "quantile": 0.99,
+                    "always_ram": True
+                }
             },
         }
     )
@@ -102,8 +123,14 @@ def test_hnsw_update():
     result = response.json()["result"]
     config = result["config"]
     assert config["params"]["vectors"]["hnsw_config"]["m"] == 32
+    assert config["params"]["vectors"]["quantization_config"]["scalar"]["type"] == "int8"
+    assert config["params"]["vectors"]["quantization_config"]["scalar"]["quantile"] == 0.8
+    assert "always_ram" not in config["params"]["vectors"]["quantization_config"]["scalar"]
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 123
+    assert config["quantization_config"]["scalar"]["type"] == "int8"
+    assert config["quantization_config"]["scalar"]["quantile"] == 0.99
+    assert config["quantization_config"]["scalar"]["always_ram"]
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -116,6 +143,12 @@ def test_hnsw_update():
                         "m": 10,
                         "ef_construct": 100,
                     },
+                },
+                "quantization_config": {
+                    "product": {
+                        "compression": "x32",
+                        "always_ram": True
+                    }
                 },
             },
         }
@@ -132,3 +165,8 @@ def test_hnsw_update():
     config = result["config"]
     assert config["params"]["vectors"]["hnsw_config"]["m"] == 10
     assert config["params"]["vectors"]["hnsw_config"]["ef_construct"] == 100
+    assert config["params"]["vectors"]["quantization_config"]["product"]["compression"] == "x32"
+    assert config["params"]["vectors"]["quantization_config"]["product"]["always_ram"]
+    assert config["quantization_config"]["scalar"]["type"] == "int8"
+    assert config["quantization_config"]["scalar"]["quantile"] == 0.99
+    assert config["quantization_config"]["scalar"]["always_ram"]
