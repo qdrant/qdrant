@@ -32,7 +32,7 @@ pub struct GraphLayersBuilder {
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
-    links_layers: Vec<LockedLayersContainer>,
+    pub links_layers: Vec<LockedLayersContainer>,
     entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
