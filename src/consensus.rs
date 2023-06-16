@@ -1044,9 +1044,9 @@ mod tests {
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            search_runtime,
-            update_runtime,
-            general_runtime,
+            search_runtime.handle().clone(),
+            update_runtime.handle().clone(),
+            general_runtime.handle().clone(),
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
