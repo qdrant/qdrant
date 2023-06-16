@@ -306,7 +306,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
 }
 
 impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.points_count
     }
 
@@ -449,10 +449,6 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
             };
         }
         Box::new(payload_conditions.into_iter())
-    }
-
-    fn count_indexed_points(&self) -> usize {
-        self.points_count
     }
 }
 
