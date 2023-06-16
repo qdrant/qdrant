@@ -1130,6 +1130,11 @@ impl Collection {
         Ok(())
     }
 
+    /// Updates vectors config:
+    /// Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
     pub async fn update_vectors_from_diff(
         &self,
         update_vectors_diff: UpdateVectorsConfig,
@@ -1153,7 +1158,6 @@ impl Collection {
                 }
             }
         }
-        self.trigger_optimizers().await?;
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
