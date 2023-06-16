@@ -43,9 +43,10 @@ jobs:
         run: sudo apt-get install clang protobuf-compiler
       - name: Build
         run: cargo build --features service_debug
+      - name: Install pytest
+        run: pip install pytest
       - name: Run integration tests
-        run: ./tests/integration-tests-api-key.sh
-        shell: bash
+        run: pytest ./tests/api_key
 
   test-consensus:
 
