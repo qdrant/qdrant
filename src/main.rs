@@ -16,7 +16,7 @@ use std::io::Error;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -212,9 +212,9 @@ fn main() -> anyhow::Result<()> {
     // It is a main entry point for the storage.
     let toc = TableOfContent::new(
         &settings.storage,
-        search_runtime,
-        update_runtime,
-        general_runtime,
+        search_runtime.handle().clone(),
+        update_runtime.handle().clone(),
+        general_runtime.handle().clone(),
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
@@ -439,7 +439,38 @@ fn main() -> anyhow::Result<()> {
         );
         handle.join().expect("thread is not panicking")?;
     }
-    drop(toc_arc);
+    drop(search_runtime);
+    drop(update_runtime);
+    drop(general_runtime);
     drop(settings);
+    drop(wait_unwrap(toc_arc));
     Ok(())
+}
+
+/// Wait for the current thread to become a single referent of an [`Arc`] and returns it.
+///
+/// This methods move a value out from an [`Arc`] when there is only one reference left
+/// and it is safe to do so.
+///
+/// **CAUTION**: this method may create live lock if parallel threads are not going to finish
+/// and decrement [`Arc`] counter. Caller should initiate shutdown of all the threads holding the
+/// [`Arc`] before calling this method.
+fn wait_unwrap<T>(mut input: Arc<T>) -> T {
+    let start_time = Instant::now();
+    let mut notified = false;
+    loop {
+        if !notified && start_time.elapsed() > Duration::from_secs(10) {
+            log::warn!("Waiting for Arc to be dropped...");
+            notified = true;
+        }
+        match Arc::try_unwrap(input) {
+            Ok(input) => {
+                return input;
+            }
+            Err(new_input) => {
+                input = new_input;
+                thread::sleep_ms(100);
+            }
+        }
+    }
 }
