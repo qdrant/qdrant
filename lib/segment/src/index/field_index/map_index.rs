@@ -86,12 +86,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
         let values_count = self.map.get(value).map(|p| p.len()).unwrap_or(0);
 
-        CardinalityEstimation {
-            primary_clauses: vec![],
-            min: values_count,
-            exp: values_count,
-            max: values_count,
-        }
+        CardinalityEstimation::exact(values_count)
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
