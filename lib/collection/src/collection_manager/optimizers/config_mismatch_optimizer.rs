@@ -347,9 +347,10 @@ mod tests {
             memmap_threshold: std::usize::MAX,
             indexing_threshold: 10,
         };
-        let hnsw_config_vector1 = HnswConfigDiff {
+        let mut hnsw_config_vector1 = HnswConfigDiff {
             m: Some(10),
             ef_construct: Some(40),
+            on_disk: Some(true),
             ..Default::default()
         };
         let collection_params = CollectionParams {
@@ -434,6 +435,20 @@ mod tests {
             "optimized segment should be gone",
         );
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
+
+        // Changing on_disk flag shouldn't cause rebuild
+        hnsw_config_vector1
+            .on_disk
+            .replace(!hnsw_config_vector1.on_disk.unwrap());
+        match config_mismatch_optimizer.collection_params.vectors {
+            VectorsConfig::Single(_) => unreachable!(),
+            VectorsConfig::Multi(ref mut map) => {
+                map.get_mut("vector1")
+                    .unwrap()
+                    .hnsw_config
+                    .replace(hnsw_config_vector1);
+            }
+        }
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
         let suggested_to_optimize =
