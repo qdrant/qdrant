@@ -5931,6 +5931,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

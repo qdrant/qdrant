@@ -12,6 +12,7 @@ message VectorParams {
 message VectorParamsDiff {
   optional HnswConfigDiff hnsw_config = 1; // Update params for HNSW index. If empty object - it will be unset
   optional QuantizationConfigDiff quantization_config = 2; // Update quantization params. If none - it is left unchanged.
+  optional bool on_disk = 3; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
 }
 
 message VectorParamsMap {
