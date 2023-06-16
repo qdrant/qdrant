@@ -157,6 +157,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                     })
                 })
                 .transpose()?,
+            on_disk_payload: value.on_disk_payload,
         })
     }
 }
