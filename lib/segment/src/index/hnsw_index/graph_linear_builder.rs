@@ -3,23 +3,21 @@ use std::collections::BinaryHeap;
 use num_traits::float::FloatCore;
 
 use super::entry_points::EntryPoints;
-use super::graph_layers::LinkContainer;
 use crate::common::utils::rev_range;
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
-pub type LayersContainer = Vec<LinkContainer>;
-
 pub struct GraphLinearBuilder<'a> {
     m: usize,
     m0: usize,
     ef_construct: usize,
-    links_layers: Vec<LayersContainer>,
+    links_layers: Vec<Vec<PointOffsetType>>,
     entry_points: EntryPoints,
     visited_pool: VisitedPool,
     points_scorer: Box<dyn RawScorer + 'a>,
+    point_levels: Vec<usize>,
 }
 
 pub struct GraphLinkRequest {
@@ -53,25 +51,19 @@ impl GraphLinkResponse {
 
 impl<'a> GraphLinearBuilder<'a> {
     pub fn new(
-        levels: impl Iterator<Item = usize>,
+        levels: &[usize],
         m: usize,
         m0: usize,
         ef_construct: usize,
         entry_points_num: usize,
         points_scorer: Box<dyn RawScorer + 'a>,
     ) -> Self {
-        let mut links_layers: Vec<LayersContainer> = vec![];
-
-        for level in levels {
-            let mut links = Vec::new();
-            links.reserve(m0);
-            let mut point_layers = vec![links];
-            while point_layers.len() <= level {
-                let mut links = vec![];
-                links.reserve(m);
-                point_layers.push(links);
-            }
-            links_layers.push(point_layers);
+        let levels_count = levels.iter().copied().max().unwrap();
+        let mut links_layers: Vec<Vec<PointOffsetType>> = vec![];
+        for i in 0..=levels_count {
+            let level_m = if i == 0 { m0 } else { m };
+            let buffer = vec![0 as PointOffsetType; (level_m + 1) * levels.len()];
+            links_layers.push(buffer);
         }
 
         Self {
@@ -82,6 +74,7 @@ impl<'a> GraphLinearBuilder<'a> {
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
             points_scorer,
+            point_levels: levels.to_vec(),
         }
     }
 
@@ -310,7 +303,7 @@ impl<'a> GraphLinearBuilder<'a> {
     }
 
     fn get_point_level(&self, point_id: PointOffsetType) -> usize {
-        self.links_layers[point_id as usize].len() - 1
+        self.point_levels[point_id as usize]
     }
 
     fn score(&self, a: PointOffsetType, b: PointOffsetType) -> ScoreType {
@@ -318,15 +311,27 @@ impl<'a> GraphLinearBuilder<'a> {
     }
 
     fn num_points(&self) -> usize {
-        self.links_layers.len()
+        self.point_levels.len()
     }
 
-    fn get_links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
-        self.links_layers[point_id as usize][level].as_slice()
+    pub fn get_links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+        let level_m = self.get_m(level);
+        let start_index = point_id as usize * (level_m + 1);
+        let len = self.links_layers[level][start_index] as usize;
+        &self.links_layers[level][start_index + 1..start_index + 1 + len]
     }
 
-    fn set_links(&mut self, point_id: PointOffsetType, level: usize, links: &[PointOffsetType]) {
-        self.links_layers[point_id as usize][level] = links.to_vec();
+    pub fn set_links(
+        &mut self,
+        point_id: PointOffsetType,
+        level: usize,
+        links: &[PointOffsetType],
+    ) {
+        let level_m = self.get_m(level);
+        let start_index = point_id as usize * (level_m + 1);
+        self.links_layers[level][start_index] = links.len() as PointOffsetType;
+        self.links_layers[level][start_index + 1..start_index + 1 + links.len()]
+            .copy_from_slice(links);
     }
 }
 
@@ -385,7 +390,7 @@ mod tests {
         let added_vector = vector_holder.vectors.get(0).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
         let mut graph_layers_2 = GraphLinearBuilder::new(
-            levels.iter().copied(),
+            &levels,
             m,
             m * 2,
             ef_construct,
@@ -397,18 +402,11 @@ mod tests {
             graph_layers_2.link_new_point(idx);
         }
 
-        assert_eq!(
-            graph_layers_1.links_layers.len(),
-            graph_layers_2.links_layers.len(),
-        );
-        for (links_1, links_2) in graph_layers_1
-            .links_layers
-            .iter()
-            .zip(graph_layers_2.links_layers.iter())
-        {
-            assert_eq!(links_1.len(), links_2.len());
-            for (links_1, links_2) in links_1.iter().zip(links_2.iter()) {
-                assert_eq!(links_1.read().clone(), links_2.clone());
+        for (point_id, links_1) in graph_layers_1.links_layers.iter().enumerate() {
+            for (level, links_1) in links_1.iter().enumerate() {
+                let links_1 = links_1.read().clone();
+                let links_2 = graph_layers_2.get_links(point_id as PointOffsetType, level);
+                assert_eq!(links_1.as_slice(), links_2);
             }
         }
     }
