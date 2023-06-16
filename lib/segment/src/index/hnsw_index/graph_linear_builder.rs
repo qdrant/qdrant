@@ -22,22 +22,42 @@ pub struct GraphLinearBuilder<'a> {
     points_scorer: Box<dyn RawScorer + 'a>,
 }
 
+pub struct GraphLinkRequest {
+    point_id: PointOffsetType,
+    level: usize,
+    entry: ScoredPointOffset,
+}
+
 pub struct GraphLinkResponse {
     point_id: PointOffsetType,
     level: usize,
-    entry: Option<ScoredPointOffset>,
+    entry: ScoredPointOffset,
     links: Vec<PointOffsetType>,
     neighbor_ids: Vec<PointOffsetType>,
     neighbor_links: Vec<Vec<PointOffsetType>>,
 }
 
+impl GraphLinkResponse {
+    pub fn next_request(&self) -> Option<GraphLinkRequest> {
+        if self.level > 0 {
+            Some(GraphLinkRequest {
+                point_id: self.point_id,
+                level: self.level - 1,
+                entry: self.entry,
+            })
+        } else {
+            None
+        }
+    }
+}
+
 impl<'a> GraphLinearBuilder<'a> {
     pub fn new(
-        levels: impl Iterator<Item = usize>, // Initial number of points in index
-        m: usize,                            // Expected M for non-first layer
-        m0: usize,                           // Expected M for first layer
+        levels: impl Iterator<Item = usize>,
+        m: usize,
+        m0: usize,
         ef_construct: usize,
-        entry_points_num: usize, // Depends on number of points
+        entry_points_num: usize,
         points_scorer: Box<dyn RawScorer + 'a>,
     ) -> Self {
         let mut links_layers: Vec<LayersContainer> = vec![];
@@ -76,98 +96,83 @@ impl<'a> GraphLinearBuilder<'a> {
         }
     }
 
-    pub fn link_new_point(&mut self, point_id: PointOffsetType) {
-        // Check if there is an suitable entry point
-        //   - entry point level if higher or equal
-        //   - it satisfies filters
-
+    pub fn get_link_request(&mut self, point_id: PointOffsetType) -> Option<GraphLinkRequest> {
         let level = self.get_point_level(point_id);
-
-        let entry_point_opt = self.entry_points.new_point(point_id, level, |point_id| {
-            self.points_scorer.check_vector(point_id)
-        });
+        let entry_point_opt = self.entry_points.new_point(point_id, level, |_| true);
         match entry_point_opt {
-            // New point is a new empty entry (for this filter, at least)
-            // We can't do much here, so just quit
-            None => {}
-
-            // Entry point found.
+            None => None,
             Some(entry_point) => {
-                let mut level_entry = if entry_point.level > level {
-                    // The entry point is higher than a new point
-                    // Let's find closest one on same level
-
-                    // greedy search for a single closest point
+                let entry = if entry_point.level > level {
                     self.search_entry(point_id, entry_point.point_id, entry_point.level, level)
                 } else {
                     ScoredPointOffset {
                         idx: entry_point.point_id,
-                        score: self
-                            .points_scorer
-                            .score_internal(point_id, entry_point.point_id),
+                        score: self.score(point_id, entry_point.point_id),
                     }
                 };
-                // minimal common level for entry points
-                let linking_level = std::cmp::min(level, entry_point.level);
-
-                for curr_level in (0..=linking_level).rev() {
-                    let link_response = self.link_on_level(point_id, curr_level, level_entry);
-                    if let Some(the_nearest) = link_response.entry {
-                        level_entry = the_nearest;
-                    }
-                    self.apply_link_response(&link_response);
-                }
+                let level = std::cmp::min(level, entry_point.level);
+                Some(GraphLinkRequest {
+                    point_id,
+                    level,
+                    entry,
+                })
             }
         }
     }
 
-    fn link_on_level(
-        &self,
-        point_id: PointOffsetType,
-        level: usize,
-        entry: ScoredPointOffset,
-    ) -> GraphLinkResponse {
-        let nearest_points = self.search_on_level(point_id, entry, level);
+    pub fn link_new_point(&mut self, point_id: PointOffsetType) {
+        let mut request = self.get_link_request(point_id);
+        while let Some(r) = request {
+            let response = self.link(r);
+            self.apply_link_response(&response);
+            request = response.next_request();
+        }
+    }
+
+    pub fn link(&self, request: GraphLinkRequest) -> GraphLinkResponse {
+        let nearest_points = self.search_on_level(request.point_id, request.entry, request.level);
 
         let mut response = GraphLinkResponse {
-            point_id,
-            level,
-            entry: nearest_points.iter().copied().max(),
+            point_id: request.point_id,
+            level: request.level,
+            entry: nearest_points
+                .iter()
+                .copied()
+                .max()
+                .unwrap_or(request.entry),
             links: vec![],
             neighbor_ids: vec![],
             neighbor_links: vec![],
         };
-        let level_m = self.get_m(level);
+        let level_m = self.get_m(request.level);
 
         response.links =
-            self.select_candidate_with_heuristic_from_sorted(nearest_points.into_iter(), level_m);
+            self.select_candidate_with_heuristic_from_sorted(&nearest_points.into_vec(), level_m);
         for &other_point in &response.links {
             response.neighbor_ids.push(other_point);
 
-            let other_point_links = &self.links_layers[other_point as usize][level];
+            let other_point_links = &self.links_layers[other_point as usize][request.level];
             if other_point_links.len() < level_m {
                 // If linked point is lack of neighbours
                 let mut other_point_links = other_point_links.clone();
-                other_point_links.push(point_id);
+                other_point_links.push(request.point_id);
                 response.neighbor_links.push(other_point_links);
             } else {
                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                 candidates.push(ScoredPointOffset {
-                    idx: point_id,
-                    score: self.points_scorer.score_internal(point_id, other_point),
+                    idx: request.point_id,
+                    score: self.score(request.point_id, other_point),
                 });
                 for other_point_link in other_point_links.iter().take(level_m).copied() {
                     candidates.push(ScoredPointOffset {
                         idx: other_point_link,
-                        score: self
-                            .points_scorer
-                            .score_internal(other_point_link, other_point),
+                        score: self.score(other_point_link, other_point),
                     });
                 }
-                let selected_candidates = self.select_candidate_with_heuristic_from_sorted(
-                    candidates.into_sorted_vec().into_iter().rev(),
-                    level_m,
-                );
+                let mut candidates = candidates.into_sorted_vec();
+                candidates.reverse();
+                let selected_candidates =
+                    self.select_candidate_with_heuristic_from_sorted(&candidates, level_m);
                 response.neighbor_links.push(selected_candidates);
             }
         }
@@ -177,7 +182,7 @@ impl<'a> GraphLinearBuilder<'a> {
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidate_with_heuristic_from_sorted(
         &self,
-        candidates: impl Iterator<Item = ScoredPointOffset>,
+        candidates: &[ScoredPointOffset],
         m: usize,
     ) -> Vec<PointOffsetType> {
         let mut result_list = vec![];
@@ -188,9 +193,7 @@ impl<'a> GraphLinearBuilder<'a> {
             }
             let mut is_good = true;
             for &selected_point in &result_list {
-                let dist_to_already_selected = self
-                    .points_scorer
-                    .score_internal(current_closest.idx, selected_point);
+                let dist_to_already_selected = self.score(current_closest.idx, selected_point);
                 if dist_to_already_selected > current_closest.score {
                     is_good = false;
                     break;
@@ -229,7 +232,7 @@ impl<'a> GraphLinearBuilder<'a> {
             let links = &self.links_layers[candidate.idx as usize][level];
             for &link in links.iter() {
                 if !visited_list.check_and_update_visited(link) {
-                    let score = self.points_scorer.score_internal(link, id);
+                    let score = self.score(link, id);
                     Self::process_candidate(
                         &mut nearest,
                         &mut candidates,
@@ -246,7 +249,7 @@ impl<'a> GraphLinearBuilder<'a> {
                     &mut candidates,
                     ScoredPointOffset {
                         idx: existing_link,
-                        score: self.points_scorer.score_internal(id, existing_link),
+                        score: self.score(id, existing_link),
                     },
                 );
             }
@@ -279,7 +282,7 @@ impl<'a> GraphLinearBuilder<'a> {
     ) -> ScoredPointOffset {
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
-            score: self.points_scorer.score_internal(id, entry_point),
+            score: self.score(id, entry_point),
         };
         for level in rev_range(top_level, target_level) {
             let mut changed = true;
@@ -287,7 +290,7 @@ impl<'a> GraphLinearBuilder<'a> {
                 changed = false;
 
                 for &link in &self.links_layers[current_point.idx as usize][level] {
-                    let score = self.points_scorer.score_internal(link, id);
+                    let score = self.score(link, id);
                     if score > current_point.score {
                         changed = true;
                         current_point = ScoredPointOffset { idx: link, score };
@@ -308,6 +311,10 @@ impl<'a> GraphLinearBuilder<'a> {
 
     fn get_point_level(&self, point_id: PointOffsetType) -> usize {
         self.links_layers[point_id as usize].len() - 1
+    }
+
+    fn score(&self, a: PointOffsetType, b: PointOffsetType) -> ScoreType {
+        self.points_scorer.score_internal(a, b)
     }
 }
 
