@@ -3,7 +3,6 @@ use std::collections::BinaryHeap;
 use num_traits::float::FloatCore;
 
 use super::entry_points::EntryPoints;
-use crate::common::utils::rev_range;
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
@@ -277,7 +276,8 @@ impl<'a> GraphLinearBuilder<'a> {
             idx: entry_point,
             score: self.score(id, entry_point),
         };
-        for level in rev_range(top_level, target_level) {
+        // (b + 1..=a).rev()
+        for level in (target_level + 1..=top_level).rev() {
             let mut changed = true;
             while changed {
                 changed = false;
