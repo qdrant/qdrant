@@ -86,13 +86,13 @@ impl<'a> GraphLinearBuilder<'a> {
     }
 
     pub fn apply_link_response(&mut self, response: &GraphLinkResponse) {
-        self.links_layers[response.point_id as usize][response.level] = response.links.clone();
+        self.set_links(response.point_id, response.level, &response.links);
         for (id, links) in response
             .neighbor_ids
             .iter()
             .zip(response.neighbor_links.iter())
         {
-            self.links_layers[*id as usize][response.level] = links.clone();
+            self.set_links(*id, response.level, links);
         }
     }
 
@@ -151,10 +151,10 @@ impl<'a> GraphLinearBuilder<'a> {
         for &other_point in &response.links {
             response.neighbor_ids.push(other_point);
 
-            let other_point_links = &self.links_layers[other_point as usize][request.level];
+            let other_point_links = self.get_links(other_point, request.level);
             if other_point_links.len() < level_m {
                 // If linked point is lack of neighbours
-                let mut other_point_links = other_point_links.clone();
+                let mut other_point_links = other_point_links.to_vec();
                 other_point_links.push(request.point_id);
                 response.neighbor_links.push(other_point_links);
             } else {
@@ -213,7 +213,7 @@ impl<'a> GraphLinearBuilder<'a> {
         level_entry: ScoredPointOffset,
         level: usize,
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
-        let mut visited_list = self.visited_pool.get(self.links_layers.len());
+        let mut visited_list = self.visited_pool.get(self.num_points());
         visited_list.check_and_update_visited(level_entry.idx);
 
         let mut nearest = FixedLengthPriorityQueue::<ScoredPointOffset>::new(self.ef_construct);
@@ -229,7 +229,7 @@ impl<'a> GraphLinearBuilder<'a> {
                 break;
             }
 
-            let links = &self.links_layers[candidate.idx as usize][level];
+            let links = self.get_links(candidate.idx, level);
             for &link in links.iter() {
                 if !visited_list.check_and_update_visited(link) {
                     let score = self.score(link, id);
@@ -242,7 +242,7 @@ impl<'a> GraphLinearBuilder<'a> {
             }
         }
 
-        for &existing_link in &self.links_layers[id as usize][level] {
+        for &existing_link in self.get_links(id, level) {
             if !visited_list.check(existing_link) {
                 Self::process_candidate(
                     &mut nearest,
@@ -289,7 +289,7 @@ impl<'a> GraphLinearBuilder<'a> {
             while changed {
                 changed = false;
 
-                for &link in &self.links_layers[current_point.idx as usize][level] {
+                for &link in self.get_links(current_point.idx, level) {
                     let score = self.score(link, id);
                     if score > current_point.score {
                         changed = true;
@@ -315,6 +315,18 @@ impl<'a> GraphLinearBuilder<'a> {
 
     fn score(&self, a: PointOffsetType, b: PointOffsetType) -> ScoreType {
         self.points_scorer.score_internal(a, b)
+    }
+
+    fn num_points(&self) -> usize {
+        self.links_layers.len()
+    }
+
+    fn get_links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+        self.links_layers[point_id as usize][level].as_slice()
+    }
+
+    fn set_links(&mut self, point_id: PointOffsetType, level: usize, links: &[PointOffsetType]) {
+        self.links_layers[point_id as usize][level] = links.to_vec();
     }
 }
 
