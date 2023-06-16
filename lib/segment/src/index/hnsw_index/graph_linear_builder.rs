@@ -138,8 +138,7 @@ impl<'a> GraphLinearBuilder<'a> {
         };
         let level_m = self.get_m(request.level);
 
-        response.links =
-            self.select_candidate_with_heuristic_from_sorted(&nearest_points.into_vec(), level_m);
+        response.links = self.select_with_heuristic(nearest_points, level_m);
         for &other_point in &response.links {
             response.neighbor_ids.push(other_point);
 
@@ -150,7 +149,8 @@ impl<'a> GraphLinearBuilder<'a> {
                 other_point_links.push(request.point_id);
                 response.neighbor_links.push(other_point_links);
             } else {
-                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                let mut candidates =
+                    FixedLengthPriorityQueue::<ScoredPointOffset>::new(level_m + 1);
                 candidates.push(ScoredPointOffset {
                     idx: request.point_id,
                     score: self.score(request.point_id, other_point),
@@ -161,25 +161,21 @@ impl<'a> GraphLinearBuilder<'a> {
                         score: self.score(other_point_link, other_point),
                     });
                 }
-                let mut candidates = candidates.into_sorted_vec();
-                candidates.reverse();
-                let selected_candidates =
-                    self.select_candidate_with_heuristic_from_sorted(&candidates, level_m);
+                let selected_candidates = self.select_with_heuristic(candidates, level_m);
                 response.neighbor_links.push(selected_candidates);
             }
         }
         response
     }
 
-    /// <https://github.com/nmslib/hnswlib/issues/99>
-    fn select_candidate_with_heuristic_from_sorted(
+    fn select_with_heuristic(
         &self,
-        candidates: &[ScoredPointOffset],
+        candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
     ) -> Vec<PointOffsetType> {
         let mut result_list = vec![];
         result_list.reserve(m);
-        for current_closest in candidates {
+        for current_closest in candidates.into_vec() {
             if result_list.len() >= m {
                 break;
             }
