@@ -81,7 +81,7 @@ impl State {
         config.params.replication_factor = new_config.params.replication_factor;
         config.params.write_consistency_factor = new_config.params.write_consistency_factor;
 
-        self.recreate_optimizers_blocking().await?;
+        collection.recreate_optimizers_blocking().await?;
 
         Ok(())
     }
