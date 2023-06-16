@@ -1,6 +1,8 @@
 use std::collections::BinaryHeap;
 
 use num_traits::float::FloatCore;
+use rand::distributions::Uniform;
+use rand::Rng;
 
 use super::entry_points::EntryPoints;
 use crate::index::visited_pool::VisitedPool;
@@ -49,14 +51,22 @@ impl GraphLinkResponse {
 }
 
 impl<'a> GraphLinearBuilder<'a> {
-    pub fn new(
-        levels: &[usize],
+    pub fn new<R>(
+        num_points: usize,
         m: usize,
         m0: usize,
         ef_construct: usize,
         entry_points_num: usize,
         points_scorer: Box<dyn RawScorer + 'a>,
-    ) -> Self {
+        rng: &mut R,
+    ) -> Self
+    where
+        R: Rng + ?Sized,
+    {
+        let level_factor = 1.0 / (std::cmp::max(m, 2) as f64).ln();
+        let levels: Vec<_> = (0..num_points)
+            .map(|_| Self::get_random_layer(level_factor, rng))
+            .collect();
         let levels_count = levels.iter().copied().max().unwrap();
         let mut links_layers: Vec<Vec<PointOffsetType>> = vec![];
         for i in 0..=levels_count {
@@ -272,7 +282,6 @@ impl<'a> GraphLinearBuilder<'a> {
             idx: entry_point,
             score: self.score(id, entry_point),
         };
-        // (b + 1..=a).rev()
         for level in (target_level + 1..=top_level).rev() {
             let mut changed = true;
             while changed {
@@ -298,7 +307,7 @@ impl<'a> GraphLinearBuilder<'a> {
         }
     }
 
-    fn get_point_level(&self, point_id: PointOffsetType) -> usize {
+    pub fn get_point_level(&self, point_id: PointOffsetType) -> usize {
         self.point_levels[point_id as usize]
     }
 
@@ -306,7 +315,7 @@ impl<'a> GraphLinearBuilder<'a> {
         self.points_scorer.score_internal(a, b)
     }
 
-    fn num_points(&self) -> usize {
+    pub fn num_points(&self) -> usize {
         self.point_levels.len()
     }
 
@@ -329,11 +338,20 @@ impl<'a> GraphLinearBuilder<'a> {
         self.links_layers[level][start_index + 1..start_index + 1 + links.len()]
             .copy_from_slice(links);
     }
+
+    pub fn get_random_layer<R>(level_factor: f64, rng: &mut R) -> usize
+    where
+        R: Rng + ?Sized,
+    {
+        let distribution = Uniform::new(0.0, 1.0);
+        let sample: f64 = rng.sample(distribution);
+        let picked_level = -sample.ln() * level_factor;
+        picked_level.round() as usize
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
@@ -356,6 +374,18 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(16, num_vectors, &mut rng);
 
+        let added_vector = vector_holder.vectors.get(0).to_vec();
+        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+        let mut graph_layers_2 = GraphLinearBuilder::new(
+            num_vectors,
+            m,
+            m * 2,
+            ef_construct,
+            entry_points_num,
+            raw_scorer,
+            &mut rng,
+        );
+
         let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
             num_vectors,
             m,
@@ -366,33 +396,15 @@ mod tests {
             true,
         );
 
-        let levels = (0..(num_vectors as PointOffsetType))
-            .map(|idx| {
-                let level = graph_layers_1.get_random_layer(&mut rng);
-                graph_layers_1.set_levels(idx, level);
-                level
-            })
-            .collect_vec();
-
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
 
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers_1.set_levels(idx, graph_layers_2.get_point_level(idx));
             graph_layers_1.link_new_point(idx, scorer);
         }
-
-        let added_vector = vector_holder.vectors.get(0).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-        let mut graph_layers_2 = GraphLinearBuilder::new(
-            &levels,
-            m,
-            m * 2,
-            ef_construct,
-            entry_points_num,
-            raw_scorer,
-        );
 
         for idx in 0..(num_vectors as PointOffsetType) {
             graph_layers_2.link_new_point(idx);
