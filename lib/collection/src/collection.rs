@@ -1116,7 +1116,7 @@ impl Collection {
             let mut config = self.collection_config.write().await;
             config.hnsw_config = hnsw_config_diff.update(&config.hnsw_config)?;
         }
-        self.trigger_optimizers().await?;
+        self.recreate_optimizers_blocking().await?;
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
@@ -1185,7 +1185,7 @@ impl Collection {
             config.optimizer_config =
                 DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
         }
-        self.trigger_optimizers().await?;
+        self.recreate_optimizers_blocking().await?;
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
@@ -1202,17 +1202,23 @@ impl Collection {
             let mut config = self.collection_config.write().await;
             config.optimizer_config = optimizer_config;
         }
-        self.trigger_optimizers().await?;
+        self.recreate_optimizers_blocking().await?;
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
 
-    /// Trigger the optimizers on all shards for this collection
-    async fn trigger_optimizers(&self) -> CollectionResult<()> {
+    /// Recreate the optimizers on all shards for this collection
+    ///
+    /// This will stop existing optimizers, and start new ones with new configurations.
+    ///
+    /// # Blocking
+    ///
+    /// Partially blocking. Stopping existing optimizers is blocking. Starting new optimizers is
+    /// not blocking.
+    async fn recreate_optimizers_blocking(&self) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
-        for replica_set in shard_holder.all_shards() {
-            replica_set.on_optimizer_config_update().await?;
-        }
+        let updates = shard_holder.all_shards().map(|replica_set| replica_set.on_optimizer_config_update());
+        try_join_all(updates).await?;
         Ok(())
     }
 
