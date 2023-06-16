@@ -1,12 +1,10 @@
 use std::future::{ready, Ready};
-use std::sync::OnceLock;
 
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::Method;
 use actix_web::{Error, HttpResponse};
 use futures_util::future::LocalBoxFuture;
-use regex::Regex;
 
 use crate::common::auth::AuthScheme;
 use crate::common::strings::ct_eq;
@@ -109,26 +107,27 @@ where
 }
 
 fn is_read_only(req: &ServiceRequest) -> bool {
-    static READ_ONLY_PATHS: OnceLock<Vec<Regex>> = OnceLock::new();
+    static READ_ONLY_POST_PATTERNS: [&str; 8] = [
+        "/collections/{name}/points",
+        "/collections/{name}/points/count",
+        "/collections/{name}/points/search",
+        "/collections/{name}/points/search/batch",
+        "/collections/{name}/points/recommend",
+        "/collections/{name}/points/recommend/groups",
+        "/collections/{name}/points/recommend/batch",
+        "/collections/{name}/points/scroll",
+    ];
 
-    let read_only_paths = READ_ONLY_PATHS.get_or_init(|| {
-        vec![
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/count/?(\?.*)?$").expect("bad regex"),
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/search/?(\?.*)?$").expect("bad regex"),
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/search/batch/?(\?.*)?$")
-                .expect("bad regex"),
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/recommend/?(\?.*)?$")
-                .expect("bad regex"),
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/recommend/groups/?(\?.*)?$")
-                .expect("bad regex"),
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/recommend/batch/?(\?.*)?$")
-                .expect("bad regex"),
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/?(\?.*)?$").expect("bad regex"),
-            Regex::new(r"^/collections/[a-z0-9-_&;]+/points/scroll/?(\?.*)?$").expect("bad regex"),
-        ]
-    });
-
-    req.method() == Method::GET
-        || (req.method() == Method::POST
-            && read_only_paths.iter().any(|re| re.is_match(req.path())))
+    match *req.method() {
+        Method::GET => true,
+        Method::POST => req
+            .match_pattern()
+            .map(|pattern| {
+                READ_ONLY_POST_PATTERNS
+                    .iter()
+                    .any(|pat| ct_eq(&pattern, pat))
+            })
+            .unwrap_or_default(),
+        _ => false,
+    }
 }

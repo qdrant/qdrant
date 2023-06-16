@@ -94,17 +94,16 @@ impl<S> Layer<S> for ApiKeyMiddlewareLayer {
 }
 
 fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {
-    // Assuming gRPC over HTTP2
-    // https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md
-    if let Some(rpc_name) = req.uri().path().split('/').nth(2) {
-        rpc_name.starts_with("Search")
-            || rpc_name.starts_with("Scroll")
-            || rpc_name.starts_with("List")
-            || rpc_name.starts_with("Get")
-            || rpc_name.starts_with("Count")
-            || rpc_name.starts_with("Recommend")
-    } else {
-        log::warn!("Received a malformed gRPC request that has no name");
-        false
-    }
+    static READ_ONLY_RPC_PATHS: [&str; 6] = [
+        "/qdrant.Collections/List",
+        "/qdrant.Collections/Get",
+        "/qdrant.Points/Search",
+        "/qdrant.Points/Scroll",
+        "/qdrant.Points/Get",
+        "/qdrant.Points/Recommend",
+    ];
+    let uri_path = req.uri().path();
+    READ_ONLY_RPC_PATHS
+        .iter()
+        .any(|ro_uri_path| ct_eq(uri_path, ro_uri_path))
 }
