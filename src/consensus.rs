@@ -58,7 +58,7 @@ pub struct Consensus {
 
 impl Consensus {
     /// Create and run consensus node
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn run(
         logger: &slog::Logger,
         state_ref: ConsensusStateRef,
