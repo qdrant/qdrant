@@ -1225,7 +1225,9 @@ impl Collection {
     /// not blocking.
     pub async fn recreate_optimizers_blocking(&self) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
-        let updates = shard_holder.all_shards().map(|replica_set| replica_set.on_optimizer_config_update());
+        let updates = shard_holder
+            .all_shards()
+            .map(|replica_set| replica_set.on_optimizer_config_update());
         try_join_all(updates).await?;
         Ok(())
     }
