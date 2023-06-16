@@ -266,7 +266,7 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let handle = Consensus::run(
+        let (grpc_handle, consensus_handle) = Consensus::run(
             &slog_logger,
             consensus_state.clone(),
             args.bootstrap,
@@ -280,7 +280,8 @@ fn main() -> anyhow::Result<()> {
         )
         .expect("Can't initialize consensus");
 
-        handles.push(handle);
+        handles.push(grpc_handle);
+        handles.push(consensus_handle);
 
         let toc_arc_clone = toc_arc.clone();
         let consensus_state_clone = consensus_state.clone();

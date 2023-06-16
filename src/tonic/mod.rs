@@ -5,6 +5,7 @@ mod tonic_telemetry;
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use ::api::grpc::models::VersionInfo;
@@ -155,6 +156,7 @@ pub fn init_internal(
     tls_config: Option<ServerTlsConfig>,
     to_consensus: tokio::sync::mpsc::Sender<crate::consensus::Message>,
     runtime: Handle,
+    shutdown_requested: Arc<AtomicBool>,
 ) -> std::io::Result<()> {
     use ::api::grpc::qdrant::raft_server::RaftServer;
 
@@ -225,6 +227,7 @@ pub fn init_internal(
                 )
                 .serve_with_shutdown(socket, async {
                     wait_stop_signal("internal gRPC").await;
+                    shutdown_requested.store(true, Ordering::Relaxed);
                 })
                 .await
         })
