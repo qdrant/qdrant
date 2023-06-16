@@ -52,7 +52,7 @@ impl GraphLinkResponse {
 
 impl<'a> GraphLinearBuilder<'a> {
     pub fn new<R>(
-        num_points: usize,
+        num_vectors: usize,
         m: usize,
         m0: usize,
         ef_construct: usize,
@@ -64,10 +64,11 @@ impl<'a> GraphLinearBuilder<'a> {
         R: Rng + ?Sized,
     {
         let level_factor = 1.0 / (std::cmp::max(m, 2) as f64).ln();
-        let levels: Vec<_> = (0..num_points)
+        let levels: Vec<_> = (0..num_vectors)
             .map(|_| Self::get_random_layer(level_factor, rng))
             .collect();
         let levels_count = levels.iter().copied().max().unwrap();
+
         let mut links_layers: Vec<Vec<PointOffsetType>> = vec![];
         for i in 0..=levels_count {
             let level_m = if i == 0 { m0 } else { m };
@@ -75,7 +76,7 @@ impl<'a> GraphLinearBuilder<'a> {
             links_layers.push(buffer);
         }
 
-        Self {
+        let mut builder = Self {
             m,
             m0,
             ef_construct,
@@ -84,7 +85,13 @@ impl<'a> GraphLinearBuilder<'a> {
             visited_pool: VisitedPool::new(),
             points_scorer,
             point_levels: levels.to_vec(),
+        };
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            builder.link_new_point(idx);
         }
+
+        builder
     }
 
     pub fn apply_link_response(&mut self, response: &GraphLinkResponse) {
@@ -211,7 +218,7 @@ impl<'a> GraphLinearBuilder<'a> {
         level_entry: ScoredPointOffset,
         level: usize,
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
-        let mut visited_list = self.visited_pool.get(self.num_points());
+        let mut visited_list = self.visited_pool.get(self.num_vectors());
         visited_list.check_and_update_visited(level_entry.idx);
 
         let mut nearest = FixedLengthPriorityQueue::<ScoredPointOffset>::new(self.ef_construct);
@@ -315,7 +322,7 @@ impl<'a> GraphLinearBuilder<'a> {
         self.points_scorer.score_internal(a, b)
     }
 
-    pub fn num_points(&self) -> usize {
+    pub fn num_vectors(&self) -> usize {
         self.point_levels.len()
     }
 
@@ -376,7 +383,7 @@ mod tests {
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-        let mut graph_layers_2 = GraphLinearBuilder::new(
+        let graph_layers_2 = GraphLinearBuilder::new(
             num_vectors,
             m,
             m * 2,
@@ -404,10 +411,6 @@ mod tests {
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers_1.set_levels(idx, graph_layers_2.get_point_level(idx));
             graph_layers_1.link_new_point(idx, scorer);
-        }
-
-        for idx in 0..(num_vectors as PointOffsetType) {
-            graph_layers_2.link_new_point(idx);
         }
 
         for (point_id, links_1) in graph_layers_1.links_layers.iter().enumerate() {
