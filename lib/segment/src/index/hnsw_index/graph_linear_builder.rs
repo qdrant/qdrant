@@ -4,7 +4,7 @@ use num_traits::float::FloatCore;
 use rand::distributions::Uniform;
 use rand::Rng;
 
-use super::entry_points::EntryPoints;
+use super::entry_points::{EntryPoint, EntryPoints};
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
@@ -15,10 +15,11 @@ pub struct GraphLinearBuilder<'a> {
     m0: usize,
     ef_construct: usize,
     links_layers: Vec<Vec<PointOffsetType>>,
-    entry_points: EntryPoints,
+    pub entry_points: EntryPoints,
     visited_pool: VisitedPool,
     points_scorer: Box<dyn RawScorer + 'a>,
     point_levels: Vec<usize>,
+    entries: Vec<Option<EntryPoint>>,
 }
 
 pub struct GraphLinkRequest {
@@ -64,16 +65,22 @@ impl<'a> GraphLinearBuilder<'a> {
         R: Rng + ?Sized,
     {
         let level_factor = 1.0 / (std::cmp::max(m, 2) as f64).ln();
-        let levels: Vec<_> = (0..num_vectors)
+        let point_levels: Vec<_> = (0..num_vectors)
             .map(|_| Self::get_random_layer(level_factor, rng))
             .collect();
-        let levels_count = levels.iter().copied().max().unwrap();
+        let levels_count = point_levels.iter().copied().max().unwrap();
 
         let mut links_layers: Vec<Vec<PointOffsetType>> = vec![];
         for i in 0..=levels_count {
             let level_m = if i == 0 { m0 } else { m };
-            let buffer = vec![0 as PointOffsetType; (level_m + 1) * levels.len()];
+            let buffer = vec![0 as PointOffsetType; (level_m + 1) * point_levels.len()];
             links_layers.push(buffer);
+        }
+
+        let mut entry_points = EntryPoints::new(entry_points_num);
+        let mut entries = vec![];
+        for idx in 0..(num_vectors as PointOffsetType) {
+            entries.push(entry_points.new_point(idx, point_levels[idx as usize], |_| true));
         }
 
         let mut builder = Self {
@@ -81,10 +88,11 @@ impl<'a> GraphLinearBuilder<'a> {
             m0,
             ef_construct,
             links_layers,
-            entry_points: EntryPoints::new(entry_points_num),
+            entry_points,
             visited_pool: VisitedPool::new(),
             points_scorer,
-            point_levels: levels.to_vec(),
+            point_levels,
+            entries,
         };
 
         for idx in 0..(num_vectors as PointOffsetType) {
@@ -107,7 +115,7 @@ impl<'a> GraphLinearBuilder<'a> {
 
     pub fn get_link_request(&mut self, point_id: PointOffsetType) -> Option<GraphLinkRequest> {
         let level = self.get_point_level(point_id);
-        let entry_point_opt = self.entry_points.new_point(point_id, level, |_| true);
+        let entry_point_opt = self.entries[point_id as usize].clone();
         match entry_point_opt {
             None => None,
             Some(entry_point) => {
