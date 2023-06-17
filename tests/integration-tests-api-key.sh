@@ -35,7 +35,4 @@ done
 
 echo "server ready to serve traffic"
 
-./tests/api_key/rest_ro.sh
-./tests/api_key/rest_rw.sh
-./tests/api_key/grpc_ro.sh
-./tests/api_key/grpc_rw.sh
+pytest ./tests/api_key
