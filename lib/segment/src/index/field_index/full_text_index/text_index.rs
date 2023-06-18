@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::common::Flusher;
 use crate::data_types::text_index::TextIndexParams;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::{
@@ -173,16 +172,8 @@ impl BasePayloadFieldIndex for FullTextIndex {
         Ok(true)
     }
 
-    fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.remove_column_family()
-    }
-
-    fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
-    }
-
-    fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
+    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+        &self.db_wrapper
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {

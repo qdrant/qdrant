@@ -1,6 +1,7 @@
 use enum_dispatch::enum_dispatch;
 use serde_json::Value;
 
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
@@ -25,13 +26,20 @@ pub trait BasePayloadFieldIndex {
     fn load(&mut self) -> OperationResult<bool>;
 
     /// Remove db content of the current payload index
-    fn clear(self) -> OperationResult<()>;
+    fn clear(&self) -> OperationResult<()> {
+        Self::db_wrapper(self).remove_column_family()
+    }
 
     /// Return function that flushes all pending updates to disk.
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self) -> Flusher {
+        self.db_wrapper().flusher()
+    }
 
-    // TODO: add get_db_wrapper() to this trait, make recreate() pre-implemented
-    fn recreate(&self) -> OperationResult<()>;
+    fn db_wrapper(&self) -> &DatabaseColumnWrapper;
+
+    fn recreate(&self) -> OperationResult<()> {
+        self.db_wrapper().recreate_column_family()
+    }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
 

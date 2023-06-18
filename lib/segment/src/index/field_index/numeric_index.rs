@@ -10,7 +10,6 @@ use serde_json::Value;
 
 use super::{ PayloadFieldIndex};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -135,10 +134,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             }
         }
         Ok(true)
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
@@ -293,12 +288,12 @@ impl<T: Encodable + Numericable> BasePayloadFieldIndex for NumericIndex<T> {
         NumericIndex::load(self)
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn clear(&self) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
     }
 
-    fn flusher(&self) -> Flusher {
-        NumericIndex::flusher(self)
+    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+        &self.db_wrapper
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
@@ -318,10 +313,6 @@ impl<T: Encodable + Numericable> BasePayloadFieldIndex for NumericIndex<T> {
         self.get_values(point_id)
             .map(|x| x.is_empty())
             .unwrap_or(true)
-    }
-
-    fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
     }
 }
 

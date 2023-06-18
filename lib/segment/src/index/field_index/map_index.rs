@@ -12,7 +12,6 @@ use serde_json::Value;
 
 use super::{ PayloadFieldIndex};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
@@ -75,10 +74,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             self.map.entry(value).or_default().insert(idx);
         }
         Ok(true)
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
     }
 
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
@@ -290,16 +285,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr> BasePayloadFieldIndex for MapInde
         MapIndex::load(self)
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn clear(&self) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
     }
 
-    fn flusher(&self) -> Flusher {
-        MapIndex::flusher(self)
-    }
-
-    fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
+    fn db_wrapper(&self) ->  &DatabaseColumnWrapper {
+        &self.db_wrapper
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {

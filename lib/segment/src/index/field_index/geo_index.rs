@@ -10,7 +10,6 @@ use serde_json::Value;
 
 use super::{ PayloadFieldIndex};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
@@ -246,10 +245,6 @@ impl GeoMapIndex {
         result[0..8].clone_from_slice(&value.lat.to_be_bytes());
         result[8..16].clone_from_slice(&value.lon.to_be_bytes());
         result
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
@@ -491,17 +486,9 @@ impl BasePayloadFieldIndex for GeoMapIndex {
     fn load(&mut self) -> OperationResult<bool> {
         GeoMapIndex::load(self)
     }
-
-    fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.remove_column_family()
-    }
-
-    fn flusher(&self) -> Flusher {
-        GeoMapIndex::flusher(self)
-    }
-
-    fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
+    
+    fn db_wrapper(&self) ->  &DatabaseColumnWrapper {
+        &self.db_wrapper
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
