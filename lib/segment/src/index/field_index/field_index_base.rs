@@ -62,17 +62,19 @@ pub trait PayloadFieldIndex: BasePayloadFieldIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
 }
 
-// enum_dispatch won't work nicely with generics, so we implement the sugar manually
-pub trait ValueIndexer<T> {
+// enum_dispatch won't work nicely with associated types (nor generics), so we implement the sugar manually
+pub trait ValueIndexer {
+    type ValueType;
+
     /// Add multiple values associated with a single point
     /// This function should be called only once for each point
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<T>) -> OperationResult<()>;
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::ValueType>) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
-    fn get_value(&self, value: &Value) -> Option<T>;
+    fn get_value(&self, value: &Value) -> Option<Self::ValueType>;
 
     /// Try to extract index-able values from payload `Value`, even if it is an array
-    fn get_values(&self, value: &Value) -> Vec<T> {
+    fn get_values(&self, value: &Value) -> Vec<Self::ValueType> {
         match value {
             Value::Array(values) => values.iter().flat_map(|x| self.get_value(x)).collect(),
             _ => self.get_value(value).map(|x| vec![x]).unwrap_or_default(),

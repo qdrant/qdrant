@@ -107,8 +107,10 @@ impl FullTextIndex {
     }
 }
 
-impl ValueIndexer<String> for FullTextIndex {
-    fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+impl ValueIndexer for FullTextIndex {
+    type ValueType = String;
+
+    fn add_many(&mut self, idx: PointOffsetType, values: Vec<Self::ValueType>) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -132,7 +134,7 @@ impl ValueIndexer<String> for FullTextIndex {
         Ok(())
     }
 
-    fn get_value(&self, value: &Value) -> Option<String> {
+    fn get_value(&self, value: &Value) -> Option<Self::ValueType> {
         if let Value::String(keyword) = value {
             return Some(keyword.to_owned());
         }

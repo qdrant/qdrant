@@ -464,12 +464,14 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 }
 
-impl ValueIndexer<String> for MapIndex<String> {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+impl ValueIndexer for MapIndex<String> {
+    type ValueType = String;
+
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::ValueType>) -> OperationResult<()> {
         self.add_many_to_map(id, values)
     }
 
-    fn get_value(&self, value: &Value) -> Option<String> {
+    fn get_value(&self, value: &Value) -> Option<Self::ValueType> {
         if let Value::String(keyword) = value {
             return Some(keyword.to_owned());
         }
@@ -481,16 +483,18 @@ impl ValueIndexer<String> for MapIndex<String> {
     }
 }
 
-impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
+impl ValueIndexer for MapIndex<IntPayloadType> {
+    type ValueType = IntPayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,
-        values: Vec<IntPayloadType>,
+        values: Vec<Self::ValueType>,
     ) -> OperationResult<()> {
         self.add_many_to_map(id, values)
     }
 
-    fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
+    fn get_value(&self, value: &Value) -> Option<Self::ValueType> {
         if let Value::Number(num) = value {
             return num.as_i64();
         }

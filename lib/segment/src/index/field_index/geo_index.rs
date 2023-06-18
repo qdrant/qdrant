@@ -456,12 +456,14 @@ impl GeoMapIndex {
     }
 }
 
-impl ValueIndexer<GeoPoint> for GeoMapIndex {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
+impl ValueIndexer for GeoMapIndex {
+    type ValueType = GeoPoint;
+
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::ValueType>) -> OperationResult<()> {
         self.add_many_geo_points(id, &values)
     }
 
-    fn get_value(&self, value: &Value) -> Option<GeoPoint> {
+    fn get_value(&self, value: &Value) -> Option<Self::ValueType> {
         match value {
             Value::Object(obj) => {
                 let lon_op = obj.get("lon").and_then(|x| x.as_f64());
