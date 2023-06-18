@@ -15,7 +15,7 @@ use crate::index::field_index::full_text_index::inverted_index::{
 };
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::field_index::{
-    CardinalityEstimation, EstimateCardinality, Filterable, PayloadBlockCondition, PayloadBlocks,
+    BasePayloadFieldIndex, CardinalityEstimation, PayloadBlockCondition,
     PayloadFieldIndex, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
@@ -153,7 +153,7 @@ impl ValueIndexer<String> for FullTextIndex {
     }
 }
 
-impl PayloadFieldIndex for FullTextIndex {
+impl BasePayloadFieldIndex for FullTextIndex {
     fn count_indexed_points(&self) -> usize {
         self.inverted_index.points_count
     }
@@ -202,7 +202,7 @@ impl PayloadFieldIndex for FullTextIndex {
     }
 }
 
-impl Filterable for FullTextIndex {
+impl PayloadFieldIndex for FullTextIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -213,9 +213,7 @@ impl Filterable for FullTextIndex {
         }
         None
     }
-}
 
-impl EstimateCardinality for FullTextIndex {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
@@ -226,9 +224,7 @@ impl EstimateCardinality for FullTextIndex {
         }
         None
     }
-}
 
-impl PayloadBlocks for FullTextIndex {
     fn payload_blocks(
         &self,
         threshold: usize,

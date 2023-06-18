@@ -17,7 +17,7 @@ use crate::types::{
 };
 
 #[enum_dispatch]
-pub trait PayloadFieldIndex {
+pub trait BasePayloadFieldIndex {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;
 
@@ -40,24 +40,19 @@ pub trait PayloadFieldIndex {
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 }
 
+/// Main trait for all specific payload indexes, allowing polymorphic access to them
 #[enum_dispatch]
-pub trait Filterable {
+pub trait PayloadFieldIndex: BasePayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
-}
 
-#[enum_dispatch]
-pub trait EstimateCardinality {
     /// Return estimation of points amount which satisfy given condition
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
-}
 
-#[enum_dispatch]
-pub trait PayloadBlocks {
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
     fn payload_blocks(
@@ -132,7 +127,7 @@ pub trait ValueIndexer<T> {
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes
 /// TODO: Rename with major release
-#[enum_dispatch(PayloadFieldIndex, Filterable, EstimateCardinality, PayloadBlocks)]
+#[enum_dispatch(BasePayloadFieldIndex, PayloadFieldIndex)]
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),

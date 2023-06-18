@@ -8,14 +8,15 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use super::{EstimateCardinality, Filterable, PayloadBlocks};
+use super::{ PayloadFieldIndex};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
+    BasePayloadFieldIndex, CardinalityEstimation, PayloadBlockCondition, PrimaryCondition,
+    ValueIndexer,
 };
 use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
@@ -283,7 +284,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
+impl<T: Encodable + Numericable> BasePayloadFieldIndex for NumericIndex<T> {
     fn count_indexed_points(&self) -> usize {
         self.points_count
     }
@@ -324,7 +325,7 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable> Filterable for NumericIndex<T> {
+impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -373,9 +374,7 @@ impl<T: Encodable + Numericable> Filterable for NumericIndex<T> {
             self.map.range((start_bound, end_bound)).map(|(_, v)| *v),
         ))
     }
-}
 
-impl<T: Encodable + Numericable> EstimateCardinality for NumericIndex<T> {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         condition.range.as_ref().map(|range| {
             let mut cardinality = self.range_cardinality(range);
@@ -385,9 +384,7 @@ impl<T: Encodable + Numericable> EstimateCardinality for NumericIndex<T> {
             cardinality
         })
     }
-}
 
-impl<T: Encodable + Numericable> PayloadBlocks for NumericIndex<T> {
     fn payload_blocks(
         &self,
         threshold: usize,

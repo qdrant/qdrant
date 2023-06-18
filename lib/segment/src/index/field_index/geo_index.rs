@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use super::{EstimateCardinality, Filterable, PayloadBlocks};
+use super::{ PayloadFieldIndex};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -18,7 +18,8 @@ use crate::index::field_index::geo_hash::{
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
+    BasePayloadFieldIndex, CardinalityEstimation, PayloadBlockCondition, PrimaryCondition,
+    ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -480,7 +481,7 @@ impl ValueIndexer<GeoPoint> for GeoMapIndex {
     }
 }
 
-impl PayloadFieldIndex for GeoMapIndex {
+impl BasePayloadFieldIndex for GeoMapIndex {
     fn count_indexed_points(&self) -> usize {
         self.points_count
     }
@@ -521,7 +522,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     }
 }
 
-impl Filterable for GeoMapIndex {
+impl PayloadFieldIndex for GeoMapIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -556,9 +557,7 @@ impl Filterable for GeoMapIndex {
 
         None
     }
-}
 
-impl EstimateCardinality for GeoMapIndex {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
@@ -580,9 +579,7 @@ impl EstimateCardinality for GeoMapIndex {
 
         None
     }
-}
 
-impl PayloadBlocks for GeoMapIndex {
     fn payload_blocks(
         &self,
         threshold: usize,
