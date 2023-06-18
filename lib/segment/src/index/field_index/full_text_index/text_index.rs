@@ -15,7 +15,8 @@ use crate::index::field_index::full_text_index::inverted_index::{
 };
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
+    CardinalityEstimation, EstimateCardinality, Filterable, PayloadBlockCondition, PayloadBlocks,
+    PayloadFieldIndex, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType, PointOffsetType};
@@ -79,19 +80,6 @@ impl FullTextIndex {
         }
     }
 
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_values_count: self.inverted_index.points_count,
-            points_count: self.inverted_index.points_count,
-            histogram_bucket_size: None,
-        }
-    }
-
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &self.config, |token| {
@@ -116,15 +104,6 @@ impl FullTextIndex {
     pub fn query(&self, query: &str) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let parsed_query = self.parse_query(query);
         self.inverted_index.filter(&parsed_query)
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        // Maybe we want number of documents in the future?
-        self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_doc(point_id).map(|x| x.is_empty()).unwrap_or(true)
     }
 }
 
@@ -200,6 +179,30 @@ impl PayloadFieldIndex for FullTextIndex {
         self.db_wrapper.flusher()
     }
 
+    fn recreate(&self) -> OperationResult<()> {
+        self.db_wrapper.recreate_column_family()
+    }
+
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_values_count: self.inverted_index.points_count,
+            points_count: self.inverted_index.points_count,
+            histogram_bucket_size: None,
+        }
+    }
+
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        // Maybe we want number of documents in the future?
+        self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
+    }
+
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_doc(point_id).map(|x| x.is_empty()).unwrap_or(true)
+    }
+}
+
+impl Filterable for FullTextIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -210,7 +213,9 @@ impl PayloadFieldIndex for FullTextIndex {
         }
         None
     }
+}
 
+impl EstimateCardinality for FullTextIndex {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
@@ -221,7 +226,9 @@ impl PayloadFieldIndex for FullTextIndex {
         }
         None
     }
+}
 
+impl PayloadBlocks for FullTextIndex {
     fn payload_blocks(
         &self,
         threshold: usize,

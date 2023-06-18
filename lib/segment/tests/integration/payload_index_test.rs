@@ -11,7 +11,7 @@ use segment::fixtures::payload_fixtures::{
     random_vector, FLICKING_KEY, GEO_KEY, INT_KEY, INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY,
     STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
 };
-use segment::index::field_index::PrimaryCondition;
+use segment::index::field_index::{PayloadFieldIndex, PrimaryCondition};
 use segment::index::PayloadIndex;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;

@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::FieldIndex;
+use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::query_checker::{

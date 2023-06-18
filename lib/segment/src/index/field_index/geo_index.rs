@@ -8,6 +8,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use super::{EstimateCardinality, Filterable, PayloadBlocks};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -75,10 +76,6 @@ impl GeoMapIndex {
 
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_geo")
-    }
-
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
     }
 
     fn increment_hash_value_counts(&mut self, geo_hash: &GeoHash) {
@@ -311,15 +308,6 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_count: self.points_count,
-            points_values_count: self.values_count,
-            histogram_bucket_size: None,
-        }
-    }
-
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if self.point_to_values.len() <= idx as usize {
             return Ok(()); // Already removed or never actually existed
@@ -465,16 +453,6 @@ impl GeoMapIndex {
 
         Box::new(edge_region.into_iter())
     }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_values(point_id)
-            .map(|x| x.is_empty())
-            .unwrap_or(true)
-    }
 }
 
 impl ValueIndexer<GeoPoint> for GeoMapIndex {
@@ -519,6 +497,31 @@ impl PayloadFieldIndex for GeoMapIndex {
         GeoMapIndex::flusher(self)
     }
 
+    fn recreate(&self) -> OperationResult<()> {
+        self.db_wrapper.recreate_column_family()
+    }
+
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.points_count,
+            points_values_count: self.values_count,
+            histogram_bucket_size: None,
+        }
+    }
+
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
+    }
+
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_values(point_id)
+            .map(|x| x.is_empty())
+            .unwrap_or(true)
+    }
+}
+
+impl Filterable for GeoMapIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -553,7 +556,9 @@ impl PayloadFieldIndex for GeoMapIndex {
 
         None
     }
+}
 
+impl EstimateCardinality for GeoMapIndex {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
@@ -575,7 +580,9 @@ impl PayloadFieldIndex for GeoMapIndex {
 
         None
     }
+}
 
+impl PayloadBlocks for GeoMapIndex {
     fn payload_blocks(
         &self,
         threshold: usize,

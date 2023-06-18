@@ -10,6 +10,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
+use super::field_index::{EstimateCardinality, Filterable, PayloadBlocks, PayloadFieldIndex};
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
@@ -121,7 +122,7 @@ impl StructPayloadIndex {
         let mut indexes = index_selector(field, &payload_schema, self.db.clone());
 
         let mut is_loaded = true;
-        for ref mut index in indexes.iter_mut() {
+        for index in indexes.iter_mut() {
             if !index.load()? {
                 is_loaded = false;
                 break;

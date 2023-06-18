@@ -8,6 +8,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use super::{EstimateCardinality, Filterable, PayloadBlocks};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -76,10 +77,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
 
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_numeric")
-    }
-
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
@@ -284,25 +281,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             .next()
             .map(|(key, _)| Self::key_to_histogram_point(key))
     }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_count: self.points_count,
-            points_values_count: self.histogram.get_total_count(),
-            histogram_bucket_size: Some(self.histogram.current_bucket_size()),
-        }
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_values(point_id)
-            .map(|x| x.is_empty())
-            .unwrap_or(true)
-    }
 }
 
 impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
@@ -322,6 +300,31 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         NumericIndex::flusher(self)
     }
 
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.points_count,
+            points_values_count: self.histogram.get_total_count(),
+            histogram_bucket_size: Some(self.histogram.current_bucket_size()),
+        }
+    }
+
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
+    }
+
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_values(point_id)
+            .map(|x| x.is_empty())
+            .unwrap_or(true)
+    }
+
+    fn recreate(&self) -> OperationResult<()> {
+        self.db_wrapper.recreate_column_family()
+    }
+}
+
+impl<T: Encodable + Numericable> Filterable for NumericIndex<T> {
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -370,7 +373,9 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
             self.map.range((start_bound, end_bound)).map(|(_, v)| *v),
         ))
     }
+}
 
+impl<T: Encodable + Numericable> EstimateCardinality for NumericIndex<T> {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         condition.range.as_ref().map(|range| {
             let mut cardinality = self.range_cardinality(range);
@@ -380,7 +385,9 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
             cardinality
         })
     }
+}
 
+impl<T: Encodable + Numericable> PayloadBlocks for NumericIndex<T> {
     fn payload_blocks(
         &self,
         threshold: usize,

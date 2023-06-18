@@ -10,6 +10,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use super::{EstimateCardinality, Filterable, PayloadBlocks};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -52,10 +53,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         format!("{field}_map")
     }
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
     fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
@@ -91,15 +88,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
         self.point_to_values.get(idx as usize)
-    }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_count: self.indexed_points,
-            points_values_count: self.values_count,
-            histogram_bucket_size: None,
-        }
     }
 
     fn add_many_to_map(&mut self, idx: PointOffsetType, values: Vec<N>) -> OperationResult<()> {
@@ -172,16 +160,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         }
 
         Ok(())
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_values(point_id)
-            .map(|x| x.is_empty())
-            .unwrap_or(true)
     }
 
     /// Estimates cardinality for `except` clause
@@ -302,7 +280,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 }
 
-impl PayloadFieldIndex for MapIndex<String> {
+impl<N: Hash + Eq + Clone + Display + FromStr> PayloadFieldIndex for MapIndex<N> {
     fn count_indexed_points(&self) -> usize {
         self.indexed_points
     }
@@ -319,6 +297,31 @@ impl PayloadFieldIndex for MapIndex<String> {
         MapIndex::flusher(self)
     }
 
+    fn recreate(&self) -> OperationResult<()> {
+        self.db_wrapper.recreate_column_family()
+    }
+
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.indexed_points,
+            points_values_count: self.values_count,
+            histogram_bucket_size: None,
+        }
+    }
+
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
+    }
+
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_values(point_id)
+            .map(|x| x.is_empty())
+            .unwrap_or(true)
+    }
+}
+
+impl Filterable for MapIndex<String> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
@@ -341,7 +344,9 @@ impl PayloadFieldIndex for MapIndex<String> {
             _ => None,
         }
     }
+}
 
+impl EstimateCardinality for MapIndex<String> {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
@@ -371,7 +376,9 @@ impl PayloadFieldIndex for MapIndex<String> {
             _ => None,
         }
     }
+}
 
+impl PayloadBlocks for MapIndex<String> {
     fn payload_blocks(
         &self,
         threshold: usize,
@@ -389,23 +396,7 @@ impl PayloadFieldIndex for MapIndex<String> {
     }
 }
 
-impl PayloadFieldIndex for MapIndex<IntPayloadType> {
-    fn count_indexed_points(&self) -> usize {
-        self.indexed_points
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        MapIndex::load(self)
-    }
-
-    fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
-    fn flusher(&self) -> Flusher {
-        MapIndex::flusher(self)
-    }
-
+impl Filterable for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
@@ -428,7 +419,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             _ => None,
         }
     }
+}
 
+impl EstimateCardinality for MapIndex<IntPayloadType> {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
@@ -458,7 +451,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             _ => None,
         }
     }
+}
 
+impl PayloadBlocks for MapIndex<IntPayloadType> {
     fn payload_blocks(
         &self,
         threshold: usize,
@@ -467,9 +462,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         let iter = self
             .map
             .iter()
-            .filter(move |(_value, point_ids)| point_ids.len() >= threshold)
+            .filter(move |(_value, point_ids)| point_ids.len() > threshold)
             .map(move |(value, point_ids)| PayloadBlockCondition {
-                condition: FieldCondition::new_match(key.clone(), (*value).into()),
+                condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
                 cardinality: point_ids.len(),
             });
         Box::new(iter)
