@@ -2789,6 +2789,7 @@ pub mod with_vectors_selector {
         Include(super::VectorsSelector),
     }
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationSearchParams {
@@ -2809,8 +2810,10 @@ pub struct QuantizationSearchParams {
     /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
     /// and then top-100 will be returned after re-scoring.
     #[prost(double, optional, tag = "3")]
+    #[validate(custom = "crate::grpc::validate::validate_f64_range_min_1")]
     pub oversampling: ::core::option::Option<f64>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
@@ -2818,6 +2821,7 @@ pub struct SearchParams {
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
     /// Larger the value - more accurate the result, more time required for search.
     #[prost(uint64, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4")]
     pub hnsw_ef: ::core::option::Option<u64>,
     ///
     /// Search without approximation. If set to true, search may run long but with exact results.
@@ -2826,6 +2830,7 @@ pub struct SearchParams {
     ///
     /// If set to true, search will ignore quantized vector data
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
 }
 #[derive(validator::Validate)]
@@ -2851,6 +2856,7 @@ pub struct SearchPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "7")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "8")]
@@ -2920,6 +2926,7 @@ pub struct SearchPointGroups {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "6")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "7")]
@@ -3007,6 +3014,7 @@ pub struct RecommendPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "8")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "9")]
@@ -3068,6 +3076,7 @@ pub struct RecommendPointGroups {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "7")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "8")]
