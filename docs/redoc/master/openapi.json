@@ -6718,6 +6718,7 @@
         "type": "object",
         "required": [
           "debug",
+          "recovery_mode",
           "service_debug_feature",
           "web_feature"
         ],
@@ -6729,6 +6730,9 @@
             "type": "boolean"
           },
           "service_debug_feature": {
+            "type": "boolean"
+          },
+          "recovery_mode": {
             "type": "boolean"
           }
         }
