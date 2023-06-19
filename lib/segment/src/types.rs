@@ -298,7 +298,8 @@ pub const fn default_quantization_oversampling_value() -> Option<f64> {
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
-    /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
+    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
+    #[validate(range(min = 4))]
     pub hnsw_ef: Option<usize>,
 
     /// Search without approximation. If set to true, search may run long but with exact results.
