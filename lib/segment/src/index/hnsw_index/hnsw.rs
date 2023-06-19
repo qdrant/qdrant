@@ -269,6 +269,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let oversampled_top = if oversampling > 1.0 {
                 (oversampling * top as f64) as usize
             } else {
+                // Very unlikely this is reached because validation enforces oversampling >= 1.0
                 top
             };
 
