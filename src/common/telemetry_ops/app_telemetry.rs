@@ -5,6 +5,8 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 
+use crate::settings::Settings;
+
 pub struct AppBuildTelemetryCollector {
     pub startup: DateTime<Utc>,
 }
@@ -22,6 +24,7 @@ pub struct AppFeaturesTelemetry {
     debug: bool,
     web_feature: bool,
     service_debug_feature: bool,
+    recovery_mode: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -49,7 +52,11 @@ pub struct AppBuildTelemetry {
 }
 
 impl AppBuildTelemetry {
-    pub fn collect(level: usize, collector: &AppBuildTelemetryCollector) -> Self {
+    pub fn collect(
+        level: usize,
+        collector: &AppBuildTelemetryCollector,
+        settings: &Settings,
+    ) -> Self {
         AppBuildTelemetry {
             name: env!("CARGO_PKG_NAME").to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -58,6 +65,7 @@ impl AppBuildTelemetry {
                     debug: cfg!(debug_assertions),
                     web_feature: cfg!(feature = "web"),
                     service_debug_feature: cfg!(feature = "service_debug"),
+                    recovery_mode: settings.storage.recovery_mode.is_some(),
                 })
             } else {
                 None
@@ -125,6 +133,7 @@ impl Anonymize for AppFeaturesTelemetry {
             debug: self.debug,
             web_feature: self.web_feature,
             service_debug_feature: self.service_debug_feature,
+            recovery_mode: self.recovery_mode,
         }
     }
 }
