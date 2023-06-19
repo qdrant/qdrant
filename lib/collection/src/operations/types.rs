@@ -228,6 +228,7 @@ pub struct SearchRequest {
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
+    #[validate(range(min = 1))]
     pub limit: usize,
     /// Offset of the first result to return.
     /// May be used to paginate results.
@@ -343,6 +344,7 @@ pub struct RecommendRequest {
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
+    #[validate(range(min = 1))]
     pub limit: usize,
     /// Offset of the first result to return.
     /// May be used to paginate results.
