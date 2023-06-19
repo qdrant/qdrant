@@ -224,6 +224,7 @@ pub struct SearchRequest {
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
@@ -248,6 +249,7 @@ pub struct SearchRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestBatch {
+    #[validate]
     pub searches: Vec<SearchRequest>,
 }
 
@@ -260,6 +262,7 @@ pub struct SearchGroupsRequest {
     pub filter: Option<Filter>,
 
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
 
     /// Select which payload to return with the response. Default: None
@@ -336,6 +339,7 @@ pub struct RecommendRequest {
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
@@ -367,6 +371,7 @@ pub struct RecommendRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestBatch {
+    #[validate]
     pub searches: Vec<RecommendRequest>,
 }
 
@@ -383,6 +388,7 @@ pub struct RecommendGroupsRequest {
     pub filter: Option<Filter>,
 
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
 
     /// Select which payload to return with the response. Default: None
