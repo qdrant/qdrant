@@ -86,7 +86,7 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
 actix-multipart = "0.6.0"
-constant_time_eq = "0.2.6"
+constant_time_eq = "0.3.0"
 
 # Profiling
 tracing = { version = "0.1", features = ["async-await"], optional = true }
