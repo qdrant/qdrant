@@ -434,11 +434,7 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         let collection = self.get_collection(source_collection).await?;
         let collection_vectors_schema = collection.state().await.config.params.vectors;
-        if &collection_vectors_schema != vectors {
-            return Err(StorageError::BadInput {
-                description: format!("Cannot take data from collection with vectors schema {collection_vectors_schema:?} to collection with vectors schema {vectors:?}")
-            });
-        }
+        collection_vectors_schema.check_compatible(vectors)?;
         Ok(())
     }
 
