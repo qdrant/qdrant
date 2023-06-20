@@ -234,8 +234,19 @@ pub struct ProductQuantization {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CodebookQuantization {
+    /// Codebook name
+    #[prost(string, tag = "1")]
+    pub codebook: ::prost::alloc::string::String,
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "2")]
+    pub always_ram: ::core::option::Option<bool>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
-    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2")]
+    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3")]
     #[validate]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
@@ -248,6 +259,8 @@ pub mod quantization_config {
         Scalar(super::ScalarQuantization),
         #[prost(message, tag = "2")]
         Product(super::ProductQuantization),
+        #[prost(message, tag = "3")]
+        Codebook(super::CodebookQuantization),
     }
 }
 #[derive(validator::Validate)]

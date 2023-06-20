@@ -152,6 +152,10 @@ impl QuantizedVectors {
                     stopped,
                 )?
             }
+            QuantizationConfig::Codebook(_) => {
+                // todo(ivan)
+                panic!("Codebook quantization is not supported for quantized vectors")
+            }
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -216,6 +220,10 @@ impl QuantizedVectors {
                         &config.vector_parameters,
                     )?)
                 }
+            }
+            QuantizationConfig::Codebook(_) => {
+                // todo(ivan)
+                panic!("Codebook quantization is not supported for quantized vectors")
             }
         };
 
@@ -290,7 +298,9 @@ impl QuantizedVectors {
                 vectors,
                 storage_builder,
                 vector_parameters,
-                bucket_size,
+                quantization::encoded_vectors_pq::CentroidsParameters::KMeans {
+                    chunk_size: bucket_size,
+                },
                 max_threads,
                 || stopped.load(Ordering::Relaxed),
             )?))
@@ -305,7 +315,9 @@ impl QuantizedVectors {
                 vectors,
                 storage_builder,
                 vector_parameters,
-                bucket_size,
+                quantization::encoded_vectors_pq::CentroidsParameters::KMeans {
+                    chunk_size: bucket_size,
+                },
                 max_threads,
                 || stopped.load(Ordering::Relaxed),
             )?))

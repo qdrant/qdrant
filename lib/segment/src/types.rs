@@ -409,6 +409,15 @@ impl PartialEq for ScalarQuantizationConfig {
     }
 }
 
+impl std::hash::Hash for ScalarQuantizationConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.always_ram.hash(state);
+        self.r#type.hash(state);
+    }
+}
+
+impl Eq for ScalarQuantizationConfig {}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct ProductQuantizationConfig {
@@ -424,14 +433,20 @@ pub struct ProductQuantization {
     pub product: ProductQuantizationConfig,
 }
 
-impl std::hash::Hash for ScalarQuantizationConfig {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.always_ram.hash(state);
-        self.r#type.hash(state);
-    }
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct CodebookQuantizationConfig {
+    pub codebook: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
 }
 
-impl Eq for ScalarQuantizationConfig {}
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+pub struct CodebookQuantization {
+    #[validate]
+    pub codebook: CodebookQuantizationConfig,
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -439,6 +454,7 @@ impl Eq for ScalarQuantizationConfig {}
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
+    Codebook(CodebookQuantization),
 }
 
 impl Validate for QuantizationConfig {
@@ -446,6 +462,7 @@ impl Validate for QuantizationConfig {
         match self {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
             QuantizationConfig::Product(product) => product.validate(),
+            QuantizationConfig::Codebook(codebook) => codebook.validate(),
         }
     }
 }

@@ -190,10 +190,16 @@ message ProductQuantization {
   optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
+message CodebookQuantization {
+  string codebook = 1; // Codebook name
+  optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+}
+
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
     ProductQuantization product = 2;
+    CodebookQuantization codebook = 3;
   }
 }
 

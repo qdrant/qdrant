@@ -7,8 +7,9 @@ use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{
-    CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
-    ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    CodebookQuantization, CodebookQuantizationConfig, CompressionRatio, Distance,
+    ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
+    ScalarQuantizationConfig, ScalarType,
 };
 use tonic::Status;
 
@@ -395,6 +396,14 @@ fn grpc_to_segment_quantization_config(
                         Some(api::grpc::qdrant::CompressionRatio::X32) => CompressionRatio::X32,
                         Some(api::grpc::qdrant::CompressionRatio::X64) => CompressionRatio::X64,
                     },
+                    always_ram: config.always_ram,
+                },
+            }))
+        }
+        api::grpc::qdrant::quantization_config::Quantization::Codebook(config) => {
+            Ok(QuantizationConfig::Codebook(CodebookQuantization {
+                codebook: CodebookQuantizationConfig {
+                    codebook: config.codebook,
                     always_ram: config.always_ram,
                 },
             }))

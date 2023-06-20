@@ -549,6 +549,16 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
                     },
                 )),
             },
+            segment::types::QuantizationConfig::Codebook(
+                segment::types::CodebookQuantization { codebook: config },
+            ) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Codebook(
+                    super::qdrant::CodebookQuantization {
+                        codebook: config.codebook,
+                        always_ram: config.always_ram,
+                    },
+                )),
+            },
         }
     }
 }
@@ -602,6 +612,16 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
                     },
                 }),
             ),
+            super::qdrant::quantization_config::Quantization::Codebook(config) => {
+                Ok(segment::types::QuantizationConfig::Codebook(
+                    segment::types::CodebookQuantization {
+                        codebook: segment::types::CodebookQuantizationConfig {
+                            codebook: config.codebook,
+                            always_ram: config.always_ram,
+                        },
+                    },
+                ))
+            }
         }
     }
 }

@@ -87,6 +87,7 @@ impl Validate for crate::grpc::qdrant::quantization_config::Quantization {
         match self {
             Quantization::Scalar(scalar) => scalar.validate(),
             Quantization::Product(product) => product.validate(),
+            Quantization::Codebook(codebook) => codebook.validate(),
         }
     }
 }

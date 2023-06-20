@@ -735,6 +735,7 @@ impl LocalShard {
                         CompressionRatio::X32 => vector_size / 8,
                         CompressionRatio::X64 => vector_size / 16,
                     },
+                    Some(QuantizationConfig::Codebook(_)) => panic!(), //todo(ivan)
                 };
 
                 vector_size * size_of::<VectorElementType>() + quantized_size_bytes

@@ -291,7 +291,7 @@ mod tests {
                 QuantizationConfig::Scalar(scalar) => {
                     assert_eq!(scalar.scalar.quantile, Some(0.99));
                 }
-                QuantizationConfig::Product(_) => {
+                _ => {
                     panic!("expected scalar quantization")
                 }
             },
