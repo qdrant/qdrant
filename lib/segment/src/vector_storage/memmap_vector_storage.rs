@@ -181,7 +181,7 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![self.vectors_path.clone()];
+        let mut files = vec![self.vectors_path.clone(), self.deleted_path.clone()];
         if let Some(Some(quantized_vectors)) =
             &self.mmap_store.as_ref().map(|x| &x.quantized_vectors)
         {
