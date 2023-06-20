@@ -5312,7 +5312,7 @@
             "description": "Params relevant to HNSW index Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
             "type": "integer",
             "format": "uint",
-            "minimum": 4,
+            "minimum": 0,
             "nullable": true
           },
           "exact": {
