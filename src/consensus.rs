@@ -18,7 +18,6 @@ use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
-use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -657,9 +656,7 @@ impl Consensus {
 
         if !ready.messages().is_empty() {
             log::trace!("Handling {} messages", ready.messages().len());
-            if let Err(err) = self.send_messages(ready.take_messages()) {
-                log::warn!("Failed to send messages: {err}")
-            }
+            self.send_messages(ready.take_messages());
         }
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
@@ -693,9 +690,7 @@ impl Consensus {
                 "Handling {} persisted messages",
                 ready.persisted_messages().len()
             );
-            if let Err(err) = self.send_messages(ready.take_persisted_messages()) {
-                log::error!("Failed to send persisted messages: {err}")
-            }
+            self.send_messages(ready.take_persisted_messages());
         }
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
         let stop_consensus =
@@ -725,9 +720,7 @@ impl Consensus {
                 .set_commit_index(commit)
                 .map_err(|err| anyhow!("Failed to set commit index: {}", err))?;
         }
-        if let Err(err) = self.send_messages(light_rd.take_messages()) {
-            log::warn!("Failed to send messages: {err}")
-        }
+        self.send_messages(light_rd.take_messages());
         // Apply all committed entries.
         let stop_consensus =
             handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
@@ -746,12 +739,8 @@ impl Consensus {
         store.set_raft_soft_state(state);
     }
 
-    fn send_messages(&mut self, messages: Vec<RaftMessage>) -> Result<(), StorageError> {
-        self.broker
-            .send(messages)
-            .map_err(|err| StorageError::service_error(err.to_string()))?; // TODO!?
-
-        Ok(())
+    fn send_messages(&mut self, messages: Vec<RaftMessage>) {
+        self.broker.send(messages);
     }
 }
 
@@ -801,30 +790,31 @@ impl RaftMessageBroker {
         }
     }
 
-    pub fn send(&mut self, messages: impl IntoIterator<Item = RaftMessage>) -> anyhow::Result<()> {
+    pub fn send(&mut self, messages: impl IntoIterator<Item = RaftMessage>) {
         for message in messages {
             let peer_id = message.to;
 
             let sender = match self.senders.get(&peer_id) {
                 Some(sender) => sender,
                 None => {
+                    log::debug!("Spawning message sender task for peer {peer_id}...");
+
                     let (task, handle) = self.message_sender();
                     let future = self.runtime.spawn(task.exec());
                     drop(future); // drop `JoinFuture` explicitly to make clippy happy
 
                     self.senders.insert(peer_id, handle);
 
-                    self.senders.get(&peer_id).expect("TODO") // TODO!
+                    self.senders
+                        .get(&peer_id)
+                        .expect("message sender task spawned")
                 }
             };
 
-            if let Err(err) = sender.blocking_send(message) {
-                log::error!("TODO: {err}"); // TODO!
-                self.senders.remove(&peer_id);
-            }
+            sender
+                .blocking_send(message)
+                .expect("successfully forwarded message to message sender task");
         }
-
-        Ok(())
     }
 
     fn message_sender(&self) -> (RaftMessageSender, Sender<RaftMessage>) {
@@ -853,36 +843,44 @@ struct RaftMessageSender {
 }
 
 impl RaftMessageSender {
-    pub async fn exec(mut self) -> anyhow::Result<()> {
+    pub async fn exec(mut self) {
         while let Some(message) = self.messages.recv().await {
-            if let Err(err) = self.send(message).await {
-                log::error!("TODO: {err}"); // TODO!
-            }
+            self.send(&message).await;
         }
-
-        Ok(())
     }
 
-    async fn send(&mut self, raft_message: RaftMessage) -> anyhow::Result<()> {
-        let uri = self.uri(raft_message.to).await?;
+    async fn send(&mut self, message: &RaftMessage) {
+        if let Err(err) = self.try_send(message).await {
+            let peer_id = message.to;
+
+            if log::max_level() >= log::Level::Debug {
+                log::error!("Failed to send Raft message {message:?} to peer {peer_id}: {err}");
+            } else {
+                log::error!("Failed to send Raft message to peer {peer_id}: {err}");
+            }
+        }
+    }
+
+    async fn try_send(&mut self, message: &RaftMessage) -> anyhow::Result<()> {
+        let peer_id = message.to;
+
+        let uri = self.uri(peer_id).await?;
 
         let mut bytes = Vec::new();
-
-        RaftMessage::encode(&raft_message, &mut bytes).context("TODO")?; // TODO
-
-        let message = GrpcRaftMessage { message: bytes };
+        RaftMessage::encode(message, &mut bytes).context("failed to encode Raft message")?;
+        let grpc_message = GrpcRaftMessage { message: bytes };
 
         let timeout = Duration::from_millis(
             self.consensus_config.message_timeout_ticks * self.consensus_config.tick_period_ms,
         );
 
-        let result = self
+        let res = self
             .transport_channel_pool
             .with_channel_timeout(
                 &uri,
                 |channel| async {
                     let mut client = RaftClient::new(channel);
-                    let mut request = tonic::Request::new(message.clone());
+                    let mut request = tonic::Request::new(grpc_message.clone());
                     request.set_timeout(timeout);
                     client.send(request).await
                 },
@@ -891,10 +889,10 @@ impl RaftMessageSender {
             )
             .await;
 
-        if raft_message.msg_type == raft::eraftpb::MessageType::MsgSnapshot as i32 {
-            let result = self.consensus_state.report_snapshot(
-                raft_message.to,
-                if result.is_ok() {
+        if message.msg_type == raft::eraftpb::MessageType::MsgSnapshot as i32 {
+            let res = self.consensus_state.report_snapshot(
+                peer_id,
+                if res.is_ok() {
                     SnapshotStatus::Finish
                 } else {
                     SnapshotStatus::Failure
@@ -911,12 +909,12 @@ impl RaftMessageSender {
             // - ...or, if the consensus thread failed, then we should already have an error,
             //   and it will only produce more noise.
 
-            if let Err(err) = result {
+            if let Err(err) = res {
                 log::error!("{}", err);
             }
         }
 
-        match result {
+        match res {
             Ok(_) => self.consensus_state.record_message_send_success(&uri),
             Err(err) => self.consensus_state.record_message_send_failure(&uri, err),
         }
@@ -925,12 +923,13 @@ impl RaftMessageSender {
     }
 
     async fn uri(&mut self, peer_id: PeerId) -> anyhow::Result<Uri> {
-        match self
+        let uri = self
             .consensus_state
             .peer_address_by_id()
             .get(&peer_id)
-            .cloned()
-        {
+            .cloned();
+
+        match uri {
             Some(uri) => Ok(uri),
             None => self.who_is(peer_id).await,
         }
@@ -940,7 +939,7 @@ impl RaftMessageSender {
         let bootstrap_uri = self
             .bootstrap_uri
             .clone()
-            .ok_or_else(|| anyhow::format_err!("TODO"))?;
+            .ok_or_else(|| anyhow::format_err!("No bootstrap URI provided"))?;
 
         let bootstrap_timeout = Duration::from_secs(self.consensus_config.bootstrap_timeout_sec);
 
