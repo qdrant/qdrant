@@ -39,7 +39,7 @@ pub struct StorageConfig {
     pub snapshots_path: String,
     #[validate(length(min = 1))]
     #[serde(default)]
-    pub tmp_path: Option<String>,
+    pub temp_path: Option<String>,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
     #[validate]

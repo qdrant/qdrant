@@ -9,8 +9,8 @@ storage:
   snapshots_path: ./snapshots
 
   # Where to store temporary files
-  # If null, temporary snapshot are stored in: storage/snapshots_tmp/
-  tmp_path: null
+  # If null, temporary snapshot are stored in: storage/snapshots_temp/
+  temp_path: null
 
   # If true - point's payload will not be stored in memory.
   # It will be read from the disk every time it is requested.

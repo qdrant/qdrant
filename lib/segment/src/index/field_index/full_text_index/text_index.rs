@@ -271,7 +271,7 @@ mod tests {
             serde_json::json!("Yet now, for a day, perhaps for a week, even Multivac might celebrate the great time, and rest."),
         ];
 
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let config = TextIndexParams {
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::Word,
@@ -281,7 +281,7 @@ mod tests {
         };
 
         {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
             let mut index = FullTextIndex::new(db, config.clone(), "text");
 
@@ -332,7 +332,7 @@ mod tests {
         }
 
         {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
             let mut index = FullTextIndex::new(db, config, "text");
             let loaded = index.load().unwrap();
             assert!(loaded);

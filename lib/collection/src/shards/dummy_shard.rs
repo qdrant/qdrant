@@ -30,8 +30,8 @@ impl DummyShard {
     pub async fn create_snapshot(
         &self,
         _temp_path: &Path,
-        _: &Path,
-        _: bool,
+        _target_path: &Path,
+        _save_wal: bool,
     ) -> CollectionResult<()> {
         self.dummy()
     }

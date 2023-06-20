@@ -151,7 +151,7 @@ fn get_texts() -> Vec<String> {
 
 #[test]
 fn test_prefix_search() {
-    let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
         r#type: TextIndexType::Text,
         tokenizer: TokenizerType::Prefix,
@@ -160,7 +160,7 @@ fn test_prefix_search() {
         lowercase: None,
     };
 
-    let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+    let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
     let mut index = FullTextIndex::new(db, config, "text");
     index.recreate().unwrap();
 
