@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use bitvec::vec::BitVec;
+use bitvec::prelude::*;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
@@ -15,7 +15,6 @@ use crate::types::{
 pub(self) struct BinaryMemory {
     trues: BitVec,
     falses: BitVec,
-    indexed_count: usize,
 }
 
 /// Due to being able to store multi-values, the binary index is not a simple bitset, but rather a pair of bitsets, one for true values and one for false values.
@@ -31,7 +30,6 @@ impl BinaryMemory {
         Self {
             trues: BitVec::new(),
             falses: BitVec::new(),
-            indexed_count: 0,
         }
     }
 
@@ -59,7 +57,6 @@ impl BinaryMemory {
         if (id as usize) >= self.trues.len() {
             self.trues.resize(id as usize + 1, false);
             self.falses.resize(id as usize + 1, false);
-            self.indexed_count += 1;
         }
 
         debug_assert!(self.trues.len() == self.falses.len());
@@ -79,7 +76,6 @@ impl BinaryMemory {
         if (id as usize) < self.trues.len() {
             self.trues.set(id as usize, false);
             self.falses.set(id as usize, false);
-            self.indexed_count -= 1;
         }
 
         // shrink the vectors if possible
@@ -106,7 +102,7 @@ impl BinaryMemory {
     }
 
     pub fn indexed_count(&self) -> usize {
-        self.indexed_count
+        self.trues.count_ones().max(self.falses.count_ones())
     }
 
     pub fn iter(&self) -> BinaryMemoryIterator {
@@ -186,6 +182,20 @@ impl BinaryIndex {
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         matches!(self.memory.get(point_id), BinaryItem::None)
     }
+
+    /// Uses the first two bits of a u8 to encode the values first bit is for has_true, second is for has_false
+    fn encode_db_value(is_true: bool, is_false: bool) -> u8 {
+        let mut bv: BitVec<_, Lsb0> = BitVec::from_element(0u8);
+        bv.set(0, is_true);
+        bv.set(1, is_false);
+        bv.load::<u8>()
+    }
+
+    fn decode_db_value(encoded: u8) -> (bool, bool) {
+        let bv: BitVec<_, Lsb0> = BitVec::from_element(encoded);
+        // (has_true, has_false)
+        (bv[0], bv[1])
+    }
 }
 
 impl PayloadFieldIndex for BinaryIndex {
@@ -194,7 +204,27 @@ impl PayloadFieldIndex for BinaryIndex {
     }
 
     fn load(&mut self) -> crate::entry::entry_point::OperationResult<bool> {
-        todo!()
+        if !self.db_wrapper.has_column_family()? {
+            return Ok(false);
+        }
+
+        for (key, value) in self.db_wrapper.lock_db().iter()? {
+            let idx = PointOffsetType::from_be_bytes(key.as_ref().try_into().unwrap());
+            let value = value.as_ref().first().ok_or(OperationError::service_error(
+                "Expected a value in binary index",
+            ))?;
+
+            let (has_true, has_false) = Self::decode_db_value(*value);
+
+            if has_true {
+                self.memory.set_or_insert(idx, true);
+            }
+
+            if has_false {
+                self.memory.set_or_insert(idx, false);
+            }
+        }
+        Ok(true)
     }
 
     fn clear(self) -> crate::entry::entry_point::OperationResult<()> {
@@ -296,13 +326,19 @@ impl ValueIndexer<bool> for BinaryIndex {
             return Ok(());
         }
 
-        if values.iter().any(|v| *v) {
+        let (has_true, has_false) = (values.iter().any(|v| *v), values.iter().any(|v| !v));
+
+        if has_true {
             self.memory.set_or_insert(id, true);
         }
 
-        if values.iter().any(|v| !v) {
+        if has_false {
             self.memory.set_or_insert(id, false);
         }
+
+        let record = Self::encode_db_value(has_true, has_false);
+
+        self.db_wrapper.put(id.to_be_bytes(), [record])?;
 
         Ok(())
     }
@@ -316,6 +352,7 @@ impl ValueIndexer<bool> for BinaryIndex {
         id: PointOffsetType,
     ) -> crate::entry::entry_point::OperationResult<()> {
         self.memory.remove(id);
+        self.db_wrapper.remove(id.to_be_bytes())?;
         Ok(())
     }
 }
