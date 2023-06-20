@@ -823,6 +823,78 @@ impl VectorsConfig {
             VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
         }
     }
+
+    fn check_vector_params_compatibility(
+        self_params: &VectorParams,
+        other_params: &VectorParams,
+        vector_name: &str,
+    ) -> Result<(), CollectionError> {
+        if self_params.size != other_params.size {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: origin vector {} size: {}, while other vector size: {}",
+                    vector_name, self_params.size, other_params.size
+                )
+            });
+        }
+
+        if self_params.distance != other_params.distance {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: origin vector {} distance: {:?}, while other vector distance: {:?}",
+                    vector_name, self_params.distance, other_params.distance
+                )
+            });
+        }
+
+        Ok(())
+    }
+
+    pub fn check_compatible(&self, other: &Self) -> Result<(), CollectionError> {
+        match (self, other) {
+            (VectorsConfig::Single(self_single), VectorsConfig::Single(other_single)) => {
+                Self::check_vector_params_compatibility(
+                    self_single,
+                    other_single,
+                    DEFAULT_VECTOR_NAME,
+                )
+            }
+            (VectorsConfig::Multi(self_params), VectorsConfig::Multi(other_params)) => {
+                for (self_vector_name, self_vector_params) in self_params {
+                    if let Some(other_vector_params) = other_params.get(self_vector_name) {
+                        Self::check_vector_params_compatibility(
+                            self_vector_params,
+                            other_vector_params,
+                            self_vector_name,
+                        )?;
+                    } else {
+                        return Err(CollectionError::BadInput {
+                            description: format!(
+                                "Vectors configuration is not compatible: origin collection have vector {}, while other collection does not",
+                                self_vector_name
+                            )
+                        });
+                    }
+                }
+                Ok(())
+            }
+            _ => {
+                let self_vectors = self
+                    .params_iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let other_vectors = other
+                    .params_iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(CollectionError::BadInput {
+                    description: format!("Vectors configuration is not compatible: origin collection have vectors: [{}], while other vectors: [{}]", self_vectors, other_vectors)
+                })
+            }
+        }
+    }
 }
 
 impl Anonymize for VectorsConfig {
