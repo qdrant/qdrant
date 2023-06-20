@@ -252,6 +252,15 @@ mod tests {
         let mut borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
+        // Assert this storage lists both the vector and deleted file
+        let files = borrowed_storage.files();
+        for file_name in [VECTORS_PATH, DELETED_PATH] {
+            files
+                .iter()
+                .find(|p| p.file_name().unwrap() == file_name)
+                .expect("storage is missing required file");
+        }
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
