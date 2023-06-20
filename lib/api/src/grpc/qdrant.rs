@@ -2821,7 +2821,6 @@ pub struct SearchParams {
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
     /// Larger the value - more accurate the result, more time required for search.
     #[prost(uint64, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4")]
     pub hnsw_ef: ::core::option::Option<u64>,
     ///
     /// Search without approximation. If set to true, search may run long but with exact results.

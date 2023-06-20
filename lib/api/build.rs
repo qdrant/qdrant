@@ -151,7 +151,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPointGroups.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
             ("SearchPointGroups.group_size", "range(min = 1)"),
             ("SearchPointGroups.limit", "range(min = 1)"),
-            ("SearchParams.hnsw_ef", "custom = \"crate::grpc::validate::validate_u64_range_min_4\""),
             ("SearchParams.quantization", ""),
             ("QuantizationSearchParams.oversampling", "custom = \"crate::grpc::validate::validate_f64_range_min_1\""),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255)"),
