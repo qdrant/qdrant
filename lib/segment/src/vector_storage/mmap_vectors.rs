@@ -35,6 +35,7 @@ pub struct MmapVectors {
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Arc<Mmap>,
     /// Context for io_uring-base async IO
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     uring_reader: Mutex<UringReader>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
