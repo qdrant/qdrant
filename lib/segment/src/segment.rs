@@ -32,6 +32,7 @@ use crate::types::{
     SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::utils;
+use crate::utils::fs::find_symlink;
 use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -461,6 +462,14 @@ impl Segment {
             }
 
             let files_path = snapshot_path.join(SNAPSHOT_FILES_PATH);
+
+            if let Some(symlink) = find_symlink(&files_path) {
+                return Err(OperationError::service_error(format!(
+                    "Snapshot is corrupted, can't read file: {:?}",
+                    symlink
+                )));
+            }
+
             utils::fs::move_all(&files_path, &segment_path)?;
 
             fs::remove_dir_all(&snapshot_path).map_err(|err| {
