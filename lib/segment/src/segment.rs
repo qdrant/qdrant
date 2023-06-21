@@ -2049,4 +2049,156 @@ mod tests {
         assert_eq!(segment_info.num_points, 3);
         assert_eq!(segment_info.num_vectors, 4);
     }
+
+    /// Tests segment functions to ensure invalid requests do error
+    #[test]
+    fn test_vector_compatibility_checks() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let config = SegmentConfig {
+            vector_data: HashMap::from([
+                (
+                    "a".into(),
+                    VectorDataConfig {
+                        size: 4,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+                (
+                    "b".into(),
+                    VectorDataConfig {
+                        size: 2,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+            ]),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+        // Insert one point for a reference internal ID
+        let point_id = 4.into();
+        segment
+            .upsert_point(
+                100,
+                point_id,
+                &NamedVectors::from([
+                    ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                    ("b".into(), vec![1.0, 0.9]),
+                ]),
+            )
+            .unwrap();
+        let internal_id = segment.lookup_internal_id(point_id).unwrap();
+
+        // A set of broken vectors
+        let wrong_vectors_single = vec![
+            // Incorrect dimensionality
+            ("a", vec![]),
+            ("a", vec![0.0, 1.0, 0.0]),
+            ("a", vec![0.0, 1.0, 0.0, 1.0, 0.0]),
+            ("b", vec![]),
+            ("b", vec![0.5]),
+            ("b", vec![0.0, 0.1, 0.2, 0.3]),
+            // Incorrect names
+            ("aa", vec![0.0, 0.1, 0.2, 0.3]),
+            ("bb", vec![0.0, 0.1]),
+        ];
+        let wrong_vectors_multi = vec![
+            // Incorrect dimensionality
+            NamedVectors::from_ref("a", &[]),
+            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0]),
+            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0, 1.0, 0.0]),
+            NamedVectors::from_ref("b", &[]),
+            NamedVectors::from_ref("b", &[0.5]),
+            NamedVectors::from_ref("b", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3]),
+                ("b".into(), vec![1.0, 0.9]),
+            ]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("b".into(), vec![1.0, 0.9, 0.0]),
+            ]),
+            // Incorrect names
+            NamedVectors::from_ref("aa", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from_ref("bb", &[0.0, 0.1]),
+            NamedVectors::from([
+                ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("b".into(), vec![1.0, 0.9]),
+            ]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("bb".into(), vec![1.0, 0.9]),
+            ]),
+        ];
+        let wrong_names = vec!["aa", "bb", ""];
+
+        for (vector_name, vector) in wrong_vectors_single.iter() {
+            segment
+                .search(
+                    vector_name,
+                    vector,
+                    &WithPayload {
+                        enable: false,
+                        payload_selector: None,
+                    },
+                    &WithVector::Bool(true),
+                    None,
+                    1,
+                    None,
+                )
+                .err()
+                .unwrap();
+            segment
+                .search_batch(
+                    vector_name,
+                    &[vector, vector],
+                    &WithPayload {
+                        enable: false,
+                        payload_selector: None,
+                    },
+                    &WithVector::Bool(true),
+                    None,
+                    1,
+                    None,
+                )
+                .err()
+                .unwrap();
+        }
+
+        for vectors in wrong_vectors_multi {
+            segment.upsert_point(101, point_id, &vectors).err().unwrap();
+            segment
+                .update_vectors(internal_id, vectors.clone())
+                .err()
+                .unwrap();
+            segment
+                .insert_new_vectors(point_id, vectors.clone())
+                .err()
+                .unwrap();
+            segment
+                .replace_all_vectors(internal_id, vectors.clone())
+                .err()
+                .unwrap();
+        }
+
+        for wrong_name in wrong_names {
+            segment.vector(wrong_name, point_id).err().unwrap();
+            segment.vector_dim(wrong_name).err().unwrap();
+            segment
+                .delete_vector(101, point_id, wrong_name)
+                .err()
+                .unwrap();
+            segment.available_vector_count(wrong_name).err().unwrap();
+            segment
+                .vector_by_offset(wrong_name, internal_id)
+                .err()
+                .unwrap();
+        }
+    }
 }
