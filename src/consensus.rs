@@ -828,8 +828,9 @@ impl RaftMessageBroker {
                     }
                 }
 
+                // This should *never* happen...
                 Err(tokio::sync::mpsc::error::TrySendError::Closed(message)) => {
-                    panic!(
+                    unreachable!(
                         "Failed to forward message {message:?} to message sender task {peer_id}: \
                          message sender task queue is closed"
                     );
