@@ -769,16 +769,6 @@ impl SegmentEntry for Segment {
             let mut processed_vectors = NamedVectors::default();
             for (vector_name, vector) in vectors.iter() {
                 let vector_name: &str = vector_name;
-                let vector: &[VectorElementType] = vector;
-                let vector_data = &segment.vector_data[vector_name];
-                let vector_dim = vector_data.vector_storage.borrow().vector_dim();
-                if vector_dim != vector.len() {
-                    return Err(OperationError::WrongVector {
-                        expected_dim: vector_dim,
-                        received_dim: vector.len(),
-                    });
-                }
-
                 let processed_vector_opt = segment.segment_config.vector_data[vector_name]
                     .distance
                     .preprocess_vector(vector);
