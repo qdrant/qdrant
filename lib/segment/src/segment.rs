@@ -13,7 +13,9 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_vector_name, check_vectors_set, mmap_ops};
+use crate::common::{
+    check_named_vectors, check_vector, check_vector_name, check_vectors, mmap_ops,
+};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -130,7 +132,7 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
             match vector {
@@ -167,9 +169,10 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
-            self.vector_data[vector_name.as_ref()]
+            let vector_data = &self.vector_data[vector_name.as_ref()];
+            vector_data
                 .vector_storage
                 .borrow_mut()
                 .insert_vector(internal_id, new_vector.as_ref())?;
@@ -188,8 +191,8 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
+        check_named_vectors(&vectors, &self.segment_config)?;
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
-        check_vectors_set(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
@@ -724,16 +727,8 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        check_vector_name(vector_name, &self.segment_config)?;
+        check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
-        if vector.len() != expected_vector_dim {
-            return Err(OperationError::WrongVector {
-                expected_dim: expected_vector_dim,
-                received_dim: vector.len(),
-            });
-        }
-
         let internal_result =
             &vector_data
                 .vector_index
@@ -753,18 +748,8 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        check_vector_name(vector_name, &self.segment_config)?;
+        check_vectors(vector_name, vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
-        for vector in vectors {
-            if vector.len() != expected_vector_dim {
-                return Err(OperationError::WrongVector {
-                    expected_dim: expected_vector_dim,
-                    received_dim: vector.len(),
-                });
-            }
-        }
-
         let internal_results = vector_data
             .vector_index
             .borrow()
@@ -787,22 +772,12 @@ impl SegmentEntry for Segment {
         vectors: &NamedVectors,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(vectors, &self.segment_config)?;
+        check_named_vectors(vectors, &self.segment_config)?;
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
             let mut processed_vectors = NamedVectors::default();
             for (vector_name, vector) in vectors.iter() {
                 let vector_name: &str = vector_name;
-                let vector: &[VectorElementType] = vector;
-                let vector_data = &segment.vector_data[vector_name];
-                let vector_dim = vector_data.vector_storage.borrow().vector_dim();
-                if vector_dim != vector.len() {
-                    return Err(OperationError::WrongVector {
-                        expected_dim: vector_dim,
-                        received_dim: vector.len(),
-                    });
-                }
-
                 let processed_vector_opt = segment.segment_config.vector_data[vector_name]
                     .distance
                     .preprocess_vector(vector);
@@ -857,6 +832,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vectors: NamedVectors,
     ) -> OperationResult<bool> {
+        check_named_vectors(&vectors, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -877,6 +853,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vector_name: &str,
     ) -> OperationResult<bool> {
+        check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -982,6 +959,7 @@ impl SegmentEntry for Segment {
         vector_name: &str,
         point_id: PointIdType,
     ) -> OperationResult<Option<Vec<VectorElementType>>> {
+        check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
         Ok(vector_opt)
@@ -2079,5 +2057,160 @@ mod tests {
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
         assert_eq!(segment_info.num_vectors, 4);
+    }
+
+    /// Tests segment functions to ensure invalid requests do error
+    #[test]
+    fn test_vector_compatibility_checks() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let config = SegmentConfig {
+            vector_data: HashMap::from([
+                (
+                    "a".into(),
+                    VectorDataConfig {
+                        size: 4,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+                (
+                    "b".into(),
+                    VectorDataConfig {
+                        size: 2,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+            ]),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+        // Insert one point for a reference internal ID
+        let point_id = 4.into();
+        segment
+            .upsert_point(
+                100,
+                point_id,
+                &NamedVectors::from([
+                    ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                    ("b".into(), vec![1.0, 0.9]),
+                ]),
+            )
+            .unwrap();
+        let internal_id = segment.lookup_internal_id(point_id).unwrap();
+
+        // A set of broken vectors
+        let wrong_vectors_single = vec![
+            // Incorrect dimensionality
+            ("a", vec![]),
+            ("a", vec![0.0, 1.0, 0.0]),
+            ("a", vec![0.0, 1.0, 0.0, 1.0, 0.0]),
+            ("b", vec![]),
+            ("b", vec![0.5]),
+            ("b", vec![0.0, 0.1, 0.2, 0.3]),
+            // Incorrect names
+            ("aa", vec![0.0, 0.1, 0.2, 0.3]),
+            ("bb", vec![0.0, 0.1]),
+        ];
+        let wrong_vectors_multi = vec![
+            // Incorrect dimensionality
+            NamedVectors::from_ref("a", &[]),
+            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0]),
+            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0, 1.0, 0.0]),
+            NamedVectors::from_ref("b", &[]),
+            NamedVectors::from_ref("b", &[0.5]),
+            NamedVectors::from_ref("b", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3]),
+                ("b".into(), vec![1.0, 0.9]),
+            ]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("b".into(), vec![1.0, 0.9, 0.0]),
+            ]),
+            // Incorrect names
+            NamedVectors::from_ref("aa", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from_ref("bb", &[0.0, 0.1]),
+            NamedVectors::from([
+                ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("b".into(), vec![1.0, 0.9]),
+            ]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("bb".into(), vec![1.0, 0.9]),
+            ]),
+        ];
+        let wrong_names = vec!["aa", "bb", ""];
+
+        for (vector_name, vector) in wrong_vectors_single.iter() {
+            check_vector(vector_name, vector, &config).err().unwrap();
+            segment
+                .search(
+                    vector_name,
+                    vector,
+                    &WithPayload {
+                        enable: false,
+                        payload_selector: None,
+                    },
+                    &WithVector::Bool(true),
+                    None,
+                    1,
+                    None,
+                )
+                .err()
+                .unwrap();
+            segment
+                .search_batch(
+                    vector_name,
+                    &[vector, vector],
+                    &WithPayload {
+                        enable: false,
+                        payload_selector: None,
+                    },
+                    &WithVector::Bool(true),
+                    None,
+                    1,
+                    None,
+                )
+                .err()
+                .unwrap();
+        }
+
+        for vectors in wrong_vectors_multi {
+            check_named_vectors(&vectors, &config).err().unwrap();
+            segment.upsert_point(101, point_id, &vectors).err().unwrap();
+            segment
+                .update_vectors(internal_id, vectors.clone())
+                .err()
+                .unwrap();
+            segment
+                .insert_new_vectors(point_id, vectors.clone())
+                .err()
+                .unwrap();
+            segment
+                .replace_all_vectors(internal_id, vectors.clone())
+                .err()
+                .unwrap();
+        }
+
+        for wrong_name in wrong_names {
+            check_vector_name(wrong_name, &config).err().unwrap();
+            segment.vector(wrong_name, point_id).err().unwrap();
+            segment.vector_dim(wrong_name).err().unwrap();
+            segment
+                .delete_vector(101, point_id, wrong_name)
+                .err()
+                .unwrap();
+            segment.available_vector_count(wrong_name).err().unwrap();
+            segment
+                .vector_by_offset(wrong_name, internal_id)
+                .err()
+                .unwrap();
+        }
     }
 }
