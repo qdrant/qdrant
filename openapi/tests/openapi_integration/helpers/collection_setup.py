@@ -1,3 +1,5 @@
+import os
+
 from .helpers import request_with_validation
 
 
@@ -10,7 +12,13 @@ def drop_collection(collection_name='test_collection'):
     assert response.ok
 
 
-def basic_collection_setup(collection_name='test_collection', on_disk_payload=False):
+def basic_collection_setup(
+        collection_name='test_collection',
+        on_disk_payload=False,
+        on_disk_vectors=None,
+):
+    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS'), 0))
+
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -25,7 +33,8 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
         body={
             "vectors": {
                 "size": 4,
-                "distance": "Dot"
+                "distance": "Dot",
+                "on_disk": on_disk_vectors
             },
             "on_disk_payload": on_disk_payload
         }
@@ -91,7 +100,12 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
     assert response.ok
 
 
-def multivec_collection_setup(collection_name='test_collection', on_disk_payload=False):
+def multivec_collection_setup(
+        collection_name='test_collection',
+        on_disk_payload=False,
+        on_disk_vectors=None,
+):
+    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS'), 0))
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -107,11 +121,13 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_payload
             "vectors": {
                 "image": {
                     "size": 4,
-                    "distance": "Dot"
+                    "distance": "Dot",
+                    "on_disk": on_disk_vectors
                 },
                 "text": {
                     "size": 8,
-                    "distance": "Cosine"
+                    "distance": "Cosine",
+                    "on_disk": on_disk_vectors
                 }
             },
             "on_disk_payload": on_disk_payload
