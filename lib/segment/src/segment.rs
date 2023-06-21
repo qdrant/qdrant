@@ -13,7 +13,9 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_vector, check_vector_name, check_vectors, check_vectors_set, mmap_ops};
+use crate::common::{
+    check_named_vectors, check_vector, check_vector_name, check_vectors, mmap_ops,
+};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -129,7 +131,7 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
             match vector {
@@ -166,7 +168,7 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             vector_data
@@ -188,7 +190,7 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
@@ -761,7 +763,7 @@ impl SegmentEntry for Segment {
         vectors: &NamedVectors,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(vectors, &self.segment_config)?;
+        check_named_vectors(vectors, &self.segment_config)?;
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
             let mut processed_vectors = NamedVectors::default();
@@ -831,7 +833,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vectors: NamedVectors,
     ) -> OperationResult<bool> {
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
