@@ -1432,7 +1432,7 @@ impl Collection {
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
-                    .create_snapshot(&shard_snapshot_path, save_wal)
+                    .create_snapshot(temp_dir, &shard_snapshot_path, save_wal)
                     .await?;
             }
         }

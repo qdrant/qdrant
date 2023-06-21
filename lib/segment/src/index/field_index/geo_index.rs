@@ -639,8 +639,8 @@ mod tests {
     }
 
     fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
@@ -747,8 +747,8 @@ mod tests {
 
     #[test]
     fn match_cardinality_point_with_multi_far_geo_payload() {
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -808,8 +808,8 @@ mod tests {
 
     #[test]
     fn match_cardinality_point_with_multi_close_geo_payload() {
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -843,9 +843,9 @@ mod tests {
 
     #[test]
     fn load_from_disk() {
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
             let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -867,7 +867,7 @@ mod tests {
             drop(index);
         }
 
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
         new_index.load().unwrap();
 
@@ -883,9 +883,9 @@ mod tests {
 
     #[test]
     fn same_geo_index_between_points_test() {
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
             let mut index = GeoMapIndex::new(db, FIELD_NAME);
             index.recreate().unwrap();
 
@@ -910,7 +910,7 @@ mod tests {
             drop(index);
         }
 
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
         new_index.load().unwrap();
         assert_eq!(new_index.points_count, 1);

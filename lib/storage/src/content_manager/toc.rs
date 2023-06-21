@@ -61,7 +61,7 @@ use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
-pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
+pub const SNAPSHOTS_TEMP_DIR: &str = "snapshots_temp";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidden";
 
@@ -104,6 +104,10 @@ impl TableOfContent {
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
+        if let Some(path) = storage_config.temp_path.as_deref() {
+            let temp_path = Path::new(path);
+            create_dir_all(temp_path).expect("Can't create temporary files directory");
+        }
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
@@ -210,6 +214,18 @@ impl TableOfContent {
 
     pub fn snapshots_path(&self) -> &str {
         &self.storage_config.snapshots_path
+    }
+
+    pub fn temp_path(&self) -> Option<&str> {
+        self.storage_config.temp_path.as_deref()
+    }
+
+    /// Get path for temporary storage files.
+    ///
+    /// Defaults to `storage_path()`.
+    /// A user may specify `storage.temp_path` to override this.
+    pub fn temp_storage_path(&self) -> &Path {
+        Path::new(self.temp_path().unwrap_or_else(|| self.storage_path()))
     }
 
     fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
@@ -1450,12 +1466,12 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<SnapshotDescription, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        // We want to use tmp dir inside the storage, because it is possible, that
+        // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
-        let tmp_dir = Path::new(&self.storage_config.storage_path).join(SNAPSHOTS_TMP_DIR);
-        tokio::fs::create_dir_all(&tmp_dir).await?;
+        let temp_dir = self.temp_storage_path().join(SNAPSHOTS_TEMP_DIR);
+        tokio::fs::create_dir_all(&temp_dir).await?;
         Ok(collection
-            .create_snapshot(&tmp_dir, self.this_peer_id)
+            .create_snapshot(&temp_dir, self.this_peer_id)
             .await?)
     }
 

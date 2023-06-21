@@ -66,16 +66,31 @@ impl Shard {
 
     pub async fn create_snapshot(
         &self,
+        temp_path: &Path,
         target_path: &Path,
         save_wal: bool,
     ) -> CollectionResult<()> {
         match self {
-            Shard::Local(local_shard) => local_shard.create_snapshot(target_path, save_wal).await,
-            Shard::Proxy(proxy_shard) => proxy_shard.create_snapshot(target_path, save_wal).await,
-            Shard::ForwardProxy(proxy_shard) => {
-                proxy_shard.create_snapshot(target_path, save_wal).await
+            Shard::Local(local_shard) => {
+                local_shard
+                    .create_snapshot(temp_path, target_path, save_wal)
+                    .await
             }
-            Shard::Dummy(dummy_shard) => dummy_shard.create_snapshot(target_path, save_wal).await,
+            Shard::Proxy(proxy_shard) => {
+                proxy_shard
+                    .create_snapshot(temp_path, target_path, save_wal)
+                    .await
+            }
+            Shard::ForwardProxy(proxy_shard) => {
+                proxy_shard
+                    .create_snapshot(temp_path, target_path, save_wal)
+                    .await
+            }
+            Shard::Dummy(dummy_shard) => {
+                dummy_shard
+                    .create_snapshot(temp_path, target_path, save_wal)
+                    .await
+            }
         }
     }
 
