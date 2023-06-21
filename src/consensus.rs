@@ -811,9 +811,30 @@ impl RaftMessageBroker {
                 }
             };
 
-            sender
-                .blocking_send(message)
-                .expect("successfully forwarded message to message sender task");
+            match sender.try_send(message) {
+                Ok(()) => (),
+
+                Err(tokio::sync::mpsc::error::TrySendError::Full(message)) => {
+                    if log::max_level() >= log::Level::Debug {
+                        log::error!(
+                            "Failed to forward message {message:?} to message sender task {peer_id}: \
+                             message sender taks queue is full"
+                        );
+                    } else {
+                        log::error!(
+                            "Failed to forward message to message sender task {peer_id}: \
+                             message sender task queue is full"
+                        );
+                    }
+                }
+
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(message)) => {
+                    panic!(
+                        "Failed to forward message {message:?} to message sender task {peer_id}: \
+                         message sender task queue is closed"
+                    );
+                }
+            }
         }
     }
 
