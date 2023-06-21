@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use collection::collection::Collection;
 use collection::config::CollectionConfig;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
