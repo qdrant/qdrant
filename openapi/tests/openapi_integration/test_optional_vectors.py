@@ -158,6 +158,35 @@ def test_upsert_partial_vectors():
 
 
 def update_vectors():
+    POINT_ID = 1000
+
+    # Put empty vector first
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": POINT_ID,
+                    "vector": {},
+                    "payload": {"city": "Berlin"}
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    assert result["vector"].get("text") is None
+
     text_vector = [0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98]
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
@@ -167,7 +196,7 @@ def update_vectors():
         body={
             "points": [
                 {
-                    "id": 1,
+                    "id": POINT_ID,
                     "vector": {
                         "text": text_vector,
                     }
@@ -180,11 +209,12 @@ def update_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'collection_name': collection_name, 'id': 1},
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
     )
     assert response.ok
     result = response.json()["result"]
     assert result["vector"]["text"] == text_vector
+    assert result["payload"]["city"] == "Berlin"
 
     text_vector = [0.12, 0.34, 0.56, 0.78, 0.90, 0.12, 0.34, 0.56]
     image_vector = [0.19, 0.28, 0.37, 0.46]
@@ -196,7 +226,7 @@ def update_vectors():
         body={
             "points": [
                 {
-                    "id": 1,
+                    "id": POINT_ID,
                     "vector": {
                         "text": text_vector,
                         "image": image_vector,
@@ -210,7 +240,7 @@ def update_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'collection_name': collection_name, 'id': 1},
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
     )
     assert response.ok
     result = response.json()["result"]
@@ -226,7 +256,7 @@ def update_vectors():
         body={
             "points": [
                 {
-                    "id": 1,
+                    "id": POINT_ID,
                     "vector": {
                         "image": image_vector,
                     }
@@ -239,7 +269,7 @@ def update_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'collection_name': collection_name, 'id': 1},
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
     )
     assert response.ok
     result = response.json()["result"]
