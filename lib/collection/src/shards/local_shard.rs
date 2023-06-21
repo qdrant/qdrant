@@ -559,7 +559,7 @@ impl LocalShard {
             rx.await?;
         }
 
-        let temp_path = temp_path.join(format!("{}.snapshot", Uuid::new_v4()));
+        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
         create_dir_all(&temp_path).await?;
 
         tokio::task::spawn_blocking(move || {
