@@ -818,7 +818,7 @@ impl RaftMessageBroker {
                     if log::max_level() >= log::Level::Debug {
                         log::error!(
                             "Failed to forward message {message:?} to message sender task {peer_id}: \
-                             message sender taks queue is full"
+                             message sender task queue is full"
                         );
                     } else {
                         log::error!(
