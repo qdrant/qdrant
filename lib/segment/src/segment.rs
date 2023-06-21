@@ -2139,6 +2139,7 @@ mod tests {
         let wrong_names = vec!["aa", "bb", ""];
 
         for (vector_name, vector) in wrong_vectors_single.iter() {
+            check_vector(vector_name, vector, &config).err().unwrap();
             segment
                 .search(
                     vector_name,
@@ -2172,6 +2173,7 @@ mod tests {
         }
 
         for vectors in wrong_vectors_multi {
+            check_named_vectors(&vectors, &config).err().unwrap();
             segment.upsert_point(101, point_id, &vectors).err().unwrap();
             segment
                 .update_vectors(internal_id, vectors.clone())
@@ -2188,6 +2190,7 @@ mod tests {
         }
 
         for wrong_name in wrong_names {
+            check_vector_name(wrong_name, &config).err().unwrap();
             segment.vector(wrong_name, point_id).err().unwrap();
             segment.vector_dim(wrong_name).err().unwrap();
             segment
