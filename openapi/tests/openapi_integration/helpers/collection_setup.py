@@ -17,7 +17,7 @@ def basic_collection_setup(
         on_disk_payload=False,
         on_disk_vectors=None,
 ):
-    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS'), 0))
+    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -105,7 +105,7 @@ def multivec_collection_setup(
         on_disk_payload=False,
         on_disk_vectors=None,
 ):
-    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS'), 0))
+    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
