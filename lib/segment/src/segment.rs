@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_vector_name, check_vectors_set, mmap_ops};
+use crate::common::{check_vector, check_vector_name, check_vectors, check_vectors_set, mmap_ops};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -169,16 +169,10 @@ impl Segment {
         check_vectors_set(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
-            let mut vector_storage = vector_data.vector_storage.borrow_mut();
-            let vector_dim = vector_storage.vector_dim();
-            if vector_dim != new_vector.len() {
-                return Err(OperationError::WrongVector {
-                    expected_dim: vector_dim,
-                    received_dim: new_vector.len(),
-                });
-            }
-
-            vector_storage.insert_vector(internal_id, new_vector.as_ref())?;
+            vector_data
+                .vector_storage
+                .borrow_mut()
+                .insert_vector(internal_id, new_vector.as_ref())?;
         }
         Ok(())
     }
@@ -194,8 +188,8 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
-        let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
         check_vectors_set(&vectors, &self.segment_config)?;
+        let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
@@ -722,16 +716,8 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        check_vector_name(vector_name, &self.segment_config)?;
+        check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
-        if vector.len() != expected_vector_dim {
-            return Err(OperationError::WrongVector {
-                expected_dim: expected_vector_dim,
-                received_dim: vector.len(),
-            });
-        }
-
         let internal_result =
             &vector_data
                 .vector_index
@@ -751,18 +737,8 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        check_vector_name(vector_name, &self.segment_config)?;
+        check_vectors(vector_name, vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
-        for vector in vectors {
-            if vector.len() != expected_vector_dim {
-                return Err(OperationError::WrongVector {
-                    expected_dim: expected_vector_dim,
-                    received_dim: vector.len(),
-                });
-            }
-        }
-
         let internal_results = vector_data
             .vector_index
             .borrow()
@@ -855,6 +831,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vectors: NamedVectors,
     ) -> OperationResult<bool> {
+        check_vectors_set(&vectors, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -875,6 +852,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vector_name: &str,
     ) -> OperationResult<bool> {
+        check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -980,6 +958,7 @@ impl SegmentEntry for Segment {
         vector_name: &str,
         point_id: PointIdType,
     ) -> OperationResult<Option<Vec<VectorElementType>>> {
+        check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
         Ok(vector_opt)
