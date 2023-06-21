@@ -97,10 +97,9 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .await
     .unwrap();
 
-    let snapshots_tmp_dir = collection_dir.path().join("snapshots_tmp");
-    std::fs::create_dir_all(&snapshots_tmp_dir).unwrap();
+    let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let snapshot_description = collection
-        .create_snapshot(&snapshots_tmp_dir, 0)
+        .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
 

@@ -1339,11 +1339,15 @@ impl SegmentEntry for Segment {
             .collect()
     }
 
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf> {
+    fn take_snapshot(
+        &self,
+        temp_path: &Path,
+        snapshot_dir_path: &Path,
+    ) -> OperationResult<PathBuf> {
         log::debug!(
             "Taking snapshot of segment {:?} into {:?}",
             self.current_path,
-            snapshot_dir_path
+            snapshot_dir_path,
         );
 
         if !snapshot_dir_path.exists() {
@@ -1361,10 +1365,9 @@ impl SegmentEntry for Segment {
         // flush segment to capture latest state
         self.flush(true)?;
 
-        let tmp_path = self.current_path.join(format!("tmp-{}", Uuid::new_v4()));
-
-        let db_backup_path = tmp_path.join(DB_BACKUP_PATH);
-        let payload_index_db_backup_path = tmp_path.join(PAYLOAD_DB_BACKUP_PATH);
+        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
+        let db_backup_path = temp_path.join(DB_BACKUP_PATH);
+        let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
 
         {
             let db = self.database.read();
@@ -1393,8 +1396,8 @@ impl SegmentEntry for Segment {
         let mut builder = Builder::new(file);
 
         builder
-            .append_dir_all(SNAPSHOT_PATH, &tmp_path)
-            .map_err(|err| utils::tar::failed_to_append_error(&tmp_path, err))?;
+            .append_dir_all(SNAPSHOT_PATH, &temp_path)
+            .map_err(|err| utils::tar::failed_to_append_error(&temp_path, err))?;
 
         let files = Path::new(SNAPSHOT_PATH).join(SNAPSHOT_FILES_PATH);
 
@@ -1443,11 +1446,11 @@ impl SegmentEntry for Segment {
 
         // remove tmp directory in background
         let _ = std::thread::spawn(move || {
-            let res = std::fs::remove_dir_all(&tmp_path);
+            let res = std::fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
                     "Failed to remove tmp directory at {}: {:?}",
-                    tmp_path.display(),
+                    temp_path.display(),
                     err
                 );
             }
@@ -1714,9 +1717,12 @@ mod tests {
             .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
 
         // snapshotting!
-        let archive = segment.take_snapshot(snapshot_dir.path()).unwrap();
+        let archive = segment
+            .take_snapshot(temp_dir.path(), snapshot_dir.path())
+            .unwrap();
         let archive_extension = archive.extension().unwrap();
         let archive_name = archive.file_name().unwrap().to_str().unwrap().to_string();
 

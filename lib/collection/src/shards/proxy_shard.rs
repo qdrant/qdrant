@@ -64,11 +64,12 @@ impl ProxyShard {
     /// Forward `create_snapshot` to `wrapped_shard`
     pub async fn create_snapshot(
         &self,
+        temp_path: &Path,
         target_path: &Path,
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.wrapped_shard
-            .create_snapshot(target_path, save_wal)
+            .create_snapshot(temp_path, target_path, save_wal)
             .await
     }
 

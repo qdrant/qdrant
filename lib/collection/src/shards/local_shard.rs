@@ -24,6 +24,7 @@ use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
+use uuid::Uuid;
 use wal::{Wal, WalOptions};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
@@ -531,9 +532,10 @@ impl LocalShard {
         Ok(())
     }
 
-    /// create snapshot for local shard into `target_path`
+    /// Create snapshot for local shard into `target_path`
     pub async fn create_snapshot(
         &self,
+        temp_path: &Path,
         target_path: &Path,
         save_wal: bool,
     ) -> CollectionResult<()> {
@@ -557,11 +559,14 @@ impl LocalShard {
             rx.await?;
         }
 
+        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
+        create_dir_all(&temp_path).await?;
+
         tokio::task::spawn_blocking(move || {
             let segments_read = segments.read();
 
             // Do not change segments while snapshotting
-            segments_read.snapshot_all_segments(&snapshot_segments_shard_path)?;
+            segments_read.snapshot_all_segments(&temp_path, &snapshot_segments_shard_path)?;
 
             if save_wal {
                 // snapshot all shard's WAL
