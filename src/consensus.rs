@@ -877,8 +877,53 @@ struct RaftMessageSender {
 
 impl RaftMessageSender {
     pub async fn exec(mut self) {
-        while let Some(message) = self.messages.recv().await {
-            self.send(&message).await;
+        let mut heartbeat = None;
+
+        loop {
+            // Try to get a message from the queue without waiting
+            let mut message = match self.messages.try_recv() {
+                Ok(message) => Some(message),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => None,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+            };
+
+            // If the queue is empty and there's no heartbeat to send, wait for the next message
+            if message.is_none() && heartbeat.is_none() {
+                message = self.messages.recv().await;
+            }
+
+            // Check if the message is a heartbeat...
+            let is_heartbeat = message.as_ref().map_or(false, |message| {
+                message.msg_type == raft::eraftpb::MessageType::MsgHeartbeat as i32
+            });
+
+            // ...and if it is, replace the earlier one and try to get the next message from the queue
+            if is_heartbeat {
+                heartbeat = message;
+                continue;
+            }
+
+            // At this point, if the message is `Some`, then it is not a heartbeat,
+            // and so we can send it right away and an earlier heartbeat (if any) can be skipped
+            if message.is_some() {
+                heartbeat = None;
+            }
+
+            // At this point, three conditions should be possible:
+            //
+            // - the message is `Some`
+            //   - (and if so, it should be a non-heartbeat one, and heartbeat should be `None`)
+            //   - which means we just got a message from the queue that we should send
+            //
+            // - the message is `None` and heartbeat is `Some`
+            //   - which means we just exhausted the queue, but we have an up-to-date heartbeat that we should send
+            //
+            // - or both the message and the hearbeat is `None`
+            //   - which means the queue has been closed
+            match message.or_else(|| heartbeat.take()) {
+                Some(message) => self.send(&message).await,
+                None => break,
+            }
         }
     }
 
