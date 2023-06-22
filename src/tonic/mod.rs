@@ -19,7 +19,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tokio::runtime::Handle;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
@@ -46,9 +46,16 @@ impl Qdrant for QdrantService {
     }
 }
 
+#[cfg(not(unix))]
 async fn wait_stop_signal(for_what: &str) {
-    let mut term = signal(SignalKind::terminate()).unwrap();
-    let mut inrt = signal(SignalKind::interrupt()).unwrap();
+    signal::ctrl_c().await.unwrap();
+    log::debug!("Stopping {} on SIGINT", for_what)
+}
+
+#[cfg(unix)]
+async fn wait_stop_signal(for_what: &str) {
+    let mut term = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+    let mut inrt = signal::unix::signal(signal::unix::SignalKind::interrupt()).unwrap();
 
     tokio::select! {
         _ = term.recv() => log::debug!("Stopping {} on SIGTERM", for_what),
