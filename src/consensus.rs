@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{mpsc, Arc};
-use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+use std::{fmt, thread};
 
 use anyhow::{anyhow, Context};
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
@@ -12,14 +12,13 @@ use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftM
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
+use prost::Message as _;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
-use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
-use storage::types::PeerAddressById;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
@@ -51,10 +50,8 @@ pub struct Consensus {
     runtime: Handle,
     /// Uri to some other known peer, used to join the consensus
     /// ToDo: Make if many
-    bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
-    channel_service: ChannelService,
-    tls_config: Option<ClientTlsConfig>,
+    broker: RaftMessageBroker,
 }
 
 impl Consensus {
@@ -222,14 +219,21 @@ impl Consensus {
         // They might have not been applied due to unplanned Qdrant shutdown
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
 
+        let broker = RaftMessageBroker::new(
+            runtime.clone(),
+            bootstrap_peer,
+            tls_config,
+            config.clone(),
+            node.store().clone(),
+            channel_service.channel_pool,
+        );
+
         let consensus = Self {
             node,
             receiver,
             runtime,
-            bootstrap_uri: bootstrap_peer,
             config,
-            channel_service,
-            tls_config,
+            broker,
         };
 
         Ok((consensus, sender))
@@ -649,14 +653,10 @@ impl Consensus {
         mut ready: raft::Ready,
     ) -> anyhow::Result<(Option<raft::LightReady>, Option<StateRole>)> {
         let store = self.store();
-        let peer_address_by_id = store.peer_address_by_id();
 
         if !ready.messages().is_empty() {
             log::trace!("Handling {} messages", ready.messages().len());
-            if let Err(err) = self.send_messages(ready.take_messages(), peer_address_by_id.clone())
-            {
-                log::warn!("Failed to send messages: {err}")
-            }
+            self.send_messages(ready.take_messages());
         }
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
@@ -690,11 +690,7 @@ impl Consensus {
                 "Handling {} persisted messages",
                 ready.persisted_messages().len()
             );
-            if let Err(err) =
-                self.send_messages(ready.take_persisted_messages(), peer_address_by_id)
-            {
-                log::error!("Failed to send persisted messages: {err}")
-            }
+            self.send_messages(ready.take_persisted_messages());
         }
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
         let stop_consensus =
@@ -717,7 +713,6 @@ impl Consensus {
     /// If it receives message to stop the consensus - returns `true`, otherwise `false`.
     fn process_light_ready(&mut self, mut light_rd: raft::LightReady) -> anyhow::Result<bool> {
         let store = self.store();
-        let peer_address_by_id = store.peer_address_by_id();
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
             log::debug!("Updating commit index to {commit}");
@@ -725,9 +720,7 @@ impl Consensus {
                 .set_commit_index(commit)
                 .map_err(|err| anyhow!("Failed to set commit index: {}", err))?;
         }
-        if let Err(err) = self.send_messages(light_rd.take_messages(), peer_address_by_id) {
-            log::warn!("Failed to send messages: {err}")
-        }
+        self.send_messages(light_rd.take_messages());
         // Apply all committed entries.
         let stop_consensus =
             handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
@@ -746,63 +739,8 @@ impl Consensus {
         store.set_raft_soft_state(state);
     }
 
-    fn send_messages(
-        &self,
-        messages: Vec<RaftMessage>,
-        peer_address_by_id: PeerAddressById,
-    ) -> Result<(), StorageError> {
-        let messages_with_address: Vec<_> = messages
-            .into_iter()
-            .map(|message| {
-                let address = peer_address_by_id.get(&message.to).cloned();
-                (message, address)
-            })
-            .collect();
-        let bootstrap_uri = self.bootstrap_uri.clone();
-        let consensus_config_arc = Arc::new(self.config.clone());
-        let message_timeout = Duration::from_millis(
-            consensus_config_arc.tick_period_ms * consensus_config_arc.message_timeout_ticks,
-        );
-        let pool = self.channel_service.channel_pool.clone();
-        let store = self.store();
-        let tls_config = self.tls_config.clone();
-        let future = async move {
-            let mut send_futures = Vec::new();
-            for (message, address) in messages_with_address {
-                let address = match address {
-                    Some(address) => address,
-                    None => match who_is(
-                        message.to,
-                        bootstrap_uri.clone(),
-                        consensus_config_arc.clone(),
-                        tls_config.clone(),
-                    )
-                    .await
-                    {
-                        Ok(address) => address,
-                        Err(_) => {
-                            log::warn!(
-                                "Address of peer with ID {} not found. Message {:?} was not sent to it.",
-                                message.to, message
-                            );
-                            continue;
-                        }
-                    },
-                };
-                send_futures.push(send_message(
-                    address,
-                    message,
-                    pool.clone(),
-                    store.clone(),
-                    message_timeout,
-                ));
-            }
-            futures::future::join_all(send_futures).await;
-        };
-        // Raft does not need the responses and should not wait for timeouts
-        // so sending messages in parallel should be ok
-        self.runtime.spawn(future);
-        Ok(())
+    fn send_messages(&mut self, messages: Vec<RaftMessage>) {
+        self.broker.send(messages);
     }
 }
 
@@ -822,92 +760,241 @@ fn handle_committed_entries(
     Ok(stop_consensus)
 }
 
-async fn who_is(
-    peer_id: collection::shards::shard::PeerId,
+struct RaftMessageBroker {
+    senders: HashMap<PeerId, Sender<RaftMessage>>,
+    runtime: Handle,
     bootstrap_uri: Option<Uri>,
-    config: Arc<ConsensusConfig>,
     tls_config: Option<ClientTlsConfig>,
-) -> anyhow::Result<Uri> {
-    log::debug!("Resolving who is {peer_id}");
-    let bootstrap_uri =
-        bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
-    let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
-    // Use dedicated transport channel for who_is because of specific timeout
-    let channel = make_grpc_channel(
-        bootstrap_timeout,
-        bootstrap_timeout,
-        bootstrap_uri,
-        tls_config,
-    )
-    .await
-    .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
-    let mut client = RaftClient::new(channel);
-    Ok(client
-        .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
-        .await?
-        .into_inner()
-        .uri
-        .parse()?)
+    consensus_config: Arc<ConsensusConfig>,
+    consensus_state: ConsensusStateRef,
+    transport_channel_pool: Arc<TransportChannelPool>,
 }
 
-async fn send_message(
-    address: Uri,
-    message: RaftMessage,
-    transport_channel_pool: Arc<TransportChannelPool>,
-    store: ConsensusStateRef,
-    timeout: Duration,
-) {
-    let is_snapshot = message.msg_type == raft::eraftpb::MessageType::MsgSnapshot as i32;
-    let peer_id = message.to;
-
-    let mut bytes = Vec::new();
-    if let Err(err) = <RaftMessage as prost::Message>::encode(&message, &mut bytes) {
-        format!("Failed to serialize Raft message: {err}");
-    }
-    let message = &GrpcRaftMessage { message: bytes };
-
-    let result = transport_channel_pool
-        .with_channel_timeout(
-            &address,
-            |channel| async move {
-                let mut client = RaftClient::new(channel);
-                let mut request = tonic::Request::new(message.clone());
-                request.set_timeout(timeout);
-                client.send(request).await
-            },
-            Some(timeout),
-            0,
-        )
-        .await;
-
-    if is_snapshot {
-        // Should we ignore the error? Seems like it will only produce noise.
-        //
-        // - `send_message` is only called by the sub-task spawned by the consnsus thread.
-        // - `report_snapshot` sends a message back to the consensus thread.
-        // - It can only fail, if the "receiver" end of the channel is closed.
-        // - Which means consensus thread either resolved successfully, or failed.
-        // - So, if the consensus thread is shutting down, no need to log a misleading error...
-        // - ...or, if the consensus thread failed, then we should already have an error,
-        //   and it will only produce more noise.
-
-        let res = store.report_snapshot(
-            peer_id,
-            if result.is_ok() {
-                SnapshotStatus::Finish
-            } else {
-                SnapshotStatus::Failure
-            },
-        );
-
-        if let Err(err) = res {
-            log::error!("{}", err);
+impl RaftMessageBroker {
+    pub fn new(
+        runtime: Handle,
+        bootstrap_uri: Option<Uri>,
+        tls_config: Option<ClientTlsConfig>,
+        consensus_config: ConsensusConfig,
+        consensus_state: ConsensusStateRef,
+        transport_channel_pool: Arc<TransportChannelPool>,
+    ) -> Self {
+        Self {
+            senders: HashMap::new(),
+            runtime,
+            bootstrap_uri,
+            tls_config,
+            consensus_config: consensus_config.into(),
+            consensus_state,
+            transport_channel_pool,
         }
     }
 
-    match result {
-        Ok(_) => store.record_message_send_success(&address),
-        Err(err) => store.record_message_send_failure(&address, err),
+    pub fn send(&mut self, messages: impl IntoIterator<Item = RaftMessage>) {
+        let mut messages = messages.into_iter();
+        let mut retry = None;
+
+        while let Some(message) = retry.take().or_else(|| messages.next()) {
+            let peer_id = message.to;
+
+            let sender = match self.senders.get(&peer_id) {
+                Some(sender) => sender,
+                None => {
+                    log::debug!("Spawning message sender task for peer {peer_id}...");
+
+                    let (task, handle) = self.message_sender();
+                    let future = self.runtime.spawn(task.exec());
+                    drop(future); // drop `JoinFuture` explicitly to make clippy happy
+
+                    self.senders.insert(peer_id, handle);
+
+                    self.senders
+                        .get(&peer_id)
+                        .expect("message sender task spawned")
+                }
+            };
+
+            let failed_to_forward = |message: &RaftMessage, description: &str| {
+                let peer_id = message.to;
+
+                let is_debug = log::max_level() >= log::Level::Debug;
+                let space = if is_debug { " " } else { "" };
+                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" };
+
+                log::error!(
+                    "Failed to forward message{space}{message:?} to message sender task {peer_id}: \
+                     {description}"
+                );
+            };
+
+            match sender.try_send(message) {
+                Ok(()) => (),
+
+                Err(tokio::sync::mpsc::error::TrySendError::Full(message)) => {
+                    failed_to_forward(
+                        &message,
+                        "message sender task queue is full. Message will be dropped.",
+                    );
+                }
+
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(message)) => {
+                    failed_to_forward(
+                        &message,
+                        "message sender task queue is closed. \
+                         Message sender task will be restarted and message will be retried.",
+                    );
+
+                    self.senders.remove(&peer_id);
+                    retry = Some(message);
+                }
+            }
+        }
+    }
+
+    fn message_sender(&self) -> (RaftMessageSender, Sender<RaftMessage>) {
+        let (handle, messages) = tokio::sync::mpsc::channel(128);
+
+        let task = RaftMessageSender {
+            messages,
+            bootstrap_uri: self.bootstrap_uri.clone(),
+            tls_config: self.tls_config.clone(),
+            consensus_config: self.consensus_config.clone(),
+            consensus_state: self.consensus_state.clone(),
+            transport_channel_pool: self.transport_channel_pool.clone(),
+        };
+
+        (task, handle)
+    }
+}
+
+struct RaftMessageSender {
+    messages: Receiver<RaftMessage>,
+    bootstrap_uri: Option<Uri>,
+    tls_config: Option<ClientTlsConfig>,
+    consensus_config: Arc<ConsensusConfig>,
+    consensus_state: ConsensusStateRef,
+    transport_channel_pool: Arc<TransportChannelPool>,
+}
+
+impl RaftMessageSender {
+    pub async fn exec(mut self) {
+        while let Some(message) = self.messages.recv().await {
+            self.send(&message).await;
+        }
+    }
+
+    async fn send(&mut self, message: &RaftMessage) {
+        if let Err(err) = self.try_send(message).await {
+            let peer_id = message.to;
+
+            if log::max_level() >= log::Level::Debug {
+                log::error!("Failed to send Raft message {message:?} to peer {peer_id}: {err}");
+            } else {
+                log::error!("Failed to send Raft message to peer {peer_id}: {err}");
+            }
+        }
+    }
+
+    async fn try_send(&mut self, message: &RaftMessage) -> anyhow::Result<()> {
+        let peer_id = message.to;
+
+        let uri = self.uri(peer_id).await?;
+
+        let mut bytes = Vec::new();
+        RaftMessage::encode(message, &mut bytes).context("failed to encode Raft message")?;
+        let grpc_message = GrpcRaftMessage { message: bytes };
+
+        let timeout = Duration::from_millis(
+            self.consensus_config.message_timeout_ticks * self.consensus_config.tick_period_ms,
+        );
+
+        let res = self
+            .transport_channel_pool
+            .with_channel_timeout(
+                &uri,
+                |channel| async {
+                    let mut client = RaftClient::new(channel);
+                    let mut request = tonic::Request::new(grpc_message.clone());
+                    request.set_timeout(timeout);
+                    client.send(request).await
+                },
+                Some(timeout),
+                0,
+            )
+            .await;
+
+        if message.msg_type == raft::eraftpb::MessageType::MsgSnapshot as i32 {
+            let res = self.consensus_state.report_snapshot(
+                peer_id,
+                if res.is_ok() {
+                    SnapshotStatus::Finish
+                } else {
+                    SnapshotStatus::Failure
+                },
+            );
+
+            // Should we ignore the error? Seems like it will only produce noise.
+            //
+            // - `send_message` is only called by the sub-task spawned by the consnsus thread.
+            // - `report_snapshot` sends a message back to the consensus thread.
+            // - It can only fail, if the "receiver" end of the channel is closed.
+            // - Which means consensus thread either resolved successfully, or failed.
+            // - So, if the consensus thread is shutting down, no need to log a misleading error...
+            // - ...or, if the consensus thread failed, then we should already have an error,
+            //   and it will only produce more noise.
+
+            if let Err(err) = res {
+                log::error!("{}", err);
+            }
+        }
+
+        match res {
+            Ok(_) => self.consensus_state.record_message_send_success(&uri),
+            Err(err) => self.consensus_state.record_message_send_failure(&uri, err),
+        }
+
+        Ok(())
+    }
+
+    async fn uri(&mut self, peer_id: PeerId) -> anyhow::Result<Uri> {
+        let uri = self
+            .consensus_state
+            .peer_address_by_id()
+            .get(&peer_id)
+            .cloned();
+
+        match uri {
+            Some(uri) => Ok(uri),
+            None => self.who_is(peer_id).await,
+        }
+    }
+
+    async fn who_is(&mut self, peer_id: PeerId) -> anyhow::Result<Uri> {
+        let bootstrap_uri = self
+            .bootstrap_uri
+            .clone()
+            .ok_or_else(|| anyhow::format_err!("No bootstrap URI provided"))?;
+
+        let bootstrap_timeout = Duration::from_secs(self.consensus_config.bootstrap_timeout_sec);
+
+        // Use dedicated transport channel for who_is because of specific timeout
+        let channel = make_grpc_channel(
+            bootstrap_timeout,
+            bootstrap_timeout,
+            bootstrap_uri,
+            self.tls_config.clone(),
+        )
+        .await
+        .map_err(|err| anyhow::format_err!("Failed to create who-is channel: {}", err))?;
+
+        let uri = RaftClient::new(channel)
+            .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
+            .await?
+            .into_inner()
+            .uri
+            .parse()?;
+
+        Ok(uri)
     }
 }
 
