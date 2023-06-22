@@ -1622,6 +1622,7 @@ mod tests {
             wal_config,
             hnsw_config: Default::default(),
             quantization_config: None,
+            codebooks_config: None,
         };
 
         let shared_config = Arc::new(RwLock::new(config.clone()));

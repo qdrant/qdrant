@@ -14,8 +14,8 @@ use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
-    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, VectorStorageType, VECTOR_ELEMENT_SIZE,
+    CodebooksConfig, HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType,
+    PointIdType, QuantizationConfig, SegmentConfig, VectorStorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -58,6 +58,9 @@ pub trait SegmentOptimizer {
 
     /// Get quantization config
     fn quantization_config(&self) -> Option<QuantizationConfig>;
+
+    /// Get codebooks config
+    fn codebooks_config(&self) -> Option<CodebooksConfig>;
 
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
@@ -198,6 +201,7 @@ pub trait SegmentOptimizer {
             self.collection_path(),
             self.temp_path(),
             &optimized_config,
+            self.codebooks_config(),
         )?)
     }
 

@@ -12,7 +12,7 @@ use crate::index::hnsw_index::max_rayon_threads;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
-use crate::types::{Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig};
+use crate::types::{CodebooksConfig, Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig};
 use crate::vector_storage::VectorStorage;
 
 /// Structure for constructing segment out of several other segments
@@ -21,6 +21,7 @@ pub struct SegmentBuilder {
     pub destination_path: PathBuf,
     pub temp_path: PathBuf,
     pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
+    pub codebooks_config: Option<CodebooksConfig>,
 }
 
 impl SegmentBuilder {
@@ -28,6 +29,7 @@ impl SegmentBuilder {
         segment_path: &Path,
         temp_dir: &Path,
         segment_config: &SegmentConfig,
+        codebooks_config: Option<CodebooksConfig>,
     ) -> OperationResult<Self> {
         let segment = build_segment(temp_dir, segment_config, true)?;
         let temp_path = segment.current_path.clone();
@@ -39,6 +41,7 @@ impl SegmentBuilder {
             destination_path,
             temp_path,
             indexed_fields: Default::default(),
+            codebooks_config,
         })
     }
 
@@ -192,7 +195,7 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
-            Self::update_quantization(&segment, stopped)?;
+            Self::update_quantization(&segment, &self.codebooks_config, stopped)?;
 
             for vector_data in segment.vector_data.values_mut() {
                 vector_data.vector_index.borrow_mut().build_index(stopped)?;
@@ -216,7 +219,11 @@ impl SegmentBuilder {
         Ok(loaded_segment)
     }
 
-    fn update_quantization(segment: &Segment, stopped: &AtomicBool) -> OperationResult<()> {
+    fn update_quantization(
+        segment: &Segment,
+        codebooks_config: &Option<CodebooksConfig>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<()> {
         let config = segment.config();
         for (vector_name, vector_data) in &segment.vector_data {
             if let Some(quantization) = config.quantization_config(vector_name) {
@@ -236,6 +243,7 @@ impl SegmentBuilder {
                 vector_data.vector_storage.borrow_mut().quantize(
                     &vector_storage_path,
                     quantization,
+                    codebooks_config,
                     max_threads,
                     stopped,
                 )?;

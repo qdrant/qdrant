@@ -12,7 +12,7 @@ use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
+use crate::types::{CodebooksConfig, Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
@@ -83,6 +83,7 @@ pub trait VectorStorage {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        codebooks_config: &Option<CodebooksConfig>,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<()>;
@@ -204,19 +205,32 @@ impl VectorStorage for VectorStorageEnum {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        codebooks_config: &Option<CodebooksConfig>,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
         match self {
-            VectorStorageEnum::Simple(v) => {
-                v.quantize(data_path, quantization_config, max_threads, stopped)
-            }
-            VectorStorageEnum::Memmap(v) => {
-                v.quantize(data_path, quantization_config, max_threads, stopped)
-            }
-            VectorStorageEnum::AppendableMemmap(v) => {
-                v.quantize(data_path, quantization_config, max_threads, stopped)
-            }
+            VectorStorageEnum::Simple(v) => v.quantize(
+                data_path,
+                quantization_config,
+                codebooks_config,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::Memmap(v) => v.quantize(
+                data_path,
+                quantization_config,
+                codebooks_config,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::AppendableMemmap(v) => v.quantize(
+                data_path,
+                quantization_config,
+                codebooks_config,
+                max_threads,
+                stopped,
+            ),
         }
     }
 

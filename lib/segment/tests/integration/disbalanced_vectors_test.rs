@@ -83,7 +83,7 @@ fn test_rebuild_with_removed_vectors() {
     }
 
     let mut builder =
-        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config, None).unwrap();
 
     builder.update_from(&segment1, &stopped).unwrap();
     builder.update_from(&segment2, &stopped).unwrap();

@@ -27,7 +27,7 @@ fn test_building_new_segment() {
     let mut segment2 = build_segment_2(dir.path());
 
     let mut builder =
-        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config, None).unwrap();
 
     // Include overlapping with segment1 to check the
     segment2
@@ -92,7 +92,8 @@ fn estimate_build_time(segment: &Segment, stop_timeout_millis: u64) -> (u64, boo
         payload_storage_type: Default::default(),
     };
 
-    let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
+    let mut builder =
+        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config, None).unwrap();
 
     builder.update_from(segment, &stopped).unwrap();
 

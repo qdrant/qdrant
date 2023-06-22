@@ -237,7 +237,7 @@ pub struct ProductQuantization {
 pub struct CodebookQuantization {
     /// Codebook name
     #[prost(string, tag = "1")]
-    pub codebook: ::prost::alloc::string::String,
+    pub name: ::prost::alloc::string::String,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "2")]
     pub always_ram: ::core::option::Option<bool>,
@@ -262,6 +262,19 @@ pub mod quantization_config {
         #[prost(message, tag = "3")]
         Codebook(super::CodebookQuantization),
     }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CodebooksConfig {
+    /// Path to the codebooks
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// Codebook file name aliases
+    #[prost(map = "string, string", tag = "2")]
+    pub aliases: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -312,6 +325,9 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "14")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// Codebooks configuration
+    #[prost(message, optional, tag = "15")]
+    pub codebooks_config: ::core::option::Option<CodebooksConfig>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -411,6 +427,9 @@ pub struct CollectionConfig {
     #[prost(message, optional, tag = "5")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// Configuration of the codebooks config
+    #[prost(message, optional, tag = "6")]
+    pub codebooks_config: ::core::option::Option<CodebooksConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

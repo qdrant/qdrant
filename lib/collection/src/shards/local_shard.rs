@@ -222,6 +222,7 @@ impl LocalShard {
             &collection_config_read.optimizer_config,
             &collection_config_read.hnsw_config,
             &collection_config_read.quantization_config,
+            &collection_config_read.codebooks_config,
         );
 
         drop(collection_config_read); // release `shared_config` from borrow checker
@@ -376,6 +377,7 @@ impl LocalShard {
             &config.optimizer_config,
             &config.hnsw_config,
             &config.quantization_config,
+            &config.codebooks_config,
         );
 
         drop(config); // release `shared_config` from borrow checker
@@ -484,6 +486,7 @@ impl LocalShard {
             &config.optimizer_config,
             &config.hnsw_config,
             &config.quantization_config,
+            &config.codebooks_config,
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;

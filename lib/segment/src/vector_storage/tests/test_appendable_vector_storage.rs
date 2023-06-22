@@ -293,7 +293,7 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     let stopped = AtomicBool::new(false);
     borrowed_storage
-        .quantize(dir.path(), &config, 1, &stopped)
+        .quantize(dir.path(), &config, &None, 1, &stopped)
         .unwrap();
 
     let query = vec![0.5, 0.5, 0.5, 0.5];

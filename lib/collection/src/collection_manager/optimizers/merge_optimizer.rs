@@ -7,7 +7,9 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
+use segment::types::{
+    CodebooksConfig, HnswConfig, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE,
+};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -31,6 +33,7 @@ pub struct MergeOptimizer {
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
+    codebooks_config: Option<CodebooksConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
@@ -44,6 +47,7 @@ impl MergeOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        codebooks_config: Option<CodebooksConfig>,
     ) -> Self {
         MergeOptimizer {
             max_segments,
@@ -53,6 +57,7 @@ impl MergeOptimizer {
             collection_params,
             hnsw_config,
             quantization_config,
+            codebooks_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
@@ -77,6 +82,10 @@ impl SegmentOptimizer for MergeOptimizer {
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
         self.quantization_config.clone()
+    }
+
+    fn codebooks_config(&self) -> Option<CodebooksConfig> {
+        self.codebooks_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {

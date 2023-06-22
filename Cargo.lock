@@ -3090,7 +3090,7 @@ dependencies = [
 [[package]]
 name = "quantization"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/quantization.git?branch=custom-pq-centroids#9477f54b8d1a54a475d8e43b96f4958b95a90b12"
+source = "git+https://github.com/qdrant/quantization.git?branch=custom-pq-centroids#988dec1e7135da4c882c7c873306b9477579ff9a"
 dependencies = [
  "cc",
  "permutation_iterator",

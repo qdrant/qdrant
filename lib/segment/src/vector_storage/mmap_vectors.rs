@@ -15,7 +15,7 @@ use crate::common::mmap_type::MmapBitSlice;
 use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{CodebooksConfig, Distance, PointOffsetType, QuantizationConfig};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
@@ -93,6 +93,7 @@ impl MmapVectors {
         distance: Distance,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        codebooks_config: &Option<CodebooksConfig>,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
@@ -110,6 +111,7 @@ impl MmapVectors {
         self.quantized_vectors = Some(QuantizedVectors::create(
             vector_data_iterator,
             quantization_config,
+            codebooks_config,
             distance,
             self.dim,
             self.num_vectors,

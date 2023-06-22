@@ -70,7 +70,13 @@ fn hnsw_quantized_search_test(
         vector_storage
             .vector_storage
             .borrow_mut()
-            .quantize(quantized_data_path, &quantization_config, 3, &stopped)
+            .quantize(
+                quantized_data_path,
+                &quantization_config,
+                &None,
+                3,
+                &stopped,
+            )
             .unwrap();
     });
 

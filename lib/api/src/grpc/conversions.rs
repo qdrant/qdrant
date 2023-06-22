@@ -8,7 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{CompressionRatio, GroupId};
+use super::qdrant::{CodebooksConfig, CompressionRatio, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -554,7 +554,7 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
             ) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Codebook(
                     super::qdrant::CodebookQuantization {
-                        codebook: config.codebook,
+                        name: config.name,
                         always_ram: config.always_ram,
                     },
                 )),
@@ -616,12 +616,30 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
                 Ok(segment::types::QuantizationConfig::Codebook(
                     segment::types::CodebookQuantization {
                         codebook: segment::types::CodebookQuantizationConfig {
-                            codebook: config.codebook,
+                            name: config.name,
                             always_ram: config.always_ram,
                         },
                     },
                 ))
             }
+        }
+    }
+}
+
+impl From<segment::types::CodebooksConfig> for CodebooksConfig {
+    fn from(value: segment::types::CodebooksConfig) -> Self {
+        Self {
+            path: value.path,
+            aliases: value.aliases,
+        }
+    }
+}
+
+impl From<CodebooksConfig> for segment::types::CodebooksConfig {
+    fn from(value: CodebooksConfig) -> Self {
+        Self {
+            path: value.path,
+            aliases: value.aliases,
         }
     }
 }

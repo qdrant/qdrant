@@ -9,7 +9,7 @@ use segment::common::operation_time_statistics::{
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::VectorIndex;
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
+use segment::types::{CodebooksConfig, HnswConfig, QuantizationConfig, SegmentType};
 use segment::vector_storage::VectorStorage;
 
 use crate::collection_manager::holders::segment_holder::{
@@ -35,6 +35,7 @@ pub struct VacuumOptimizer {
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
+    codebooks_config: Option<CodebooksConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
@@ -49,6 +50,7 @@ impl VacuumOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        codebooks_config: Option<CodebooksConfig>,
     ) -> Self {
         VacuumOptimizer {
             deleted_threshold,
@@ -59,6 +61,7 @@ impl VacuumOptimizer {
             collection_params,
             hnsw_config,
             quantization_config,
+            codebooks_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
@@ -182,6 +185,10 @@ impl SegmentOptimizer for VacuumOptimizer {
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
         self.quantization_config.clone()
+    }
+
+    fn codebooks_config(&self) -> Option<CodebooksConfig> {
+        self.codebooks_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -311,6 +318,7 @@ mod tests {
                 replication_factor: NonZeroU32::new(1).unwrap(),
                 write_consistency_factor: NonZeroU32::new(1).unwrap(),
             },
+            Default::default(),
             Default::default(),
             Default::default(),
         );
@@ -454,6 +462,7 @@ mod tests {
             collection_params.clone(),
             hnsw_config.clone(),
             Default::default(),
+            Default::default(),
         );
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
@@ -463,6 +472,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             hnsw_config,
+            Default::default(),
             Default::default(),
         );
 

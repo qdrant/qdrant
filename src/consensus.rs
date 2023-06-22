@@ -1035,6 +1035,7 @@ mod tests {
                             write_consistency_factor: None,
                             init_from: None,
                             quantization_config: None,
+                            codebooks_config: None,
                         },
                     )),
                     None,

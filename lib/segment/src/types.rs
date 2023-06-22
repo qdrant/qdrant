@@ -17,6 +17,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 use validator::{Validate, ValidationErrors};
 
+use crate::common::anonymize::Anonymize;
 use crate::common::utils;
 use crate::common::utils::MultiValue;
 use crate::data_types::text_index::TextIndexParams;
@@ -436,7 +437,7 @@ pub struct ProductQuantization {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct CodebookQuantizationConfig {
-    pub codebook: String,
+    pub name: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
@@ -476,6 +477,28 @@ impl From<ScalarQuantizationConfig> for QuantizationConfig {
 impl From<ProductQuantizationConfig> for QuantizationConfig {
     fn from(config: ProductQuantizationConfig) -> Self {
         QuantizationConfig::Product(ProductQuantization { product: config })
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct CodebooksConfig {
+    pub path: String,
+    pub aliases: HashMap<String, String>,
+}
+
+impl Anonymize for CodebooksConfig {
+    fn anonymize(&self) -> Self {
+        CodebooksConfig {
+            path: self.path.anonymize(),
+            aliases: self.aliases.anonymize(),
+        }
+    }
+}
+
+impl std::hash::Hash for CodebooksConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
     }
 }
 

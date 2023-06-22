@@ -9,7 +9,7 @@ use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::madvise;
-use segment::types::{HnswConfig, QuantizationConfig};
+use segment::types::{CodebooksConfig, HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
@@ -48,6 +48,9 @@ pub struct StorageConfig {
     pub hnsw_index: HnswConfig,
     #[validate]
     pub quantization: Option<QuantizationConfig>,
+    // If provided - qdrant will use this codebook paths for vector quantization
+    #[validate]
+    pub codebooks: Option<CodebooksConfig>,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,
     #[serde(default)]

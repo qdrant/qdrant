@@ -5,6 +5,7 @@
 /storage
 /snapshots
 /consensus_test_logs
+/codebooks
 /config/local
 /tls
 /static

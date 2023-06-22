@@ -60,6 +60,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
+        codebooks_config: Default::default(),
     };
 
     let snapshot_path = collection_path.join("snapshots");

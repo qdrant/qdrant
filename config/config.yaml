@@ -22,6 +22,12 @@ storage:
     # Number of WAL segments to create ahead of actual data requirement
     wal_segments_ahead: 0
 
+  codebooks:
+    path: ./codebooks
+    aliases:
+      "aa": "bb"
+      "cc": "dd"
+
   # Normal node - receives all updates and answers all queries
   node_type: "Normal"
 

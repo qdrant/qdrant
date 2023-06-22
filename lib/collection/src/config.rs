@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
-    HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
+    CodebooksConfig, HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -114,7 +114,11 @@ pub struct CollectionConfig {
     #[validate]
     pub wal_config: WalConfig,
     #[serde(default)]
+    #[validate]
     pub quantization_config: Option<QuantizationConfig>,
+    #[serde(default)]
+    #[validate]
+    pub codebooks_config: Option<CodebooksConfig>,
 }
 
 impl CollectionConfig {

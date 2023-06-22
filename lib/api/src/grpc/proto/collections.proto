@@ -191,7 +191,7 @@ message ProductQuantization {
 }
 
 message CodebookQuantization {
-  string codebook = 1; // Codebook name
+  string name = 1; // Codebook name
   optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
@@ -201,6 +201,11 @@ message QuantizationConfig {
     ProductQuantization product = 2;
     CodebookQuantization codebook = 3;
   }
+}
+
+message CodebooksConfig {
+  string path = 1; // Path to the codebooks
+  map<string, string> aliases = 2; // Codebook file name aliases
 }
 
 message CreateCollection {
@@ -218,6 +223,7 @@ message CreateCollection {
   optional uint32 write_consistency_factor = 12; // How many replicas should apply the operation for us to consider it successful, default = 1
   optional string init_from_collection = 13; // Specify name of the other collection to copy data from
   optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
+  optional CodebooksConfig codebooks_config = 15; // Codebooks configuration
 }
 
 message UpdateCollection {
@@ -258,6 +264,7 @@ message CollectionConfig {
   OptimizersConfigDiff optimizer_config = 3; // Configuration of the optimizers
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
   optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantization
+  optional CodebooksConfig codebooks_config = 6; // Configuration of the codebooks config
 }
 
 enum TokenizerType {

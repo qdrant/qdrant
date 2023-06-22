@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::slice::BitSlice;
+use quantization::encoded_vectors_pq::CentroidsParameters;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
@@ -10,9 +11,11 @@ use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{
-    CompressionRatio, Distance, ProductQuantization, QuantizationConfig, ScalarQuantization,
+    CodebookQuantization, CodebooksConfig, CompressionRatio, Distance, ProductQuantization,
+    QuantizationConfig, ScalarQuantization,
 };
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::quantized::codebook::Codebook;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
@@ -120,6 +123,7 @@ impl QuantizedVectors {
     pub fn create<'a>(
         vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
         quantization_config: &QuantizationConfig,
+        codebooks_config: &Option<CodebooksConfig>,
         distance: Distance,
         dim: usize,
         count: usize,
@@ -133,7 +137,7 @@ impl QuantizedVectors {
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: scalar_config,
-            }) => Self::crate_scalar(
+            }) => Self::create_scalar(
                 vectors,
                 &vector_parameters,
                 scalar_config,
@@ -142,19 +146,40 @@ impl QuantizedVectors {
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
-                Self::crate_pq(
+                let bucket_size = Self::get_bucket_size(pq_config.compression);
+                let centroid_params = CentroidsParameters::KMeans {
+                    chunk_size: bucket_size,
+                };
+                Self::create_pq(
                     vectors,
                     &vector_parameters,
-                    pq_config,
                     path,
+                    centroid_params,
+                    pq_config.always_ram,
                     on_disk_vector_storage,
                     max_threads,
                     stopped,
                 )?
             }
-            QuantizationConfig::Codebook(_) => {
-                // todo(ivan)
-                panic!("Codebook quantization is not supported for quantized vectors")
+            QuantizationConfig::Codebook(CodebookQuantization { codebook }) => {
+                let always_ram = codebook.always_ram;
+                match Codebook::load(&codebook.name, codebooks_config)? {
+                    Codebook::ProductQuantization(codebook) => {
+                        let centroid_params = CentroidsParameters::Custom {
+                            codebook: codebook.product_quantization.centroids.clone(),
+                        };
+                        Self::create_pq(
+                            vectors,
+                            &vector_parameters,
+                            path,
+                            centroid_params,
+                            always_ram,
+                            on_disk_vector_storage,
+                            max_threads,
+                            stopped,
+                        )?
+                    }
+                }
             }
         };
 
@@ -221,9 +246,20 @@ impl QuantizedVectors {
                     )?)
                 }
             }
-            QuantizationConfig::Codebook(_) => {
-                // todo(ivan)
-                panic!("Codebook quantization is not supported for quantized vectors")
+            QuantizationConfig::Codebook(CodebookQuantization { codebook: cb }) => {
+                if Self::is_ram(cb.always_ram, on_disk_vector_storage) {
+                    QuantizedVectorStorage::PQRam(EncodedVectorsPQ::<ChunkedVectors<u8>>::load(
+                        &data_path,
+                        &meta_path,
+                        &config.vector_parameters,
+                    )?)
+                } else {
+                    QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::<QuantizedMmapStorage>::load(
+                        &data_path,
+                        &meta_path,
+                        &config.vector_parameters,
+                    )?)
+                }
             }
         };
 
@@ -235,7 +271,7 @@ impl QuantizedVectors {
         })
     }
 
-    fn crate_scalar<'a>(
+    fn create_scalar<'a>(
         vectors: impl Iterator<Item = &'a [f32]> + Clone,
         vector_parameters: &quantization::VectorParameters,
         scalar_config: &crate::types::ScalarQuantizationConfig,
@@ -275,22 +311,22 @@ impl QuantizedVectors {
         }
     }
 
-    fn crate_pq<'a>(
+    fn create_pq<'a>(
         vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
-        pq_config: &crate::types::ProductQuantizationConfig,
         path: &Path,
+        centroid_params: CentroidsParameters,
+        always_ram: Option<bool>,
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
-        let bucket_size = Self::get_bucket_size(pq_config.compression);
         let quantized_vector_size =
             EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
-                bucket_size,
+                &centroid_params,
             );
-        let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
+        let in_ram = Self::is_ram(always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             storage_builder.try_reserve_exact(vector_parameters.count)?;
@@ -298,9 +334,7 @@ impl QuantizedVectors {
                 vectors,
                 storage_builder,
                 vector_parameters,
-                quantization::encoded_vectors_pq::CentroidsParameters::KMeans {
-                    chunk_size: bucket_size,
-                },
+                centroid_params,
                 max_threads,
                 || stopped.load(Ordering::Relaxed),
             )?))
@@ -315,9 +349,7 @@ impl QuantizedVectors {
                 vectors,
                 storage_builder,
                 vector_parameters,
-                quantization::encoded_vectors_pq::CentroidsParameters::KMeans {
-                    chunk_size: bucket_size,
-                },
+                centroid_params,
                 max_threads,
                 || stopped.load(Ordering::Relaxed),
             )?))

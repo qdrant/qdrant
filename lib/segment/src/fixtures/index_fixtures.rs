@@ -11,7 +11,7 @@ use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{CodebooksConfig, Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum};
@@ -78,6 +78,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         &mut self,
         _data_path: &Path,
         _quantization_config: &QuantizationConfig,
+        _codebooks_config: &Option<CodebooksConfig>,
         _max_threads: usize,
         _stopped: &AtomicBool,
     ) -> OperationResult<()> {

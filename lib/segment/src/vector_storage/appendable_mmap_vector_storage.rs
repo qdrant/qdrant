@@ -10,7 +10,7 @@ use bitvec::prelude::BitSlice;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{CodebooksConfig, Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -145,6 +145,7 @@ impl VectorStorage for AppendableMmapVectorStorage {
         &mut self,
         path: &Path,
         quantization_config: &QuantizationConfig,
+        codebooks_config: &Option<CodebooksConfig>,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
@@ -152,6 +153,7 @@ impl VectorStorage for AppendableMmapVectorStorage {
         self.quantized_vectors = Some(QuantizedVectors::create(
             vector_data_iterator,
             quantization_config,
+            codebooks_config,
             self.distance,
             self.vectors.dim(),
             self.vectors.len(),

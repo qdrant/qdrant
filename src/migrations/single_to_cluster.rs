@@ -49,6 +49,7 @@ pub async fn handle_existing_collections(
                 optimizers_config: Some(collection_state.config.optimizer_config.into()),
                 init_from: None,
                 quantization_config: collection_state.config.quantization_config,
+                codebooks_config: collection_state.config.codebooks_config,
             },
         );
 

@@ -13,7 +13,7 @@ use super::VectorStorageEnum;
 use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{CodebooksConfig, Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::VectorStorage;
 
@@ -157,6 +157,7 @@ impl VectorStorage for MemmapVectorStorage {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        codebooks_config: &Option<CodebooksConfig>,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
@@ -165,6 +166,7 @@ impl VectorStorage for MemmapVectorStorage {
             self.distance,
             data_path,
             quantization_config,
+            codebooks_config,
             max_threads,
             stopped,
         )
@@ -630,7 +632,7 @@ mod tests {
 
         let stopped = Arc::new(AtomicBool::new(false));
         borrowed_storage
-            .quantize(dir.path(), &config, 1, &stopped)
+            .quantize(dir.path(), &config, &None, 1, &stopped)
             .unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];

@@ -66,6 +66,13 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                         None
                     }
                 },
+                codebooks_config: {
+                    if let Some(config) = value.codebooks_config {
+                        Some(config.into())
+                    } else {
+                        None
+                    }
+                },
             },
         )))
     }

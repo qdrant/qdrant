@@ -294,6 +294,7 @@ impl TableOfContent {
             write_consistency_factor,
             init_from,
             quantization_config,
+            codebooks_config,
         } = operation;
 
         self.collections
@@ -372,12 +373,18 @@ impl TableOfContent {
             Some(diff) => Some(diff),
         };
 
+        let codebooks_config = match codebooks_config {
+            None => self.storage_config.codebooks.clone(),
+            Some(diff) => Some(diff),
+        };
+
         let collection_config = CollectionConfig {
             wal_config,
             params: collection_params,
             optimizer_config: optimizers_config,
             hnsw_config,
             quantization_config,
+            codebooks_config,
         };
         let collection = Collection::new(
             collection_name.to_string(),

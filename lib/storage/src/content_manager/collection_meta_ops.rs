@@ -8,7 +8,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
-use segment::types::QuantizationConfig;
+use segment::types::{CodebooksConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -142,6 +142,10 @@ pub struct CreateCollection {
     #[serde(default, alias = "quantization")]
     #[validate]
     pub quantization_config: Option<QuantizationConfig>,
+    /// Quantization parameters. If none - quantization is disabled.
+    #[serde(default, alias = "codebooks")]
+    #[validate]
+    pub codebooks_config: Option<CodebooksConfig>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -306,6 +310,7 @@ impl From<CollectionConfig> for CreateCollection {
             optimizers_config: Some(value.optimizer_config.into()),
             init_from: None,
             quantization_config: value.quantization_config,
+            codebooks_config: value.codebooks_config,
         }
     }
 }

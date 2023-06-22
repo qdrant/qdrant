@@ -272,6 +272,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
                 quantization_config: config.quantization_config.map(|x| x.into()),
+                codebooks_config: config.codebooks_config.map(|x| x.into()),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -403,7 +404,7 @@ fn grpc_to_segment_quantization_config(
         api::grpc::qdrant::quantization_config::Quantization::Codebook(config) => {
             Ok(QuantizationConfig::Codebook(CodebookQuantization {
                 codebook: CodebookQuantizationConfig {
-                    codebook: config.codebook,
+                    name: config.name,
                     always_ram: config.always_ram,
                 },
             }))
@@ -485,6 +486,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     None
                 }
             },
+            codebooks_config: config.codebooks_config.map(|config| config.into()),
         })
     }
 }

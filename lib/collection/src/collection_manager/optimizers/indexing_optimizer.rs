@@ -6,7 +6,9 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
+use segment::types::{
+    CodebooksConfig, HnswConfig, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE,
+};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
@@ -29,6 +31,7 @@ pub struct IndexingOptimizer {
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
+    codebooks_config: Option<CodebooksConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
@@ -40,6 +43,7 @@ impl IndexingOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        codebooks_config: Option<CodebooksConfig>,
     ) -> Self {
         IndexingOptimizer {
             thresholds_config,
@@ -48,6 +52,7 @@ impl IndexingOptimizer {
             collection_params,
             hnsw_config,
             quantization_config,
+            codebooks_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
@@ -217,6 +222,10 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.quantization_config.clone()
     }
 
+    fn codebooks_config(&self) -> Option<CodebooksConfig> {
+        self.codebooks_config.clone()
+    }
+
     fn threshold_config(&self) -> &OptimizerThresholds {
         &self.thresholds_config
     }
@@ -326,6 +335,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            Default::default(),
         );
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
 
@@ -428,6 +438,7 @@ mod tests {
                 write_consistency_factor: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
             },
+            Default::default(),
             Default::default(),
             Default::default(),
         );
