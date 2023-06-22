@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{mpsc, Arc};
-use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+use std::{fmt, thread};
 
 use anyhow::{anyhow, Context};
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
@@ -791,7 +791,10 @@ impl RaftMessageBroker {
     }
 
     pub fn send(&mut self, messages: impl IntoIterator<Item = RaftMessage>) {
-        for message in messages {
+        let mut messages = messages.into_iter();
+        let mut retry = None;
+
+        while let Some(message) = retry.take().or_else(|| messages.next()) {
             let peer_id = message.to;
 
             let sender = match self.senders.get(&peer_id) {
@@ -811,29 +814,38 @@ impl RaftMessageBroker {
                 }
             };
 
+            let failed_to_forward = |message: &RaftMessage, description: &str| {
+                let peer_id = message.to;
+
+                let is_debug = log::max_level() >= log::Level::Debug;
+                let space = if is_debug { " " } else { "" };
+                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" };
+
+                log::error!(
+                    "Failed to forward message{space}{message:?} to message sender task {peer_id}: \
+                     {description}"
+                );
+            };
+
             match sender.try_send(message) {
                 Ok(()) => (),
 
                 Err(tokio::sync::mpsc::error::TrySendError::Full(message)) => {
-                    if log::max_level() >= log::Level::Debug {
-                        log::error!(
-                            "Failed to forward message {message:?} to message sender task {peer_id}: \
-                             message sender task queue is full"
-                        );
-                    } else {
-                        log::error!(
-                            "Failed to forward message to message sender task {peer_id}: \
-                             message sender task queue is full"
-                        );
-                    }
+                    failed_to_forward(
+                        &message,
+                        "message sender task queue is full. Message will be dropped.",
+                    );
                 }
 
-                // This should *never* happen...
                 Err(tokio::sync::mpsc::error::TrySendError::Closed(message)) => {
-                    unreachable!(
-                        "Failed to forward message {message:?} to message sender task {peer_id}: \
-                         message sender task queue is closed"
+                    failed_to_forward(
+                        &message,
+                        "message sender task queue is closed. \
+                         Message sender task will be restarted and message will be retried.",
                     );
+
+                    self.senders.remove(&peer_id);
+                    retry = Some(message);
                 }
             }
         }
