@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::common::Flusher;
 use crate::common::rocksdb_wrapper::DatabaseColumn;
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;

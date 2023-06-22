@@ -257,7 +257,7 @@ impl DatabaseColumn for DatabaseColumnWrapper {
     fn has_column_family(&self) -> OperationResult<bool> {
         let db = self.database.read();
         Ok(db.cf_handle(&self.column_name).is_some())
-    }   
+    }
 }
 
 impl<'a> LockedDatabaseColumnWrapper<'a> {

@@ -8,8 +8,10 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
+use crate::common::rocksdb_buffered_delete_wrapper::ScheduledDeleteDecorator;
+use crate::common::rocksdb_wrapper::{
+    DatabaseColumn, DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF,
+};
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
@@ -59,8 +61,8 @@ pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
-    mapping_db_wrapper: DatabaseColumnScheduledDeleteWrapper,
-    versions_db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+    mapping_db_wrapper: ScheduledDeleteDecorator<DatabaseColumnWrapper>,
+    versions_db_wrapper: ScheduledDeleteDecorator<DatabaseColumnWrapper>,
 }
 
 impl SimpleIdTracker {
@@ -70,9 +72,8 @@ impl SimpleIdTracker {
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
 
-        let mapping_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
-            DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF),
-        );
+        let mapping_db_wrapper =
+            ScheduledDeleteDecorator::new(DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF));
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let internal_id: PointOffsetType =
@@ -117,9 +118,8 @@ impl SimpleIdTracker {
         }
 
         let mut internal_to_version: Vec<SeqNumberType> = Default::default();
-        let versions_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
-            DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
-        );
+        let versions_db_wrapper =
+            ScheduledDeleteDecorator::new(DatabaseColumnWrapper::new(store, DB_VERSIONS_CF));
         for (key, val) in versions_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();

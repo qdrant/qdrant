@@ -4,7 +4,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF, DatabaseColumn};
+use crate::common::rocksdb_wrapper::{DatabaseColumn, DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{Payload, PointOffsetType};
 
