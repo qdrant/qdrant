@@ -1,5 +1,5 @@
 [hooks]
-pre-push = "cargo +nightly fmt --all -- --check"
+pre-push = "rustup run nightly cargo fmt --all -- --check"
 
 [logging]
 verbose = true
