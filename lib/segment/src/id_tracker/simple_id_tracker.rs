@@ -8,7 +8,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::common::rocksdb_buffered_delete_wrapper::ScheduledDeleteDecorator;
+use crate::common::rocksdb_wrapper::rocksdb_buffered_delete_wrapper::ScheduledDeleteDecorator;
 use crate::common::rocksdb_wrapper::{
     DatabaseColumn, DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF,
 };
