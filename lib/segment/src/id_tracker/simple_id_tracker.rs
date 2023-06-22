@@ -1,14 +1,14 @@
-use std::collections::{BTreeMap, HashSet};
-use std::mem;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use bincode;
 use bitvec::prelude::{BitSlice, BitVec};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
@@ -59,10 +59,8 @@ pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
-    mapping_db_wrapper: DatabaseColumnWrapper,
-    versions_db_wrapper: DatabaseColumnWrapper,
-    /// Set of points scheduled for deletion in the persistence layer.
-    deleted_pending_persistence: Mutex<HashSet<PointIdType>>,
+    mapping_db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+    versions_db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl SimpleIdTracker {
@@ -72,7 +70,9 @@ impl SimpleIdTracker {
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
 
-        let mapping_db_wrapper = DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF);
+        let mapping_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
+            DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF),
+        );
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let internal_id: PointOffsetType =
@@ -117,7 +117,9 @@ impl SimpleIdTracker {
         }
 
         let mut internal_to_version: Vec<SeqNumberType> = Default::default();
-        let versions_db_wrapper = DatabaseColumnWrapper::new(store, DB_VERSIONS_CF);
+        let versions_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
+            DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
+        );
         for (key, val) in versions_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();
@@ -158,7 +160,6 @@ impl SimpleIdTracker {
             external_to_internal_uuid,
             mapping_db_wrapper,
             versions_db_wrapper,
-            deleted_pending_persistence: Mutex::new(HashSet::new()),
         })
     }
 
@@ -172,12 +173,14 @@ impl SimpleIdTracker {
     }
 
     fn delete_key(&self, external_id: &PointIdType) -> OperationResult<()> {
-        self.deleted_pending_persistence.lock().insert(*external_id);
+        self.mapping_db_wrapper
+            .remove(Self::store_key(external_id))?;
+        self.versions_db_wrapper
+            .remove(Self::store_key(external_id))?;
         Ok(())
     }
 
     fn persist_key(&self, external_id: &PointIdType, internal_id: usize) -> OperationResult<()> {
-        self.deleted_pending_persistence.lock().remove(external_id);
         self.mapping_db_wrapper.put(
             Self::store_key(external_id),
             bincode::serialize(&internal_id).unwrap(),
@@ -356,29 +359,14 @@ impl IdTracker for SimpleIdTracker {
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
     fn mapping_flusher(&self) -> Flusher {
-        let ids_to_delete = self.deleted_pending_persistence.lock().clone();
-        let wrapper = self.mapping_db_wrapper.clone();
-        Box::new(move || {
-            for external_id in ids_to_delete {
-                wrapper.remove(Self::store_key(&external_id))?;
-            }
-            wrapper.flusher()()
-        })
+        self.mapping_db_wrapper.flusher()
     }
 
     /// Creates a flusher function, that persists the removed points in the version database
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
-    /// It also clears the pending persistence set, as it is supposed to be the last flush.
     fn versions_flusher(&self) -> Flusher {
-        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
-        let wrapper = self.versions_db_wrapper.clone();
-        Box::new(move || {
-            for external_id in ids_to_delete {
-                wrapper.remove(Self::store_key(&external_id))?;
-            }
-            wrapper.flusher()()
-        })
+        self.versions_db_wrapper.flusher()
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
