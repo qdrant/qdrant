@@ -7,13 +7,14 @@ mod consensus;
 mod greeting;
 mod migrations;
 mod settings;
+mod signal;
 mod snapshots;
 mod startup;
 mod tonic;
 mod tracing;
 
 use std::io::Error;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -162,6 +163,9 @@ fn main() -> anyhow::Result<()> {
     } else {
         vec![]
     };
+
+    let context = Arc::new(AtomicBool::default());
+    crate::signal::register_signal_context(context.clone())?;
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
@@ -375,12 +379,14 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(grpc_port) = settings.service.grpc_port {
         let settings = settings.clone();
+        let ctx = context.clone();
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
                 log_err_if_any(
                     "gRPC",
                     tonic::init(
+                        ctx,
                         dispatcher_arc,
                         tonic_telemetry_collector,
                         settings,
@@ -432,6 +438,17 @@ fn main() -> anyhow::Result<()> {
 
     touch_started_file_indicator();
 
+    thread::spawn(move || {
+        while !context.load(std::sync::atomic::Ordering::Relaxed) {
+            thread::sleep(Duration::new(0, 100000));
+        }
+
+        log::warn!("Shutting down service");
+
+        drop(toc_arc);
+        drop(settings);
+    });
+
     for handle in handles.into_iter() {
         log::debug!(
             "Waiting for thread {} to finish",
@@ -439,7 +456,6 @@ fn main() -> anyhow::Result<()> {
         );
         handle.join().expect("thread is not panicking")?;
     }
-    drop(toc_arc);
-    drop(settings);
+
     Ok(())
 }

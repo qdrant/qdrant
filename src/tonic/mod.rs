@@ -5,7 +5,8 @@ mod tonic_telemetry;
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
+use std::time::Duration;
 
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
@@ -47,6 +48,7 @@ impl Qdrant for QdrantService {
 }
 
 pub fn init(
+    context: Arc<AtomicBool>,
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     settings: Settings,
@@ -119,7 +121,10 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
-                signal::ctrl_c().await.unwrap();
+                while !context.load(std::sync::atomic::Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::new(0, 100000)).await;
+                }
+
                 log::debug!("Stopping gRPC");
             })
             .await

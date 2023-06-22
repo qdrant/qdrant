@@ -64,6 +64,7 @@ pub fn create_update_runtime(max_optimization_threads: usize) -> io::Result<Runt
         // panics if val is not larger than 0.
         update_runtime_builder.max_blocking_threads(max_optimization_threads);
     }
+
     update_runtime_builder.build()
 }
 
