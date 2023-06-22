@@ -3,12 +3,27 @@
 {
 	"name": "Ubuntu",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04"
+	"image": "debian:12-slim",
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {},
+		"rust": "latest",
+        "ghcr.io/devcontainers-contrib/features/protoc:latest": {}
+    },
+    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y clang lld cmake protobuf-compiler jq && rustup component add rustfmt",
+    "containerEnv": {
+        "RUST_BACKTRACE": "1"
+    },
+
+
+
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
+	"forwardPorts": [
+        6333,
+        6334
+    ]
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "uname -a",
