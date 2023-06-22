@@ -7,19 +7,19 @@ use super::wrapper::DatabaseColumn;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 
-/// Decorator around `DatabaseColumnWrapper` that ensures, that keys that were removed from the
+/// Decorator around `DatabaseColumn` that ensures, that keys that were removed from the
 /// database are only persisted on flush explicitly.
 ///
 /// This might be required to guarantee consistency of the database component.
 /// E.g. copy-on-write implementation should guarantee that data in the `write` component is
 /// persisted before it is removed from the `copy` component.
-pub struct ScheduledDeleteDecorator<T: DatabaseColumn> {
-    db: T,
+pub struct ScheduledDeleteDecorator<D: DatabaseColumn> {
+    db: D,
     deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,
 }
 
-impl<T: DatabaseColumn> ScheduledDeleteDecorator<T> {
-    pub fn new(db: T) -> Self {
+impl<D: DatabaseColumn> ScheduledDeleteDecorator<D> {
+    pub fn new(db: D) -> Self {
         Self {
             db,
             deleted_pending_persistence: Mutex::new(HashSet::new()),
@@ -27,7 +27,7 @@ impl<T: DatabaseColumn> ScheduledDeleteDecorator<T> {
     }
 }
 
-impl<W: DatabaseColumn + Clone + Send + 'static> DatabaseColumn for ScheduledDeleteDecorator<W> {
+impl<D: DatabaseColumn + Clone + Send + 'static> DatabaseColumn for ScheduledDeleteDecorator<D> {
     fn put<K, V>(&self, key: K, value: V) -> OperationResult<()>
     where
         K: AsRef<[u8]>,
