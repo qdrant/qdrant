@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::mem;
 use std::sync::Arc;
 
 use bincode;
 use bitvec::prelude::{BitSlice, BitVec};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -60,6 +61,8 @@ pub struct SimpleIdTracker {
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
     mapping_db_wrapper: DatabaseColumnWrapper,
     versions_db_wrapper: DatabaseColumnWrapper,
+    /// Set of points scheduled for deletion in the persistence layer.
+    deleted_pending_persistence: Mutex<HashSet<PointIdType>>,
 }
 
 impl SimpleIdTracker {
@@ -155,6 +158,7 @@ impl SimpleIdTracker {
             external_to_internal_uuid,
             mapping_db_wrapper,
             versions_db_wrapper,
+            deleted_pending_persistence: Mutex::new(HashSet::new()),
         })
     }
 
@@ -165,6 +169,19 @@ impl SimpleIdTracker {
     fn restore_key(data: &[u8]) -> PointIdType {
         let stored_external_id: StoredPointId = bincode::deserialize(data).unwrap();
         stored_to_external_id(stored_external_id)
+    }
+
+    fn delete_key(&self, external_id: &PointIdType) -> OperationResult<()> {
+        self.deleted_pending_persistence.lock().insert(*external_id);
+        Ok(())
+    }
+
+    fn persist_key(&self, external_id: &PointIdType, internal_id: usize) -> OperationResult<()> {
+        self.deleted_pending_persistence.lock().remove(external_id);
+        self.mapping_db_wrapper.put(
+            Self::store_key(external_id),
+            bincode::serialize(&internal_id).unwrap(),
+        )
     }
 }
 
@@ -232,10 +249,7 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external[internal_id] = external_id;
         self.deleted.set(internal_id, false);
 
-        self.mapping_db_wrapper.put(
-            Self::store_key(&external_id),
-            bincode::serialize(&internal_id).unwrap(),
-        )?;
+        self.persist_key(&external_id, internal_id)?;
         Ok(())
     }
 
@@ -248,10 +262,7 @@ impl IdTracker for SimpleIdTracker {
             self.deleted.set(internal_id as usize, true);
             self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
         }
-        self.mapping_db_wrapper
-            .remove(Self::store_key(&external_id))?;
-        self.versions_db_wrapper
-            .remove(Self::store_key(&external_id))?;
+        self.delete_key(&external_id)?;
         Ok(())
     }
 
@@ -341,12 +352,33 @@ impl IdTracker for SimpleIdTracker {
         self.iter_internal()
     }
 
+    /// Creates a flusher function, that persists the removed points in the mapping database
+    /// and flushes the mapping to disk.
+    /// This function should be called _before_ flushing the version database.
     fn mapping_flusher(&self) -> Flusher {
-        self.mapping_db_wrapper.flusher()
+        let ids_to_delete = self.deleted_pending_persistence.lock().clone();
+        let wrapper = self.mapping_db_wrapper.clone();
+        Box::new(move || {
+            for external_id in ids_to_delete {
+                wrapper.remove(Self::store_key(&external_id))?;
+            }
+            wrapper.flusher()()
+        })
     }
 
+    /// Creates a flusher function, that persists the removed points in the version database
+    /// and flushes the version database to disk.
+    /// This function should be called _after_ flushing the mapping database.
+    /// It also clears the pending persistence set, as it is supposed to be the last flush.
     fn versions_flusher(&self) -> Flusher {
-        self.versions_db_wrapper.flusher()
+        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
+        let wrapper = self.versions_db_wrapper.clone();
+        Box::new(move || {
+            for external_id in ids_to_delete {
+                wrapper.remove(Self::store_key(&external_id))?;
+            }
+            wrapper.flusher()()
+        })
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
