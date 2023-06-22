@@ -1,4 +1,4 @@
-mod wrapper;
 pub mod decorators;
+mod wrapper;
 
 pub use wrapper::*;

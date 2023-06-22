@@ -121,66 +121,17 @@ pub trait DatabaseColumn {
     where
         K: AsRef<[u8]>;
 
-    fn lock_db(&self) -> LockedDatabaseColumnWrapper {
-        LockedDatabaseColumnWrapper {
-            guard: self.database().read(),
-            column_name: self.column_name(),
-        }
-    }
+    fn lock_db(&self) -> LockedDatabaseColumnWrapper;
 
-    fn flusher(&self) -> Flusher {
-        let database = self.database().clone();
-        let column_name = self.column_name().clone();
-        Box::new(move || {
-            let db = database.read();
-            let column_family = db.cf_handle(&column_name).ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "RocksDB cf_handle error: Cannot find column family {}",
-                    &column_name
-                ))
-            })?;
+    fn flusher(&self) -> Flusher;
 
-            db.flush_cf(column_family).map_err(|err| {
-                OperationError::service_error(format!("RocksDB flush_cf error: {err}"))
-            })?;
-            Ok(())
-        })
-    }
+    fn create_column_family_if_not_exists(&self) -> OperationResult<()>;
 
-    fn create_column_family_if_not_exists(&self) -> OperationResult<()> {
-        let mut db = self.database().write();
-        if db.cf_handle(self.column_name()).is_none() {
-            db.create_cf(self.column_name(), &db_options())
-                .map_err(|err| {
-                    OperationError::service_error(format!("RocksDB create_cf error: {err}"))
-                })?;
-        }
-        Ok(())
-    }
+    fn recreate_column_family(&self) -> OperationResult<()>;
 
-    fn recreate_column_family(&self) -> OperationResult<()> {
-        self.remove_column_family()?;
-        self.create_column_family_if_not_exists()
-    }
+    fn remove_column_family(&self) -> OperationResult<()>;
 
-    fn remove_column_family(&self) -> OperationResult<()> {
-        let mut db = self.database().write();
-        if db.cf_handle(self.column_name()).is_some() {
-            db.drop_cf(self.column_name()).map_err(|err| {
-                OperationError::service_error(format!("RocksDB drop_cf error: {err}"))
-            })?;
-        }
-        Ok(())
-    }
-
-    fn has_column_family(&self) -> OperationResult<bool> {
-        let db = self.database().read();
-        Ok(db.cf_handle(self.column_name()).is_some())
-    }
-
-    fn database(&self) -> &Arc<RwLock<DB>>;
-
-    fn column_name(&self) -> &String;
+    fn has_column_family(&self) -> OperationResult<bool>;
 }
 
 impl DatabaseColumnWrapper {
@@ -251,12 +202,61 @@ impl DatabaseColumn for DatabaseColumnWrapper {
         Ok(())
     }
 
-    fn database(&self) -> &Arc<RwLock<DB>> {
-        &self.database
+    fn lock_db(&self) -> LockedDatabaseColumnWrapper {
+        LockedDatabaseColumnWrapper {
+            guard: self.database.read(),
+            column_name: &self.column_name,
+        }
     }
 
-    fn column_name(&self) -> &String {
-        &self.column_name
+    fn flusher(&self) -> Flusher {
+        let database = self.database.clone();
+        let column_name = self.column_name.clone();
+        Box::new(move || {
+            let db = database.read();
+            let column_family = db.cf_handle(&column_name).ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "RocksDB cf_handle error: Cannot find column family {}",
+                    &column_name
+                ))
+            })?;
+
+            db.flush_cf(column_family).map_err(|err| {
+                OperationError::service_error(format!("RocksDB flush_cf error: {err}"))
+            })?;
+            Ok(())
+        })
+    }
+
+    fn create_column_family_if_not_exists(&self) -> OperationResult<()> {
+        let mut db = self.database.write();
+        if db.cf_handle(&self.column_name).is_none() {
+            db.create_cf(&self.column_name, &db_options())
+                .map_err(|err| {
+                    OperationError::service_error(format!("RocksDB create_cf error: {err}"))
+                })?;
+        }
+        Ok(())
+    }
+
+    fn recreate_column_family(&self) -> OperationResult<()> {
+        self.remove_column_family()?;
+        self.create_column_family_if_not_exists()
+    }
+
+    fn remove_column_family(&self) -> OperationResult<()> {
+        let mut db = self.database.write();
+        if db.cf_handle(&self.column_name).is_some() {
+            db.drop_cf(&self.column_name).map_err(|err| {
+                OperationError::service_error(format!("RocksDB drop_cf error: {err}"))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn has_column_family(&self) -> OperationResult<bool> {
+        let db = self.database.read();
+        Ok(db.cf_handle(&self.column_name).is_some())
     }
 }
 
