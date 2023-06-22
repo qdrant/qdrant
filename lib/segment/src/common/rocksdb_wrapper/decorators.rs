@@ -3,7 +3,7 @@ use std::mem;
 
 use parking_lot::Mutex;
 
-use super::rocksdb_wrapper::DatabaseColumn;
+use super::wrapper::DatabaseColumn;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 

@@ -1,4 +1,4 @@
-mod rocksdb_wrapper;
-pub mod rocksdb_buffered_delete_wrapper;
+mod wrapper;
+pub mod decorators;
 
-pub use rocksdb_wrapper::*;
+pub use wrapper::*;
