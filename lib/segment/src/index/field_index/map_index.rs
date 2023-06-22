@@ -10,7 +10,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DatabaseColumn};
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::stat_tools::number_of_selected_points;

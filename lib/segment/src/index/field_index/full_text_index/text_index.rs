@@ -6,7 +6,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DatabaseColumn};
 use crate::common::Flusher;
 use crate::data_types::text_index::TextIndexParams;
 use crate::entry::entry_point::{OperationError, OperationResult};

@@ -7,6 +7,8 @@ use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumn
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 
+use super::rocksdb_wrapper::DatabaseColumn;
+
 /// Wrapper around `DatabaseColumnWrapper` that ensures, that keys that were removed from the
 /// database are only persisted on flush explicitly.
 ///
