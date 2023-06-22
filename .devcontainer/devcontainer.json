@@ -7,9 +7,24 @@
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
     "features": {
-        "ghcr.io/devcontainers/features/common-utils:2": {},
 		"rust": "latest",
-        "ghcr.io/devcontainers-contrib/features/protoc:latest": {}
+		"ghcr.io/devcontainers/features/common-utils:latest": {},
+		"ghcr.io/devcontainers-contrib/features/protoc:latest": {},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+			"moby": true,
+			"installDockerBuildx": true,
+			"version": "latest",
+			"dockerDashComposeVersion": "v2"
+		}
+		// "ghcr.io/devcontainers-contrib/features/protoc:1": {
+		// 	"version": "latest"
+		// }
+		// "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+		// 	// "moby": true,
+		// 	// "installDockerBuildx": true,
+		// 	"version": "latest",
+		// 	"dockerDashComposeVersion": "v2"
+		// }
     },
     "postCreateCommand": "sudo apt-get update && sudo apt-get install -y clang lld cmake protobuf-compiler jq && rustup component add rustfmt",
     "containerEnv": {
