@@ -19,7 +19,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tokio::runtime::Handle;
-use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
@@ -43,6 +43,16 @@ impl Qdrant for QdrantService {
         _request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckReply>, Status> {
         Ok(Response::new(VersionInfo::default().into()))
+    }
+}
+
+async fn wait_stop_signal(for_what: &str) {
+    let mut term = signal(SignalKind::terminate()).unwrap();
+    let mut inrt = signal(SignalKind::interrupt()).unwrap();
+
+    tokio::select! {
+        _ = term.recv() => log::debug!("Stopping {} on SIGTERM", for_what),
+        _ = inrt.recv() => log::debug!("Stopping {} on SIGINT", for_what),
     }
 }
 
@@ -119,8 +129,7 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
-                signal::ctrl_c().await.unwrap();
-                log::debug!("Stopping gRPC");
+                wait_stop_signal("gRPC service").await;
             })
             .await
             .map_err(helpers::tonic_error_to_io_error)
@@ -208,8 +217,7 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .serve_with_shutdown(socket, async {
-                    signal::ctrl_c().await.unwrap();
-                    log::debug!("Stopping internal gRPC");
+                    wait_stop_signal("internal gRPC").await;
                 })
                 .await
         })
