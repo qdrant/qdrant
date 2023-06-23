@@ -10,7 +10,8 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use super::{ PayloadFieldIndex};
+use super::private::DbWrapper;
+use super::PayloadFieldIndex;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::stat_tools::number_of_selected_points;
@@ -276,6 +277,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 }
 
+impl<N: Hash + Eq + Clone + Display> DbWrapper for MapIndex<N> {
+    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+        &self.db_wrapper
+    }
+}
+
 impl<N: Hash + Eq + Clone + Display + FromStr> BasePayloadFieldIndex for MapIndex<N> {
     fn count_indexed_points(&self) -> usize {
         self.indexed_points
@@ -287,10 +294,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> BasePayloadFieldIndex for MapInde
 
     fn clear(&self) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
-    }
-
-    fn db_wrapper(&self) ->  &DatabaseColumnWrapper {
-        &self.db_wrapper
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
@@ -458,7 +461,11 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
 impl ValueIndexer for MapIndex<String> {
     type ValueType = String;
 
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::ValueType>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+    ) -> OperationResult<()> {
         self.add_many_to_map(id, values)
     }
 

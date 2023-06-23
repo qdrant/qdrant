@@ -8,7 +8,8 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use super::{ PayloadFieldIndex};
+use super::private::DbWrapper;
+use super::PayloadFieldIndex;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
@@ -279,6 +280,12 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     }
 }
 
+impl<T: Encodable + Numericable> DbWrapper for NumericIndex<T> {
+    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+        &self.db_wrapper
+    }
+}
+
 impl<T: Encodable + Numericable> BasePayloadFieldIndex for NumericIndex<T> {
     fn count_indexed_points(&self) -> usize {
         self.points_count
@@ -290,10 +297,6 @@ impl<T: Encodable + Numericable> BasePayloadFieldIndex for NumericIndex<T> {
 
     fn clear(&self) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
-    }
-
-    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
-        &self.db_wrapper
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {

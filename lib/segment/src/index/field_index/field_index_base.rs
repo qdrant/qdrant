@@ -1,6 +1,7 @@
 use enum_dispatch::enum_dispatch;
 use serde_json::Value;
 
+use self::private::DbWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
@@ -17,8 +18,21 @@ use crate::types::{
     PointOffsetType,
 };
 
+pub(super) mod private {
+    use enum_dispatch::enum_dispatch;
+
+    use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+
+    #[enum_dispatch]
+    pub trait DbWrapper {
+        fn db_wrapper(&self) -> &DatabaseColumnWrapper;
+    }
+}
+
+
+/// Base trait for all payload indexes, intended to be implemented only once per index
 #[enum_dispatch]
-pub trait BasePayloadFieldIndex {
+pub trait BasePayloadFieldIndex: private::DbWrapper {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;
 
@@ -35,8 +49,6 @@ pub trait BasePayloadFieldIndex {
         self.db_wrapper().flusher()
     }
 
-    fn db_wrapper(&self) -> &DatabaseColumnWrapper;
-
     fn recreate(&self) -> OperationResult<()> {
         self.db_wrapper().recreate_column_family()
     }
@@ -48,7 +60,7 @@ pub trait BasePayloadFieldIndex {
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 }
 
-/// Main trait for all specific payload indexes, allowing polymorphic access to them
+/// Main trait for all specific payload indexes, allowing polymorphic implementations for them
 #[enum_dispatch]
 pub trait PayloadFieldIndex: BasePayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
@@ -70,13 +82,19 @@ pub trait PayloadFieldIndex: BasePayloadFieldIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
 }
 
-// enum_dispatch won't work nicely with associated types (nor generics), so we implement the sugar manually
+// enum_dispatch won't work with associated types (nor generics), because it would be 
+// impossible to implement it as a trait with a specific associated type. 
+// Instead, we add these methods as part of the target enum implementation.
 pub trait ValueIndexer {
     type ValueType;
 
     /// Add multiple values associated with a single point
     /// This function should be called only once for each point
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::ValueType>) -> OperationResult<()>;
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+    ) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
     fn get_value(&self, value: &Value) -> Option<Self::ValueType>;
@@ -137,7 +155,7 @@ pub trait ValueIndexer {
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes
 /// TODO: Rename with major release
-#[enum_dispatch(BasePayloadFieldIndex, PayloadFieldIndex)]
+#[enum_dispatch(BasePayloadFieldIndex, PayloadFieldIndex, DbWrapper)]
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
