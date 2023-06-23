@@ -9,7 +9,7 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use super::private::DbWrapper;
-use super::PayloadFieldIndex;
+use super::FieldTypeIndex;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
@@ -18,8 +18,7 @@ use crate::index::field_index::geo_hash::{
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    BasePayloadFieldIndex, CardinalityEstimation, PayloadBlockCondition, PrimaryCondition,
-    ValueIndexer,
+    CardinalityEstimation, IndexingStrategy, PayloadBlockCondition, PrimaryCondition, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -485,7 +484,7 @@ impl DbWrapper for GeoMapIndex {
     }
 }
 
-impl BasePayloadFieldIndex for GeoMapIndex {
+impl IndexingStrategy for GeoMapIndex {
     fn count_indexed_points(&self) -> usize {
         self.points_count
     }
@@ -514,7 +513,7 @@ impl BasePayloadFieldIndex for GeoMapIndex {
     }
 }
 
-impl PayloadFieldIndex for GeoMapIndex {
+impl FieldTypeIndex for GeoMapIndex {
     fn filter(
         &self,
         condition: &FieldCondition,

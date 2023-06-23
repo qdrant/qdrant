@@ -9,14 +9,13 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use super::private::DbWrapper;
-use super::PayloadFieldIndex;
+use super::FieldTypeIndex;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    BasePayloadFieldIndex, CardinalityEstimation, PayloadBlockCondition, PrimaryCondition,
-    ValueIndexer,
+    CardinalityEstimation, IndexingStrategy, PayloadBlockCondition, PrimaryCondition, ValueIndexer,
 };
 use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
@@ -286,7 +285,7 @@ impl<T: Encodable + Numericable> DbWrapper for NumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable> BasePayloadFieldIndex for NumericIndex<T> {
+impl<T: Encodable + Numericable> IndexingStrategy for NumericIndex<T> {
     fn count_indexed_points(&self) -> usize {
         self.points_count
     }
@@ -319,7 +318,7 @@ impl<T: Encodable + Numericable> BasePayloadFieldIndex for NumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
+impl<T: Encodable + Numericable> FieldTypeIndex for NumericIndex<T> {
     fn filter(
         &self,
         condition: &FieldCondition,

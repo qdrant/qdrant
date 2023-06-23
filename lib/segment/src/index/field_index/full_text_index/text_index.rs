@@ -15,8 +15,7 @@ use crate::index::field_index::full_text_index::inverted_index::{
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::field_index::private::DbWrapper;
 use crate::index::field_index::{
-    BasePayloadFieldIndex, CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex,
-    ValueIndexer,
+    CardinalityEstimation, FieldTypeIndex, IndexingStrategy, PayloadBlockCondition, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType, PointOffsetType};
@@ -161,7 +160,7 @@ impl DbWrapper for FullTextIndex {
     }
 }
 
-impl BasePayloadFieldIndex for FullTextIndex {
+impl IndexingStrategy for FullTextIndex {
     fn count_indexed_points(&self) -> usize {
         self.inverted_index.points_count
     }
@@ -198,7 +197,7 @@ impl BasePayloadFieldIndex for FullTextIndex {
     }
 }
 
-impl PayloadFieldIndex for FullTextIndex {
+impl FieldTypeIndex for FullTextIndex {
     fn filter(
         &self,
         condition: &FieldCondition,

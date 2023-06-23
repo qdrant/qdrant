@@ -29,9 +29,9 @@ pub(super) mod private {
     }
 }
 
-/// Base trait for all payload indexes, intended to be implemented only once per index
+/// Base trait for all field indexes, meant to be implemented only once per indexing approach
 #[enum_dispatch]
-pub trait BasePayloadFieldIndex: private::DbWrapper {
+pub trait IndexingStrategy: private::DbWrapper {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;
 
@@ -59,9 +59,10 @@ pub trait BasePayloadFieldIndex: private::DbWrapper {
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 }
 
-/// Main trait for all specific payload indexes, allowing polymorphic implementations for them
+/// Main trait for all concrete field indexes, allowing polymorphic implementations for them.
+/// Depending on the specific field type they act on.
 #[enum_dispatch]
-pub trait PayloadFieldIndex: BasePayloadFieldIndex {
+pub trait FieldTypeIndex: IndexingStrategy {
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
     fn filter<'a>(
@@ -82,8 +83,8 @@ pub trait PayloadFieldIndex: BasePayloadFieldIndex {
 }
 
 // enum_dispatch won't work with associated types (nor generics), because it would be
-// impossible to implement it as a trait with a specific associated type.
-// Instead, we add these methods as part of the target enum implementation.
+// impossible to implement it as a trait with a specific associated type on the dispatcher enum.
+// Instead, we add these methods as part of the dispatcher enum implementation.
 pub trait ValueIndexer {
     type Value;
 
@@ -150,7 +151,7 @@ pub trait ValueIndexer {
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes
 /// TODO: Rename with major release
-#[enum_dispatch(BasePayloadFieldIndex, PayloadFieldIndex, DbWrapper)]
+#[enum_dispatch(IndexingStrategy, FieldTypeIndex, DbWrapper)]
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
