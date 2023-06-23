@@ -16,7 +16,7 @@ use tempfile::Builder;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_updater() {
     test_collection_updater_with_shards(1).await;
     test_collection_updater_with_shards(N_SHARDS).await;
@@ -25,7 +25,7 @@ async fn test_collection_updater() {
 async fn test_collection_updater_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -78,10 +78,9 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         }
         Err(err) => panic!("search failed: {err:?}"),
     }
-    collection.before_drop().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_search_with_payload_and_vector() {
     test_collection_search_with_payload_and_vector_with_shards(1).await;
     test_collection_search_with_payload_and_vector_with_shards(N_SHARDS).await;
@@ -90,7 +89,7 @@ async fn test_collection_search_with_payload_and_vector() {
 async fn test_collection_search_with_payload_and_vector_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -155,12 +154,10 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
 
     let count_res = collection.count(count_request, None).await.unwrap();
     assert_eq!(count_res.count, 1);
-
-    collection.before_drop().await;
 }
 
 // FIXME: dos not work
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_loading() {
     test_collection_loading_with_shards(1).await;
     test_collection_loading_with_shards(N_SHARDS).await;
@@ -170,7 +167,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+        let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
                 ids: vec![0, 1, 2, 3, 4]
@@ -208,11 +205,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             .update_from_client(assign_payload, true, WriteOrdering::default())
             .await
             .unwrap();
-        collection.before_drop().await;
     }
 
     let collection_path = collection_dir.path();
-    let mut loaded_collection = load_local_collection(
+    let loaded_collection = load_local_collection(
         "test".to_string(),
         collection_path,
         &collection_path.join("snapshots"),
@@ -238,7 +234,6 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         }
     }
     println!("Function end");
-    loaded_collection.before_drop().await;
 }
 
 #[test]
@@ -288,7 +283,7 @@ fn test_deserialization2() {
 }
 
 // Request to find points sent to all shards but they might not have a particular id, so they will return an error
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_recommendation_api() {
     test_recommendation_api_with_shards(1).await;
     test_recommendation_api_with_shards(N_SHARDS).await;
@@ -296,7 +291,7 @@ async fn test_recommendation_api() {
 
 async fn test_recommendation_api_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -342,10 +337,9 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
     let top1 = &result[0];
 
     assert!(top1.id == 5.into() || top1.id == 6.into());
-    collection.before_drop().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_read_api() {
     test_read_api_with_shards(1).await;
     test_read_api_with_shards(N_SHARDS).await;
@@ -353,7 +347,7 @@ async fn test_read_api() {
 
 async fn test_read_api_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         Batch {
@@ -400,10 +394,9 @@ async fn test_read_api_with_shards(shard_number: u32) {
 
     assert_eq!(result.next_page_offset, Some(2.into()));
     assert_eq!(result.points.len(), 2);
-    collection.before_drop().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_delete_points_by_filter() {
     test_collection_delete_points_by_filter_with_shards(1).await;
     test_collection_delete_points_by_filter_with_shards(N_SHARDS).await;
@@ -412,7 +405,7 @@ async fn test_collection_delete_points_by_filter() {
 async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -487,5 +480,4 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     assert_eq!(result.points.get(0).unwrap().id, 1.into());
     assert_eq!(result.points.get(1).unwrap().id, 2.into());
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
-    collection.before_drop().await;
 }

@@ -8,7 +8,7 @@ use tempfile::Builder;
 
 use crate::common::{simple_collection_fixture, N_SHARDS};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_paginated_search() {
     test_collection_paginated_search_with_shards(1).await;
     test_collection_paginated_search_with_shards(N_SHARDS).await;
@@ -20,7 +20,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         .tempdir()
         .unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     // Upload 1000 random vectors to the collection
     let mut points = Vec::new();
@@ -59,8 +59,6 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
 
     assert_eq!(reference_result.len(), 100);
     assert_eq!(reference_result[0].id, 999.into());
-
-    collection.before_drop().await;
 
     let page_size = 10;
 

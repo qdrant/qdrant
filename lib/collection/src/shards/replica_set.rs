@@ -373,8 +373,9 @@ impl ShardReplicaSet {
             local.take()
         };
 
-        if let Some(mut removing_local) = removing_local {
-            removing_local.before_drop().await;
+        if let Some(removing_local) = removing_local {
+            // stop ongoing tasks and delete data
+            drop(removing_local);
             LocalShard::clear(&self.shard_path).await?;
         }
         Ok(())
@@ -951,13 +952,6 @@ impl ShardReplicaSet {
         }
     }
 
-    pub(crate) async fn before_drop(&mut self) {
-        let mut write_local = self.local.write().await;
-        if let Some(shard) = &mut *write_local {
-            shard.before_drop().await
-        }
-    }
-
     pub(crate) async fn get_telemetry_data(&self) -> ReplicaSetTelemetry {
         let local_shard = self.local.read().await;
         let local = local_shard
@@ -983,8 +977,7 @@ impl ShardReplicaSet {
             let mut local = self.local.write().await;
             let removed_local = local.take();
 
-            if let Some(mut removing_local) = removed_local {
-                removing_local.before_drop().await;
+            if let Some(removing_local) = removed_local {
                 drop(removing_local); // release file handlers
                 LocalShard::clear(&self.shard_path).await?;
             }

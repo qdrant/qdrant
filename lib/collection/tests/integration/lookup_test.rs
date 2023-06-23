@@ -80,7 +80,7 @@ async fn setup() -> Resources {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn happy_lookup_ids() {
     let Resources {
         mut request,
@@ -169,7 +169,7 @@ fn non_parsable_pseudo_id_to_point_id(#[case] value: impl Into<PseudoId>) {
 #[rstest]
 #[case::uuid(Uuid::new_v4().to_string())]
 #[case::int(1001u64)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn inexisting_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) {
     let value = value.into();
 
@@ -204,7 +204,7 @@ async fn inexisting_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) {
     assert_eq!(result.len(), 0);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn err_when_collection_by_name_returns_none() {
     let Resources {
         request,

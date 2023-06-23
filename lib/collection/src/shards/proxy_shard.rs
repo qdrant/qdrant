@@ -116,11 +116,6 @@ impl ProxyShard {
         Ok(())
     }
 
-    /// Forward `before_drop` to `wrapped_shard`
-    pub async fn before_drop(&mut self) {
-        self.wrapped_shard.before_drop().await
-    }
-
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         self.wrapped_shard.get_telemetry_data()
     }
