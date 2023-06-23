@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use geo::prelude::HaversineDistance;
-use geo::Point;
+use geo::{Contains, Coord, Point, Polygon};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -1196,6 +1196,32 @@ impl GeoRadius {
     }
 }
 
+/// Geo filter request
+///
+/// Matches coordinates inside the polygon, defined by the given coordinates in order.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct GeoPolygon {
+    /// Ordered list of coordinates representing the vertices of a polygon.
+    pub points: Vec<GeoPoint>,
+}
+
+impl GeoPolygon {
+    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+        let polygon_points: Vec<Coord<f64>> = self
+            .points
+            .iter()
+            .map(|p| Coord { x: p.lon, y: p.lat })
+            .collect();
+
+        let polygon = Polygon::new(polygon_points.into(), vec![]);
+
+        let point = Coord { x: lon, y: lat };
+
+        polygon.contains(&point)
+    }
+}
+
 /// All possible payload filtering conditions
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -1645,6 +1671,101 @@ mod tests {
         let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
         eprintln!("payload = {payload:#?}");
         eprintln!("de_record = {de_record:#?}");
+    }
+
+    #[test]
+    fn test_geo_radius_check_point() {
+        let radius = GeoRadius {
+            center: GeoPoint { lon: 0.0, lat: 0.0 },
+            radius: 80000.0,
+        };
+
+        let inside_result = radius.check_point(0.5, 0.5);
+        assert!(inside_result);
+
+        let outside_result = radius.check_point(1.5, 1.5);
+        assert!(!outside_result);
+    }
+
+    #[test]
+    fn test_geo_boundingbox_check_point() {
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint {
+                lon: -1.0,
+                lat: 1.0,
+            },
+            bottom_right: GeoPoint {
+                lon: 1.0,
+                lat: -1.0,
+            },
+        };
+
+        // haversine distance between (0, 0) and (0.5, 0.5) is 78626.29627999048
+        let inside_result = bounding_box.check_point(-0.5, 0.5);
+        assert!(inside_result);
+
+        // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
+        let outside_result = bounding_box.check_point(1.5, 1.5);
+        assert!(!outside_result);
+    }
+
+    #[test]
+    fn test_geo_polygon_check_point() {
+        // Create a GeoPolygon with a square shape
+        let polygon_1 = GeoPolygon {
+            points: vec![
+                GeoPoint {
+                    lon: -1.0,
+                    lat: -1.0,
+                },
+                GeoPoint {
+                    lon: 1.0,
+                    lat: -1.0,
+                },
+                GeoPoint { lon: 1.0, lat: 1.0 },
+                GeoPoint {
+                    lon: -1.0,
+                    lat: 1.0,
+                },
+            ],
+        };
+
+        let inside_result = polygon_1.check_point(0.5, 0.5);
+        assert!(inside_result);
+
+        let outside_result = polygon_1.check_point(1.5, 1.5);
+        assert!(!outside_result);
+
+        let on_edge_result = polygon_1.check_point(1.0, 0.0);
+        assert!(!on_edge_result);
+
+        // Create a GeoPolygon as a `twisted square`
+        let polygon_2 = GeoPolygon {
+            points: vec![
+                GeoPoint {
+                    lon: -1.0,
+                    lat: -1.0,
+                },
+                GeoPoint { lon: 1.0, lat: 1.0 },
+                GeoPoint {
+                    lon: 1.0,
+                    lat: -1.0,
+                },
+                GeoPoint {
+                    lon: -1.0,
+                    lat: 1.0,
+                },
+            ],
+        };
+
+        let inside_result_2 = polygon_2.check_point(0.5, 0.0);
+        assert!(inside_result_2);
+
+        let outside_result_2 = polygon_2.check_point(0.0, 0.5);
+        assert!(!outside_result_2);
+
+        let on_edge_result_2 = polygon_2.check_point(0.0, 0.0);
+        assert!(!on_edge_result_2);
     }
 
     #[test]
