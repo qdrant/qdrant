@@ -8,7 +8,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::common::rocksdb_wrapper::decorators::ScheduledDeleteDecorator;
+use crate::common::rocksdb_wrapper::decorators::ScheduledDelete;
 use crate::common::rocksdb_wrapper::{
     DatabaseColumn, DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF,
 };
@@ -61,8 +61,8 @@ pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
-    mapping_db_wrapper: ScheduledDeleteDecorator<DatabaseColumnWrapper>,
-    versions_db_wrapper: ScheduledDeleteDecorator<DatabaseColumnWrapper>,
+    mapping_db_wrapper: ScheduledDelete<DatabaseColumnWrapper>,
+    versions_db_wrapper: ScheduledDelete<DatabaseColumnWrapper>,
 }
 
 impl SimpleIdTracker {
@@ -73,7 +73,7 @@ impl SimpleIdTracker {
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
 
         let mapping_db_wrapper =
-            ScheduledDeleteDecorator::new(DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF));
+            ScheduledDelete::new(DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF));
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let internal_id: PointOffsetType =
@@ -119,7 +119,7 @@ impl SimpleIdTracker {
 
         let mut internal_to_version: Vec<SeqNumberType> = Default::default();
         let versions_db_wrapper =
-            ScheduledDeleteDecorator::new(DatabaseColumnWrapper::new(store, DB_VERSIONS_CF));
+            ScheduledDelete::new(DatabaseColumnWrapper::new(store, DB_VERSIONS_CF));
         for (key, val) in versions_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();

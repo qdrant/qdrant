@@ -13,12 +13,12 @@ use crate::entry::entry_point::OperationResult;
 /// This might be required to guarantee consistency of the database component.
 /// E.g. copy-on-write implementation should guarantee that data in the `write` component is
 /// persisted before it is removed from the `copy` component.
-pub struct ScheduledDeleteDecorator<D: DatabaseColumn> {
+pub struct ScheduledDelete<D: DatabaseColumn> {
     db: D,
     deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,
 }
 
-impl<D: DatabaseColumn> ScheduledDeleteDecorator<D> {
+impl<D: DatabaseColumn> ScheduledDelete<D> {
     pub fn new(db: D) -> Self {
         Self {
             db,
@@ -27,7 +27,7 @@ impl<D: DatabaseColumn> ScheduledDeleteDecorator<D> {
     }
 }
 
-impl<D: DatabaseColumn + Clone + Send + 'static> DatabaseColumn for ScheduledDeleteDecorator<D> {
+impl<D: DatabaseColumn + Clone + Send + 'static> DatabaseColumn for ScheduledDelete<D> {
     fn put<K, V>(&self, key: K, value: V) -> OperationResult<()>
     where
         K: AsRef<[u8]>,
