@@ -451,17 +451,13 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
 }
 
 impl ValueIndexer for NumericIndex<IntPayloadType> {
-    type ValueType = IntPayloadType;
+    type Value = IntPayloadType;
 
-    fn add_many(
-        &mut self,
-        id: PointOffsetType,
-        values: Vec<Self::ValueType>,
-    ) -> OperationResult<()> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::Value>) -> OperationResult<()> {
         self.add_many_to_list(id, values)
     }
 
-    fn get_value(&self, value: &Value) -> Option<Self::ValueType> {
+    fn get_value(&self, value: &Value) -> Option<Self::Value> {
         if let Value::Number(num) = value {
             return num.as_i64();
         }
@@ -474,17 +470,13 @@ impl ValueIndexer for NumericIndex<IntPayloadType> {
 }
 
 impl ValueIndexer for NumericIndex<FloatPayloadType> {
-    type ValueType = FloatPayloadType;
+    type Value = FloatPayloadType;
 
-    fn add_many(
-        &mut self,
-        id: PointOffsetType,
-        values: Vec<Self::ValueType>,
-    ) -> OperationResult<()> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::Value>) -> OperationResult<()> {
         self.add_many_to_list(id, values)
     }
 
-    fn get_value(&self, value: &Value) -> Option<Self::ValueType> {
+    fn get_value(&self, value: &Value) -> Option<Self::Value> {
         if let Value::Number(num) = value {
             return num.as_f64();
         }

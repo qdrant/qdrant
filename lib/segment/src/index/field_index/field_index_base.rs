@@ -29,7 +29,6 @@ pub(super) mod private {
     }
 }
 
-
 /// Base trait for all payload indexes, intended to be implemented only once per index
 #[enum_dispatch]
 pub trait BasePayloadFieldIndex: private::DbWrapper {
@@ -82,25 +81,21 @@ pub trait PayloadFieldIndex: BasePayloadFieldIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
 }
 
-// enum_dispatch won't work with associated types (nor generics), because it would be 
-// impossible to implement it as a trait with a specific associated type. 
+// enum_dispatch won't work with associated types (nor generics), because it would be
+// impossible to implement it as a trait with a specific associated type.
 // Instead, we add these methods as part of the target enum implementation.
 pub trait ValueIndexer {
-    type ValueType;
+    type Value;
 
     /// Add multiple values associated with a single point
     /// This function should be called only once for each point
-    fn add_many(
-        &mut self,
-        id: PointOffsetType,
-        values: Vec<Self::ValueType>,
-    ) -> OperationResult<()>;
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::Value>) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
-    fn get_value(&self, value: &Value) -> Option<Self::ValueType>;
+    fn get_value(&self, value: &Value) -> Option<Self::Value>;
 
     /// Try to extract index-able values from payload `Value`, even if it is an array
-    fn get_values(&self, value: &Value) -> Vec<Self::ValueType> {
+    fn get_values(&self, value: &Value) -> Vec<Self::Value> {
         match value {
             Value::Array(values) => values.iter().flat_map(|x| self.get_value(x)).collect(),
             _ => self.get_value(value).map(|x| vec![x]).unwrap_or_default(),
