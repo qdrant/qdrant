@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::collections::HashSet;
+use std::fmt;
 use std::sync::Arc;
 
 use itertools::Itertools;
@@ -82,6 +83,24 @@ pub struct UpdateHandler {
     wal: LockedWal,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
+}
+
+impl fmt::Debug for UpdateHandler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UpdateHandler")
+            .field("shared_storage_config", &self.shared_storage_config)
+            .field("flush_interval_sec", &self.flush_interval_sec)
+            .field("segments", &self.segments)
+            .field("update_worker", &self.update_worker)
+            .field("optimizer_worker", &self.optimizer_worker)
+            .field("flush_worker", &self.flush_worker)
+            .field("flush_stop", &self.flush_stop)
+            .field("runtime_handle", &self.runtime_handle)
+            .field("wal", &self.wal)
+            .field("optimization_handles", &self.optimization_handles)
+            .field("max_optimization_threads", &self.max_optimization_threads)
+            .finish_non_exhaustive()
+    }
 }
 
 impl UpdateHandler {

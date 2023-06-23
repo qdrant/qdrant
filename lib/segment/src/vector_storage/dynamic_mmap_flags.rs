@@ -1,7 +1,7 @@
 use std::cmp::max;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fmt, fs};
 
 use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
@@ -58,6 +58,7 @@ impl FileId {
     }
 }
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct DynamicMmapStatus {
     pub len: usize,
@@ -83,6 +84,16 @@ pub struct DynamicMmapFlags {
     flags_flusher: Arc<Mutex<Option<Flusher>>>,
     status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
+}
+
+impl fmt::Debug for DynamicMmapFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DynamicMmapFlags")
+            .field("flags", &self.flags)
+            .field("status", &self.status)
+            .field("directory", &self.directory)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Based on the number of flags determines the size of the mmap file.

@@ -22,18 +22,20 @@ const DEFAULT_CHUNK_SIZE: usize = 32 * 1024 * 1024; // 32Mb
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct Status {
     pub len: usize,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ChunkedMmapConfig {
     chunk_size_bytes: usize,
     chunk_size_vectors: usize,
     dim: usize,
 }
 
+#[derive(Debug)]
 pub struct ChunkedMmapVectors {
     config: ChunkedMmapConfig,
     status: MmapType<Status>,

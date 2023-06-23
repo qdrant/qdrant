@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use crate::{ConsensusOperations, StorageError};
 
 /// Structure used to notify consensus about operation
+#[derive(Debug)]
 pub struct OperationSender(Mutex<Sender<ConsensusOperations>>);
 
 impl OperationSender {

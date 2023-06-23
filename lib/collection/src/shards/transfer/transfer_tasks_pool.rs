@@ -4,6 +4,7 @@ use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
 use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
+#[derive(Debug)]
 pub struct TransferTasksPool {
     collection_id: CollectionId,
     tasks: HashMap<ShardTransferKey, StoppableAsyncTaskHandle<bool>>,

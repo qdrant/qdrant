@@ -22,6 +22,7 @@ use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 /// In-memory vector storage with on-update persistence using `store`
+#[derive(Debug)]
 pub struct SimpleVectorStorage {
     dim: usize,
     distance: Distance,

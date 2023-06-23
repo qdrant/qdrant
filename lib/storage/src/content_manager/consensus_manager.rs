@@ -64,6 +64,7 @@ impl TryFrom<&[u8]> for SnapshotData {
     }
 }
 
+#[derive(Debug)]
 pub struct ConsensusManager<C: CollectionContainer> {
     pub persistent: RwLock<Persistent>,
     /// Notifies if the current node knows who the leader and is not in the process of election
@@ -746,7 +747,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ConsensusStateRef(pub Arc<prelude::ConsensusState>);
 
 impl Deref for ConsensusStateRef {

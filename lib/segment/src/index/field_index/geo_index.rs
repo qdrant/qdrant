@@ -28,6 +28,7 @@ use crate::types::{
 // TODO discuss value, should it be dynamically computed?
 const GEO_QUERY_MAX_REGION: usize = 12;
 
+#[derive(Debug)]
 pub struct GeoMapIndex {
     /**
     {

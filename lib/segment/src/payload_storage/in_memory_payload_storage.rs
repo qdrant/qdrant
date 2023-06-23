@@ -5,7 +5,7 @@ use crate::types::{Payload, PointOffsetType};
 
 /// Same as `SimplePayloadStorage` but without persistence
 /// Warn: for tests only
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct InMemoryPayloadStorage {
     pub(crate) payload: HashMap<PointOffsetType, Payload>,
 }

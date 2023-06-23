@@ -3,6 +3,7 @@ use std::sync::{Arc, Weak};
 
 use tokio::task::JoinHandle;
 
+#[derive(Debug)]
 pub struct StoppableTaskHandle<T> {
     pub join_handle: JoinHandle<T>,
     finished: Arc<AtomicBool>,

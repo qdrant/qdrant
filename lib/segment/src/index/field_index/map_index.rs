@@ -26,6 +26,7 @@ use crate::types::{
 use crate::vector_storage::div_ceil;
 
 /// HashMap-based type of index
+#[derive(Debug)]
 pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     map: HashMap<N, BTreeSet<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,

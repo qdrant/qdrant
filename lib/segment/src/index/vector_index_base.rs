@@ -35,6 +35,7 @@ pub trait VectorIndex {
     fn is_appendable(&self) -> bool;
 }
 
+#[derive(Debug)]
 pub enum VectorIndexEnum {
     Plain(PlainIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),

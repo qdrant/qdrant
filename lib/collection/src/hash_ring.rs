@@ -1,3 +1,4 @@
+use std::fmt;
 use std::hash::Hash;
 
 pub enum HashRing<T: Hash + Copy> {
@@ -6,6 +7,18 @@ pub enum HashRing<T: Hash + Copy> {
         ring: hashring::HashRing<(T, u32)>,
         scale: u32,
     },
+}
+
+impl<T: Hash + Copy> fmt::Debug for HashRing<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Raw(_) => f.debug_tuple("Raw").finish(),
+            Self::Fair { scale, .. } => f
+                .debug_struct("Fair")
+                .field("scale", &scale)
+                .finish_non_exhaustive(),
+        }
+    }
 }
 
 impl<T: Hash + Copy> HashRing<T> {

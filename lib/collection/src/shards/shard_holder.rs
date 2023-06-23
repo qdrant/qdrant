@@ -22,12 +22,14 @@ use crate::shards::CollectionId;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 
+#[derive(Debug)]
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     ring: HashRing<ShardId>,
 }
 
+#[derive(Debug)]
 pub struct LockedShardHolder(pub RwLock<ShardHolder>);
 
 impl ShardHolder {

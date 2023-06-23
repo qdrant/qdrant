@@ -34,6 +34,7 @@ type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
 ///
 /// It can be used to provide all read and write operations while the wrapped shard is being transferred to another node.
 /// It keeps track of changed points during the shard transfer to assure consistency.
+#[derive(Debug)]
 pub struct ProxyShard {
     wrapped_shard: LocalShard,
     changed_points: ChangedPointsSet,

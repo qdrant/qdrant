@@ -5,6 +5,7 @@ use std::sync::{Arc, Weak};
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 
+#[derive(Debug)]
 pub struct StoppableAsyncTaskHandle<T: Clone> {
     pub join_handle: JoinHandle<T>,
     result_holder: Arc<Mutex<Option<T>>>,

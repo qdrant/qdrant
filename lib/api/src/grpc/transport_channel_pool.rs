@@ -67,6 +67,7 @@ enum RequestFailure {
 /// Holds a pool of channels established for a set of URIs.
 /// Channel are shared by cloning them.
 /// Make the `pool_size` larger to increase throughput.
+#[derive(Debug)]
 pub struct TransportChannelPool {
     uri_to_pool: tokio::sync::RwLock<HashMap<Uri, DynamicChannelPool>>,
     pool_size: NonZeroUsize,

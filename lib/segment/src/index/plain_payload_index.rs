@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -202,6 +203,23 @@ pub struct PlainIndex {
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
+}
+
+impl fmt::Debug for PlainIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PlainIndex")
+            .field("vector_storage", &self.vector_storage)
+            .field("payload_index", &self.payload_index)
+            .field(
+                "filtered_searches_telemetry",
+                &self.filtered_searches_telemetry,
+            )
+            .field(
+                "unfiltered_searches_telemetry",
+                &self.unfiltered_searches_telemetry,
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl PlainIndex {

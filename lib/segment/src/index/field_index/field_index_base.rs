@@ -114,6 +114,7 @@ pub trait ValueIndexer<T> {
 /// Enables polymorphism on field indexes
 /// TODO: Rename with major release
 #[allow(clippy::enum_variant_names)]
+#[derive(Debug)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
     IntMapIndex(MapIndex<IntPayloadType>),

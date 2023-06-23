@@ -21,6 +21,7 @@ pub async fn make_grpc_channel(
     endpoint.connect().await
 }
 
+#[derive(Debug)]
 pub struct DynamicChannelPool {
     pool: Mutex<DynamicPool<Channel>>,
     init_at: Instant,

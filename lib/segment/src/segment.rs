@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -84,6 +85,25 @@ pub struct Segment {
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<SeqNumberType>>>>,
 }
 
+impl fmt::Debug for Segment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Segment")
+            .field("version", &self.version)
+            .field("persisted_version", &self.persisted_version)
+            .field("current_path", &self.current_path)
+            .field("vector_data", &self.vector_data)
+            .field("payload_index", &self.payload_index)
+            .field("appendable_flag", &self.appendable_flag)
+            .field("segment_type", &self.segment_type)
+            .field("segment_config", &self.segment_config)
+            .field("error_status", &self.error_status)
+            .field("database", &self.database)
+            .field("flush_thread", &self.flush_thread)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
 pub struct VectorData {
     pub vector_index: Arc<AtomicRefCell<VectorIndexEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,

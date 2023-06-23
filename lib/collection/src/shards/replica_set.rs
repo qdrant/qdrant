@@ -1,4 +1,3 @@
-use std::cmp;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -7,6 +6,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{cmp, fmt};
 
 use futures::future::{join, join_all};
 use futures::stream::FuturesUnordered;
@@ -171,6 +171,26 @@ pub struct ShardReplicaSet {
     update_runtime: Handle,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
+}
+
+impl fmt::Debug for ShardReplicaSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ShardReplicaSet")
+            .field("local", &self.local)
+            .field("remotes", &self.remotes)
+            .field("replica_state", &self.replica_state)
+            .field("locally_disabled_peers", &self.locally_disabled_peers)
+            .field("shard_path", &self.shard_path)
+            .field("shard_id", &self.shard_id)
+            .field("read_remote_replicas", &self.read_remote_replicas)
+            .field("channel_service", &self.channel_service)
+            .field("collection_id", &self.collection_id)
+            .field("collection_config", &self.collection_config)
+            .field("shared_storage_config", &self.shared_storage_config)
+            .field("update_runtime", &self.update_runtime)
+            .field("write_ordering_lock", &self.write_ordering_lock)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ShardReplicaSet {

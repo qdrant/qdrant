@@ -4,6 +4,7 @@ use crate::entry::entry_point::OperationResult;
 
 // This is a mock implementation of the async_io module for those platforms that don't support io_uring.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct UringReader;
 
 #[allow(dead_code)]

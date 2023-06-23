@@ -55,7 +55,7 @@ impl ParsedQuery {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct InvertedIndex {
     postings: Vec<Option<PostingList>>,
     pub vocab: HashMap<String, TokenId>,

@@ -43,6 +43,7 @@ type Result<T> = std::result::Result<T, Error>;
 /// This directly maps (transmutes) the type onto the memory mapped data. This is dangerous and
 /// very error prone and must be used with utmost care. Types holding references are not supported
 /// for example. Malformed data in the mmap will break type `T` and will cause undefined behavior.
+#[derive(Debug)]
 pub struct MmapType<T>
 where
     T: ?Sized + 'static,
@@ -213,6 +214,7 @@ where
 /// Functions as if it is `&[T]` because this implements [`Deref`] and [`DerefMut`].
 ///
 /// A helper because [`MmapType`] doesn't support slices directly.
+#[derive(Debug)]
 pub struct MmapSlice<T>
 where
     T: Sized + 'static,
@@ -281,6 +283,7 @@ impl<T> DerefMut for MmapSlice<T> {
 /// [`BitSlice`] on a memory mapped file
 ///
 /// Functions as if it is a [`BitSlice`] because this implements [`Deref`] and [`DerefMut`].
+#[derive(Debug)]
 pub struct MmapBitSlice {
     mmap: MmapType<BitSlice>,
 }

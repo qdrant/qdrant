@@ -20,6 +20,7 @@ use crate::index::field_index::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType, PointOffsetType};
 
+#[derive(Debug)]
 pub struct FullTextIndex {
     inverted_index: InvertedIndex,
     db_wrapper: DatabaseColumnWrapper,

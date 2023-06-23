@@ -24,6 +24,7 @@ type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
 /// This object is a wrapper around read-only segment.
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
 /// It writes all changed records into a temporary `write_segment` and keeps track on changed points
+#[derive(Debug)]
 pub struct ProxySegment {
     pub write_segment: LockedSegment,
     pub wrapped_segment: LockedSegment,

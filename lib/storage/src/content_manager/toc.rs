@@ -68,6 +68,7 @@ pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidd
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
 /// the launch of the service.
+#[derive(Debug)]
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     storage_config: Arc<StorageConfig>,

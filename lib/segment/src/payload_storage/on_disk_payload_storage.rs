@@ -12,6 +12,7 @@ use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 
 /// On-disk implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, does not keep payload in memory
+#[derive(Debug)]
 pub struct OnDiskPayloadStorage {
     db_wrapper: DatabaseColumnWrapper,
 }

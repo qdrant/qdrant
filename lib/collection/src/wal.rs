@@ -62,6 +62,7 @@ impl WalState {
 /// Each stored record is enumerated with sequential number.
 /// Sequential number can be used to read stored records starting from some IDs,
 /// for removing old, no longer required, records.
+#[derive(Debug)]
 pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,

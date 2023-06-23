@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -52,6 +53,20 @@ pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     searches_telemetry: SearchesTelemetry,
 }
 
+impl<T: GraphLinks + fmt::Debug> fmt::Debug for HNSWIndex<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HNSWIndex")
+            .field("vector_storage", &self.vector_storage)
+            .field("payload_index", &self.payload_index)
+            .field("config", &self.config)
+            .field("path", &self.path)
+            .field("graph", &self.graph)
+            .field("searches_telemetry", &self.searches_telemetry)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
 struct SearchesTelemetry {
     unfiltered_plain: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,

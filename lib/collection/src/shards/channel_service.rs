@@ -6,7 +6,7 @@ use tonic::transport::Uri;
 
 use crate::shards::shard::PeerId;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ChannelService {
     // Shared with consensus_state
     pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,

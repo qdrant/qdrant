@@ -26,6 +26,7 @@ use crate::shards::telemetry::LocalShardTelemetry;
 ///
 /// It can be used to provide all read and write operations while the wrapped shard is being transferred to another node.
 /// Proxy forwards all operations to remote shards.
+#[derive(Debug)]
 pub struct ForwardProxyShard {
     pub(crate) wrapped_shard: LocalShard,
     pub(crate) remote_shard: RemoteShard,

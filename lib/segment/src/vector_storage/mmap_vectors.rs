@@ -27,6 +27,7 @@ const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
 const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Mem-mapped file
+#[derive(Debug)]
 pub struct MmapVectors {
     pub dim: usize,
     pub num_vectors: usize,

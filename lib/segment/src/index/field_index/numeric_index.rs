@@ -51,6 +51,7 @@ impl Encodable for FloatPayloadType {
     }
 }
 
+#[derive(Debug)]
 pub struct NumericIndex<T: Encodable + Numericable> {
     map: BTreeMap<Vec<u8>, u32>,
     db_wrapper: DatabaseColumnWrapper,

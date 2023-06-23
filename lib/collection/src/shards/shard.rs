@@ -18,6 +18,7 @@ pub type PeerId = u64;
 /// Contains a part of the collection's points
 ///
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
 pub enum Shard {
     Local(LocalShard),
     Proxy(ProxyShard),

@@ -4,7 +4,7 @@ use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::thread;
+use std::{fmt, thread};
 
 use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -60,6 +60,20 @@ pub struct LocalShard {
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     update_runtime: Handle,
+}
+
+impl fmt::Debug for LocalShard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalShard")
+            .field("segments", &self.segments)
+            .field("collection_config", &self.collection_config)
+            .field("shred_storage_config", &self.shred_storage_config)
+            .field("wal", &self.wal)
+            .field("update_handler", &self.update_handler)
+            .field("update_sender", &self.update_sender)
+            .field("path", &self.path)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Shard holds information about segments and WAL.

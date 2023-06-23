@@ -22,6 +22,7 @@ impl<T: Clone> ItemWithStats<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct DynamicPool<T: Clone> {
     items: HashMap<u64, Arc<ItemWithStats<T>>>,
     /// How many times one item can be used

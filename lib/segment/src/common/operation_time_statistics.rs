@@ -36,6 +36,7 @@ pub struct OperationDurationStatistics {
     pub last_responded: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug)]
 pub struct OperationDurationsAggregator {
     ok_count: usize,
     fail_count: usize,

@@ -128,6 +128,7 @@ pub trait VectorStorage {
     fn is_appendable(&self) -> bool;
 }
 
+#[derive(Debug)]
 pub enum VectorStorageEnum {
     Simple(SimpleVectorStorage),
     Memmap(Box<MemmapVectorStorage>),

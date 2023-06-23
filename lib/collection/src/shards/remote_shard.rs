@@ -48,6 +48,7 @@ use crate::shards::CollectionId;
 /// RemoteShard
 ///
 /// Remote Shard is a representation of a shard that is located on a remote peer.
+#[derive(Debug)]
 pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,

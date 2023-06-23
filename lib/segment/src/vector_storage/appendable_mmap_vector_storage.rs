@@ -19,6 +19,7 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
+#[derive(Debug)]
 pub struct AppendableMmapVectorStorage {
     vectors: ChunkedMmapVectors,
     deleted: DynamicMmapFlags,

@@ -17,6 +17,7 @@ use super::validate;
 use crate::common::collections::*;
 use crate::tonic::api::collections_common::get;
 
+#[derive(Debug)]
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,
 }

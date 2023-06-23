@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,12 +23,23 @@ pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
 pub const QUANTIZED_META_PATH: &str = "quantized.meta.json";
 
+// TODO: Derive/implement `fmt::Debug` for types in `quantization` crate!
 #[derive(Deserialize, Serialize, Clone)]
 pub struct QuantizedVectorsConfig {
     pub quantization_config: QuantizationConfig,
     pub vector_parameters: quantization::VectorParameters,
 }
 
+// TODO: Derive/implement `fmt::Debug` for types in `quantization` crate!
+impl fmt::Debug for QuantizedVectorsConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QuantizedVectorsConfig")
+            .field("quantization_config", &self.quantization_config)
+            .finish_non_exhaustive()
+    }
+}
+
+// TODO: Derive/implement `fmt::Debug` for types in `quantization` crate!
 pub enum QuantizedVectorStorage {
     ScalarRam(EncodedVectorsU8<ChunkedVectors<u8>>),
     ScalarMmap(EncodedVectorsU8<QuantizedMmapStorage>),
@@ -35,6 +47,19 @@ pub enum QuantizedVectorStorage {
     PQMmap(EncodedVectorsPQ<QuantizedMmapStorage>),
 }
 
+// TODO: Derive/implement `fmt::Debug` for types in `quantization` crate!
+impl fmt::Debug for QuantizedVectorStorage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ScalarRam(_) => f.debug_tuple("ScalarRam").finish(),
+            Self::ScalarMmap(_) => f.debug_tuple("ScalarMmap").finish(),
+            Self::PQRam(_) => f.debug_tuple("PQRam").finish(),
+            Self::PQMmap(_) => f.debug_tuple("PQMmap").finish(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct QuantizedVectors {
     storage_impl: QuantizedVectorStorage,
     config: QuantizedVectorsConfig,

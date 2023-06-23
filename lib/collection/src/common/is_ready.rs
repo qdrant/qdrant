@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use parking_lot::{Condvar, Mutex};
 
+#[derive(Debug)]
 pub struct IsReady {
     condvar: Condvar,
     value: Mutex<bool>,

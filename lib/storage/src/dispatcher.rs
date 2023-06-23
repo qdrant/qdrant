@@ -8,6 +8,7 @@ use crate::{
     TableOfContent,
 };
 
+#[derive(Debug)]
 pub struct Dispatcher {
     toc: Arc<TableOfContent>,
     consensus_state: Option<ConsensusStateRef>,

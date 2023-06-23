@@ -12,6 +12,7 @@ use crate::{ConsensusOperations, StorageError};
 
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 
+#[derive(Debug)]
 pub struct ConsensusOpWal(Wal);
 
 impl ConsensusOpWal {

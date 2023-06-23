@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs::create_dir_all;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -51,6 +52,19 @@ pub struct StructPayloadIndex {
     /// Used to select unique point ids
     visited_pool: VisitedPool,
     db: Arc<RwLock<DB>>,
+}
+
+impl fmt::Debug for StructPayloadIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StructPayloadIndex")
+            .field("payload", &self.payload)
+            .field("field_indexes", &self.field_indexes)
+            .field("config", &self.config)
+            .field("path", &self.path)
+            .field("visited_pool", &self.visited_pool)
+            .field("db", &self.db)
+            .finish_non_exhaustive()
+    }
 }
 
 impl StructPayloadIndex {

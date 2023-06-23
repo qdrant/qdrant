@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -99,6 +100,27 @@ pub struct Collection {
     search_runtime: Handle,
     // Update runtime handle.
     update_runtime: Handle,
+}
+
+impl fmt::Debug for Collection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Collection")
+            .field("id", &self.id)
+            .field("shards_holder", &self.shards_holder)
+            .field("collection_config", &self.collection_config)
+            .field("shared_storage_config", &self.shared_storage_config)
+            .field("this_peer_id", &self.this_peer_id)
+            .field("path", &self.path)
+            .field("snapshots_path", &self.snapshots_path)
+            .field("channel_service", &self.channel_service)
+            .field("transfer_tasks", &self.transfer_tasks)
+            .field("init_time", &self.init_time)
+            .field("is_initialized", &self.is_initialized)
+            .field("updates_lock", &self.updates_lock)
+            .field("search_runtime", &self.search_runtime)
+            .field("update_runtime", &self.update_runtime)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Collection {
