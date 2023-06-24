@@ -1,10 +1,15 @@
 use std::collections::BinaryHeap;
+use std::path::Path;
 
+use itertools::Itertools;
 use num_traits::float::FloatCore;
 use rand::distributions::Uniform;
 use rand::Rng;
 
 use super::entry_points::{EntryPoint, EntryPoints};
+use super::graph_layers::GraphLayers;
+use super::graph_links::{GraphLinks, GraphLinksConverter};
+use crate::entry::entry_point::OperationResult;
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
@@ -15,19 +20,21 @@ pub struct GraphLinearBuilder<'a> {
     m0: usize,
     ef_construct: usize,
     links_layers: Vec<Vec<PointOffsetType>>,
-    pub entry_points: EntryPoints,
+    entry_points: EntryPoints,
     visited_pool: VisitedPool,
     points_scorer: Box<dyn RawScorer + 'a>,
     point_levels: Vec<usize>,
     entries: Vec<Option<EntryPoint>>,
 }
 
+#[derive(Clone)]
 pub struct GraphLinkRequest {
     point_id: PointOffsetType,
     level: usize,
     entry: ScoredPointOffset,
 }
 
+#[derive(Clone)]
 pub struct GraphLinkResponse {
     point_id: PointOffsetType,
     level: usize,
@@ -68,10 +75,10 @@ impl<'a> GraphLinearBuilder<'a> {
         let point_levels: Vec<_> = (0..num_vectors)
             .map(|_| Self::get_random_layer(level_factor, rng))
             .collect();
-        let levels_count = point_levels.iter().copied().max().unwrap();
+        let max_level = point_levels.iter().copied().max().unwrap();
 
         let mut links_layers: Vec<Vec<PointOffsetType>> = vec![];
-        for i in 0..=levels_count {
+        for i in 0..=max_level {
             let level_m = if i == 0 { m0 } else { m };
             let buffer = vec![0 as PointOffsetType; (level_m + 1) * point_levels.len()];
             links_layers.push(buffer);
@@ -83,7 +90,7 @@ impl<'a> GraphLinearBuilder<'a> {
             entries.push(entry_points.new_point(idx, point_levels[idx as usize], |_| true));
         }
 
-        let mut builder = Self {
+        let builder = Self {
             m,
             m0,
             ef_construct,
@@ -94,12 +101,83 @@ impl<'a> GraphLinearBuilder<'a> {
             point_levels,
             entries,
         };
+        builder
+    }
 
-        for idx in 0..(num_vectors as PointOffsetType) {
-            builder.link_new_point(idx);
+    pub fn into_graph_layers<TGraphLinks: GraphLinks>(
+        self,
+        path: Option<&Path>,
+    ) -> OperationResult<GraphLayers<TGraphLinks>> {
+        let links = (0..self.num_vectors() as PointOffsetType)
+            .map(|idx| {
+                (0..=self.get_point_level(idx))
+                    .map(|level| self.get_links(idx, level).to_vec())
+                    .collect_vec()
+            })
+            .collect_vec();
+
+        let mut links_converter = GraphLinksConverter::new(links);
+        if let Some(path) = path {
+            links_converter.save_as(path)?;
         }
 
-        builder
+        let links = TGraphLinks::from_converter(links_converter)?;
+        Ok(GraphLayers {
+            m: self.m,
+            m0: self.m0,
+            ef_construct: self.ef_construct,
+            links,
+            entry_points: self.entry_points,
+            visited_pool: self.visited_pool,
+        })
+    }
+
+    pub fn build(&mut self) {
+        let mut requests: Vec<Option<GraphLinkRequest>> =
+            (0..self.num_vectors()).map(|_| None).collect();
+        let max_level = self.point_levels.iter().copied().max().unwrap();
+        for level in (0..=max_level).rev() {
+            let mut level_requests = vec![];
+            for idx in 0..self.num_vectors() as PointOffsetType {
+                let point_level = self.get_point_level(idx);
+                let min_level = std::cmp::min(
+                    point_level,
+                    self.entries[idx as usize]
+                        .as_ref()
+                        .map(|e| e.level)
+                        .unwrap_or(point_level),
+                );
+                if min_level == level {
+                    requests[idx as usize] = self.get_link_request(idx);
+                }
+                if let Some(request) = requests[idx as usize].clone() {
+                    if request.level == level {
+                        level_requests.push(request);
+                    }
+                }
+            }
+
+            for request in level_requests {
+                let point_id = request.point_id;
+                let response = self.link(request);
+                self.apply_link_response(&response);
+                requests[point_id as usize] = response.next_request();
+            }
+        }
+        for idx in 0..self.num_vectors() {
+            assert!(requests[idx].is_none());
+        }
+    }
+
+    pub fn build_one_by_one(&mut self) {
+        for idx in 0..self.num_vectors() {
+            let mut request = self.get_link_request(idx as PointOffsetType);
+            while let Some(r) = request {
+                let response = self.link(r);
+                self.apply_link_response(&response);
+                request = response.next_request();
+            }
+        }
     }
 
     pub fn apply_link_response(&mut self, response: &GraphLinkResponse) {
@@ -371,8 +449,9 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer, random_vector};
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+    use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::CosineMetric;
     use crate::types::PointOffsetType;
@@ -391,7 +470,7 @@ mod tests {
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-        let graph_layers_2 = GraphLinearBuilder::new(
+        let mut graph_layers_2 = GraphLinearBuilder::new(
             num_vectors,
             m,
             m * 2,
@@ -400,6 +479,7 @@ mod tests {
             raw_scorer,
             &mut rng,
         );
+        graph_layers_2.build_one_by_one();
 
         let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
             num_vectors,
@@ -421,12 +501,110 @@ mod tests {
             graph_layers_1.link_new_point(idx, scorer);
         }
 
-        for (point_id, links_1) in graph_layers_1.links_layers.iter().enumerate() {
-            for (level, links_1) in links_1.iter().enumerate() {
+        for (point_id, layer_1) in graph_layers_1.links_layers.iter().enumerate() {
+            for (level, links_1) in layer_1.iter().enumerate().rev() {
                 let links_1 = links_1.read().clone();
                 let links_2 = graph_layers_2.get_links(point_id as PointOffsetType, level);
                 assert_eq!(links_1.as_slice(), links_2);
             }
         }
+    }
+
+    #[test]
+    fn test_linear_hnsw_quality() {
+        let num_vectors = 1000;
+        let m = M;
+        let ef_construct = 16;
+        let entry_points_num = 10;
+        let dim = 16;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
+
+        let added_vector = vector_holder.vectors.get(0).to_vec();
+        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+        let mut graph_layers_2 = GraphLinearBuilder::new(
+            num_vectors,
+            m,
+            m * 2,
+            ef_construct,
+            entry_points_num,
+            raw_scorer,
+            &mut rng,
+        );
+        //graph_layers_2.build_one_by_one();
+        graph_layers_2.build();
+
+        let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
+            num_vectors,
+            m,
+            m * 2,
+            ef_construct,
+            entry_points_num,
+            true,
+            true,
+        );
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let fake_filter_context = FakeFilterContext {};
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers_1.set_levels(idx, graph_layers_2.get_point_level(idx));
+            graph_layers_1.link_new_point(idx, scorer);
+        }
+
+        let graph_1 = graph_layers_1
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
+        let graph_2 = graph_layers_2
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
+
+        let attempts = 10;
+        let top = 10;
+        let ef = 16;
+        let mut total_sames_1 = 0;
+        let mut total_sames_2 = 0;
+        for _ in 0..attempts {
+            let query = random_vector(&mut rng, dim);
+            let fake_filter_context = FakeFilterContext {};
+            let raw_scorer = vector_holder.get_raw_scorer(query);
+
+            let mut reference_top = FixedLengthPriorityQueue::<ScoredPointOffset>::new(top);
+            for idx in 0..vector_holder.vectors.len() as PointOffsetType {
+                reference_top.push(ScoredPointOffset {
+                    idx,
+                    score: raw_scorer.score_point(idx)}
+                );
+            }
+            let brute_top = reference_top.into_vec();
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let graph_search_1 = graph_1.search(top, ef, scorer);
+            let sames_1 = sames_count(&brute_top, &graph_search_1);
+            total_sames_1 += sames_1;
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let graph_search_2 = graph_2.search(top, ef, scorer);
+            let sames_2 = sames_count(&brute_top, &graph_search_2);
+            total_sames_2 += sames_2;
+        }
+        let min_sames = top as f32 * 0.8 * attempts as f32;
+        assert!(total_sames_1 as f32 > min_sames);
+        assert!(total_sames_2 as f32 > min_sames);
+    }
+
+    fn sames_count(a: &[ScoredPointOffset], b: &[ScoredPointOffset]) -> usize {
+        let mut count = 0;
+        for a_item in a {
+            for b_item in b {
+                if a_item.idx == b_item.idx {
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 }
