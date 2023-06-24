@@ -449,7 +449,9 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer, random_vector};
+    use crate::fixtures::index_fixtures::{
+        random_vector, FakeFilterContext, TestRawScorerProducer,
+    };
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -576,8 +578,8 @@ mod tests {
             for idx in 0..vector_holder.vectors.len() as PointOffsetType {
                 reference_top.push(ScoredPointOffset {
                     idx,
-                    score: raw_scorer.score_point(idx)}
-                );
+                    score: raw_scorer.score_point(idx),
+                });
             }
             let brute_top = reference_top.into_vec();
 
