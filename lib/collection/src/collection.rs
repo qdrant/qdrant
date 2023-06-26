@@ -142,12 +142,7 @@ impl Collection {
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
             )
-            .await;
-
-            let replica_set = match replica_set {
-                Ok(replica_set) => replica_set,
-                Err(err) => return Err(err),
-            };
+            .await?;
 
             shard_holder.add_shard(shard_id, replica_set);
         }
