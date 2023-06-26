@@ -49,7 +49,7 @@ actix-web-validator = "5.0.1"
 segment = {path = "../segment"}
 api = {path = "../api"}
 
-itertools = "0.10"
+itertools = "0.11"
 indicatif = "0.17.5"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono", "url"] }
