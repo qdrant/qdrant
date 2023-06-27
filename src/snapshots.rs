@@ -1,4 +1,4 @@
-use std::fs::{remove_dir_all, rename};
+use std::fs::{self, remove_dir_all, rename};
 use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
@@ -92,16 +92,16 @@ pub fn recover_full_snapshot(
     let snapshot_temp_path = temp_dir.map(PathBuf::from).unwrap_or_else(|| {
         Path::new(storage_dir).join(format!("snapshots-recovery-{}", Uuid::new_v4()))
     });
-    std::fs::create_dir_all(&snapshot_temp_path).unwrap();
+    fs::create_dir_all(&snapshot_temp_path).unwrap();
 
     // Un-tar snapshot into temporary directory
-    let archive_file = std::fs::File::open(snapshot_path).unwrap();
+    let archive_file = fs::File::open(snapshot_path).unwrap();
     let mut ar = tar::Archive::new(archive_file);
     ar.unpack(&snapshot_temp_path).unwrap();
 
     // Read configuration file with snapshot-to-collection mapping
     let config_path = snapshot_temp_path.join("config.json");
-    let config_file = std::fs::File::open(config_path).unwrap();
+    let config_file = fs::File::open(config_path).unwrap();
     let config_json: SnapshotConfig = serde_json::from_reader(config_file).unwrap();
 
     // Create mapping from the configuration file
