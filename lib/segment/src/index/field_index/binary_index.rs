@@ -12,7 +12,7 @@ use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
 };
 
-pub(self) struct BinaryMemory {
+struct BinaryMemory {
     trues: BitVec,
     falses: BitVec,
 }
@@ -53,7 +53,11 @@ impl BinaryMemory {
         }
     }
 
-    pub fn set_or_insert(&mut self, id: PointOffsetType, value: bool) {
+    pub fn set_or_insert(&mut self, id: PointOffsetType, has_true: bool, has_false: bool) {
+        if !has_true && !has_false {
+            return;
+        }
+
         if (id as usize) >= self.trues.len() {
             self.trues.resize(id as usize + 1, false);
             self.falses.resize(id as usize + 1, false);
@@ -63,11 +67,8 @@ impl BinaryMemory {
 
         unsafe {
             // SAFETY: we just resized the vectors to be at least as long as the id
-            if value {
-                self.trues.set_unchecked(id as usize, true);
-            } else {
-                self.falses.set_unchecked(id as usize, true);
-            }
+            self.trues.set_unchecked(id as usize, has_true);
+            self.falses.set_unchecked(id as usize, has_false);
         }
     }
 
@@ -78,7 +79,12 @@ impl BinaryMemory {
             self.falses.set(id as usize, false);
         }
 
-        // shrink the vectors if possible
+        // TODO: should we avoid shrinking the vecs on every remove?
+        self.shrink();
+    }
+
+    /// Shrinks the vectors to the last populated index
+    fn shrink(&mut self) {
         let last_populated_index = self.trues.last_one().max(self.falses.last_one());
         match last_populated_index {
             Some(index) if index < self.trues.len() - 1 => {
@@ -106,14 +112,13 @@ impl BinaryMemory {
     }
 
     pub fn iter(&self) -> BinaryMemoryIterator {
+        let last_false = self.falses.last_one();
+        let last_true = self.trues.last_one();
+        let end = last_false.max(last_true).unwrap_or(0) + 1;
         BinaryMemoryIterator {
             memory: self,
             ptr: 0,
-            end: self
-                .trues
-                .last_one()
-                .max(self.falses.last_one())
-                .unwrap_or(0),
+            end,
         }
     }
 }
@@ -155,7 +160,7 @@ impl BinaryIndex {
     }
 
     fn storage_cf_name(field: &str) -> String {
-        format!("{field}_binary")
+        format!("{}_binary", field)
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
@@ -183,7 +188,19 @@ impl BinaryIndex {
         matches!(self.memory.get(point_id), BinaryItem::None)
     }
 
-    /// Uses the first two bits of a u8 to encode the values first bit is for has_true, second is for has_false
+    /// Uses the first two bits of a u8 to encode the values first bit is for `has_true`, second is for `has_false`.
+    ///
+    /// `u8` is the smallest unit of data we can store in the database.
+    ///
+    /// ```text
+    ///       has_false─┐
+    ///    ┌────────────▼──┐
+    /// u8 │0 0 0 0 0 0 1 1│
+    ///    └──────────────▲┘
+    ///         has_true──┘
+    ///
+    ///     ◄──────────────  Lsb0 = Least-significant bit traversal
+    /// ```
     fn encode_db_value(is_true: bool, is_false: bool) -> u8 {
         let mut bv: BitVec<_, Lsb0> = BitVec::from_element(0u8);
         bv.set(0, is_true);
@@ -216,13 +233,7 @@ impl PayloadFieldIndex for BinaryIndex {
 
             let (has_true, has_false) = Self::decode_db_value(*value);
 
-            if has_true {
-                self.memory.set_or_insert(idx, true);
-            }
-
-            if has_false {
-                self.memory.set_or_insert(idx, false);
-            }
+            self.memory.set_or_insert(idx, has_true, has_false);
         }
         Ok(true)
     }
@@ -326,15 +337,10 @@ impl ValueIndexer<bool> for BinaryIndex {
             return Ok(());
         }
 
-        let (has_true, has_false) = (values.iter().any(|v| *v), values.iter().any(|v| !v));
+        let has_true = values.iter().any(|v| *v);
+        let has_false = values.iter().any(|v| !v);
 
-        if has_true {
-            self.memory.set_or_insert(id, true);
-        }
-
-        if has_false {
-            self.memory.set_or_insert(id, false);
-        }
+        self.memory.set_or_insert(id, has_true, has_false);
 
         let record = Self::encode_db_value(has_true, has_false);
 
@@ -354,5 +360,132 @@ impl ValueIndexer<bool> for BinaryIndex {
         self.memory.remove(id);
         self.db_wrapper.remove(id.to_be_bytes())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use rstest::rstest;
+    use serde_json::json;
+    use tempfile::{Builder, TempDir};
+
+    use super::BinaryIndex;
+    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
+    use crate::common::utils::MultiValue;
+    use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
+
+    const FIELD_NAME: &str = "bool_field";
+    const DB_NAME: &str = "test_db";
+
+    fn new_binary_index() -> (TempDir, BinaryIndex) {
+        let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
+        let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
+        let index = BinaryIndex::new(db, FIELD_NAME);
+        index.recreate().unwrap();
+        (tmp_dir, index)
+    }
+
+    fn match_bool(value: bool) -> crate::types::FieldCondition {
+        crate::types::FieldCondition::new_match(
+            FIELD_NAME.to_string(),
+            crate::types::Match::Value(crate::types::MatchValue {
+                value: crate::types::ValueVariants::Bool(value),
+            }),
+        )
+    }
+
+    fn filter(given: serde_json::Value, match_on: bool, expected_count: usize) {
+        let (_tmp_dir, mut index) = new_binary_index();
+
+        index.add_point(0, &MultiValue::one(&given)).unwrap();
+
+        let count = index.filter(&match_bool(match_on)).unwrap().count();
+
+        assert_eq!(count, expected_count);
+    }
+
+    #[rstest]
+    #[case(json!(true), 1)]
+    #[case(json!(false), 0)]
+    #[case(json!([true]), 1)]
+    #[case(json!([false]), 0)]
+    #[case(json!([true, false]), 1)]
+    #[case(json!([false, true]), 1)]
+    #[case(json!([false, false]), 0)]
+    #[case(json!([true, true]), 1)]
+    fn filter_true(#[case] given: serde_json::Value, #[case] expected_count: usize) {
+        filter(given, true, expected_count)
+    }
+
+    #[rstest]
+    #[case(json!(true), 0)]
+    #[case(json!(false), 1)]
+    #[case(json!([true]), 0)]
+    #[case(json!([false]), 1)]
+    #[case(json!([true, false]), 1)]
+    #[case(json!([false, true]), 1)]
+    #[case(json!([false, false]), 1)]
+    #[case(json!([true, true]), 0)]
+    fn filter_false(#[case] given: serde_json::Value, #[case] expected_count: usize) {
+        filter(given, false, expected_count)
+    }
+
+    #[test]
+    fn load_from_disk() {
+        let (_tmp_dir, mut index) = new_binary_index();
+
+        [
+            json!(true),
+            json!(false),
+            json!([true, false]),
+            json!([false, true]),
+            json!([true, true]),
+            json!([false, false]),
+            json!([true, false, true]),
+            serde_json::Value::Null,
+            json!(1),
+            json!("test"),
+            json!([false]),
+            json!([true]),
+        ]
+        .into_iter()
+        .enumerate()
+        .for_each(|(i, value)| {
+            let payload = MultiValue::one(&value);
+            index.add_point(i as u32, &payload).unwrap();
+        });
+
+        index.flusher()().unwrap();
+        let db = index.db_wrapper.database;
+
+        let mut new_index = BinaryIndex::new(db, FIELD_NAME);
+        assert!(new_index.load().unwrap());
+
+        let point_offsets = new_index.filter(&match_bool(false)).unwrap().collect_vec();
+        assert_eq!(point_offsets, vec![1, 2, 3, 5, 6, 10]);
+
+        let point_offsets = new_index.filter(&match_bool(true)).unwrap().collect_vec();
+        assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
+    }
+
+    #[rstest]
+    #[case(json!(false), json!(true))]
+    #[case(json!(false), json!([true, false]))]
+    #[case(json!([false, true]), json!([true, false]))]
+    #[case(json!([false, true]), json!(true))]
+    fn modify_value(#[case] before: serde_json::Value, #[case] after: serde_json::Value) {
+        let (_tmp_dir, mut index) = new_binary_index();
+
+        let idx = 1000;
+        index.add_point(idx, &MultiValue::one(&before)).unwrap();
+
+        let point_offsets = index.filter(&match_bool(false)).unwrap().collect_vec();
+        assert_eq!(point_offsets, vec![idx]);
+
+        index.add_point(idx, &MultiValue::one(&after)).unwrap();
+
+        let point_offsets = index.filter(&match_bool(true)).unwrap().collect_vec();
+        assert_eq!(point_offsets, vec![idx]);
     }
 }

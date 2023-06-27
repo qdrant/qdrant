@@ -3753,6 +3753,7 @@ dependencies = [
  "rayon",
  "rmp-serde",
  "rocksdb",
+ "rstest",
  "schemars",
  "seahash",
  "semver",
