@@ -216,6 +216,14 @@ impl TableOfContent {
         &self.storage_config.snapshots_path
     }
 
+    /// Get path for temporary snapshot files.
+    ///
+    /// Defaults to `snapshot_path()`.
+    /// A user may specify `storage.temp_path` to override this.
+    pub fn temp_snapshots_path(&self) -> &Path {
+        Path::new(self.temp_path().unwrap_or_else(|| self.snapshots_path()))
+    }
+
     pub fn temp_path(&self) -> Option<&str> {
         self.storage_config.temp_path.as_deref()
     }
