@@ -746,9 +746,7 @@ impl TableOfContent {
     }
 
     async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
-        if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
-            removed.before_drop().await;
-
+        if let Some(removed) = self.collections.write().await.remove(collection_name) {
             self.alias_persistence
                 .write()
                 .await
@@ -1671,16 +1669,5 @@ impl CollectionContainer for TableOfContent {
             }
             Ok(())
         })
-    }
-}
-
-// `TableOfContent` should not be dropped from async context.
-impl Drop for TableOfContent {
-    fn drop(&mut self) {
-        self.general_runtime.block_on(async {
-            for (_, mut collection) in self.collections.write().await.drain() {
-                collection.before_drop().await;
-            }
-        });
     }
 }

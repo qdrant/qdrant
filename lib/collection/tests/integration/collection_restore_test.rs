@@ -10,7 +10,7 @@ use tempfile::Builder;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_reloading() {
     test_collection_reloading_with_shards(1).await;
     test_collection_reloading_with_shards(N_SHARDS).await;
@@ -19,13 +19,11 @@ async fn test_collection_reloading() {
 async fn test_collection_reloading_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
-    {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
-        collection.before_drop().await;
-    }
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    drop(collection);
     for _i in 0..5 {
         let collection_path = collection_dir.path();
-        let mut collection = load_local_collection(
+        let collection = load_local_collection(
             "test".to_string(),
             collection_path,
             &collection_path.join("snapshots"),
@@ -42,21 +40,19 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             .update_from_client(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
-        collection.before_drop().await;
     }
 
     let collection_path = collection_dir.path();
-    let mut collection = load_local_collection(
+    let collection = load_local_collection(
         "test".to_string(),
         collection_path,
         &collection_path.join("snapshots"),
     )
     .await;
     assert_eq!(collection.info(None).await.unwrap().vectors_count, 2);
-    collection.before_drop().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_payload_reloading() {
     test_collection_payload_reloading_with_shards(1).await;
     test_collection_payload_reloading_with_shards(N_SHARDS).await;
@@ -65,7 +61,7 @@ async fn test_collection_payload_reloading() {
 async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+        let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
@@ -77,10 +73,9 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             .update_from_client(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
-        collection.before_drop().await;
     }
     let collection_path = collection_dir.path();
-    let mut collection = load_local_collection(
+    let collection = load_local_collection(
         "test".to_string(),
         collection_path,
         &collection_path.join("snapshots"),
@@ -121,10 +116,9 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         "res = {:#?}",
         res.points[0].payload.as_ref().unwrap().get_value("k")
     );
-    collection.before_drop().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_collection_payload_custom_payload() {
     test_collection_payload_custom_payload_with_shards(1).await;
     test_collection_payload_custom_payload_with_shards(N_SHARDS).await;
@@ -133,7 +127,7 @@ async fn test_collection_payload_custom_payload() {
 async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+        let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0.into(), 1.into()],
@@ -148,11 +142,10 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             .update_from_client(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
-        collection.before_drop().await;
     }
 
     let collection_path = collection_dir.path();
-    let mut collection = load_local_collection(
+    let collection = load_local_collection(
         "test".to_string(),
         collection_path,
         &collection_path.join("snapshots"),
@@ -235,5 +228,4 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         Value::String(value) => assert_eq!("v4", value),
         _ => panic!("unexpected type"),
     }
-    collection.before_drop().await;
 }

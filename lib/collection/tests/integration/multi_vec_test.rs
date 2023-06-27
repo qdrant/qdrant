@@ -22,7 +22,7 @@ use crate::common::{new_local_collection, N_SHARDS, TEST_OPTIMIZERS_CONFIG};
 const VEC_NAME1: &str = "vec1";
 const VEC_NAME2: &str = "vec2";
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_multi_vec() {
     test_multi_vec_with_shards(1).await;
     test_multi_vec_with_shards(N_SHARDS).await;
@@ -90,7 +90,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         .tempdir()
         .unwrap();
 
-    let mut collection = multi_vec_collection_fixture(collection_dir.path(), shard_number).await;
+    let collection = multi_vec_collection_fixture(collection_dir.path(), shard_number).await;
 
     // Upload 1000 random vectors to the collection
     let mut points = Vec::new();
@@ -266,6 +266,4 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             }
         }
     }
-
-    collection.before_drop().await;
 }

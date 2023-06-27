@@ -89,7 +89,7 @@ mod group_by {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn searching() {
         let resources = setup(16, 8).await;
 
@@ -125,7 +125,7 @@ mod group_by {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn recommending() {
         let resources = setup(16, 8).await;
 
@@ -178,7 +178,7 @@ mod group_by {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn with_filter() {
         let resources = setup(16, 8).await;
 
@@ -226,7 +226,7 @@ mod group_by {
         assert_eq!(result.len(), 2);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn with_payload_and_vectors() {
         let resources = setup(16, 8).await;
 
@@ -267,7 +267,7 @@ mod group_by {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn group_by_string_field() {
         let Resources {
             collection,
@@ -311,7 +311,7 @@ mod group_by {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn zero_group_size() {
         let Resources {
             collection,
@@ -351,7 +351,7 @@ mod group_by {
         assert_eq!(result.len(), 0);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn zero_limit_groups() {
         let Resources {
             collection,
@@ -391,7 +391,7 @@ mod group_by {
         assert_eq!(result.len(), 0);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn big_limit_groups() {
         let Resources {
             collection,
@@ -435,7 +435,7 @@ mod group_by {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn big_group_size_groups() {
         let Resources {
             collection,
@@ -586,7 +586,7 @@ mod group_by_builder {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn only_group_by() {
         let Resources {
             request,
@@ -612,7 +612,7 @@ mod group_by_builder {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn group_by_with_lookup() {
         let Resources {
             mut request,
