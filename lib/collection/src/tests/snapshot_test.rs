@@ -80,7 +80,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ..Default::default()
     };
 
-    let mut collection = Collection::new(
+    let collection = Collection::new(
         collection_name,
         1,
         collection_dir.path(),
@@ -118,11 +118,10 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         0,
         true,
     ) {
-        collection.before_drop().await;
         panic!("Failed to restore snapshot: {err}")
     }
 
-    let mut recovered_collection = Collection::load(
+    let recovered_collection = Collection::load(
         collection_name_rec,
         1,
         recover_dir.path(),
@@ -152,12 +151,9 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         assert!(replica_ser_3.is_local().await);
         assert_eq!(replica_ser_3.peers().len(), 3); // 2 remotes + 1 local
     }
-
-    collection.before_drop().await;
-    recovered_collection.before_drop().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_collection() {
     _test_snapshot_collection(NodeType::Normal).await;
     _test_snapshot_collection(NodeType::Listener).await;

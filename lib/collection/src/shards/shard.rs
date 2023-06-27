@@ -44,15 +44,6 @@ impl Shard {
         }
     }
 
-    pub async fn before_drop(&mut self) {
-        match self {
-            Shard::Local(local_shard) => local_shard.before_drop().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.before_drop().await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.before_drop().await,
-            Shard::Dummy(_) => (), // `DummyShard` don't need (and don't have) `before_drop`
-        }
-    }
-
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         let mut telemetry = match self {
             Shard::Local(local_shard) => local_shard.get_telemetry_data(),

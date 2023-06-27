@@ -58,8 +58,8 @@ pub struct LocalShard {
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) path: PathBuf,
-    before_drop_called: bool,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
+    update_runtime: Handle,
 }
 
 /// Shard holds information about segments and WAL.
@@ -136,7 +136,7 @@ impl LocalShard {
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             path: shard_path.to_owned(),
-            before_drop_called: false,
+            update_runtime,
             optimizers,
         }
     }
@@ -494,8 +494,8 @@ impl LocalShard {
         Ok(())
     }
 
-    pub async fn before_drop(&mut self) {
-        // Finishes update tasks right before destructor stuck to do so with runtime
+    /// Finishes ongoing update tasks
+    pub async fn stop_gracefully(&self) {
         if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
             log::warn!("Error sending stop signal to update handler: {}", err);
         }
@@ -505,8 +505,6 @@ impl LocalShard {
         if let Err(err) = self.wait_update_workers_stop().await {
             log::warn!("Update workers failed with: {}", err);
         }
-
-        self.before_drop_called = true;
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
@@ -701,18 +699,6 @@ impl LocalShard {
         }
     }
 
-    fn assert_before_drop_called(&self) {
-        if !self.before_drop_called {
-            // Panic is used to get fast feedback in unit and integration tests
-            // in cases where `before_drop` was not added.
-            if cfg!(test) {
-                panic!("Collection `before_drop` was not called.")
-            } else {
-                log::error!("Collection `before_drop` was not called.")
-            }
-        }
-    }
-
     /// Returns estimated size of vector data in bytes
     async fn estimate_vector_data_size(&self) -> usize {
         let info = self.local_shard_info().await;
@@ -819,15 +805,17 @@ impl LocalShard {
     }
 }
 
-pub async fn drop_and_delete_from_disk(shard: LocalShard) -> CollectionResult<()> {
-    let path = shard.shard_path();
-    drop(shard);
-    remove_dir_all(path).await?;
-    Ok(())
-}
-
 impl Drop for LocalShard {
     fn drop(&mut self) {
-        self.assert_before_drop_called()
+        thread::scope(|s| {
+            let handle = thread::Builder::new()
+                .name("drop-shard".to_string())
+                .spawn_scoped(s, || {
+                    // Needs dedicated thread to avoid `Cannot start a runtime from within a runtime` error.
+                    self.update_runtime
+                        .block_on(async { self.stop_gracefully().await })
+                });
+            handle.expect("Failed to create thread for shard drop");
+        })
     }
 }
