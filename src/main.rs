@@ -142,8 +142,11 @@ fn main() -> anyhow::Result<()> {
 
     let is_distributed_deployment = settings.cluster.enabled;
 
+    let temp_path = settings.storage.temp_path.as_deref();
+
     let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
         recover_full_snapshot(
+            temp_path,
             &full_snapshot,
             &settings.storage.storage_path,
             args.force_snapshot,
@@ -155,6 +158,7 @@ fn main() -> anyhow::Result<()> {
         recover_snapshots(
             &snapshots,
             args.force_snapshot,
+            temp_path,
             &settings.storage.storage_path,
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,
