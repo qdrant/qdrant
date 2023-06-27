@@ -32,6 +32,12 @@ use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
 
+/// gRPC and consensus thread handles.
+type ConsensusHandles = (
+    JoinHandle<std::io::Result<()>>,
+    JoinHandle<std::io::Result<()>>,
+);
+
 const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
@@ -58,7 +64,7 @@ pub struct Consensus {
 
 impl Consensus {
     /// Create and run consensus node
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         logger: &slog::Logger,
         state_ref: ConsensusStateRef,
@@ -70,10 +76,7 @@ impl Consensus {
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
-    ) -> anyhow::Result<(
-        JoinHandle<std::io::Result<()>>,
-        JoinHandle<std::io::Result<()>>,
-    )> {
+    ) -> anyhow::Result<ConsensusHandles> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
         let p2p_host = settings.service.host;
