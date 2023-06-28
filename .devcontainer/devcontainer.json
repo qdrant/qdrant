@@ -1,51 +1,17 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
-// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
-	"name": "Ubuntu",
-	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "debian:12-slim",
-
-	// Features to add to the dev container. More info: https://containers.dev/features.
+    "name": "Existing Dockerfile",
+    "build": {
+        "context": "..",
+        "dockerfile": "../Dockerfile"
+    },
     "features": {
-		"rust": "latest",
-		"ghcr.io/devcontainers/features/common-utils:latest": {},
-		"ghcr.io/devcontainers-contrib/features/protoc:latest": {},
-		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-			"moby": true,
-			"installDockerBuildx": true,
-			"version": "latest",
-			"dockerDashComposeVersion": "v2"
-		}
-		// "ghcr.io/devcontainers-contrib/features/protoc:1": {
-		// 	"version": "latest"
-		// }
-		// "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-		// 	// "moby": true,
-		// 	// "installDockerBuildx": true,
-		// 	"version": "latest",
-		// 	"dockerDashComposeVersion": "v2"
-		// }
-    },
-    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y clang lld cmake protobuf-compiler jq && rustup component add rustfmt",
-    "containerEnv": {
-        "RUST_BACKTRACE": "1"
-    },
-
-
-
-
-	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	"forwardPorts": [
-        6333,
-        6334
-    ]
-
-	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "uname -a",
-
-	// Configure tool-specific properties.
-	// "customizations": {},
-
-	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	// "remoteUser": "root"
+        "ghcr.io/devcontainers/features/common-utils:latest": {},
+        //  Doesnt allow for mounts: https://github.com/devcontainers/features/blob/main/src/docker-outside-of-docker/README.md
+        // "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers/features/rust:latest": {},
+        "ghcr.io/devcontainers-contrib/features/protoc:latest": {} 
+    }
 }
