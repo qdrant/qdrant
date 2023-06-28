@@ -16,6 +16,7 @@ use crate::common::version::StorageVersion;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
@@ -117,6 +118,16 @@ fn create_segment(
                 vector_config.distance,
             )?,
         };
+
+        // Warn when number of points between ID tracker and storage differs
+        let point_count = id_tracker.borrow().total_point_count();
+        let vector_count = vector_storage.borrow().total_vector_count();
+        if vector_count != point_count {
+            log::debug!(
+                "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {})",
+                vector_storage_path.display(),
+            );
+        }
 
         if config.quantization_config(vector_name).is_some() {
             let quantized_data_path = vector_storage_path;
