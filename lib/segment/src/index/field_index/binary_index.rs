@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use bitvec::prelude::*;
 use bitflags::bitflags;
+use bitvec::prelude::*;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -12,11 +12,6 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
 };
-
-struct BinaryMemory {
-    trues: BitVec,
-    falses: BitVec,
-}
 
 bitflags! {
     /// Due to being able to store multi-values, the binary index is not a simple
@@ -35,12 +30,22 @@ impl BinaryItem {
         item
     }
 }
+struct BinaryMemory {
+    trues: BitVec,
+    falses: BitVec,
+    trues_count: usize,
+    falses_count: usize,
+    indexed_count: usize,
+}
 
 impl BinaryMemory {
     pub fn new() -> Self {
         Self {
             trues: BitVec::new(),
             falses: BitVec::new(),
+            trues_count: 0,
+            falses_count: 0,
+            indexed_count: 0,
         }
     }
 
@@ -70,18 +75,37 @@ impl BinaryMemory {
 
         debug_assert!(self.trues.len() == self.falses.len());
 
-        unsafe {
-            // SAFETY: we just resized the vectors to be at least as long as the id
-            self.trues.set_unchecked(id as usize, item.contains(BinaryItem::TRUE));
-            self.falses.set_unchecked(id as usize, item.contains(BinaryItem::FALSE));
+        if item.contains(BinaryItem::TRUE) {
+            self.trues_count += 1;
+            self.trues.set(id as usize, true);
         }
+        if item.contains(BinaryItem::FALSE) {
+            self.falses_count += 1;
+            self.falses.set(id as usize, true);
+        }
+
+        self.indexed_count += 1;
     }
 
     /// Removes the point from the index and tries to shrink the vectors if possible. If the index is not within bounds, does nothing
     pub fn remove(&mut self, id: PointOffsetType) {
-        if (id as usize) < self.trues.len() {
-            self.trues.set(id as usize, false);
-            self.falses.set(id as usize, false);
+        if (id as usize) >= self.trues.len() {
+            return;
+        }
+
+        let had_true = self.trues.replace(id as usize, false);
+        let had_false = self.falses.replace(id as usize, false);
+
+        if had_true {
+            self.trues_count -= 1;
+        }
+
+        if had_false {
+            self.falses_count -= 1;
+        }
+
+        if had_false || had_true {
+            self.indexed_count -= 1;
         }
 
         // TODO: should we avoid shrinking the vecs on every remove?
@@ -105,15 +129,15 @@ impl BinaryMemory {
     }
 
     pub fn count_trues(&self) -> usize {
-        self.trues.count_ones()
+        self.trues_count
     }
 
     pub fn count_falses(&self) -> usize {
-        self.falses.count_ones()
+        self.falses_count
     }
 
     pub fn indexed_count(&self) -> usize {
-        self.trues.count_ones().max(self.falses.count_ones())
+        self.indexed_count
     }
 
     pub fn iter(&self) -> BinaryMemoryIterator {
@@ -231,12 +255,10 @@ impl PayloadFieldIndex for BinaryIndex {
                     .memory
                     .iter()
                     .zip(0u32..) // enumerate but with u32
-                    .filter_map(|(stored, point_id)| 
-                        match *value {
-                            true => stored.contains(BinaryItem::TRUE).then_some(point_id),
-                            false => stored.contains(BinaryItem::FALSE).then_some(point_id),
-                        }
-                    );
+                    .filter_map(|(stored, point_id)| match *value {
+                        true => stored.contains(BinaryItem::TRUE).then_some(point_id),
+                        false => stored.contains(BinaryItem::FALSE).then_some(point_id),
+                    });
 
                 Some(Box::new(iter))
             }
@@ -371,6 +393,23 @@ mod tests {
         )
     }
 
+    fn bools_fixture() -> Vec<serde_json::Value> {
+        vec![
+            json!(true),
+            json!(false),
+            json!([true, false]),
+            json!([false, true]),
+            json!([true, true]),
+            json!([false, false]),
+            json!([true, false, true]),
+            serde_json::Value::Null,
+            json!(1),
+            json!("test"),
+            json!([false]),
+            json!([true]),
+        ]
+    }
+
     fn filter(given: serde_json::Value, match_on: bool, expected_count: usize) {
         let (_tmp_dir, mut index) = new_binary_index();
 
@@ -411,26 +450,13 @@ mod tests {
     fn load_from_disk() {
         let (_tmp_dir, mut index) = new_binary_index();
 
-        [
-            json!(true),
-            json!(false),
-            json!([true, false]),
-            json!([false, true]),
-            json!([true, true]),
-            json!([false, false]),
-            json!([true, false, true]),
-            serde_json::Value::Null,
-            json!(1),
-            json!("test"),
-            json!([false]),
-            json!([true]),
-        ]
-        .into_iter()
-        .enumerate()
-        .for_each(|(i, value)| {
-            let payload = MultiValue::one(&value);
-            index.add_point(i as u32, &payload).unwrap();
-        });
+        bools_fixture()
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, value)| {
+                let payload = MultiValue::one(&value);
+                index.add_point(i as u32, &payload).unwrap();
+            });
 
         index.flusher()().unwrap();
         let db = index.db_wrapper.database;
@@ -463,5 +489,20 @@ mod tests {
 
         let point_offsets = index.filter(&match_bool(true)).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![idx]);
+    }
+
+    #[test]
+    fn indexed_count() {
+        let (_tmp_dir, mut index) = new_binary_index();
+
+        bools_fixture()
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, value)| {
+                let payload = MultiValue::one(&value);
+                index.add_point(i as u32, &payload).unwrap();
+            });
+
+        assert_eq!(index.indexed_points(), 9);
     }
 }
