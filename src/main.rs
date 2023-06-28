@@ -448,29 +448,24 @@ fn main() -> anyhow::Result<()> {
     drop(update_runtime);
     drop(general_runtime);
     drop(settings);
-    drop(wait_unwrap(toc_arc));
+    if let Ok(toc) = wait_unwrap(toc_arc, Duration::from_secs(30)) {
+        drop(toc);
+    }
     Ok(())
 }
 
-/// Wait for the current thread to become a single referent of an [`Arc`] and returns it.
+/// Blocks current thread for up to specified amount of time to become the single referent
+/// of an [`Arc`] and returns it.
 ///
 /// This methods move a value out from an [`Arc`] when there is only one reference left
-/// and it is safe to do so.
-///
-/// **CAUTION**: this method may create live lock if parallel threads are not going to finish
-/// and decrement [`Arc`] counter. Caller should initiate shutdown of all the threads holding the
-/// [`Arc`] before calling this method.
-fn wait_unwrap<T>(mut input: Arc<T>) -> T {
+/// and it is safe to do so. `Err()` is returned if an [`Arc`] still has more than 1 reference
+/// after given duration is passed.
+fn wait_unwrap<T>(mut input: Arc<T>, duration: Duration) -> Result<T, ()> {
     let start_time = Instant::now();
-    let mut notified = false;
-    loop {
-        if !notified && start_time.elapsed() > Duration::from_secs(10) {
-            log::warn!("Waiting for Arc to be dropped...");
-            notified = true;
-        }
+    while start_time.elapsed() < duration {
         match Arc::try_unwrap(input) {
             Ok(input) => {
-                return input;
+                return Ok(input);
             }
             Err(new_input) => {
                 input = new_input;
@@ -478,4 +473,5 @@ fn wait_unwrap<T>(mut input: Arc<T>) -> T {
             }
         }
     }
+    Err(())
 }
