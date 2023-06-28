@@ -139,6 +139,11 @@ pub fn validate_f64_range_1(value: &Option<f64>) -> Result<(), ValidationError> 
     validate_range_generic(value, Some(0.0), Some(1.0))
 }
 
+/// Validate the value is in `[1.0, ]` or `None`.
+pub fn validate_f64_range_min_1(value: &Option<f64>) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(1.0), None)
+}
+
 /// Validate the value is in `[min, max]` or `None`.
 #[inline]
 pub fn validate_range_generic<N>(

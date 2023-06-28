@@ -34,8 +34,7 @@ use crate::types::Condition::Field;
 #[cfg(debug_assertions)]
 use crate::types::PointOffsetType;
 use crate::types::{
-    default_quantization_ignore_value, default_quantization_oversampling_value,
-    default_quantization_rescore_value, FieldCondition, Filter, HnswConfig,
+    default_quantization_ignore_value, FieldCondition, Filter, HnswConfig,
     QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
@@ -231,14 +230,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         // - `params` is `Some`
         // - `params.quantization` is `Some`
         // - and `params.quantization.ignore` is `false`
-        let quantization_params =
-            params
-                .and_then(|p| p.quantization)
-                .unwrap_or_else(|| QuantizationSearchParams {
-                    ignore: default_quantization_ignore_value(),
-                    rescore: default_quantization_rescore_value(),
-                    oversampling: default_quantization_oversampling_value(),
-                });
+        let quantization_params = params.and_then(|p| p.quantization).unwrap_or_default();
 
         let (raw_scorer, quantized) = match quantized_storage {
             // If `quantization_params` is `Some`, then quantization is *not* ignored
@@ -277,6 +269,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let oversampled_top = if oversampling > 1.0 {
                 (oversampling * top as f64) as usize
             } else {
+                // Very unlikely this is reached because validation enforces oversampling >= 1.0
                 top
             };
 
