@@ -49,7 +49,7 @@ impl Qdrant for QdrantService {
 #[cfg(not(unix))]
 async fn wait_stop_signal(for_what: &str) {
     signal::ctrl_c().await.unwrap();
-    log::debug!("Stopping {} on SIGINT", for_what)
+    log::debug!("Stopping {for_what} on SIGINT");
 }
 
 #[cfg(unix)]
@@ -58,8 +58,8 @@ async fn wait_stop_signal(for_what: &str) {
     let mut inrt = signal::unix::signal(signal::unix::SignalKind::interrupt()).unwrap();
 
     tokio::select! {
-        _ = term.recv() => log::debug!("Stopping {} on SIGTERM", for_what),
-        _ = inrt.recv() => log::debug!("Stopping {} on SIGINT", for_what),
+        _ = term.recv() => log::debug!("Stopping {for_what} on SIGTERM"),
+        _ = inrt.recv() => log::debug!("Stopping {for_what} on SIGINT"),
     }
 }
 
