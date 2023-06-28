@@ -98,22 +98,12 @@ pub trait GraphLayersBase {
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
-        existing_links: &[PointOffsetType],
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
         let mut search_context = SearchContext::new(level_entry, ef);
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-
-        for &existing_link in existing_links {
-            if !visited_list.check(existing_link) {
-                search_context.process_candidate(ScoredPointOffset {
-                    idx: existing_link,
-                    score: points_scorer.score_point(existing_link),
-                });
-            }
-        }
 
         self.return_visited_list_to_pool(visited_list);
         search_context.nearest
@@ -215,8 +205,7 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
             &mut points_scorer,
         );
 
-        let nearest =
-            self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer, &[]);
+        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
         nearest.into_iter().take(top).collect_vec()
     }
 
@@ -367,7 +356,6 @@ mod tests {
             0,
             32,
             &mut scorer,
-            &[],
         );
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
