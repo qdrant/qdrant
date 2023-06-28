@@ -82,14 +82,14 @@ RUN PATH="$PATH:/opt/mold/bin" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --recipe-path recipe.json
 
 COPY . .
-# RUN PATH="$PATH:/opt/mold/bin" \
-#     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-#     xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --bin qdrant \
-#     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
-#     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
+RUN PATH="$PATH:/opt/mold/bin" \
+    RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
+    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --bin qdrant \
+    && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
+    && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
 # to skip the compilation for testing
-RUN mkdir /qdrant/qdrant
+# RUN mkdir /qdrant/qdrant
 
 
 # Download and extract web UI
