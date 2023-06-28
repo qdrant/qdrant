@@ -46,6 +46,23 @@ impl Qdrant for QdrantService {
     }
 }
 
+#[cfg(not(unix))]
+async fn wait_stop_signal(for_what: &str) {
+    signal::ctrl_c().await.unwrap();
+    log::debug!("Stopping {for_what} on SIGINT");
+}
+
+#[cfg(unix)]
+async fn wait_stop_signal(for_what: &str) {
+    let mut term = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+    let mut inrt = signal::unix::signal(signal::unix::SignalKind::interrupt()).unwrap();
+
+    tokio::select! {
+        _ = term.recv() => log::debug!("Stopping {for_what} on SIGTERM"),
+        _ = inrt.recv() => log::debug!("Stopping {for_what} on SIGINT"),
+    }
+}
+
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
@@ -119,8 +136,7 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
-                signal::ctrl_c().await.unwrap();
-                log::debug!("Stopping gRPC");
+                wait_stop_signal("gRPC service").await;
             })
             .await
             .map_err(helpers::tonic_error_to_io_error)
@@ -208,8 +224,7 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .serve_with_shutdown(socket, async {
-                    signal::ctrl_c().await.unwrap();
-                    log::debug!("Stopping internal gRPC");
+                    wait_stop_signal("internal gRPC").await;
                 })
                 .await
         })
