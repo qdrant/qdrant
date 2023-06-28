@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bitvec::prelude::*;
+use bitflags::bitflags;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -17,12 +18,22 @@ struct BinaryMemory {
     falses: BitVec,
 }
 
-/// Due to being able to store multi-values, the binary index is not a simple bitset, but rather a pair of bitsets, one for true values and one for false values.
-enum BinaryItem {
-    True,
-    False,
-    Both,
-    None,
+bitflags! {
+    /// Due to being able to store multi-values, the binary index is not a simple
+    /// bitset, but rather a pair of bitsets, one for true values and one for false values.
+    pub struct BinaryItem: u8 {
+        const TRUE = 0b00000001;
+        const FALSE = 0b00000010;
+    }
+}
+
+impl BinaryItem {
+    pub fn from_bools(has_true: bool, has_false: bool) -> Self {
+        let mut item = Self::empty();
+        item.set(Self::TRUE, has_true);
+        item.set(Self::FALSE, has_false);
+        item
+    }
 }
 
 impl BinaryMemory {
@@ -35,26 +46,20 @@ impl BinaryMemory {
 
     pub fn get(&self, id: PointOffsetType) -> BinaryItem {
         debug_assert!(self.trues.len() == self.falses.len());
-        if (id as usize) < self.trues.len() {
-            unsafe {
-                // SAFETY: we just checked that the id is within bounds
-                match (
-                    self.trues.get_unchecked(id as usize).as_ref(),
-                    self.falses.get_unchecked(id as usize).as_ref(),
-                ) {
-                    (true, true) => BinaryItem::Both,
-                    (true, false) => BinaryItem::True,
-                    (false, true) => BinaryItem::False,
-                    (false, false) => BinaryItem::None,
-                }
-            }
-        } else {
-            BinaryItem::None
+        if (id as usize) >= self.trues.len() {
+            return BinaryItem::empty();
+        }
+
+        unsafe {
+            // SAFETY: we just checked that the id is within bounds
+            let has_true = *self.trues.get_unchecked(id as usize).as_ref();
+            let has_false = *self.falses.get_unchecked(id as usize).as_ref();
+            BinaryItem::from_bools(has_true, has_false)
         }
     }
 
-    pub fn set_or_insert(&mut self, id: PointOffsetType, has_true: bool, has_false: bool) {
-        if !has_true && !has_false {
+    pub fn set_or_insert(&mut self, id: PointOffsetType, item: BinaryItem) {
+        if item.is_empty() {
             return;
         }
 
@@ -67,8 +72,8 @@ impl BinaryMemory {
 
         unsafe {
             // SAFETY: we just resized the vectors to be at least as long as the id
-            self.trues.set_unchecked(id as usize, has_true);
-            self.falses.set_unchecked(id as usize, has_false);
+            self.trues.set_unchecked(id as usize, item.contains(BinaryItem::TRUE));
+            self.falses.set_unchecked(id as usize, item.contains(BinaryItem::FALSE));
         }
     }
 
@@ -177,41 +182,11 @@ impl BinaryIndex {
     }
 
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        match self.memory.get(point_id) {
-            BinaryItem::Both => 2,
-            BinaryItem::True | BinaryItem::False => 1,
-            BinaryItem::None => 0,
-        }
+        self.memory.get(point_id).iter().count()
     }
 
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        matches!(self.memory.get(point_id), BinaryItem::None)
-    }
-
-    /// Uses the first two bits of a u8 to encode the values first bit is for `has_true`, second is for `has_false`.
-    ///
-    /// `u8` is the smallest unit of data we can store in the database.
-    ///
-    /// ```text
-    ///       has_false─┐
-    ///    ┌────────────▼──┐
-    /// u8 │0 0 0 0 0 0 1 1│
-    ///    └──────────────▲┘
-    ///         has_true──┘
-    ///
-    ///     ◄──────────────  Lsb0 = Least-significant bit traversal
-    /// ```
-    fn encode_db_value(is_true: bool, is_false: bool) -> u8 {
-        let mut bv: BitVec<_, Lsb0> = BitVec::from_element(0u8);
-        bv.set(0, is_true);
-        bv.set(1, is_false);
-        bv.load::<u8>()
-    }
-
-    fn decode_db_value(encoded: u8) -> (bool, bool) {
-        let bv: BitVec<_, Lsb0> = BitVec::from_element(encoded);
-        // (has_true, has_false)
-        (bv[0], bv[1])
+        self.memory.get(point_id).is_empty()
     }
 }
 
@@ -231,9 +206,9 @@ impl PayloadFieldIndex for BinaryIndex {
                 "Expected a value in binary index",
             ))?;
 
-            let (has_true, has_false) = Self::decode_db_value(*value);
+            let item = BinaryItem::from_bits_truncate(*value);
 
-            self.memory.set_or_insert(idx, has_true, has_false);
+            self.memory.set_or_insert(idx, item);
         }
         Ok(true)
     }
@@ -258,11 +233,12 @@ impl PayloadFieldIndex for BinaryIndex {
                     .memory
                     .iter()
                     .zip(0u32..) // enumerate but with u32
-                    .filter_map(|(stored, point_id)| match stored {
-                        BinaryItem::Both | BinaryItem::True if *value => Some(point_id),
-                        BinaryItem::Both | BinaryItem::False if !*value => Some(point_id),
-                        _ => None,
-                    });
+                    .filter_map(|(stored, point_id)| 
+                        match *value {
+                            true => stored.contains(BinaryItem::TRUE).then_some(point_id),
+                            false => stored.contains(BinaryItem::FALSE).then_some(point_id),
+                        }
+                    );
 
                 Some(Box::new(iter))
             }
@@ -340,9 +316,11 @@ impl ValueIndexer<bool> for BinaryIndex {
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !v);
 
-        self.memory.set_or_insert(id, has_true, has_false);
+        let item = BinaryItem::from_bools(has_true, has_false);
 
-        let record = Self::encode_db_value(has_true, has_false);
+        self.memory.set_or_insert(id, item);
+
+        let record = BinaryItem::from_bools(has_true, has_false).bits();
 
         self.db_wrapper.put(id.to_be_bytes(), [record])?;
 
