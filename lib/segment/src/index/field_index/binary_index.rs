@@ -117,13 +117,11 @@ impl BinaryMemory {
     }
 
     pub fn iter(&self) -> BinaryMemoryIterator {
-        let last_false = self.falses.last_one();
-        let last_true = self.trues.last_one();
-        let end = last_false.max(last_true).unwrap_or(0) + 1;
+        debug_assert!(self.trues.len() == self.falses.len());
         BinaryMemoryIterator {
             memory: self,
             ptr: 0,
-            end,
+            end: self.trues.len(),
         }
     }
 }
