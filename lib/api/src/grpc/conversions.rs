@@ -166,6 +166,7 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
                 segment::types::PayloadSchemaType::Text => PayloadSchemaType::Text,
+                segment::types::PayloadSchemaType::Bool => PayloadSchemaType::Bool,
             }
             .into(),
             params: schema.params.map(|params| match params {
@@ -247,6 +248,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
                 PayloadSchemaType::Float => segment::types::PayloadSchemaType::Float,
                 PayloadSchemaType::Geo => segment::types::PayloadSchemaType::Geo,
                 PayloadSchemaType::Text => segment::types::PayloadSchemaType::Text,
+                PayloadSchemaType::Bool => segment::types::PayloadSchemaType::Bool,
                 PayloadSchemaType::UnknownType => {
                     return Err(Status::invalid_argument(
                         "Malformed payload schema".to_string(),

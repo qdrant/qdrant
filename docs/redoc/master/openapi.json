@@ -4541,7 +4541,8 @@
           "integer",
           "float",
           "geo",
-          "text"
+          "text",
+          "bool"
         ]
       },
       "PayloadSchemaParams": {

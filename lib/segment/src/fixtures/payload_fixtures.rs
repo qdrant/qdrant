@@ -53,6 +53,7 @@ pub const FLT_KEY: &str = "flt";
 pub const FLICKING_KEY: &str = "flicking";
 pub const GEO_KEY: &str = "geo";
 pub const TEXT_KEY: &str = "text";
+pub const BOOL_KEY: &str = "bool";
 
 pub fn random_adj<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
     ADJECTIVE.choose(rnd_gen).unwrap().to_string()
@@ -100,6 +101,15 @@ pub fn random_geo_payload<R: Rng + ?Sized>(
                 "lat": rnd_gen.gen_range(LAT_RANGE),
             })
         })
+        .collect_vec()
+}
+
+pub fn random_bool_payload<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    num_values: RangeInclusive<usize>,
+) -> Vec<Value> {
+    (0..rnd_gen.gen_range(num_values))
+        .map(|_| Value::Bool(rnd_gen.gen()))
         .collect_vec()
 }
 
@@ -248,7 +258,8 @@ fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
             INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
-            TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1)
+            TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),
+            BOOL_KEY: random_bool_payload(rnd_gen, 1..=1),
         })
     } else {
         json!({
@@ -258,6 +269,7 @@ fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
             TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),
+            BOOL_KEY: random_bool_payload(rnd_gen, 1..=2),
             FLICKING_KEY: random_int_payload(rnd_gen, 1..=3)
         })
     }
