@@ -272,22 +272,26 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - Name of the collection or alias to resolve
+    /// * `collections` - A reference to the collections map
+    /// * `aliases` - A reference to the aliases storage
     ///
     /// # Result
     ///
     /// If the collection exists - return its name
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
-    async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
-        let alias_collection_name = self.alias_persistence.read().await.get(collection_name);
+    async fn resolve_name(
+        collection_name: &str,
+        collections: &Collections,
+        aliases: &AliasPersistence,
+    ) -> Result<String, StorageError> {
+        let alias_collection_name = aliases.get(collection_name);
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
             Some(resolved_alias) => resolved_alias,
         };
-        self.collections
-            .read()
-            .await
+        collections
             .validate_collection_exists(&resolved_name)
             .await?;
         Ok(resolved_name)
@@ -1018,7 +1022,11 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
-        let real_collection_name = self.resolve_name(collection_name).await?;
+
+        let real_collection_name = {
+            let alias_persistence = self.alias_persistence.read().await;
+            Self::resolve_name(collection_name, &read_collection, &alias_persistence).await?
+        };
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(RwLockReadGuard::map(read_collection, |collection| {
             collection.get(&real_collection_name).unwrap()
