@@ -2,8 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -170,15 +168,6 @@ impl ShardHolder {
                 Ok(shards)
             }
         }
-    }
-
-    pub async fn before_drop(&mut self) {
-        let futures: FuturesUnordered<_> = self
-            .shards
-            .iter_mut()
-            .map(|(_, shard)| shard.before_drop())
-            .collect();
-        futures.collect::<Vec<()>>().await;
     }
 
     pub fn len(&self) -> usize {

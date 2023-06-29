@@ -107,7 +107,9 @@ impl VectorStorage for AppendableMmapVectorStorage {
         key: PointOffsetType,
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
-        self.vectors.insert(key, vector)
+        self.vectors.insert(key, vector)?;
+        self.set_deleted(key, false)?;
+        Ok(())
     }
 
     fn update_from(

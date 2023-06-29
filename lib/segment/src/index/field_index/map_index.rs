@@ -584,9 +584,9 @@ mod tests {
             vec![25],
         ];
 
-        let tmp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index(&data, tmp_dir.path());
-        load_map_index(&data, tmp_dir.path());
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index(&data, temp_dir.path());
+        load_map_index(&data, temp_dir.path());
     }
 
     #[test]
@@ -615,8 +615,8 @@ mod tests {
             vec![String::from("PPGG")],
         ];
 
-        let tmp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index(&data, tmp_dir.path());
-        load_map_index(&data, tmp_dir.path());
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index(&data, temp_dir.path());
+        load_map_index(&data, temp_dir.path());
     }
 }

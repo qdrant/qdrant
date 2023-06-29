@@ -18,6 +18,7 @@ pub const DB_PAYLOAD_CF: &str = "payload";
 pub const DB_MAPPING_CF: &str = "mapping";
 pub const DB_VERSIONS_CF: &str = "version";
 
+#[derive(Clone)]
 pub struct DatabaseColumnWrapper {
     pub database: Arc<RwLock<DB>>,
     pub column_name: String,
