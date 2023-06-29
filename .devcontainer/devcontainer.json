@@ -8,10 +8,9 @@
     },
     "features": {
         "ghcr.io/devcontainers/features/common-utils:latest": {},
-        //  Doesnt allow for mounts: https://github.com/devcontainers/features/blob/main/src/docker-outside-of-docker/README.md
-        // "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:latest": {},
 		"ghcr.io/devcontainers/features/rust:latest": {},
         "ghcr.io/devcontainers-contrib/features/protoc:latest": {} 
-    }
+    },
+    "postCreateCommand": "apt-get update && apt-get install -y clang lld cmake protobuf-compiler jq && rustup component add rustfmt"
 }
