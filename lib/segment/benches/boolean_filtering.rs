@@ -28,7 +28,7 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
     let seed = 42;
 
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut group = c.benchmark_group("plain-boolean-query-group");
+    let mut group = c.benchmark_group("boolean-query-points");
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
@@ -36,7 +36,7 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
     let mut result_size = 0;
     let mut query_count = 0;
 
-    group.bench_function("plain-boolean-query-points", |b| {
+    group.bench_function("plain", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += plain_index.query_points(&filter).len();
@@ -57,11 +57,11 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
-    let mut group = c.benchmark_group("struct-boolean-query-group");
+    let mut group = c.benchmark_group("boolean-query-points");
 
     let mut result_size = 0;
     let mut query_count = 0;
-    group.bench_function("struct-boolean-query-points", |b| {
+    group.bench_function("binary-index", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += struct_index.query_points(&filter).len();
@@ -93,11 +93,11 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         .set_indexed(BOOL_KEY, PayloadSchemaType::Keyword.into())
         .unwrap();
 
-    let mut group = c.benchmark_group("struct-boolean-query-group");
+    let mut group = c.benchmark_group("boolean-query-points");
 
     let mut result_size = 0;
     let mut query_count = 0;
-    group.bench_function("struct-boolean-query-points", |b| {
+    group.bench_function("keyword-index", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += index.query_points(&filter).len();
