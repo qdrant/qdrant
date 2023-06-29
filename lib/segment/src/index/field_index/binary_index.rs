@@ -76,12 +76,16 @@ impl BinaryMemory {
         debug_assert!(self.trues.len() == self.falses.len());
 
         if item.contains(BinaryItem::TRUE) {
-            self.trues_count += 1;
-            self.trues.set(id as usize, true);
+            let had_true = self.trues.replace(id as usize, true);
+            if !had_true {
+                self.trues_count += 1;
+            }
         }
         if item.contains(BinaryItem::FALSE) {
-            self.falses_count += 1;
-            self.falses.set(id as usize, true);
+            let had_false = self.falses.replace(id as usize, true);
+            if !had_false {
+                self.falses_count += 1;
+            }
         }
 
         self.indexed_count += 1;
@@ -99,7 +103,6 @@ impl BinaryMemory {
         if had_true {
             self.trues_count -= 1;
         }
-
         if had_false {
             self.falses_count -= 1;
         }
