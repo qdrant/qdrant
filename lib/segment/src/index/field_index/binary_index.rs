@@ -30,6 +30,17 @@ impl BinaryItem {
         item
     }
 }
+
+impl From<bool> for BinaryItem {
+    fn from(src: bool) -> Self {
+        if src {
+            BinaryItem::TRUE
+        } else {
+            BinaryItem::FALSE
+        }
+    }
+}
+
 struct BinaryMemory {
     trues: BitVec,
     falses: BitVec,
@@ -258,9 +269,8 @@ impl PayloadFieldIndex for BinaryIndex {
                     .memory
                     .iter()
                     .zip(0u32..) // enumerate but with u32
-                    .filter_map(|(stored, point_id)| match *value {
-                        true => stored.contains(BinaryItem::TRUE).then_some(point_id),
-                        false => stored.contains(BinaryItem::FALSE).then_some(point_id),
+                    .filter_map(|(stored, point_id)| {
+                        stored.contains((*value).into()).then_some(point_id)
                     });
 
                 Some(Box::new(iter))
