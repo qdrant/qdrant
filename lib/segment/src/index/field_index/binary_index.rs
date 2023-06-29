@@ -14,8 +14,8 @@ use crate::types::{
 };
 
 bitflags! {
-    /// Due to being able to store multi-values, the binary index is not a simple
-    /// bitset, but rather a pair of bitsets, one for true values and one for false values.
+    /// Due to being able to store multi-values, the binary value is not a simple
+    /// boolean, but rather a pair of booleans, one for true value and one for false value.
     pub struct BinaryItem: u8 {
         const TRUE = 0b00000001;
         const FALSE = 0b00000010;
@@ -86,17 +86,20 @@ impl BinaryMemory {
 
         debug_assert!(self.trues.len() == self.falses.len());
 
-        if item.contains(BinaryItem::TRUE) {
-            let had_true = self.trues.replace(id as usize, true);
-            if !had_true {
-                self.trues_count += 1;
-            }
+        let set_true = item.contains(BinaryItem::TRUE);
+        let had_true = self.trues.replace(id as usize, set_true);
+        match (had_true, set_true) {
+            (false, true) => self.trues_count += 1,
+            (true, false) => self.trues_count -= 1,
+            _ => {}
         }
-        if item.contains(BinaryItem::FALSE) {
-            let had_false = self.falses.replace(id as usize, true);
-            if !had_false {
-                self.falses_count += 1;
-            }
+
+        let set_false = item.contains(BinaryItem::FALSE);
+        let had_false = self.falses.replace(id as usize, set_false);
+        match (had_false, set_false) {
+            (false, true) => self.falses_count += 1,
+            (true, false) => self.falses_count -= 1,
+            _ => {}
         }
 
         self.indexed_count += 1;
@@ -142,11 +145,11 @@ impl BinaryMemory {
         }
     }
 
-    pub fn count_trues(&self) -> usize {
+    pub fn trues_count(&self) -> usize {
         self.trues_count
     }
 
-    pub fn count_falses(&self) -> usize {
+    pub fn falses_count(&self) -> usize {
         self.falses_count
     }
 
@@ -212,7 +215,7 @@ impl BinaryIndex {
         PayloadIndexTelemetry {
             field_name: None,
             points_count: self.memory.indexed_count(),
-            points_values_count: self.memory.count_falses() + self.memory.count_falses(),
+            points_values_count: self.memory.trues_count() + self.memory.falses_count(),
             histogram_bucket_size: None,
         }
     }
@@ -285,9 +288,9 @@ impl PayloadFieldIndex for BinaryIndex {
                 value: ValueVariants::Bool(value),
             })) => {
                 let count = if *value {
-                    self.memory.count_trues()
+                    self.memory.trues_count()
                 } else {
-                    self.memory.count_falses()
+                    self.memory.falses_count()
                 };
 
                 let estimation = CardinalityEstimation::exact(count)
@@ -322,8 +325,8 @@ impl PayloadFieldIndex for BinaryIndex {
 
         // just two possible blocks: true and false
         let iter = [
-            make_block(self.memory.count_trues(), true, key.clone()),
-            make_block(self.memory.count_falses(), false, key),
+            make_block(self.memory.trues_count(), true, key.clone()),
+            make_block(self.memory.falses_count(), false, key),
         ]
         .into_iter()
         .flatten();
@@ -486,9 +489,8 @@ mod tests {
 
     #[rstest]
     #[case(json!(false), json!(true))]
-    #[case(json!(false), json!([true, false]))]
-    #[case(json!([false, true]), json!([true, false]))]
     #[case(json!([false, true]), json!(true))]
+    /// Try to modify from falsy to only true
     fn modify_value(#[case] before: serde_json::Value, #[case] after: serde_json::Value) {
         let (_tmp_dir, mut index) = new_binary_index();
 
@@ -502,6 +504,8 @@ mod tests {
 
         let point_offsets = index.filter(&match_bool(true)).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![idx]);
+        let point_offsets = index.filter(&match_bool(false)).unwrap().collect_vec();
+        assert!(point_offsets.is_empty());
     }
 
     #[test]
@@ -517,5 +521,44 @@ mod tests {
             });
 
         assert_eq!(index.indexed_points(), 9);
+    }
+
+    #[test]
+    fn payload_blocks() {
+        let (_tmp_dir, mut index) = new_binary_index();
+
+        bools_fixture()
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, value)| {
+                let payload = MultiValue::one(&value);
+                index.add_point(i as u32, &payload).unwrap();
+            });
+
+        let blocks = index
+            .payload_blocks(0, FIELD_NAME.to_string())
+            .collect_vec();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].cardinality, 6);
+        assert_eq!(blocks[1].cardinality, 6);
+    }
+
+    #[test]
+    fn estimate_cardinality() {
+        let (_tmp_dir, mut index) = new_binary_index();
+
+        bools_fixture()
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, value)| {
+                let payload = MultiValue::one(&value);
+                index.add_point(i as u32, &payload).unwrap();
+            });
+
+        let cardinality = index.estimate_cardinality(&match_bool(true)).unwrap();
+        assert_eq!(cardinality.exp, 6);
+
+        let cardinality = index.estimate_cardinality(&match_bool(false)).unwrap();
+        assert_eq!(cardinality.exp, 6);
     }
 }
