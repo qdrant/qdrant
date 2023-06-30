@@ -68,23 +68,6 @@ pub fn versioned_shard_path(
     }
 }
 
-pub async fn suggest_next_version_path(
-    collection_path: &Path,
-    shard_id: ShardId,
-) -> CollectionResult<PathBuf> {
-    // Assume `all_versions` is sorted by version in descending order.
-    let all_versions = shards_versions(collection_path, shard_id).await?;
-    if all_versions.is_empty() {
-        return Ok(versioned_shard_path(collection_path, shard_id, 0));
-    }
-    let (last_version, _) = all_versions.first().unwrap();
-    Ok(versioned_shard_path(
-        collection_path,
-        shard_id,
-        last_version + 1,
-    ))
-}
-
 pub async fn latest_shard_paths(
     collection_path: &Path,
     shard_id: ShardId,
