@@ -306,7 +306,7 @@ impl TableOfContent {
         // Collection operations require multiple file operations,
         // before collection can actually be registered in the service.
         // To prevent parallel writing of the files, we use this lock.
-        let _lock = self.collection_create_lock.lock().await;
+        let collection_create_guard = self.collection_create_lock.lock().await;
 
         let CreateCollection {
             vectors,
@@ -437,6 +437,8 @@ impl TableOfContent {
                 .await?;
             write_collections.insert(collection_name.to_string(), collection);
         }
+
+        drop(collection_create_guard);
 
         // Notify the collection is created and ready to use
         for shard_id in local_shards {
