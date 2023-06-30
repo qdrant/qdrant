@@ -23,7 +23,7 @@ pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
 
 parking_lot = "0.12"
 rayon = "1.7.0"
-num_cpus = "1.15"
+num_cpus = "1.16"
 itertools = "0.11"
 rocksdb = { version = "0.21.0", default-features = false, features = [ "snappy" ] }
 uuid = { version = "1.4", features = ["v4", "serde"] }
