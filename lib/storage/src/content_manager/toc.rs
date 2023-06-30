@@ -37,7 +37,7 @@ use collection::telemetry::CollectionTelemetry;
 use segment::common::cpu::get_num_cpus;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
-use tokio::sync::{RwLock, RwLockReadGuard, Semaphore};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use uuid::Uuid;
 
 use super::collection_meta_ops::{
@@ -87,6 +87,9 @@ pub struct TableOfContent {
     ///
     /// If not defined - no rate limiting is applied.
     update_rate_limiter: Option<Semaphore>,
+    /// A lock to prevent concurrent collection creation.
+    /// Effectively, this lock ensures that `create_collection` is called sequentially.
+    collection_create_lock: Mutex<()>,
 }
 
 impl TableOfContent {
@@ -194,6 +197,7 @@ impl TableOfContent {
             is_write_locked: AtomicBool::new(false),
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
+            collection_create_lock: Default::default(),
         }
     }
 
@@ -311,6 +315,11 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
+        // Collection operations require multiple file operations,
+        // before collection can actually be registered in the service.
+        // To prevent parallel writing of the files, we use this lock.
+        let collection_create_guard = self.collection_create_lock.lock().await;
+
         let CreateCollection {
             vectors,
             shard_number,
@@ -440,6 +449,8 @@ impl TableOfContent {
                 .await?;
             write_collections.insert(collection_name.to_string(), collection);
         }
+
+        drop(collection_create_guard);
 
         // Notify the collection is created and ready to use
         for shard_id in local_shards {

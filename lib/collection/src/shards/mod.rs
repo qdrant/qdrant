@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use shard::ShardId;
 
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::shard_versioning::suggest_next_version_path;
+use crate::shards::shard_versioning::versioned_shard_path;
 
 pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
@@ -35,17 +35,17 @@ pub async fn create_shard_dir(
     collection_path: &Path,
     shard_id: ShardId,
 ) -> CollectionResult<PathBuf> {
-    loop {
-        let shard_path = suggest_next_version_path(collection_path, shard_id).await?;
-
-        match tokio::fs::create_dir(&shard_path).await {
-            Ok(_) => return Ok(shard_path),
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    continue;
-                } else {
-                    return Err(CollectionError::from(e));
-                }
+    let shard_path = versioned_shard_path(collection_path, shard_id, 0);
+    match tokio::fs::create_dir(&shard_path).await {
+        Ok(_) => Ok(shard_path),
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                Err(CollectionError::service_error(format!(
+                    "shard path already exists: {:?}",
+                    shard_path
+                )))
+            } else {
+                Err(CollectionError::from(e))
             }
         }
     }
