@@ -7,7 +7,6 @@ use log::info;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::snapshots::SnapshotConfig;
 use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
-use uuid::Uuid;
 
 /// Recover snapshots from the given arguments
 ///
@@ -89,9 +88,9 @@ pub fn recover_full_snapshot(
     this_peer_id: PeerId,
     is_distributed: bool,
 ) -> Vec<String> {
-    let snapshot_temp_path = temp_dir.map(PathBuf::from).unwrap_or_else(|| {
-        Path::new(storage_dir).join(format!("snapshots-recovery-{}", Uuid::new_v4()))
-    });
+    let snapshot_temp_path = temp_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(storage_dir).join("snapshots_recovery_tmp"));
     fs::create_dir_all(&snapshot_temp_path).unwrap();
 
     // Un-tar snapshot into temporary directory
