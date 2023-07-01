@@ -50,6 +50,8 @@ pub enum OperationError {
         description: String,
         backtrace: Option<String>,
     },
+    #[error("Inconsistent storage: {description}")]
+    InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
