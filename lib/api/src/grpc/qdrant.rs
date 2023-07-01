@@ -2978,6 +2978,21 @@ pub struct ScrollPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "8")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifing sorted retrieval of points
+    #[prost(message, optional, tag = "9")]
+    pub order_by: ::core::option::Option<OrderBy>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OrderBy {
+    /// numerical key to use for sorting
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// direction: acsencding = 0, descending = 1; default should be ascending
+    #[prost(bool, optional, tag = "2")]
+    pub direction: ::core::option::Option<bool>,
+    #[prost(uint32, optional, tag = "3")]
+    pub offset: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

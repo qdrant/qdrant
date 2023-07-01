@@ -272,6 +272,13 @@ message ScrollPoints {
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 7; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
+  optional OrderBy order_by = 9; // Options for specifing sorted retrieval of points 
+}
+
+message OrderBy {
+    string key = 1; //numerical key to use for sorting
+    optional bool direction = 2; //direction: acsencding = 0, descending = 1; default should be ascending
+    optional uint32 offset = 3;
 }
 
 message LookupLocation {

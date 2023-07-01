@@ -790,6 +790,7 @@ pub async fn scroll(
         with_payload,
         with_vectors,
         read_consistency,
+        order_by
     } = scroll_points;
 
     let scroll_request = ScrollRequest {
