@@ -16,7 +16,7 @@ use std::io::Error;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -212,9 +212,9 @@ fn main() -> anyhow::Result<()> {
     // It is a main entry point for the storage.
     let toc = TableOfContent::new(
         &settings.storage,
-        search_runtime,
-        update_runtime,
-        general_runtime,
+        search_runtime.handle().clone(),
+        update_runtime.handle().clone(),
+        general_runtime.handle().clone(),
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
@@ -262,7 +262,7 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let handle = Consensus::run(
+        let (grpc_handle, consensus_handle) = Consensus::run(
             &slog_logger,
             consensus_state.clone(),
             args.bootstrap,
@@ -276,7 +276,8 @@ fn main() -> anyhow::Result<()> {
         )
         .expect("Can't initialize consensus");
 
-        handles.push(handle);
+        handles.push(grpc_handle);
+        handles.push(consensus_handle);
 
         let toc_arc_clone = toc_arc.clone();
         let consensus_state_clone = consensus_state.clone();
@@ -439,7 +440,34 @@ fn main() -> anyhow::Result<()> {
         );
         handle.join().expect("thread is not panicking")?;
     }
-    drop(toc_arc);
+    drop(search_runtime);
+    drop(update_runtime);
+    drop(general_runtime);
     drop(settings);
+    if let Ok(toc) = wait_unwrap(toc_arc, Duration::from_secs(30)) {
+        drop(toc);
+    }
     Ok(())
+}
+
+/// Blocks current thread for up to specified amount of time to become the single referent
+/// of an [`Arc`] and returns it.
+///
+/// This methods move a value out from an [`Arc`] when there is only one reference left
+/// and it is safe to do so. `Err()` is returned if an [`Arc`] still has more than 1 reference
+/// after given duration is passed.
+fn wait_unwrap<T>(mut input: Arc<T>, duration: Duration) -> Result<T, ()> {
+    let start_time = Instant::now();
+    while start_time.elapsed() < duration {
+        match Arc::try_unwrap(input) {
+            Ok(input) => {
+                return Ok(input);
+            }
+            Err(new_input) => {
+                input = new_input;
+                thread::sleep_ms(100);
+            }
+        }
+    }
+    Err(())
 }
