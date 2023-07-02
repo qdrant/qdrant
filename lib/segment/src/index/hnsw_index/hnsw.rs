@@ -378,7 +378,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 let id_tracker = self.id_tracker.borrow();
                 let vector_storage = self.vector_storage.borrow();
 
-                // Determine whether to a plain or graph search, pick search timer aggregator
+                // Determine whether to do a plain or graph search, and pick search timer aggregator
                 // Because an HNSW graph is built, we'd normally always assume to search the graph.
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
@@ -387,10 +387,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 // Do plain or graph search
                 if plain_search {
-                    let _timer = ScopeDurationMeasurer::new(if plain_search {
-                        &self.searches_telemetry.unfiltered_plain
-                    } else {
+                    let _timer = ScopeDurationMeasurer::new(if exact {
                         &self.searches_telemetry.exact_unfiltered
+                    } else {
+                        &self.searches_telemetry.unfiltered_plain
                     });
                     vectors
                         .iter()
