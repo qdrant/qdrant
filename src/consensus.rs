@@ -97,7 +97,6 @@ impl Consensus {
                 } else {
                     log::info!("Consensus stopped");
                     state_ref_clone.on_consensus_stopped();
-                    state_ref_clone.on_consensus_stopped();
                 }
             })?;
 
