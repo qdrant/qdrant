@@ -32,35 +32,29 @@ impl BinaryItem {
         self.value & Self::HAS_FALSE != 0
     }
 
-    pub fn set_has_true(&mut self, has_true: bool) {
-        if has_true {
-            self.value |= Self::HAS_TRUE;
+    pub fn set(&mut self, flag: u8, value: bool) {
+        if value {
+            self.value |= flag;
         } else {
-            self.value &= !Self::HAS_TRUE;
-        }
-    }
-
-    pub fn set_has_false(&mut self, has_false: bool) {
-        if has_false {
-            self.value |= Self::HAS_FALSE;
-        } else {
-            self.value &= !Self::HAS_FALSE;
+            self.value &= !flag;
         }
     }
 
     pub fn from_bools(has_true: bool, has_false: bool) -> Self {
         let mut item = Self::empty();
-        item.set_has_true(has_true);
-        item.set_has_false(has_false);
+        item.set(Self::HAS_TRUE, has_true);
+        item.set(Self::HAS_FALSE, has_false);
         item
     }
 
     pub fn as_bytes(&self) -> [u8; 1] {
         [self.value]
     }
+}
 
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        Self { value: bytes[0] }
+impl From<u8> for BinaryItem {
+    fn from(value: u8) -> Self {
+        Self { value }
     }
 }
 
@@ -92,7 +86,7 @@ impl BinaryMemory {
         BinaryItem::from_bools(has_true, has_false)
     }
 
-    pub fn set_or_insert(&mut self, id: PointOffsetType, has_true: bool, has_false: bool) {
+    pub fn set_or_insert(&mut self, id: PointOffsetType, item: &BinaryItem) {
         if (id as usize) >= self.trues.len() {
             self.trues.resize(id as usize + 1, false);
             self.falses.resize(id as usize + 1, false);
@@ -100,6 +94,7 @@ impl BinaryMemory {
 
         debug_assert!(self.trues.len() == self.falses.len());
 
+        let has_true = item.has_true();
         let had_true = self.trues.replace(id as usize, has_true);
         match (had_true, has_true) {
             (false, true) => self.trues_count += 1,
@@ -107,6 +102,7 @@ impl BinaryMemory {
             _ => {}
         }
 
+        let has_false = item.has_false();
         let had_false = self.falses.replace(id as usize, has_false);
         match (had_false, has_false) {
             (false, true) => self.falses_count += 1,
@@ -216,9 +212,8 @@ impl PayloadFieldIndex for BinaryIndex {
 
             debug_assert_eq!(value.len(), 1);
 
-            let item = BinaryItem::from_bytes(&value);
-            self.memory
-                .set_or_insert(idx, item.has_true(), item.has_false());
+            let item = BinaryItem::from(value[0]);
+            self.memory.set_or_insert(idx, &item);
         }
         Ok(true)
     }
@@ -315,10 +310,11 @@ impl ValueIndexer<bool> for BinaryIndex {
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !*v);
 
-        self.memory.set_or_insert(id, has_true, has_false);
+        let item = BinaryItem::from_bools(has_true, has_false);
 
-        let record = BinaryItem::from_bools(has_true, has_false);
-        self.db_wrapper.put(id.to_be_bytes(), record.as_bytes())?;
+        self.memory.set_or_insert(id, &item);
+
+        self.db_wrapper.put(id.to_be_bytes(), item.as_bytes())?;
 
         Ok(())
     }
