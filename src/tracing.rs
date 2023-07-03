@@ -28,6 +28,23 @@ pub fn setup() -> anyhow::Result<()> {
             tracing_subscriber::filter::filter_fn(|metadata| metadata.is_span()),
         ));
 
+        #[cfg(all(feature = "tracing-log-always", feature = "tracing-logger"))]
+        eprintln!(
+            "Both `tracing-log-always` and `tracing-logger` features are enabled at the same time. \
+             This will cause some logs to be printed twice!"
+        );
+
+        #[cfg(feature = "tracing-logger")]
+        let reg = reg.with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(true)
+                .with_span_events(tracing_subscriber::fmt::format::FmtSpan::NEW)
+                .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env()),
+        );
+
+        #[cfg(feature = "tracing-logger")]
+        tracing_log::LogTracer::init()?;
+
         tracing::subscriber::set_global_default(reg)?;
     }
 

@@ -146,6 +146,11 @@ that can be enabled with optional features.
     (e.g., if neither `tracy`, nor `console` feature is enabled)
   - if `tracing-log-always` feature is enabled, the logs would _always_ be produced
   - useful for "quick and dirty" `tracing`-enabled debugging, that does not require any additional setup
+- `tracing-logger` feature replaces default logger with an alternative "tracing-compatible" logger,
+  that also prints [tracing span] information for `tracing` logs (which is _super-useful_ in times)
+  - note, that `tracing-logger` only reads "filters" from default `RUST_LOG` env-var currently
+  - note, that if both `tracing-log-always` and `tracing-logger` features are enabled it will cause some logs
+    to be printed twice
 - `tracy` feature enables [`Tracy`] profiler integration
 - `console` feature enables [`tokio-console`] integration
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
@@ -183,6 +188,7 @@ fn some_other_function() {
 ```
 
 [tracing-log-features]: https://docs.rs/tracing/latest/tracing/#emitting-log-records
+[tracing span]: https://docs.rs/tracing/latest/tracing/index.html#spans
 [`tracing`]: https://docs.rs/tracing/latest/tracing/
 [`Tracy`]: https://github.com/wolfpld/tracy
 [`tokio-console`]: https://docs.rs/tokio-console/latest/tokio_console/
