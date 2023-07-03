@@ -67,6 +67,8 @@ charabia = { version = "0.8.2", default-features = false, features = ["greek", "
 
 common = {path = "../common"}
 
+tracing = { version = "0.1", features = ["async-await"], optional = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.15", default-features = false }

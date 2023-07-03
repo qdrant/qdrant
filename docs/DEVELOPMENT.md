@@ -140,6 +140,12 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 Qdrant have basic [`tracing`] support with [`Tracy`] profiler and [`tokio-console`] integrations
 that can be enabled with optional features.
 
+- `tracing-log` and `tracing-log-always` features enable [`tracing/log` and `tracing/log-always`][tracing-log-features]
+  features of the `tracing` crate, which cause `tracing` crate to produce logs with the `log` crate
+  - if `tracing-log` feature enabled, the logs would only be produced if no other tracing subscriber is enabled
+    (e.g., if neither `tracy`, nor `console` feature is enabled)
+  - if `tracing-log-always` feature is enabled, the logs would _always_ be produced
+  - useful for "quick and dirty" `tracing`-enabled debugging, that does not require any additional setup
 - `tracy` feature enables [`Tracy`] profiler integration
 - `console` feature enables [`tokio-console`] integration
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
@@ -176,6 +182,7 @@ fn some_other_function() {
 }
 ```
 
+[tracing-log-features]: https://docs.rs/tracing/latest/tracing/#emitting-log-records
 [`tracing`]: https://docs.rs/tracing/latest/tracing/
 [`Tracy`]: https://github.com/wolfpld/tracy
 [`tokio-console`]: https://docs.rs/tokio-console/latest/tokio_console/
