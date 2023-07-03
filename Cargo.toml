@@ -35,7 +35,7 @@ rusty-hook = "^0.11.2"
 
 parking_lot = { version = "0.12.1", features=["deadlock_detection"], optional = true }
 
-num_cpus = "1.15"
+num_cpus = "1.16"
 thiserror = "1.0"
 log = "0.4"
 env_logger = "0.10.0"
