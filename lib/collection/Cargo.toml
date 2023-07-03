@@ -14,7 +14,7 @@ criterion = "0.5"
 rstest = "0.17.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
-pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
+pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 
 [dependencies]
 
