@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use bitvec::prelude::*;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
+use self::memory::{BinaryItem, BinaryMemory};
 use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::OperationResult;
@@ -12,146 +12,152 @@ use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
 };
 
-struct BinaryItem {
-    value: u8,
-}
+mod memory {
+    use bitvec::vec::BitVec;
 
-impl BinaryItem {
-    const HAS_TRUE: u8 = 0b0000_0001;
-    const HAS_FALSE: u8 = 0b0000_0010;
+    use crate::types::PointOffsetType;
 
-    pub fn empty() -> Self {
-        Self { value: 0 }
+    pub struct BinaryItem {
+        value: u8,
     }
 
-    pub fn has_true(&self) -> bool {
-        self.value & Self::HAS_TRUE != 0
-    }
+    impl BinaryItem {
+        const HAS_TRUE: u8 = 0b0000_0001;
+        const HAS_FALSE: u8 = 0b0000_0010;
 
-    pub fn has_false(&self) -> bool {
-        self.value & Self::HAS_FALSE != 0
-    }
+        pub fn empty() -> Self {
+            Self { value: 0 }
+        }
 
-    pub fn set(&mut self, flag: u8, value: bool) {
-        if value {
-            self.value |= flag;
-        } else {
-            self.value &= !flag;
+        pub fn has_true(&self) -> bool {
+            self.value & Self::HAS_TRUE != 0
+        }
+
+        pub fn has_false(&self) -> bool {
+            self.value & Self::HAS_FALSE != 0
+        }
+
+        pub fn set(&mut self, flag: u8, value: bool) {
+            if value {
+                self.value |= flag;
+            } else {
+                self.value &= !flag;
+            }
+        }
+
+        pub fn from_bools(has_true: bool, has_false: bool) -> Self {
+            let mut item = Self::empty();
+            item.set(Self::HAS_TRUE, has_true);
+            item.set(Self::HAS_FALSE, has_false);
+            item
+        }
+
+        pub fn as_bytes(&self) -> [u8; 1] {
+            [self.value]
         }
     }
 
-    pub fn from_bools(has_true: bool, has_false: bool) -> Self {
-        let mut item = Self::empty();
-        item.set(Self::HAS_TRUE, has_true);
-        item.set(Self::HAS_FALSE, has_false);
-        item
-    }
-
-    pub fn as_bytes(&self) -> [u8; 1] {
-        [self.value]
-    }
-}
-
-impl From<u8> for BinaryItem {
-    fn from(value: u8) -> Self {
-        Self { value }
-    }
-}
-
-struct BinaryMemory {
-    trues: BitVec,
-    falses: BitVec,
-    trues_count: usize,
-    falses_count: usize,
-    indexed_count: usize,
-}
-
-impl BinaryMemory {
-    pub fn new() -> Self {
-        Self {
-            trues: BitVec::new(),
-            falses: BitVec::new(),
-            trues_count: 0,
-            falses_count: 0,
-            indexed_count: 0,
+    impl From<u8> for BinaryItem {
+        fn from(value: u8) -> Self {
+            Self { value }
         }
     }
 
-    pub fn get(&self, id: PointOffsetType) -> BinaryItem {
-        debug_assert!(self.trues.len() == self.falses.len());
-
-        let has_true = self.trues.get(id as usize).map(|v| *v).unwrap_or(false);
-        let has_false = self.falses.get(id as usize).map(|v| *v).unwrap_or(false);
-
-        BinaryItem::from_bools(has_true, has_false)
+    pub struct BinaryMemory {
+        trues: BitVec,
+        falses: BitVec,
+        trues_count: usize,
+        falses_count: usize,
+        indexed_count: usize,
     }
 
-    pub fn set_or_insert(&mut self, id: PointOffsetType, item: &BinaryItem) {
-        if (id as usize) >= self.trues.len() {
-            self.trues.resize(id as usize + 1, false);
-            self.falses.resize(id as usize + 1, false);
+    impl BinaryMemory {
+        pub fn new() -> Self {
+            Self {
+                trues: BitVec::new(),
+                falses: BitVec::new(),
+                trues_count: 0,
+                falses_count: 0,
+                indexed_count: 0,
+            }
         }
 
-        debug_assert!(self.trues.len() == self.falses.len());
+        pub fn get(&self, id: PointOffsetType) -> BinaryItem {
+            debug_assert!(self.trues.len() == self.falses.len());
 
-        let has_true = item.has_true();
-        let had_true = self.trues.replace(id as usize, has_true);
-        match (had_true, has_true) {
-            (false, true) => self.trues_count += 1,
-            (true, false) => self.trues_count -= 1,
-            _ => {}
+            let has_true = self.trues.get(id as usize).map(|v| *v).unwrap_or(false);
+            let has_false = self.falses.get(id as usize).map(|v| *v).unwrap_or(false);
+
+            BinaryItem::from_bools(has_true, has_false)
         }
 
-        let has_false = item.has_false();
-        let had_false = self.falses.replace(id as usize, has_false);
-        match (had_false, has_false) {
-            (false, true) => self.falses_count += 1,
-            (true, false) => self.falses_count -= 1,
-            _ => {}
+        pub fn set_or_insert(&mut self, id: PointOffsetType, item: &BinaryItem) {
+            if (id as usize) >= self.trues.len() {
+                self.trues.resize(id as usize + 1, false);
+                self.falses.resize(id as usize + 1, false);
+            }
+
+            debug_assert!(self.trues.len() == self.falses.len());
+
+            let has_true = item.has_true();
+            let had_true = self.trues.replace(id as usize, has_true);
+            match (had_true, has_true) {
+                (false, true) => self.trues_count += 1,
+                (true, false) => self.trues_count -= 1,
+                _ => {}
+            }
+
+            let has_false = item.has_false();
+            let had_false = self.falses.replace(id as usize, has_false);
+            match (had_false, has_false) {
+                (false, true) => self.falses_count += 1,
+                (true, false) => self.falses_count -= 1,
+                _ => {}
+            }
+
+            self.indexed_count += 1;
         }
 
-        self.indexed_count += 1;
-    }
+        /// Removes the point from the index and tries to shrink the vectors if possible. If the index is not within bounds, does nothing
+        pub fn remove(&mut self, id: PointOffsetType) {
+            if (id as usize) >= self.trues.len() {
+                return;
+            }
 
-    /// Removes the point from the index and tries to shrink the vectors if possible. If the index is not within bounds, does nothing
-    pub fn remove(&mut self, id: PointOffsetType) {
-        if (id as usize) >= self.trues.len() {
-            return;
+            let had_true = self.trues.replace(id as usize, false);
+            let had_false = self.falses.replace(id as usize, false);
+
+            if had_true {
+                self.trues_count -= 1;
+            }
+            if had_false {
+                self.falses_count -= 1;
+            }
+
+            if had_false || had_true {
+                self.indexed_count -= 1;
+            }
         }
 
-        let had_true = self.trues.replace(id as usize, false);
-        let had_false = self.falses.replace(id as usize, false);
-
-        if had_true {
-            self.trues_count -= 1;
-        }
-        if had_false {
-            self.falses_count -= 1;
+        pub fn trues_count(&self) -> usize {
+            self.trues_count
         }
 
-        if had_false || had_true {
-            self.indexed_count -= 1;
+        pub fn falses_count(&self) -> usize {
+            self.falses_count
         }
-    }
 
-    pub fn trues_count(&self) -> usize {
-        self.trues_count
-    }
+        pub fn indexed_count(&self) -> usize {
+            self.indexed_count
+        }
 
-    pub fn falses_count(&self) -> usize {
-        self.falses_count
-    }
+        pub fn iter_has_true(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+            self.trues.iter_ones().map(|v| v as PointOffsetType)
+        }
 
-    pub fn indexed_count(&self) -> usize {
-        self.indexed_count
-    }
-
-    pub fn iter_has_true(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.trues.iter_ones().map(|v| v as PointOffsetType)
-    }
-
-    pub fn iter_has_false(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.falses.iter_ones().map(|v| v as PointOffsetType)
+        pub fn iter_has_false(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+            self.falses.iter_ones().map(|v| v as PointOffsetType)
+        }
     }
 }
 
