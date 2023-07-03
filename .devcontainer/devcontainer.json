@@ -4,13 +4,11 @@
     "name": "Existing Dockerfile",
     "build": {
         "context": "..",
-        "dockerfile": "../Dockerfile"
+        "dockerfile": "Dockerfile"
     },
     "features": {
         "ghcr.io/devcontainers/features/common-utils:latest": {},
 		"ghcr.io/devcontainers/features/docker-in-docker:latest": {},
-		"ghcr.io/devcontainers/features/rust:latest": {},
-        "ghcr.io/devcontainers-contrib/features/protoc:latest": {} 
-    },
-    "postCreateCommand": "apt-get update && apt-get install -y clang lld cmake protobuf-compiler jq && rustup component add rustfmt"
+		"ghcr.io/devcontainers/features/rust:latest": {}
+    }
 }
