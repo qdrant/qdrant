@@ -3619,6 +3619,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tracing",
+ "tracing-log",
  "tracing-subscriber",
  "tracing-tracy",
  "uuid",

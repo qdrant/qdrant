@@ -118,7 +118,10 @@ fn main() -> anyhow::Result<()> {
 
     let reporting_id = TelemetryCollector::generate_id();
 
-    setup_logger(&settings.log_level);
+    if !cfg!(feature = "tracing-logger") {
+        setup_logger(&settings.log_level);
+    }
+
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
     segment::madvise::set_global(settings.storage.mmap_advice);
