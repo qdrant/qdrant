@@ -270,6 +270,27 @@ impl TableOfContent {
     async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
 
+        if path.exists() {
+            if CollectionConfig::check(&path) {
+                return Err(StorageError::bad_input(&format!(
+                    "Can't create collection with name {collection_name}. Collection data already exists at {path}",
+                    collection_name = collection_name,
+                    path = path.display(),
+                )));
+            } else {
+                // Collection doesn't have a valid config, remove it
+                log::debug!(
+                    "Removing invalid collection path {path} from storage",
+                    path = path.display(),
+                );
+                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
+                    StorageError::service_error(format!(
+                        "Can't clear directory for collection {collection_name}. Error: {err}"
+                    ))
+                })?;
+            }
+        }
+
         tokio::fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(format!(
                 "Can't create directory for collection {collection_name}. Error: {err}"
