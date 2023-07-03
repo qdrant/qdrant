@@ -895,6 +895,7 @@ impl RaftMessageSender {
             // Check if the message is a heartbeat...
             let is_heartbeat = message.as_ref().map_or(false, |message| {
                 message.msg_type == raft::eraftpb::MessageType::MsgHeartbeat as i32
+                    || message.msg_type == raft::eraftpb::MessageType::MsgHeartbeatResponse as i32
             });
 
             // ...and if it is, replace the earlier one and try to get the next message from the queue
