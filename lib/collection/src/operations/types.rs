@@ -579,6 +579,10 @@ impl From<OperationError> for CollectionError {
             OperationError::OutOfMemory { description, free } => {
                 Self::OutOfMemory { description, free }
             }
+            OperationError::InconsistentStorage { .. } => Self::ServiceError {
+                error: format!("{err}"),
+                backtrace: None,
+            },
         }
     }
 }

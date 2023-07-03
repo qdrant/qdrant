@@ -378,13 +378,24 @@ impl Segment {
             .borrow()
             .is_deleted_vector(point_offset);
         if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
-            Ok(Some(
-                vector_data
-                    .vector_storage
-                    .borrow()
-                    .get_vector(point_offset)
-                    .to_vec(),
-            ))
+            let vector_storage = vector_data.vector_storage.borrow();
+
+            if vector_storage.total_vector_count() <= point_offset as usize {
+                // Storage does not have vector with such offset.
+                // This is possible if the storage is inconsistent due to interrupted flush.
+                // Assume consistency will be restored with WAL replay.
+
+                // Without this check, the service will panic on the `get_vector` call.
+                Err(OperationError::InconsistentStorage {
+                    description: format!(
+                        "Vector storage is inconsistent, total_vector_count: {}, point_offset: {}",
+                        vector_storage.total_vector_count(),
+                        point_offset
+                    ),
+                })
+            } else {
+                Ok(Some(vector_storage.get_vector(point_offset).to_vec()))
+            }
         } else {
             Ok(None)
         }
