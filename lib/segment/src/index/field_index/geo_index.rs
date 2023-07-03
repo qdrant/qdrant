@@ -503,7 +503,7 @@ impl ValueIndexer<GeoPoint> for GeoMapIndex {
 }
 
 impl PayloadFieldIndex for GeoMapIndex {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.points_count
     }
 
@@ -591,10 +591,6 @@ impl PayloadFieldIndex for GeoMapIndex {
                     cardinality: size,
                 }),
         )
-    }
-
-    fn count_indexed_points(&self) -> usize {
-        self.points_count
     }
 }
 

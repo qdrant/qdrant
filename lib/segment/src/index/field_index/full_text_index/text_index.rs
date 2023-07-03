@@ -175,7 +175,7 @@ impl ValueIndexer<String> for FullTextIndex {
 }
 
 impl PayloadFieldIndex for FullTextIndex {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.inverted_index.points_count
     }
 
@@ -228,10 +228,6 @@ impl PayloadFieldIndex for FullTextIndex {
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.inverted_index.payload_blocks(threshold, key)
-    }
-
-    fn count_indexed_points(&self) -> usize {
-        self.inverted_index.points_count
     }
 }
 

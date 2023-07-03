@@ -17,7 +17,7 @@ use crate::types::{
 
 pub trait PayloadFieldIndex {
     /// Return number of points with at least one value indexed in here
-    fn indexed_points(&self) -> usize;
+    fn count_indexed_points(&self) -> usize;
 
     /// Load index from disk.
     fn load(&mut self) -> OperationResult<bool>;
@@ -45,9 +45,6 @@ pub trait PayloadFieldIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
-
-    /// Returns an amount of unique indexed points
-    fn count_indexed_points(&self) -> usize;
 }
 
 pub trait ValueIndexer<T> {
@@ -222,8 +219,8 @@ impl FieldIndex {
         }
     }
 
-    pub fn indexed_points(&self) -> usize {
-        self.get_payload_field_index().indexed_points()
+    pub fn count_indexed_points(&self) -> usize {
+        self.get_payload_field_index().count_indexed_points()
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -252,10 +249,6 @@ impl FieldIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
-    }
-
-    pub fn count_indexed_points(&self) -> usize {
-        self.get_payload_field_index().count_indexed_points()
     }
 
     pub fn add_point(
