@@ -12,6 +12,7 @@ pub mod map_index;
 pub mod numeric_index;
 mod stat_tools;
 
+pub mod binary_index;
 #[cfg(test)]
 mod tests;
 
@@ -63,5 +64,11 @@ impl CardinalityEstimation {
             exp: total / 2,
             max: total,
         }
+    }
+
+    /// Push a primary clause to the estimation
+    pub fn with_primary_clause(mut self, clause: PrimaryCondition) -> Self {
+        self.primary_clauses.push(clause);
+        self
     }
 }

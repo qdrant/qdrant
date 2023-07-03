@@ -29,7 +29,7 @@ use crate::types::{
 const GEO_QUERY_MAX_REGION: usize = 12;
 
 pub struct GeoMapIndex {
-    /**
+    /*
     {
         "d": 10,
         "dr": 10,
@@ -42,7 +42,7 @@ pub struct GeoMapIndex {
      */
     points_per_hash: BTreeMap<GeoHash, usize>,
     values_per_hash: BTreeMap<GeoHash, usize>,
-    /**
+    /*
     {
         "dr5ru": {1},
         "dr5rr": {2, 3},
