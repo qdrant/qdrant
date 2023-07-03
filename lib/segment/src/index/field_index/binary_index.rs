@@ -4,7 +4,10 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use self::memory::{BinaryItem, BinaryMemory};
-use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
+use super::private::DbWrapper;
+use super::{
+    CardinalityEstimation, FieldTypeIndex, IndexingStrategy, PrimaryCondition, ValueIndexer,
+};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::OperationResult;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -179,31 +182,15 @@ impl BinaryIndex {
     fn storage_cf_name(field: &str) -> String {
         format!("{}_binary", field)
     }
+}
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_count: self.memory.indexed_count(),
-            points_values_count: self.memory.trues_count() + self.memory.falses_count(),
-            histogram_bucket_size: None,
-        }
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        let binary_item = self.memory.get(point_id);
-        binary_item.has_true() as usize + binary_item.has_false() as usize
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.values_count(point_id) == 0
+impl DbWrapper for BinaryIndex {
+    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+        &self.db_wrapper
     }
 }
 
-impl PayloadFieldIndex for BinaryIndex {
+impl IndexingStrategy for BinaryIndex {
     fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
@@ -220,14 +207,30 @@ impl PayloadFieldIndex for BinaryIndex {
         Ok(true)
     }
 
-    fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.remove_column_family()
+    fn count_indexed_points(&self) -> usize {
+        self.memory.indexed_count()
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
-        self.db_wrapper.flusher()
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.memory.indexed_count(),
+            points_values_count: self.memory.trues_count() + self.memory.falses_count(),
+            histogram_bucket_size: None,
+        }
     }
 
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        let binary_item = self.memory.get(point_id);
+        binary_item.has_true() as usize + binary_item.has_false() as usize
+    }
+
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.values_count(point_id) == 0
+    }
+}
+
+impl FieldTypeIndex for BinaryIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
@@ -297,14 +300,12 @@ impl PayloadFieldIndex for BinaryIndex {
 
         Box::new(iter)
     }
-
-    fn count_indexed_points(&self) -> usize {
-        self.memory.indexed_count()
-    }
 }
 
-impl ValueIndexer<bool> for BinaryIndex {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<bool>) -> OperationResult<()> {
+impl ValueIndexer for BinaryIndex {
+    type Value = bool;
+
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<Self::Value>) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -321,7 +322,7 @@ impl ValueIndexer<bool> for BinaryIndex {
         Ok(())
     }
 
-    fn get_value(&self, value: &serde_json::Value) -> Option<bool> {
+    fn get_value(&self, value: &serde_json::Value) -> Option<Self::Value> {
         value.as_bool()
     }
 
@@ -345,7 +346,7 @@ mod tests {
     use super::BinaryIndex;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::common::utils::MultiValue;
-    use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
+    use crate::index::field_index::{FieldTypeIndex, IndexingStrategy, ValueIndexer};
 
     const FIELD_NAME: &str = "bool_field";
     const DB_NAME: &str = "test_db";
