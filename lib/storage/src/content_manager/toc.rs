@@ -36,7 +36,7 @@ use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::common::cpu::get_num_cpus;
 use segment::types::ScoredPoint;
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use uuid::Uuid;
 
@@ -71,9 +71,9 @@ pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidd
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     storage_config: Arc<StorageConfig>,
-    search_runtime: Handle,
-    update_runtime: Handle,
-    general_runtime: Handle,
+    search_runtime: Runtime,
+    update_runtime: Runtime,
+    general_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
@@ -96,9 +96,9 @@ impl TableOfContent {
     /// PeerId does not change during execution so it is ok to copy it here.
     pub fn new(
         storage_config: &StorageConfig,
-        search_runtime: Handle,
-        update_runtime: Handle,
-        general_runtime: Handle,
+        search_runtime: Runtime,
+        update_runtime: Runtime,
+        general_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
@@ -156,8 +156,8 @@ impl TableOfContent {
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                 ),
-                Some(search_runtime.clone()),
-                Some(update_runtime.clone()),
+                Some(search_runtime.handle().clone()),
+                Some(update_runtime.handle().clone()),
             ));
 
             collections.insert(collection_name, collection);
@@ -456,8 +456,8 @@ impl TableOfContent {
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
             ),
-            Some(self.search_runtime.clone()),
-            Some(self.update_runtime.clone()),
+            Some(self.search_runtime.handle().clone()),
+            Some(self.update_runtime.handle().clone()),
         )
         .await?;
 
@@ -1430,8 +1430,8 @@ impl TableOfContent {
                             self.consensus_proposal_sender.clone(),
                             id.to_string(),
                         ),
-                        Some(self.search_runtime.clone()),
-                        Some(self.update_runtime.clone()),
+                        Some(self.search_runtime.handle().clone()),
+                        Some(self.update_runtime.handle().clone()),
                     )
                     .await?;
                     collections.validate_collection_not_exists(id).await?;
