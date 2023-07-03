@@ -1,43 +1,66 @@
 use std::sync::Arc;
 
-use bitflags::bitflags;
 use bitvec::prelude::*;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::OperationResult;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
 };
 
-bitflags! {
-    /// Due to being able to store multi-values, the binary value is not a simple
-    /// boolean, but rather a pair of booleans, one for true value and one for false value.
-    pub struct BinaryItem: u8 {
-        const TRUE = 0b00000001;
-        const FALSE = 0b00000010;
-    }
+struct BinaryItem {
+    value: u8,
 }
 
 impl BinaryItem {
+    const HAS_TRUE: u8 = 0b0000_0001;
+    const HAS_FALSE: u8 = 0b0000_0010;
+
+    pub fn empty() -> Self {
+        Self { value: 0 }
+    }
+
+    pub fn has_true(&self) -> bool {
+        self.value & Self::HAS_TRUE != 0
+    }
+
+    pub fn has_false(&self) -> bool {
+        self.value & Self::HAS_FALSE != 0
+    }
+
+    pub fn set_has_true(&mut self, has_true: bool) {
+        if has_true {
+            self.value |= Self::HAS_TRUE;
+        } else {
+            self.value &= !Self::HAS_TRUE;
+        }
+    }
+
+    pub fn set_has_false(&mut self, has_false: bool) {
+        if has_false {
+            self.value |= Self::HAS_FALSE;
+        } else {
+            self.value &= !Self::HAS_FALSE;
+        }
+    }
+
     pub fn from_bools(has_true: bool, has_false: bool) -> Self {
         let mut item = Self::empty();
-        item.set(Self::TRUE, has_true);
-        item.set(Self::FALSE, has_false);
+        item.set_has_true(has_true);
+        item.set_has_false(has_false);
         item
     }
-}
 
-impl From<bool> for BinaryItem {
-    fn from(src: bool) -> Self {
-        if src {
-            BinaryItem::TRUE
-        } else {
-            BinaryItem::FALSE
-        }
+    pub fn as_bytes(&self) -> [u8; 1] {
+        [self.value]
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        Self { value: bytes[0] }
     }
 }
 
@@ -62,23 +85,14 @@ impl BinaryMemory {
 
     pub fn get(&self, id: PointOffsetType) -> BinaryItem {
         debug_assert!(self.trues.len() == self.falses.len());
-        if (id as usize) >= self.trues.len() {
-            return BinaryItem::empty();
-        }
 
-        unsafe {
-            // SAFETY: we just checked that the id is within bounds
-            let has_true = *self.trues.get_unchecked(id as usize).as_ref();
-            let has_false = *self.falses.get_unchecked(id as usize).as_ref();
-            BinaryItem::from_bools(has_true, has_false)
-        }
+        let has_true = self.trues.get(id as usize).map(|v| *v).unwrap_or(false);
+        let has_false = self.falses.get(id as usize).map(|v| *v).unwrap_or(false);
+
+        BinaryItem::from_bools(has_true, has_false)
     }
 
-    pub fn set_or_insert(&mut self, id: PointOffsetType, item: BinaryItem) {
-        if item.is_empty() {
-            return;
-        }
-
+    pub fn set_or_insert(&mut self, id: PointOffsetType, has_true: bool, has_false: bool) {
         if (id as usize) >= self.trues.len() {
             self.trues.resize(id as usize + 1, false);
             self.falses.resize(id as usize + 1, false);
@@ -86,17 +100,15 @@ impl BinaryMemory {
 
         debug_assert!(self.trues.len() == self.falses.len());
 
-        let set_true = item.contains(BinaryItem::TRUE);
-        let had_true = self.trues.replace(id as usize, set_true);
-        match (had_true, set_true) {
+        let had_true = self.trues.replace(id as usize, has_true);
+        match (had_true, has_true) {
             (false, true) => self.trues_count += 1,
             (true, false) => self.trues_count -= 1,
             _ => {}
         }
 
-        let set_false = item.contains(BinaryItem::FALSE);
-        let had_false = self.falses.replace(id as usize, set_false);
-        match (had_false, set_false) {
+        let had_false = self.falses.replace(id as usize, has_false);
+        match (had_false, has_false) {
             (false, true) => self.falses_count += 1,
             (true, false) => self.falses_count -= 1,
             _ => {}
@@ -124,25 +136,6 @@ impl BinaryMemory {
         if had_false || had_true {
             self.indexed_count -= 1;
         }
-
-        // TODO: should we avoid shrinking the vecs on every remove?
-        self.shrink();
-    }
-
-    /// Shrinks the vectors to the last populated index
-    fn shrink(&mut self) {
-        let last_populated_index = self.trues.last_one().max(self.falses.last_one());
-        match last_populated_index {
-            Some(index) if index < self.trues.len() - 1 => {
-                self.trues.truncate(index + 1);
-                self.falses.truncate(index + 1);
-            }
-            None => {
-                self.trues.clear();
-                self.falses.clear();
-            }
-            _ => {}
-        }
     }
 
     pub fn trues_count(&self) -> usize {
@@ -157,34 +150,12 @@ impl BinaryMemory {
         self.indexed_count
     }
 
-    pub fn iter(&self) -> BinaryMemoryIterator {
-        debug_assert!(self.trues.len() == self.falses.len());
-        BinaryMemoryIterator {
-            memory: self,
-            ptr: 0,
-            end: self.trues.len(),
-        }
+    pub fn iter_has_true(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        self.trues.iter_ones().map(|v| v as PointOffsetType)
     }
-}
 
-struct BinaryMemoryIterator<'a> {
-    memory: &'a BinaryMemory,
-    ptr: usize,
-    end: usize,
-}
-
-impl<'a> Iterator for BinaryMemoryIterator<'a> {
-    type Item = BinaryItem;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            return None;
-        }
-
-        let item = self.memory.get(self.ptr as PointOffsetType);
-        self.ptr += 1;
-
-        Some(item)
+    pub fn iter_has_false(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        self.falses.iter_ones().map(|v| v as PointOffsetType)
     }
 }
 
@@ -221,11 +192,12 @@ impl BinaryIndex {
     }
 
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.memory.get(point_id).iter().count()
+        let binary_item = self.memory.get(point_id);
+        binary_item.has_true() as usize + binary_item.has_false() as usize
     }
 
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.memory.get(point_id).is_empty()
+        self.values_count(point_id) == 0
     }
 }
 
@@ -234,25 +206,24 @@ impl PayloadFieldIndex for BinaryIndex {
         self.memory.indexed_count()
     }
 
-    fn load(&mut self) -> crate::entry::entry_point::OperationResult<bool> {
+    fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         }
 
         for (key, value) in self.db_wrapper.lock_db().iter()? {
             let idx = PointOffsetType::from_be_bytes(key.as_ref().try_into().unwrap());
-            let value = value.as_ref().first().ok_or(OperationError::service_error(
-                "Expected a value in binary index",
-            ))?;
 
-            let item = BinaryItem::from_bits_truncate(*value);
+            debug_assert_eq!(value.len(), 1);
 
-            self.memory.set_or_insert(idx, item);
+            let item = BinaryItem::from_bytes(&value);
+            self.memory
+                .set_or_insert(idx, item.has_true(), item.has_false());
         }
         Ok(true)
     }
 
-    fn clear(self) -> crate::entry::entry_point::OperationResult<()> {
+    fn clear(self) -> OperationResult<()> {
         self.db_wrapper.remove_column_family()
     }
 
@@ -268,15 +239,11 @@ impl PayloadFieldIndex for BinaryIndex {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
-                let iter = self
-                    .memory
-                    .iter()
-                    .zip(0u32..) // enumerate but with u32
-                    .filter_map(|(stored, point_id)| {
-                        stored.contains((*value).into()).then_some(point_id)
-                    });
-
-                Some(Box::new(iter))
+                if *value {
+                    Some(Box::new(self.memory.iter_has_true()))
+                } else {
+                    Some(Box::new(self.memory.iter_has_false()))
+                }
             }
             _ => None,
         }
@@ -340,25 +307,18 @@ impl PayloadFieldIndex for BinaryIndex {
 }
 
 impl ValueIndexer<bool> for BinaryIndex {
-    fn add_many(
-        &mut self,
-        id: PointOffsetType,
-        values: Vec<bool>,
-    ) -> crate::entry::entry_point::OperationResult<()> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<bool>) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
         }
 
         let has_true = values.iter().any(|v| *v);
-        let has_false = values.iter().any(|v| !v);
+        let has_false = values.iter().any(|v| !*v);
 
-        let item = BinaryItem::from_bools(has_true, has_false);
+        self.memory.set_or_insert(id, has_true, has_false);
 
-        self.memory.set_or_insert(id, item);
-
-        let record = BinaryItem::from_bools(has_true, has_false).bits();
-
-        self.db_wrapper.put(id.to_be_bytes(), [record])?;
+        let record = BinaryItem::from_bools(has_true, has_false);
+        self.db_wrapper.put(id.to_be_bytes(), record.as_bytes())?;
 
         Ok(())
     }
