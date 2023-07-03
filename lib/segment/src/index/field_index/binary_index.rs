@@ -204,10 +204,6 @@ impl BinaryIndex {
 }
 
 impl PayloadFieldIndex for BinaryIndex {
-    fn indexed_points(&self) -> usize {
-        self.memory.indexed_count()
-    }
-
     fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
@@ -482,7 +478,7 @@ mod tests {
                 index.add_point(i as u32, &payload).unwrap();
             });
 
-        assert_eq!(index.indexed_points(), 9);
+        assert_eq!(index.count_indexed_points(), 9);
     }
 
     #[test]
