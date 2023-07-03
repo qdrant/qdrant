@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -32,12 +31,6 @@ use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
 
-/// gRPC and consensus thread handles.
-type ConsensusHandles = (
-    JoinHandle<std::io::Result<()>>,
-    JoinHandle<std::io::Result<()>>,
-);
-
 const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
@@ -59,7 +52,6 @@ pub struct Consensus {
     /// ToDo: Make if many
     config: ConsensusConfig,
     broker: RaftMessageBroker,
-    shutdown_requested: Arc<AtomicBool>,
 }
 
 impl Consensus {
@@ -76,7 +68,7 @@ impl Consensus {
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
-    ) -> anyhow::Result<ConsensusHandles> {
+    ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
         let p2p_host = settings.service.host;
@@ -94,22 +86,20 @@ impl Consensus {
             channel_service,
             runtime.clone(),
         )?;
-        let shutdown_requested = consensus.shutdown_requested.clone();
 
         let state_ref_clone = state_ref.clone();
-        let consensus_handle =
-            thread::Builder::new()
-                .name("consensus".to_string())
-                .spawn(move || {
-                    if let Err(err) = consensus.start() {
-                        log::error!("Consensus stopped with error: {err}");
-                        state_ref_clone.on_consensus_thread_err(err);
-                    } else {
-                        log::info!("Consensus stopped");
-                        state_ref_clone.on_consensus_stopped();
-                    }
-                    Ok(())
-                })?;
+        thread::Builder::new()
+            .name("consensus".to_string())
+            .spawn(move || {
+                if let Err(err) = consensus.start() {
+                    log::error!("Consensus stopped with error: {err}");
+                    state_ref_clone.on_consensus_thread_err(err);
+                } else {
+                    log::info!("Consensus stopped");
+                    state_ref_clone.on_consensus_stopped();
+                    state_ref_clone.on_consensus_stopped();
+                }
+            })?;
 
         let message_sender_moved = message_sender.clone();
         thread::Builder::new()
@@ -136,7 +126,7 @@ impl Consensus {
             None
         };
 
-        let grpc_handle = thread::Builder::new()
+        let handle = thread::Builder::new()
             .name("grpc_internal".to_string())
             .spawn(move || {
                 init_internal(
@@ -148,12 +138,11 @@ impl Consensus {
                     server_tls,
                     message_sender,
                     runtime,
-                    shutdown_requested,
                 )
             })
             .unwrap();
 
-        Ok((grpc_handle, consensus_handle))
+        Ok(handle)
     }
 
     /// If `bootstrap_peer` peer is supplied, then either `uri` or `p2p_port` should be also supplied
@@ -239,15 +228,12 @@ impl Consensus {
             channel_service.channel_pool,
         );
 
-        let shutdown_requested = Arc::new(AtomicBool::new(false));
-
         let consensus = Self {
             node,
             receiver,
             runtime,
             config,
             broker,
-            shutdown_requested,
         };
 
         Ok((consensus, sender))
@@ -441,9 +427,6 @@ impl Consensus {
         let mut timeout = Duration::from_millis(self.config.tick_period_ms);
 
         loop {
-            if self.shutdown_requested.load(Ordering::Acquire) {
-                return Ok(());
-            }
             if !self
                 .try_promote_learner()
                 .map_err(|err| anyhow!("Failed to promote learner: {}", err))?
@@ -1062,9 +1045,9 @@ mod tests {
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            search_runtime.handle().clone(),
-            update_runtime.handle().clone(),
-            general_runtime.handle().clone(),
+            search_runtime,
+            update_runtime,
+            general_runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),

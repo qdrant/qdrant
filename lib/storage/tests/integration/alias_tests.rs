@@ -68,9 +68,9 @@ fn test_alias_operation() {
 
     let toc = Arc::new(TableOfContent::new(
         &config,
-        search_runtime.handle().clone(),
-        update_runtime.handle().clone(),
-        general_runtime.handle().clone(),
+        search_runtime,
+        update_runtime,
+        general_runtime,
         Default::default(),
         0,
         Some(propose_operation_sender),
