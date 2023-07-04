@@ -712,15 +712,6 @@ impl Segment {
             ))
             .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
-
-    fn preprocess_named_vectors<'a>(
-        &self,
-        mut vectors: NamedVectors<'a>,
-    ) -> OperationResult<NamedVectors<'a>> {
-        check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
-        Ok(vectors)
-    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -789,10 +780,11 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
-        let vectors = self.preprocess_named_vectors(vectors)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
@@ -836,9 +828,10 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
-        let vectors = self.preprocess_named_vectors(vectors)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
