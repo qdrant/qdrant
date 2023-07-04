@@ -11,12 +11,12 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use super::private::DbWrapper;
-use super::FieldTypeIndex;
+use super::PayloadFieldIndexExt;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
-    CardinalityEstimation, IndexingStrategy, PayloadBlockCondition, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::index::query_estimator::combine_should_estimations;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -282,7 +282,7 @@ impl<N: Hash + Eq + Clone + Display> DbWrapper for MapIndex<N> {
     }
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> IndexingStrategy for MapIndex<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr> PayloadFieldIndex for MapIndex<N> {
     fn count_indexed_points(&self) -> usize {
         self.indexed_points
     }
@@ -315,7 +315,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> IndexingStrategy for MapIndex<N> 
     }
 }
 
-impl FieldTypeIndex for MapIndex<String> {
+impl PayloadFieldIndexExt for MapIndex<String> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
@@ -386,7 +386,7 @@ impl FieldTypeIndex for MapIndex<String> {
     }
 }
 
-impl FieldTypeIndex for MapIndex<IntPayloadType> {
+impl PayloadFieldIndexExt for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,

@@ -6,7 +6,7 @@ use rocksdb::DB;
 use self::memory::{BinaryItem, BinaryMemory};
 use super::private::DbWrapper;
 use super::{
-    CardinalityEstimation, FieldTypeIndex, IndexingStrategy, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadFieldIndex, PayloadFieldIndexExt, PrimaryCondition, ValueIndexer,
 };
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::OperationResult;
@@ -190,7 +190,7 @@ impl DbWrapper for BinaryIndex {
     }
 }
 
-impl IndexingStrategy for BinaryIndex {
+impl PayloadFieldIndex for BinaryIndex {
     fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
@@ -230,7 +230,7 @@ impl IndexingStrategy for BinaryIndex {
     }
 }
 
-impl FieldTypeIndex for BinaryIndex {
+impl PayloadFieldIndexExt for BinaryIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
@@ -346,7 +346,7 @@ mod tests {
     use super::BinaryIndex;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::common::utils::MultiValue;
-    use crate::index::field_index::{FieldTypeIndex, IndexingStrategy, ValueIndexer};
+    use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexExt, ValueIndexer};
 
     const FIELD_NAME: &str = "bool_field";
     const DB_NAME: &str = "test_db";

@@ -10,7 +10,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
-use super::field_index::{FieldTypeIndex, IndexingStrategy};
+use super::field_index::{PayloadFieldIndex, PayloadFieldIndexExt};
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};

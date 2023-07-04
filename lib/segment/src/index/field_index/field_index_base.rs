@@ -31,7 +31,7 @@ pub(super) mod private {
 
 /// Base trait for all field indexes, meant to be implemented only once per indexing approach
 #[enum_dispatch]
-pub trait IndexingStrategy: private::DbWrapper {
+pub trait PayloadFieldIndex: private::DbWrapper {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;
 
@@ -62,7 +62,7 @@ pub trait IndexingStrategy: private::DbWrapper {
 /// Main trait for all concrete field indexes, allowing polymorphic implementations for them.
 /// Depending on the specific field type they act on.
 #[enum_dispatch]
-pub trait FieldTypeIndex: IndexingStrategy {
+pub trait PayloadFieldIndexExt: PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
     fn filter<'a>(
@@ -151,7 +151,7 @@ pub trait ValueIndexer {
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes
 /// TODO: Rename with major release
-#[enum_dispatch(IndexingStrategy, FieldTypeIndex, DbWrapper)]
+#[enum_dispatch(PayloadFieldIndex, PayloadFieldIndexExt, DbWrapper)]
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
