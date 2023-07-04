@@ -118,7 +118,7 @@ impl ProxySegment {
         let segment_arc = self.write_segment.get();
         let mut write_segment = segment_arc.write();
 
-        write_segment.upsert_point(op_num, point_id, &all_vectors)?;
+        write_segment.upsert_point(op_num, point_id, all_vectors)?;
         write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
@@ -287,7 +287,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &NamedVectors,
+        vectors: NamedVectors,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
@@ -790,11 +790,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
@@ -857,11 +857,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
@@ -1181,16 +1181,16 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
         proxy_segment2
-            .upsert_point(201, 11.into(), &only_default_vector(&vec6))
+            .upsert_point(201, 11.into(), only_default_vector(&vec6))
             .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
@@ -1305,14 +1305,14 @@ mod tests {
             .upsert_point(
                 100,
                 4.into(),
-                &NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
             )
             .unwrap();
         original_segment
             .upsert_point(
                 101,
                 6.into(),
-                &NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
             )
             .unwrap();
 
@@ -1340,17 +1340,13 @@ mod tests {
 
         // Insert point ID 8 and 10 partially, assert counts
         proxy_segment
-            .upsert_point(
-                102,
-                8.into(),
-                &NamedVectors::from([("a".into(), vec![0.0])]),
-            )
+            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
             .unwrap();
         proxy_segment
             .upsert_point(
                 103,
                 10.into(),
-                &NamedVectors::from([("b".into(), vec![1.0])]),
+                NamedVectors::from([("b".into(), vec![1.0])]),
             )
             .unwrap();
         let segment_info = proxy_segment.info();
@@ -1383,11 +1379,7 @@ mod tests {
 
         // Replace vector 'a' for point 8, counts should remain the same
         proxy_segment
-            .upsert_point(
-                108,
-                8.into(),
-                &NamedVectors::from([("a".into(), vec![0.0])]),
-            )
+            .upsert_point(108, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -1398,7 +1390,7 @@ mod tests {
             .upsert_point(
                 109,
                 8.into(),
-                &NamedVectors::from([("a".into(), vec![0.0]), ("b".into(), vec![0.0])]),
+                NamedVectors::from([("a".into(), vec![0.0]), ("b".into(), vec![0.0])]),
             )
             .unwrap();
         let segment_info = proxy_segment.info();

@@ -780,31 +780,18 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
-        check_named_vectors(vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
-            let mut processed_vectors = NamedVectors::default();
-            for (vector_name, vector) in vectors.iter() {
-                let vector_name: &str = vector_name;
-                let processed_vector_opt = segment.segment_config.vector_data[vector_name]
-                    .distance
-                    .preprocess_vector(vector);
-                match processed_vector_opt {
-                    None => processed_vectors.insert_ref(vector_name, vector),
-                    Some(preprocess_vector) => {
-                        processed_vectors.insert(vector_name.to_string(), preprocess_vector)
-                    }
-                }
-            }
-
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, processed_vectors)?;
+                segment.replace_all_vectors(existing_internal_id, vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let new_index = segment.insert_new_vectors(point_id, processed_vectors)?;
+                let new_index = segment.insert_new_vectors(point_id, vectors)?;
                 Ok((false, Some(new_index)))
             }
         })
@@ -841,9 +828,10 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -1561,11 +1549,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
@@ -1630,7 +1618,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1720,7 +1708,7 @@ mod tests {
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
 
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         segment
@@ -1810,7 +1798,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1842,11 +1830,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
 
         // first pass on consistent data
@@ -1937,10 +1925,10 @@ mod tests {
 
         // Insert point ID 4 and 6, assert counts
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&[0.4]))
+            .upsert_point(100, 4.into(), only_default_vector(&[0.4]))
             .unwrap();
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&[0.6]))
+            .upsert_point(101, 6.into(), only_default_vector(&[0.6]))
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 2);
@@ -2003,28 +1991,24 @@ mod tests {
             .upsert_point(
                 100,
                 4.into(),
-                &NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
             )
             .unwrap();
         segment
             .upsert_point(
                 101,
                 6.into(),
-                &NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
             )
             .unwrap();
         segment
-            .upsert_point(
-                102,
-                8.into(),
-                &NamedVectors::from([("a".into(), vec![0.0])]),
-            )
+            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
             .unwrap();
         segment
             .upsert_point(
                 103,
                 10.into(),
-                &NamedVectors::from([("b".into(), vec![1.0])]),
+                NamedVectors::from([("b".into(), vec![1.0])]),
             )
             .unwrap();
         let segment_info = segment.info();
@@ -2113,7 +2097,7 @@ mod tests {
             .upsert_point(
                 100,
                 point_id,
-                &NamedVectors::from([
+                NamedVectors::from([
                     ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
                     ("b".into(), vec![1.0, 0.9]),
                 ]),
@@ -2200,7 +2184,10 @@ mod tests {
 
         for vectors in wrong_vectors_multi {
             check_named_vectors(&vectors, &config).err().unwrap();
-            segment.upsert_point(101, point_id, &vectors).err().unwrap();
+            segment
+                .upsert_point(101, point_id, vectors.clone())
+                .err()
+                .unwrap();
             segment
                 .update_vectors(internal_id, vectors.clone())
                 .err()

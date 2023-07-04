@@ -360,7 +360,7 @@ impl<'s> SegmentHolder {
                         let all_vectors = write_segment.all_vectors(point_id)?;
                         let payload = write_segment.payload(point_id)?;
 
-                        appendable_write_segment.upsert_point(op_num, point_id, &all_vectors)?;
+                        appendable_write_segment.upsert_point(op_num, point_id, all_vectors)?;
                         appendable_write_segment.set_full_payload(op_num, point_id, &payload)?;
 
                         write_segment.delete_point(op_num, point_id)?;

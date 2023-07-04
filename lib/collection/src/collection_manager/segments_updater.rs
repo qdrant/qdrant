@@ -247,7 +247,7 @@ fn upsert_with_payload(
     segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
     op_num: SeqNumberType,
     point_id: PointIdType,
-    vectors: &NamedVectors,
+    vectors: NamedVectors,
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_point(op_num, point_id, vectors)?;
@@ -360,7 +360,7 @@ where
                 write_segment,
                 op_num,
                 id,
-                &point.get_vectors(),
+                point.get_vectors(),
                 point.payload.as_ref(),
             )
         })?;
@@ -385,7 +385,7 @@ where
                 &mut write_segment,
                 op_num,
                 point_id,
-                &point.get_vectors(),
+                point.get_vectors(),
                 point.payload.as_ref(),
             )? as usize;
         }
