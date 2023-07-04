@@ -225,7 +225,7 @@ fn test_update_named_vector() {
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .upsert_point(i, i.into(), only_default_vector(&vec))
+            .upsert_point(i, i.into(), only_default_vector(vec))
             .unwrap();
     }
 
@@ -255,7 +255,7 @@ fn test_update_named_vector() {
     // check if nearest_upsert is normalized
     match &nearest_upsert.vector {
         Some(VectorStruct::Single(v)) => {
-            assert!((sqrt_distance(&v) - 1.).abs() < 1e-5);
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         Some(VectorStruct::Multi(v)) => {
             assert!((sqrt_distance(&v[DEFAULT_VECTOR_NAME]) - 1.).abs() < 1e-5);
@@ -267,7 +267,7 @@ fn test_update_named_vector() {
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .update_vectors(i + num_points as u64, i.into(), only_default_vector(&vec))
+            .update_vectors(i + num_points as u64, i.into(), only_default_vector(vec))
             .unwrap();
     }
 
@@ -288,7 +288,7 @@ fn test_update_named_vector() {
     // check that nearest_upsert is normalized
     match &nearest_update.vector {
         Some(VectorStruct::Single(v)) => {
-            assert!((sqrt_distance(&v) - 1.).abs() < 1e-5);
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         Some(VectorStruct::Multi(v)) => {
             assert!((sqrt_distance(&v[DEFAULT_VECTOR_NAME]) - 1.).abs() < 1e-5);
