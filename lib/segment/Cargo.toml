@@ -16,7 +16,7 @@ rand_distr = "0.4.3"
 walkdir = "2.3.3"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
-pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
+pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 
 
 [dependencies]

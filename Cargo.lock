@@ -1119,9 +1119,9 @@ checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 
 [[package]]
 name = "cpp_demangle"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b446fd40bcc17eddd6a4a78f24315eb90afdb3334999ddfd4909985c47722442"
+checksum = "ee34052ee3d93d6d8f3e6f81d85c47921f6653a19a7b70e939e3e602d893a674"
 dependencies = [
  "cfg-if",
 ]
@@ -2833,9 +2833,9 @@ checksum = "dc59d1bcc64fc5d021d67521f818db868368028108d37f0e98d74e33f68297b5"
 
 [[package]]
 name = "pprof"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "196ded5d4be535690899a4631cc9f18cdc41b7ebf24a79400f46f48e49a11059"
+checksum = "6b90f8560ad8bd57b207b8293bc5226e48e89039a6e590c12a297d91b84c7e60"
 dependencies = [
  "backtrace",
  "cfg-if",
@@ -4066,9 +4066,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "symbolic-common"
-version = "10.2.1"
+version = "12.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b55cdc318ede251d0957f07afe5fed912119b8c1bc5a7804151826db999e737"
+checksum = "38f7afd8bcd36190409e6b71d89928f7f09d918a7aa3460d847bc49a538d672e"
 dependencies = [
  "debugid",
  "memmap2 0.5.10",
@@ -4078,9 +4078,9 @@ dependencies = [
 
 [[package]]
 name = "symbolic-demangle"
-version = "10.2.1"
+version = "12.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79be897be8a483a81fff6a3a4e195b4ac838ef73ca42d348b3f722da9902e489"
+checksum = "ec64922563a36e3fe686b6d99f06f25dacad2a202ac7502ed642930a188fb20a"
 dependencies = [
  "cpp_demangle",
  "rustc-demangle",
