@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use super::tiny_map;
 use super::vectors::{VectorElementType, DEFAULT_VECTOR_NAME};
+use crate::types::Distance;
 
 type CowKey<'a> = Cow<'a, str>;
 type CowValue<'a> = Cow<'a, [VectorElementType]>;
@@ -92,6 +93,18 @@ impl<'a> NamedVectors<'a> {
 
     pub fn get(&self, key: &str) -> Option<&[VectorElementType]> {
         self.map.get(key).map(|v| v.as_ref())
+    }
+
+    pub fn preprocess<F>(&mut self, distance_map: F)
+    where
+        F: Fn(&str) -> Distance,
+    {
+        for (name, vector) in self.map.iter_mut() {
+            let distance = distance_map(name);
+            if let Some(preprocessed_vector) = distance.preprocess_vector(vector) {
+                *vector = CowValue::Owned(preprocessed_vector);
+            }
+        }
     }
 }
 

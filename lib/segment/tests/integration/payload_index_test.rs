@@ -61,10 +61,10 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
         let payload: Payload = generate_diverse_payload(&mut rnd);
 
         plain_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         struct_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         plain_segment
             .set_full_payload(opnum, idx, &payload)
@@ -198,10 +198,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
         plain_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         struct_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         plain_segment
             .set_full_payload(opnum, idx, &payload)

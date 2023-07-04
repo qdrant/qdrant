@@ -136,7 +136,7 @@ fn test_missed_vector_name() {
         .upsert_point(
             7,
             1.into(),
-            &NamedVectors::from([
+            NamedVectors::from([
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
@@ -148,7 +148,7 @@ fn test_missed_vector_name() {
         .upsert_point(
             8,
             6.into(),
-            &NamedVectors::from([
+            NamedVectors::from([
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
@@ -165,7 +165,7 @@ fn test_vector_name_not_exists() {
     let result = segment.upsert_point(
         6,
         6.into(),
-        &NamedVectors::from([
+        NamedVectors::from([
             ("vector1".to_owned(), vec![5., 6., 7., 8.]),
             ("vector2".to_owned(), vec![10.]),
             ("vector3".to_owned(), vec![5., 6., 7., 8.]),
@@ -225,7 +225,7 @@ fn test_update_named_vector() {
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .upsert_point(i, i.into(), &only_default_vector(&vec))
+            .upsert_point(i, i.into(), only_default_vector(&vec))
             .unwrap();
     }
 
