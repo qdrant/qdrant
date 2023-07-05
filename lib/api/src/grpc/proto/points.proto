@@ -122,6 +122,7 @@ enum FieldType {
   FieldTypeFloat = 2;
   FieldTypeGeo = 3;
   FieldTypeText = 4;
+  FieldTypeBool = 5;
 }
 
 message CreateFieldIndexCollection {

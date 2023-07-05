@@ -1032,6 +1032,7 @@ Note: 1kB = 1 vector of size 256. |
 | Float | 3 |  |
 | Geo | 4 |  |
 | Text | 5 |  |
+| Bool | 6 |  |
 
 
 
@@ -2548,6 +2549,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | FieldTypeFloat | 2 |  |
 | FieldTypeGeo | 3 |  |
 | FieldTypeText | 4 |  |
+| FieldTypeBool | 5 |  |
 
 
 

@@ -766,6 +766,7 @@ pub enum PayloadSchemaType {
     Float = 3,
     Geo = 4,
     Text = 5,
+    Bool = 6,
 }
 impl PayloadSchemaType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -780,6 +781,7 @@ impl PayloadSchemaType {
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
+            PayloadSchemaType::Bool => "Bool",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -791,6 +793,7 @@ impl PayloadSchemaType {
             "Float" => Some(Self::Float),
             "Geo" => Some(Self::Geo),
             "Text" => Some(Self::Text),
+            "Bool" => Some(Self::Bool),
             _ => None,
         }
     }
@@ -3600,6 +3603,7 @@ pub enum FieldType {
     Float = 2,
     Geo = 3,
     Text = 4,
+    Bool = 5,
 }
 impl FieldType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -3613,6 +3617,7 @@ impl FieldType {
             FieldType::Float => "FieldTypeFloat",
             FieldType::Geo => "FieldTypeGeo",
             FieldType::Text => "FieldTypeText",
+            FieldType::Bool => "FieldTypeBool",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -3623,6 +3628,7 @@ impl FieldType {
             "FieldTypeFloat" => Some(Self::Float),
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
+            "FieldTypeBool" => Some(Self::Bool),
             _ => None,
         }
     }

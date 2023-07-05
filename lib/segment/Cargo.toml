@@ -95,3 +95,7 @@ harness = false
 name = "map_benchmark"
 harness = false
 
+[[bench]]
+name = "boolean_filtering"
+harness = false
+
