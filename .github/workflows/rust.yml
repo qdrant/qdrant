@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ master, dev, test-ci ]
   pull_request:
     branches: [ '**' ]
 
@@ -15,11 +15,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
     - name: Install minimal stable
-      uses: dtolnay/rust-toolchain@stable 
+      uses: dtolnay/rust-toolchain@stable
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
     - name: Install Protoc
@@ -28,6 +28,30 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Run tests
       run: cargo test --all
+
+  build-mac-binaries:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    # TODO: env:
+    # TODO:   PROTOC: /usr/local/bin/protoc
+    steps:
+      - name: Install dependencies
+        run: |
+            brew update-reset
+            brew install gcc cmake protobuf-c
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/checkout@v3
+      - name: Cargo build
+        run: cargo build --workspace --all-features
 
 #   build:
 #     runs-on: ubuntu-latest
