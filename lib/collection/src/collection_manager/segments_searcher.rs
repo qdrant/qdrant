@@ -174,21 +174,23 @@ impl SegmentsSearcher {
             let use_sampling =
                 sampling_enabled && segments.len() > 1 && available_points_segments > 0;
 
-            segments
-                .iter()
-                .map(|(_id, segment)| {
-                    (
-                        segment.clone(),
-                        search_in_segment(
-                            segment.clone(),
-                            batch_request.clone(),
-                            available_points_segments,
-                            use_sampling,
-                        ),
+            let mut searches: Vec<_> = vec![];
+            for (_id, segment) in segments.iter() {
+                let segment = segment.clone();
+                let segment_ret = segment.clone();
+                let batch_request = batch_request.clone();
+                let search = runtime_handle.spawn_blocking(move || {
+                    search_in_segment(
+                        segment,
+                        batch_request,
+                        available_points_segments,
+                        use_sampling,
                     )
-                })
-                .map(|(segment, f)| (segment, runtime_handle.spawn(f)))
-                .unzip()
+                });
+                searches.push((segment_ret, search));
+            }
+
+            searches.into_iter().unzip()
         };
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
@@ -224,8 +226,9 @@ impl SegmentsSearcher {
                             .collect(),
                     });
 
-                    let search = search_in_segment(segment, partial_batch_request, 0, false);
-                    res.push(runtime_handle.spawn(search))
+                    res.push(runtime_handle.spawn_blocking(|| {
+                        search_in_segment(segment, partial_batch_request, 0, false)
+                    }))
                 }
                 res
             };
@@ -353,7 +356,7 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 /// Collection Result of:
 /// * Vector of ScoredPoints for each request in the batch
 /// * Vector of boolean indicating if the segment have further points to search
-async fn search_in_segment(
+fn search_in_segment(
     segment: LockedSegment,
     request: Arc<SearchRequestBatch>,
     total_points: usize,
