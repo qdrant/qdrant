@@ -1030,6 +1030,7 @@ impl TryFrom<Distance> for segment::types::Distance {
             Distance::Cosine => segment::types::Distance::Cosine,
             Distance::Euclid => segment::types::Distance::Euclid,
             Distance::Dot => segment::types::Distance::Dot,
+            Distance::Jaccard => segment::types::Distance::Jaccard,
         })
     }
 }

@@ -328,6 +328,8 @@ impl QuantizedVectors {
                 Distance::Cosine => quantization::DistanceType::Dot,
                 Distance::Euclid => quantization::DistanceType::L2,
                 Distance::Dot => quantization::DistanceType::Dot,
+                // TODO(pabloem): Figure out what sort of quantized distance to use for Jaccard.
+                Distance::Jaccard => quantization::DistanceType::Dot,
             },
             invert: distance == Distance::Euclid,
         }

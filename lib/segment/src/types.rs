@@ -22,7 +22,7 @@ use crate::common::utils::MultiValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, JaccardMetric};
 
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
@@ -120,6 +120,8 @@ pub enum Distance {
     Euclid,
     // <https://en.wikipedia.org/wiki/Dot_product>
     Dot,
+    // <https://en.wikipedia.org/wiki/Jaccard_index>
+    Jaccard,
 }
 
 impl Distance {
@@ -131,6 +133,7 @@ impl Distance {
             Distance::Cosine => CosineMetric::preprocess(vector),
             Distance::Euclid => EuclidMetric::preprocess(vector),
             Distance::Dot => DotProductMetric::preprocess(vector),
+            Distance::Jaccard => JaccardMetric::preprocess(vector),
         }
     }
 
@@ -139,6 +142,7 @@ impl Distance {
             Distance::Cosine => CosineMetric::postprocess(score),
             Distance::Euclid => EuclidMetric::postprocess(score),
             Distance::Dot => DotProductMetric::postprocess(score),
+            Distance::Jaccard => JaccardMetric::postprocess(score),
         }
     }
 
@@ -146,6 +150,7 @@ impl Distance {
         match self {
             Distance::Cosine | Distance::Dot => Order::LargeBetter,
             Distance::Euclid => Order::SmallBetter,
+            Distance::Jaccard => Order::LargeBetter, // TODO(pabloem): Verify LargeBetter is correct for Jaccard
         }
     }
 

@@ -1,3 +1,5 @@
+use std::cmp::{max_by, min_by, Ordering};
+
 use super::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
@@ -26,6 +28,9 @@ pub struct CosineMetric {}
 
 #[derive(Clone)]
 pub struct EuclidMetric {}
+
+#[derive(Clone)]
+pub struct JaccardMetric {}
 
 impl Metric for EuclidMetric {
     fn distance() -> Distance {
@@ -178,6 +183,26 @@ impl Metric for CosineMetric {
     }
 }
 
+impl Metric for JaccardMetric {
+    fn distance() -> Distance {
+        Distance::Jaccard
+    }
+
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        // TODO(pabloem): Add SIMD implementations for this function.
+        jaccard_similarity(v1, v2)
+    }
+
+    fn preprocess(vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+        // TODO(pabloem): Add SIMD implementations for this function.
+        jaccard_preprocess(vector)
+    }
+
+    fn postprocess(score: ScoreType) -> ScoreType {
+        score
+    }
+}
+
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let s: ScoreType = v1
         .iter()
@@ -199,6 +224,36 @@ pub fn cosine_preprocess(vector: &[VectorElementType]) -> Option<Vec<VectorEleme
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     v1.iter().zip(v2).map(|(a, b)| a * b).sum()
+}
+
+pub fn jaccard_preprocess(vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+    // Jaccard similarity is not well defined for negative values, so we preprocess that the vectors
+    // to be positive-valued (or binary-valued).
+    Some(
+        vector
+            .iter()
+            .map(|x| if *x > 0.0 { *x } else { -*x })
+            .collect(),
+    )
+}
+
+pub fn jaccard_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    // Implementing the 'Weighted Jaccard similarity' as described in Wikipedia (
+    // https://en.wikipedia.org/wiki/Jaccard_index#Weighted_Jaccard_similarity_and_distance)
+    // and reaffirmed in stackexchange (
+    // https://datascience.stackexchange.com/questions/15862/how-to-compute-the-jaccard-similarity-in-this-example-jaccard-vs-cosine).
+    let mut intersection = 0.0;
+    let mut union = 0.0;
+    for (a, b) in v1.iter().zip(v2) {
+        // f32s can be partially ordered, but not fully ordered as there are infinities and NaNs.
+        union += max_by(*a, *b, |a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+        intersection += min_by(*a, *b, |a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    }
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection as ScoreType / union as ScoreType
+    }
 }
 
 #[cfg(test)]

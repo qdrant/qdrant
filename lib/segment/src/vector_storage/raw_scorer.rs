@@ -6,7 +6,7 @@ use bitvec::prelude::BitSlice;
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::VectorElementType;
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, JaccardMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 
@@ -128,6 +128,14 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
         Distance::Dot => Box::new(RawScorerImpl::<'a, DotProductMetric, TVectorStorage> {
             points_count,
             query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
+            vector_storage,
+            point_deleted,
+            vec_deleted,
+            metric: PhantomData,
+        }),
+        Distance::Jaccard => Box::new(RawScorerImpl::<'a, JaccardMetric, TVectorStorage> {
+            points_count,
+            query: JaccardMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
             point_deleted,
             vec_deleted,

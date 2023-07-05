@@ -5,7 +5,7 @@ use bitvec::prelude::BitSlice;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, JaccardMetric};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
@@ -223,6 +223,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             Distance::Cosine => Box::new(self.with_metric::<CosineMetric>()),
             Distance::Euclid => Box::new(self.with_metric::<EuclidMetric>()),
             Distance::Dot => Box::new(self.with_metric::<DotProductMetric>()),
+            Distance::Jaccard => Box::new(self.with_metric::<JaccardMetric>()),
         }
     }
 

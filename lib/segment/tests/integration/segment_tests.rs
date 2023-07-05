@@ -169,12 +169,12 @@ fn test_vector_name_not_exists() {
             ("vector1".to_owned(), vec![5., 6., 7., 8.]),
             ("vector2".to_owned(), vec![10.]),
             ("vector3".to_owned(), vec![5., 6., 7., 8.]),
-            ("vector4".to_owned(), vec![5., 6., 7., 8.]),
+            ("vector5".to_owned(), vec![5., 6., 7., 8.]),
         ]),
     );
 
     if let Err(OperationError::VectorNameNotExists { received_name }) = result {
-        assert!(received_name == "vector4");
+        assert!(received_name == "vector5");
     } else {
         panic!("wrong upsert result")
     }
