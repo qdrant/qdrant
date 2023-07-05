@@ -252,7 +252,7 @@ impl SegmentsSearcher {
         Ok(top_scores)
     }
 
-    pub async fn retrieve(
+    pub fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
         with_payload: &WithPayload,
@@ -595,8 +595,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_retrieve() {
+    #[test]
+    fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
 
@@ -606,7 +606,6 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
         )
-        .await
         .unwrap();
         assert_eq!(records.len(), 3);
     }
