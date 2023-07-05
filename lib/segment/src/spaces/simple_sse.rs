@@ -2,6 +2,7 @@
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use std::cmp::{max_by, min_by, Ordering};
 
 use crate::data_types::vectors::VectorElementType;
 use crate::types::ScoreType;
@@ -147,6 +148,45 @@ pub(crate) unsafe fn dot_similarity_sse(
     result
 }
 
+#[target_feature(enable = "sse")]
+pub(crate) unsafe fn jaccard_similarity_sse(
+    v1: &[VectorElementType],
+    v2: &[VectorElementType],
+) -> ScoreType {
+    let n = v1.len();
+    let m = n - (n % 4);
+    let mut ptr1: *const f32 = v1.as_ptr();
+    let mut ptr2: *const f32 = v2.as_ptr();
+
+    let mut total_intersection: f32 = 0.;
+    let mut total_union: f32 = 0.;
+
+    let mut i: usize = 0;
+    while i < m {
+        total_union += hsum128_ps_sse(_mm_max_ps(_mm_loadu_ps(ptr1), _mm_loadu_ps(ptr2)));
+        total_intersection += hsum128_ps_sse(_mm_min_ps(_mm_loadu_ps(ptr1), _mm_loadu_ps(ptr2)));
+
+        ptr1 = ptr1.add(4);
+        ptr2 = ptr2.add(4);
+        i += 4;
+    }
+
+    for i in 0..n - m {
+        total_intersection += min_by(*ptr1.add(i), *ptr2.add(i), |a, b| {
+            a.partial_cmp(b).unwrap_or(Ordering::Equal)
+        });
+        total_union += max_by(*ptr1.add(i), *ptr2.add(i), |a, b| {
+            a.partial_cmp(b).unwrap_or(Ordering::Equal)
+        });
+    }
+
+    if total_union < f32::EPSILON {
+        0.0
+    } else {
+        total_intersection / total_union
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -175,6 +215,10 @@ mod tests {
             let dot_simd = unsafe { dot_similarity_sse(&v1, &v2) };
             let dot = dot_similarity(&v1, &v2);
             assert_eq!(dot_simd, dot);
+
+            let jaccard_simd = unsafe { jaccard_similarity_sse(&v1, &v2) };
+            let jaccard = jaccard_similarity(&v1, &v2);
+            assert_eq!(jaccard_simd, jaccard);
 
             let cosine_simd = unsafe { cosine_preprocess_sse(&v1) };
             let cosine = cosine_preprocess(&v1);
