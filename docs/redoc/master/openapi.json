@@ -4233,7 +4233,8 @@
         "enum": [
           "Cosine",
           "Euclid",
-          "Dot"
+          "Dot",
+          "Jaccard"
         ]
       },
       "HnswConfigDiff": {
