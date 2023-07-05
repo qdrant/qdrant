@@ -3,6 +3,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
+use super::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
@@ -38,6 +39,7 @@ pub fn index_selector(
                 Default::default(),
                 field,
             ))],
+            PayloadSchemaType::Bool => vec![FieldIndex::BinaryIndex(BinaryIndex::new(db, field))],
         },
         PayloadFieldSchema::FieldParams(payload_params) => match payload_params {
             PayloadSchemaParams::Text(text_index_params) => vec![FieldIndex::FullTextIndex(

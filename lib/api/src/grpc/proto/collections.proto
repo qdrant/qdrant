@@ -62,6 +62,7 @@ enum PayloadSchemaType {
   Float = 3;
   Geo = 4;
   Text = 5;
+  Bool = 6;
 }
 
 enum QuantizationType {

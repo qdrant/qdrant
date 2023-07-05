@@ -61,10 +61,10 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
         let payload: Payload = generate_diverse_payload(&mut rnd);
 
         plain_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         struct_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         plain_segment
             .set_full_payload(opnum, idx, &payload)
@@ -120,10 +120,10 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
 
     for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
         for index in indexes {
-            assert!(index.indexed_points() < num_points as usize);
+            assert!(index.count_indexed_points() < num_points as usize);
             if field != FLICKING_KEY {
                 assert!(
-                    index.indexed_points()
+                    index.count_indexed_points()
                         > (num_points as usize - points_to_delete - points_to_clear)
                 );
             }
@@ -198,10 +198,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
         plain_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         struct_segment
-            .upsert_point(opnum, idx, &only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector))
             .unwrap();
         plain_segment
             .set_full_payload(opnum, idx, &payload)
@@ -237,9 +237,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for (_field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
         for index in indexes {
-            assert!(index.indexed_points() < num_points as usize);
+            assert!(index.count_indexed_points() < num_points as usize);
             assert!(
-                index.indexed_points() > (num_points as usize - points_to_delete - points_to_clear)
+                index.count_indexed_points()
+                    > (num_points as usize - points_to_delete - points_to_clear)
             );
         }
     }
@@ -256,7 +257,7 @@ fn test_is_empty_conditions() {
 
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
-            key: "flicking".to_string(),
+            key: FLICKING_KEY.to_string(),
         },
     }));
 
@@ -270,11 +271,13 @@ fn test_is_empty_conditions() {
         .borrow()
         .estimate_cardinality(&filter);
 
-    let real_number = plain_segment
-        .payload_index
-        .borrow()
-        .query_points(&filter)
-        .count();
+    let plain_result = plain_segment.payload_index.borrow().query_points(&filter);
+
+    let real_number = plain_result.len();
+
+    let struct_result = struct_segment.payload_index.borrow().query_points(&filter);
+
+    assert_eq!(plain_result, struct_result);
 
     eprintln!("estimation_plain = {estimation_plain:#?}");
     eprintln!("estimation_struct = {estimation_struct:#?}");

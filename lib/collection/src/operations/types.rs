@@ -224,9 +224,11 @@ pub struct SearchRequest {
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
+    #[validate(range(min = 1))]
     pub limit: usize,
     /// Offset of the first result to return.
     /// May be used to paginate results.
@@ -248,6 +250,7 @@ pub struct SearchRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestBatch {
+    #[validate]
     pub searches: Vec<SearchRequest>,
 }
 
@@ -260,6 +263,7 @@ pub struct SearchGroupsRequest {
     pub filter: Option<Filter>,
 
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
 
     /// Select which payload to return with the response. Default: None
@@ -336,9 +340,11 @@ pub struct RecommendRequest {
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
+    #[validate(range(min = 1))]
     pub limit: usize,
     /// Offset of the first result to return.
     /// May be used to paginate results.
@@ -367,6 +373,7 @@ pub struct RecommendRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestBatch {
+    #[validate]
     pub searches: Vec<RecommendRequest>,
 }
 
@@ -383,6 +390,7 @@ pub struct RecommendGroupsRequest {
     pub filter: Option<Filter>,
 
     /// Additional search params
+    #[validate]
     pub params: Option<SearchParams>,
 
     /// Select which payload to return with the response. Default: None
@@ -571,6 +579,10 @@ impl From<OperationError> for CollectionError {
             OperationError::OutOfMemory { description, free } => {
                 Self::OutOfMemory { description, free }
             }
+            OperationError::InconsistentStorage { .. } => Self::ServiceError {
+                error: format!("{err}"),
+                backtrace: None,
+            },
         }
     }
 }
@@ -821,6 +833,78 @@ impl VectorsConfig {
         match self {
             VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
             VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
+
+    fn check_vector_params_compatibility(
+        self_params: &VectorParams,
+        other_params: &VectorParams,
+        vector_name: &str,
+    ) -> Result<(), CollectionError> {
+        if self_params.size != other_params.size {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: origin vector {} size: {}, while other vector size: {}",
+                    vector_name, self_params.size, other_params.size
+                )
+            });
+        }
+
+        if self_params.distance != other_params.distance {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: origin vector {} distance: {:?}, while other vector distance: {:?}",
+                    vector_name, self_params.distance, other_params.distance
+                )
+            });
+        }
+
+        Ok(())
+    }
+
+    pub fn check_compatible(&self, other: &Self) -> Result<(), CollectionError> {
+        match (self, other) {
+            (VectorsConfig::Single(self_single), VectorsConfig::Single(other_single)) => {
+                Self::check_vector_params_compatibility(
+                    self_single,
+                    other_single,
+                    DEFAULT_VECTOR_NAME,
+                )
+            }
+            (VectorsConfig::Multi(self_params), VectorsConfig::Multi(other_params)) => {
+                for (self_vector_name, self_vector_params) in self_params {
+                    if let Some(other_vector_params) = other_params.get(self_vector_name) {
+                        Self::check_vector_params_compatibility(
+                            self_vector_params,
+                            other_vector_params,
+                            self_vector_name,
+                        )?;
+                    } else {
+                        return Err(CollectionError::BadInput {
+                            description: format!(
+                                "Vectors configuration is not compatible: origin collection have vector {}, while other collection does not",
+                                self_vector_name
+                            )
+                        });
+                    }
+                }
+                Ok(())
+            }
+            _ => {
+                let self_vectors = self
+                    .params_iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let other_vectors = other
+                    .params_iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(CollectionError::BadInput {
+                    description: format!("Vectors configuration is not compatible: origin collection have vectors: [{}], while other vectors: [{}]", self_vectors, other_vectors)
+                })
+            }
         }
     }
 }

@@ -79,8 +79,6 @@ pub struct Collection {
     pub(crate) shards_holder: Arc<LockedShardHolder>,
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
-    /// Tracks whether `before_drop` fn has been called.
-    before_drop_called: bool,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -144,15 +142,7 @@ impl Collection {
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
             )
-            .await;
-
-            let replica_set = match replica_set {
-                Ok(replica_set) => replica_set,
-                Err(err) => {
-                    shard_holder.before_drop().await;
-                    return Err(err);
-                }
-            };
+            .await?;
 
             shard_holder.add_shard(shard_id, replica_set);
         }
@@ -168,7 +158,6 @@ impl Collection {
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
             shared_storage_config,
-            before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -279,7 +268,6 @@ impl Collection {
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
             shared_storage_config,
-            before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -1312,11 +1300,6 @@ impl Collection {
         Ok(info)
     }
 
-    pub async fn before_drop(&mut self) {
-        self.shards_holder.write().await.before_drop().await;
-        self.before_drop_called = true
-    }
-
     pub async fn state(&self) -> State {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();
@@ -1369,6 +1352,27 @@ impl Collection {
 
     pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
         let snapshot_path = self.snapshots_path.join(snapshot_name);
+
+        let absolute_snapshot_path =
+            snapshot_path
+                .canonicalize()
+                .map_err(|_| CollectionError::NotFound {
+                    what: format!("Snapshot {snapshot_name}"),
+                })?;
+
+        let absolute_snapshot_dir =
+            self.snapshots_path
+                .canonicalize()
+                .map_err(|_| CollectionError::NotFound {
+                    what: format!("Snapshot directory: {}", self.snapshots_path.display()),
+                })?;
+
+        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
+            return Err(CollectionError::NotFound {
+                what: format!("Snapshot {snapshot_name}"),
+            });
+        }
+
         if !snapshot_path.exists() {
             return Err(CollectionError::NotFound {
                 what: format!("Snapshot {snapshot_name}"),
@@ -1411,7 +1415,7 @@ impl Collection {
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
-                    .create_snapshot(&shard_snapshot_path, save_wal)
+                    .create_snapshot(temp_dir, &shard_snapshot_path, save_wal)
                     .await?;
             }
         }
@@ -1641,19 +1645,5 @@ impl Collection {
 
     pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
         self.updates_lock.write().await
-    }
-}
-
-impl Drop for Collection {
-    fn drop(&mut self) {
-        if !self.before_drop_called {
-            // Panic is used to get fast feedback in unit and integration tests
-            // in cases where `before_drop` was not added.
-            if cfg!(test) {
-                panic!("Collection `before_drop` was not called.")
-            } else {
-                log::error!("Collection `before_drop` was not called.")
-            }
-        }
     }
 }

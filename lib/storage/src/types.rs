@@ -37,6 +37,9 @@ pub struct StorageConfig {
     #[serde(default = "default_snapshots_path")]
     #[validate(length(min = 1))]
     pub snapshots_path: String,
+    #[validate(length(min = 1))]
+    #[serde(default)]
+    pub temp_path: Option<String>,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
     #[validate]
@@ -56,6 +59,8 @@ pub struct StorageConfig {
     pub update_queue_size: Option<usize>,
     #[serde(default)]
     pub handle_collection_load_errors: bool,
+    #[serde(default)]
+    pub async_scorer: bool,
     /// If provided - qdrant will start in recovery mode, which means that it will not accept any new data.
     /// Only collection metadata will be available, and it will only process collection delete requests.
     /// Provided value will be used error message for unavailable requests.

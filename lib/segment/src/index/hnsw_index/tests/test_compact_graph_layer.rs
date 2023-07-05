@@ -34,8 +34,7 @@ fn search_in_builder(
         &mut points_scorer,
     );
 
-    let nearest =
-        builder.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer, &[]);
+    let nearest = builder.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
     nearest.into_iter().take(top).collect_vec()
 }
 

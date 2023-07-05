@@ -388,10 +388,7 @@ impl PayloadIndex for StructPayloadIndex {
         estimate_filter(&estimator, query, available_points)
     }
 
-    fn query_points<'a>(
-        &'a self,
-        query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
 
         let query_cardinality = self.estimate_cardinality(query);
@@ -407,7 +404,7 @@ impl PayloadIndex for StructPayloadIndex {
             let matched_points =
                 full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
 
-            Box::new(matched_points)
+            matched_points.collect()
         } else {
             let points_iterator_ref = self.id_tracker.borrow();
             let struct_filtered_context = self.struct_filtered_context(query);
@@ -418,8 +415,7 @@ impl PayloadIndex for StructPayloadIndex {
                 .visited_pool
                 .get(points_iterator_ref.total_point_count());
 
-            #[allow(clippy::needless_collect)]
-                let preselected: Vec<PointOffsetType> = query_cardinality
+            let preselected: Vec<PointOffsetType> = query_cardinality
                 .primary_clauses
                 .iter()
                 .flat_map(|clause| {
@@ -440,8 +436,7 @@ impl PayloadIndex for StructPayloadIndex {
 
             self.visited_pool.return_back(visited_list);
 
-            let matched_points_iter = preselected.into_iter();
-            Box::new(matched_points_iter)
+            preselected
         }
     }
 

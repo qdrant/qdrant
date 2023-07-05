@@ -4541,7 +4541,8 @@
           "integer",
           "float",
           "geo",
-          "text"
+          "text",
+          "bool"
         ]
       },
       "PayloadSchemaParams": {
@@ -4815,7 +4816,7 @@
             "description": "Max number of result to return",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           },
           "offset": {
             "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
@@ -5309,7 +5310,7 @@
         "type": "object",
         "properties": {
           "hnsw_ef": {
-            "description": "Params relevant to HNSW index /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
+            "description": "Params relevant to HNSW index Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -5347,6 +5348,14 @@
             "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. Default is false.",
             "default": false,
             "type": "boolean"
+          },
+          "oversampling": {
+            "description": "Oversampling factor for quantization. Default is 1.0.\n\nDefines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.\n\nFor example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring.",
+            "default": null,
+            "type": "number",
+            "format": "double",
+            "minimum": 1,
+            "nullable": true
           }
         }
       },
@@ -5472,7 +5481,7 @@
             "description": "Max number of result to return",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           },
           "offset": {
             "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
@@ -6711,6 +6720,7 @@
         "type": "object",
         "required": [
           "debug",
+          "recovery_mode",
           "service_debug_feature",
           "web_feature"
         ],
@@ -6722,6 +6732,9 @@
             "type": "boolean"
           },
           "service_debug_feature": {
+            "type": "boolean"
+          },
+          "recovery_mode": {
             "type": "boolean"
           }
         }

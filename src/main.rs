@@ -122,6 +122,7 @@ fn main() -> anyhow::Result<()> {
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
     segment::madvise::set_global(settings.storage.mmap_advice);
+    segment::vector_storage::raw_scorer::set_async_scorer(settings.storage.async_scorer);
 
     welcome(&settings);
 
@@ -141,8 +142,11 @@ fn main() -> anyhow::Result<()> {
 
     let is_distributed_deployment = settings.cluster.enabled;
 
+    let temp_path = settings.storage.temp_path.as_deref();
+
     let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
         recover_full_snapshot(
+            temp_path,
             &full_snapshot,
             &settings.storage.storage_path,
             args.force_snapshot,
@@ -154,6 +158,7 @@ fn main() -> anyhow::Result<()> {
         recover_snapshots(
             &snapshots,
             args.force_snapshot,
+            temp_path,
             &settings.storage.storage_path,
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,

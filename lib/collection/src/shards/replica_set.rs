@@ -373,8 +373,9 @@ impl ShardReplicaSet {
             local.take()
         };
 
-        if let Some(mut removing_local) = removing_local {
-            removing_local.before_drop().await;
+        if let Some(removing_local) = removing_local {
+            // stop ongoing tasks and delete data
+            drop(removing_local);
             LocalShard::clear(&self.shard_path).await?;
         }
         Ok(())
@@ -951,13 +952,6 @@ impl ShardReplicaSet {
         }
     }
 
-    pub(crate) async fn before_drop(&mut self) {
-        let mut write_local = self.local.write().await;
-        if let Some(shard) = &mut *write_local {
-            shard.before_drop().await
-        }
-    }
-
     pub(crate) async fn get_telemetry_data(&self) -> ReplicaSetTelemetry {
         let local_shard = self.local.read().await;
         let local = local_shard
@@ -983,8 +977,7 @@ impl ShardReplicaSet {
             let mut local = self.local.write().await;
             let removed_local = local.take();
 
-            if let Some(mut removing_local) = removed_local {
-                removing_local.before_drop().await;
+            if let Some(removing_local) = removed_local {
                 drop(removing_local); // release file handlers
                 LocalShard::clear(&self.shard_path).await?;
             }
@@ -1047,13 +1040,16 @@ impl ShardReplicaSet {
 
     pub async fn create_snapshot(
         &self,
+        temp_path: &Path,
         target_path: &Path,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
 
         if let Some(local) = &*local_read {
-            local.create_snapshot(target_path, save_wal).await?
+            local
+                .create_snapshot(temp_path, target_path, save_wal)
+                .await?
         }
 
         self.replica_state
@@ -1311,8 +1307,8 @@ impl ShardReplicaSet {
     pub fn leader_peer_for_update(&self, ordering: WriteOrdering) -> Option<PeerId> {
         match ordering {
             WriteOrdering::Weak => Some(self.this_peer_id()), // no requirement for consistency
-            WriteOrdering::Medium => self.highest_replica_peer_id(), // consistency with highest replica
-            WriteOrdering::Strong => self.highest_alive_replica_peer_id(), // consistency with highest alive replica
+            WriteOrdering::Medium => self.highest_alive_replica_peer_id(), // consistency with highest alive replica
+            WriteOrdering::Strong => self.highest_replica_peer_id(), // consistency with highest replica
         }
     }
 

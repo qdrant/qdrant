@@ -8,6 +8,10 @@ storage:
   # Where to store snapshots
   snapshots_path: ./snapshots
 
+  # Where to store temporary files
+  # If null, temporary snapshot are stored in: storage/snapshots_temp/
+  temp_path: null
+
   # If true - point's payload will not be stored in memory.
   # It will be read from the disk every time it is requested.
   # This setting saves RAM by (slightly) increasing the response time.
@@ -123,9 +127,8 @@ service:
 
   # gRPC port to bind the service on.
   # If `null` - gRPC is disabled. Default: null
+  # Comment to disable gRPC:
   grpc_port: 6334
-  # Uncomment to enable gRPC:
-  # grpc_port: 6334
 
   # Enable CORS headers in REST API.
   # If enabled, browsers would be allowed to query REST endpoints regardless of query origin.

@@ -297,10 +297,16 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
     }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_values(point_id)
+            .map(|x| x.is_empty())
+            .unwrap_or(true)
+    }
 }
 
 impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.points_count
     }
 
@@ -444,10 +450,6 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         }
         Box::new(payload_conditions.into_iter())
     }
-
-    fn count_indexed_points(&self) -> usize {
-        self.points_count
-    }
 }
 
 impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
@@ -505,19 +507,19 @@ mod tests {
     const COLUMN_NAME: &str = "test";
 
     fn get_index() -> (TempDir, NumericIndex<f64>) {
-        let tmp_dir = Builder::new()
+        let temp_dir = Builder::new()
             .prefix("test_numeric_index")
             .tempdir()
             .unwrap();
-        let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
+        let db = open_db_with_existing_cf(temp_dir.path()).unwrap();
         let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME);
         index.recreate().unwrap();
-        (tmp_dir, index)
+        (temp_dir, index)
     }
 
     fn random_index(num_points: usize, values_per_point: usize) -> (TempDir, NumericIndex<f64>) {
         let mut rng = StdRng::seed_from_u64(42);
-        let (tmp_dir, mut index) = get_index();
+        let (temp_dir, mut index) = get_index();
 
         for i in 0..num_points {
             let values = (0..values_per_point).map(|_| rng.gen_range(0.0..100.0));
@@ -526,7 +528,7 @@ mod tests {
                 .unwrap();
         }
 
-        (tmp_dir, index)
+        (temp_dir, index)
     }
 
     fn cardinality_request(index: &NumericIndex<f64>, query: Range) -> CardinalityEstimation {
@@ -547,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_cardinality_exp() {
-        let (_tmp_dir, index) = random_index(1000, 1);
+        let (_temp_dir, index) = random_index(1000, 1);
 
         cardinality_request(
             &index,
@@ -568,7 +570,7 @@ mod tests {
             },
         );
 
-        let (_tmp_dir, index) = random_index(1000, 2);
+        let (_temp_dir, index) = random_index(1000, 2);
         cardinality_request(
             &index,
             Range {
@@ -611,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_payload_blocks() {
-        let (_tmp_dir, index) = random_index(1000, 2);
+        let (_temp_dir, index) = random_index(1000, 2);
         let threshold = 100;
         let blocks = index
             .payload_blocks(threshold, "test".to_owned())
@@ -643,7 +645,7 @@ mod tests {
 
     #[test]
     fn test_payload_blocks_small() {
-        let (_tmp_dir, mut index) = get_index();
+        let (_temp_dir, mut index) = get_index();
         let threshold = 4;
         let values = vec![
             vec![1.0],
@@ -671,7 +673,7 @@ mod tests {
 
     #[test]
     fn test_numeric_index_load_from_disk() {
-        let (_tmp_dir, mut index) = get_index();
+        let (_temp_dir, mut index) = get_index();
 
         let values = vec![
             vec![1.0],
@@ -711,7 +713,7 @@ mod tests {
 
     #[test]
     fn test_numeric_index() {
-        let (_tmp_dir, mut index) = get_index();
+        let (_temp_dir, mut index) = get_index();
 
         let values = vec![
             vec![1.0],

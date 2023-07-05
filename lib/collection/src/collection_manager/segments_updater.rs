@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{OperationResult, SegmentEntry};
+use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,
@@ -247,7 +247,7 @@ fn upsert_with_payload(
     segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
     op_num: SeqNumberType,
     point_id: PointIdType,
-    vectors: &NamedVectors,
+    vectors: NamedVectors,
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_point(op_num, point_id, vectors)?;
@@ -295,7 +295,11 @@ pub(crate) fn sync_points(
 
     let mut points_to_update: Vec<_> = Vec::new();
     let _num_updated = segments.read_points(existing_point_ids.as_slice(), |id, segment| {
-        let all_vectors = segment.all_vectors(id)?;
+        let all_vectors = match segment.all_vectors(id) {
+            Ok(v) => v,
+            Err(OperationError::InconsistentStorage { .. }) => NamedVectors::default(),
+            Err(e) => return Err(e),
+        };
         let payload = segment.payload(id)?;
         let point = id_to_point.get(&id).unwrap();
         if point.get_vectors() != all_vectors {
@@ -356,7 +360,7 @@ where
                 write_segment,
                 op_num,
                 id,
-                &point.get_vectors(),
+                point.get_vectors(),
                 point.payload.as_ref(),
             )
         })?;
@@ -381,7 +385,7 @@ where
                 &mut write_segment,
                 op_num,
                 point_id,
-                &point.get_vectors(),
+                point.get_vectors(),
                 point.payload.as_ref(),
             )? as usize;
         }

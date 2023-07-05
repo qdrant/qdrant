@@ -92,7 +92,7 @@ RUN PATH="$PATH:/opt/mold/bin" \
 # Download and extract web UI
 RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
 
-FROM debian:11-slim AS qdrant
+FROM debian:12-slim AS qdrant
 
 RUN apt-get update \
     && apt-get install -y ca-certificates tzdata \

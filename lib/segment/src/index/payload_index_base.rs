@@ -42,10 +42,7 @@ pub trait PayloadIndex {
     /// Return list of all point ids, which satisfy filtering criteria
     ///
     /// A best estimation of the number of available points should be given.
-    fn query_points<'a>(
-        &'a self,
-        query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
+    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType>;
 
     /// Return number of points, indexed by this field
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;

@@ -13,6 +13,7 @@ use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
@@ -282,6 +283,34 @@ impl GraphLayersBuilder {
         result_list
     }
 
+    fn search_existing_point_on_level(
+        &self,
+        level_entry: ScoredPointOffset,
+        level: usize,
+        ef: usize,
+        points_scorer: &mut FilteredScorer,
+        point_id: PointOffsetType,
+    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+        let mut visited_list = self.get_visited_list_from_pool();
+        visited_list.check_and_update_visited(level_entry.idx);
+        let mut search_context = SearchContext::new(level_entry, ef);
+
+        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
+
+        let existing_links = self.links_layers[point_id as usize][level].read();
+        for &existing_link in existing_links.iter() {
+            if !visited_list.check(existing_link) {
+                search_context.process_candidate(ScoredPointOffset {
+                    idx: existing_link,
+                    score: points_scorer.score_point(existing_link),
+                });
+            }
+        }
+
+        self.return_visited_list_to_pool(visited_list);
+        search_context.nearest
+    }
+
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidates_with_heuristic<F>(
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
@@ -339,14 +368,12 @@ impl GraphLayersBuilder {
                     let level_m = self.get_m(curr_level);
 
                     let nearest_points = {
-                        let existing_links =
-                            self.links_layers[point_id as usize][curr_level].read();
-                        self.search_on_level(
+                        self.search_existing_point_on_level(
                             level_entry,
                             curr_level,
                             self.ef_construct,
                             &mut points_scorer,
-                            &existing_links,
+                            point_id,
                         )
                     };
 

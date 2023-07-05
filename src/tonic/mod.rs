@@ -46,6 +46,23 @@ impl Qdrant for QdrantService {
     }
 }
 
+#[cfg(not(unix))]
+async fn wait_stop_signal(for_what: &str) {
+    signal::ctrl_c().await.unwrap();
+    log::debug!("Stopping {for_what} on SIGINT");
+}
+
+#[cfg(unix)]
+async fn wait_stop_signal(for_what: &str) {
+    let mut term = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+    let mut inrt = signal::unix::signal(signal::unix::SignalKind::interrupt()).unwrap();
+
+    tokio::select! {
+        _ = term.recv() => log::debug!("Stopping {for_what} on SIGTERM"),
+        _ = inrt.recv() => log::debug!("Stopping {for_what} on SIGINT"),
+    }
+}
+
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
@@ -119,8 +136,7 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
-                signal::ctrl_c().await.unwrap();
-                log::debug!("Stopping gRPC");
+                wait_stop_signal("gRPC service").await;
             })
             .await
             .map_err(helpers::tonic_error_to_io_error)
@@ -155,7 +171,15 @@ pub fn init_internal(
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
-            let mut server = Server::builder();
+            let mut server = Server::builder()
+                // Internally use a high limit for pending accept streams.
+                // We can have a huge number of reset/dropped HTTP2 streams in our internal
+                // communcation when there are a lot of clients dropping connections. This
+                // internally causes an GOAWAY/ENHANCE_YOUR_CALM error breaking cluster consensus.
+                // We prefer to keep more pending reset streams even though this may be expensive,
+                // versus an internal error that is very hard to handle.
+                // More info: <https://github.com/qdrant/qdrant/issues/1907>
+                .http2_max_pending_accept_reset_streams(Some(1024));
 
             if let Some(config) = tls_config {
                 log::info!("TLS enabled for internal gRPC API (TTL not supported)");
@@ -200,8 +224,7 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .serve_with_shutdown(socket, async {
-                    signal::ctrl_c().await.unwrap();
-                    log::debug!("Stopping internal gRPC");
+                    wait_stop_signal("internal gRPC").await;
                 })
                 .await
         })

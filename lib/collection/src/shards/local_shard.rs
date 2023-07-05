@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
+use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,18 +10,21 @@ use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
-    Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType, SegmentConfig,
-    SegmentType,
+    CompressionRatio, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType,
+    QuantizationConfig, SegmentConfig, SegmentType,
 };
+use segment::utils::mem::Mem;
 use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
+use uuid::Uuid;
 use wal::{Wal, WalOptions};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
@@ -54,8 +58,8 @@ pub struct LocalShard {
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) path: PathBuf,
-    before_drop_called: bool,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
+    update_runtime: Handle,
 }
 
 /// Shard holds information about segments and WAL.
@@ -132,7 +136,7 @@ impl LocalShard {
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             path: shard_path.to_owned(),
-            before_drop_called: false,
+            update_runtime,
             optimizers,
         }
     }
@@ -235,6 +239,27 @@ impl LocalShard {
         .await;
 
         collection.load_from_wal(collection_id)?;
+
+        let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
+        let vectors_size_bytes = collection.estimate_vector_data_size().await;
+
+        // Simple heuristic to exclude mmap prefaulting for colletions that won't benefit from it.
+        //
+        // We assume that mmap prefaulting is beneficial if we can put significant part of data
+        // into RAM in advance. However, if we can see tha the data is too big to fit into RAM,
+        // it is better to avoid prefaulting, because it will only cause extra disk IO.
+        //
+        // This heuristic is not perfect, but it exclude cases when we don't have enough RAM
+        // even to store half of the vector data.
+        let do_mmap_prefault = available_memory_bytes * 2 > vectors_size_bytes;
+
+        if do_mmap_prefault {
+            for (_, segment) in collection.segments.read().iter() {
+                if let LockedSegment::Original(segment) = segment {
+                    segment.read().prefault_mmap_pages();
+                }
+            }
+        }
 
         Ok(collection)
     }
@@ -469,8 +494,8 @@ impl LocalShard {
         Ok(())
     }
 
-    pub async fn before_drop(&mut self) {
-        // Finishes update tasks right before destructor stuck to do so with runtime
+    /// Finishes ongoing update tasks
+    pub async fn stop_gracefully(&self) {
         if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
             log::warn!("Error sending stop signal to update handler: {}", err);
         }
@@ -480,8 +505,6 @@ impl LocalShard {
         if let Err(err) = self.wait_update_workers_stop().await {
             log::warn!("Update workers failed with: {}", err);
         }
-
-        self.before_drop_called = true;
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
@@ -507,9 +530,10 @@ impl LocalShard {
         Ok(())
     }
 
-    /// create snapshot for local shard into `target_path`
+    /// Create snapshot for local shard into `target_path`
     pub async fn create_snapshot(
         &self,
+        temp_path: &Path,
         target_path: &Path,
         save_wal: bool,
     ) -> CollectionResult<()> {
@@ -533,11 +557,14 @@ impl LocalShard {
             rx.await?;
         }
 
+        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
+        create_dir_all(&temp_path).await?;
+
         tokio::task::spawn_blocking(move || {
             let segments_read = segments.read();
 
             // Do not change segments while snapshotting
-            segments_read.snapshot_all_segments(&snapshot_segments_shard_path)?;
+            segments_read.snapshot_all_segments(&temp_path, &snapshot_segments_shard_path)?;
 
             if save_wal {
                 // snapshot all shard's WAL
@@ -672,16 +699,40 @@ impl LocalShard {
         }
     }
 
-    fn assert_before_drop_called(&self) {
-        if !self.before_drop_called {
-            // Panic is used to get fast feedback in unit and integration tests
-            // in cases where `before_drop` was not added.
-            if cfg!(test) {
-                panic!("Collection `before_drop` was not called.")
-            } else {
-                log::error!("Collection `before_drop` was not called.")
-            }
-        }
+    /// Returns estimated size of vector data in bytes
+    async fn estimate_vector_data_size(&self) -> usize {
+        let info = self.local_shard_info().await;
+
+        let vector_size: usize = info
+            .config
+            .params
+            .vectors
+            .params_iter()
+            .map(|(_, value)| {
+                let vector_size = value.size.get() as usize;
+
+                let quantization_config = value
+                    .quantization_config
+                    .as_ref()
+                    .or(info.config.quantization_config.as_ref());
+
+                let quantized_size_bytes = match quantization_config {
+                    None => 0,
+                    Some(QuantizationConfig::Scalar(_)) => vector_size,
+                    Some(QuantizationConfig::Product(pq)) => match pq.product.compression {
+                        CompressionRatio::X4 => vector_size,
+                        CompressionRatio::X8 => vector_size / 2,
+                        CompressionRatio::X16 => vector_size / 4,
+                        CompressionRatio::X32 => vector_size / 8,
+                        CompressionRatio::X64 => vector_size / 16,
+                    },
+                };
+
+                vector_size * size_of::<VectorElementType>() + quantized_size_bytes
+            })
+            .sum();
+
+        vector_size * info.points_count
     }
 
     pub async fn local_shard_info(&self) -> CollectionInfo {
@@ -754,15 +805,17 @@ impl LocalShard {
     }
 }
 
-pub async fn drop_and_delete_from_disk(shard: LocalShard) -> CollectionResult<()> {
-    let path = shard.shard_path();
-    drop(shard);
-    remove_dir_all(path).await?;
-    Ok(())
-}
-
 impl Drop for LocalShard {
     fn drop(&mut self) {
-        self.assert_before_drop_called()
+        thread::scope(|s| {
+            let handle = thread::Builder::new()
+                .name("drop-shard".to_string())
+                .spawn_scoped(s, || {
+                    // Needs dedicated thread to avoid `Cannot start a runtime from within a runtime` error.
+                    self.update_runtime
+                        .block_on(async { self.stop_gracefully().await })
+                });
+            handle.expect("Failed to create thread for shard drop");
+        })
     }
 }

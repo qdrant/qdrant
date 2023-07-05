@@ -107,7 +107,7 @@ fn delete_point_operation(idx: u64) -> CollectionUpdateOperations {
     })
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -117,7 +117,7 @@ async fn test_delete_from_indexed_payload() {
 
     let current_runtime: Handle = Handle::current();
 
-    let mut shard = LocalShard::build(
+    let shard = LocalShard::build(
         0,
         collection_name.clone(),
         collection_dir.path(),
@@ -143,11 +143,9 @@ async fn test_delete_from_indexed_payload() {
     eprintln!("info = {:#?}", info.payload_schema);
     let number_of_indexed_points = info.payload_schema.get("location").unwrap().points;
 
-    shard.before_drop().await;
-
     drop(shard);
 
-    let mut shard = LocalShard::load(
+    let shard = LocalShard::load(
         0,
         collection_name.clone(),
         collection_dir.path(),
@@ -164,10 +162,9 @@ async fn test_delete_from_indexed_payload() {
     let delete_point_op = delete_point_operation(5);
     shard.update(delete_point_op, true).await.unwrap();
 
-    shard.before_drop().await;
     drop(shard);
 
-    let mut shard = LocalShard::load(
+    let shard = LocalShard::load(
         0,
         collection_name,
         collection_dir.path(),
@@ -182,8 +179,6 @@ async fn test_delete_from_indexed_payload() {
     eprintln!("info = {:#?}", info.payload_schema);
 
     let number_of_indexed_points_after_load = info.payload_schema.get("location").unwrap().points;
-
-    shard.before_drop().await;
 
     assert_eq!(number_of_indexed_points, 4);
     assert_eq!(number_of_indexed_points_after_load, 3);

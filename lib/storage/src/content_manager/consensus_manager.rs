@@ -696,12 +696,13 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
     }
 
     fn term(&self, idx: u64) -> raft::Result<u64> {
+        let wal_guard = self.wal.lock();
         let persistent = self.persistent.read();
         let snapshot_meta = persistent.latest_snapshot_meta();
         if idx == snapshot_meta.index {
             return Ok(snapshot_meta.term);
         }
-        Ok(self.wal.lock().entry(idx)?.term)
+        Ok(wal_guard.entry(idx)?.term)
     }
 
     fn first_index(&self) -> raft::Result<u64> {

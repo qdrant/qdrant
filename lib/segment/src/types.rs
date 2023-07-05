@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use geo::prelude::HaversineDistance;
-use geo::Point;
+use geo::{Contains, Coord, Point, Polygon};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -256,7 +256,7 @@ pub struct SegmentInfo {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct QuantizationSearchParams {
     /// If true, quantized vectors are ignored. Default is false.
@@ -268,6 +268,17 @@ pub struct QuantizationSearchParams {
     /// Default is false.
     #[serde(default = "default_quantization_rescore_value")]
     pub rescore: bool,
+
+    /// Oversampling factor for quantization. Default is 1.0.
+    ///
+    /// Defines how many extra vectors should be pre-selected using quantized index,
+    /// and then re-scored using original vectors.
+    ///
+    /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
+    /// and then top-100 will be returned after re-scoring.
+    #[serde(default = "default_quantization_oversampling_value")]
+    #[validate(range(min = 1.0))]
+    pub oversampling: Option<f64>,
 }
 
 pub const fn default_quantization_ignore_value() -> bool {
@@ -278,12 +289,16 @@ pub const fn default_quantization_rescore_value() -> bool {
     false
 }
 
+pub const fn default_quantization_oversampling_value() -> Option<f64> {
+    None
+}
+
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
-    /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
+    /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
     pub hnsw_ef: Option<usize>,
 
     /// Search without approximation. If set to true, search may run long but with exact results.
@@ -292,6 +307,7 @@ pub struct SearchParams {
 
     /// Quantization params
     #[serde(default)]
+    #[validate]
     pub quantization: Option<QuantizationSearchParams>,
 }
 
@@ -838,6 +854,7 @@ pub enum PayloadSchemaType {
     Float,
     Geo,
     Text,
+    Bool,
 }
 
 /// Payload type with parameters
@@ -996,8 +1013,7 @@ pub enum Match {
 }
 
 impl Match {
-    #[cfg(test)]
-    fn new_value(value: ValueVariants) -> Self {
+    pub fn new_value(value: ValueVariants) -> Self {
         Self::Value(MatchValue { value })
     }
 
@@ -1179,6 +1195,32 @@ impl GeoRadius {
     pub fn check_point(&self, lon: f64, lat: f64) -> bool {
         let query_center = Point::new(self.center.lon, self.center.lat);
         query_center.haversine_distance(&Point::new(lon, lat)) < self.radius
+    }
+}
+
+/// Geo filter request
+///
+/// Matches coordinates inside the polygon, defined by the given coordinates in order.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct GeoPolygon {
+    /// Ordered list of coordinates representing the vertices of a polygon.
+    pub points: Vec<GeoPoint>,
+}
+
+impl GeoPolygon {
+    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+        let polygon_points: Vec<Coord<f64>> = self
+            .points
+            .iter()
+            .map(|p| Coord { x: p.lon, y: p.lat })
+            .collect();
+
+        let polygon = Polygon::new(polygon_points.into(), vec![]);
+
+        let point = Coord { x: lon, y: lat };
+
+        polygon.contains(&point)
     }
 }
 
@@ -1631,6 +1673,101 @@ mod tests {
         let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
         eprintln!("payload = {payload:#?}");
         eprintln!("de_record = {de_record:#?}");
+    }
+
+    #[test]
+    fn test_geo_radius_check_point() {
+        let radius = GeoRadius {
+            center: GeoPoint { lon: 0.0, lat: 0.0 },
+            radius: 80000.0,
+        };
+
+        let inside_result = radius.check_point(0.5, 0.5);
+        assert!(inside_result);
+
+        let outside_result = radius.check_point(1.5, 1.5);
+        assert!(!outside_result);
+    }
+
+    #[test]
+    fn test_geo_boundingbox_check_point() {
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint {
+                lon: -1.0,
+                lat: 1.0,
+            },
+            bottom_right: GeoPoint {
+                lon: 1.0,
+                lat: -1.0,
+            },
+        };
+
+        // haversine distance between (0, 0) and (0.5, 0.5) is 78626.29627999048
+        let inside_result = bounding_box.check_point(-0.5, 0.5);
+        assert!(inside_result);
+
+        // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
+        let outside_result = bounding_box.check_point(1.5, 1.5);
+        assert!(!outside_result);
+    }
+
+    #[test]
+    fn test_geo_polygon_check_point() {
+        // Create a GeoPolygon with a square shape
+        let polygon_1 = GeoPolygon {
+            points: vec![
+                GeoPoint {
+                    lon: -1.0,
+                    lat: -1.0,
+                },
+                GeoPoint {
+                    lon: 1.0,
+                    lat: -1.0,
+                },
+                GeoPoint { lon: 1.0, lat: 1.0 },
+                GeoPoint {
+                    lon: -1.0,
+                    lat: 1.0,
+                },
+            ],
+        };
+
+        let inside_result = polygon_1.check_point(0.5, 0.5);
+        assert!(inside_result);
+
+        let outside_result = polygon_1.check_point(1.5, 1.5);
+        assert!(!outside_result);
+
+        let on_edge_result = polygon_1.check_point(1.0, 0.0);
+        assert!(!on_edge_result);
+
+        // Create a GeoPolygon as a `twisted square`
+        let polygon_2 = GeoPolygon {
+            points: vec![
+                GeoPoint {
+                    lon: -1.0,
+                    lat: -1.0,
+                },
+                GeoPoint { lon: 1.0, lat: 1.0 },
+                GeoPoint {
+                    lon: 1.0,
+                    lat: -1.0,
+                },
+                GeoPoint {
+                    lon: -1.0,
+                    lat: 1.0,
+                },
+            ],
+        };
+
+        let inside_result_2 = polygon_2.check_point(0.5, 0.0);
+        assert!(inside_result_2);
+
+        let outside_result_2 = polygon_2.check_point(0.0, 0.5);
+        assert!(!outside_result_2);
+
+        let on_edge_result_2 = polygon_2.check_point(0.0, 0.0);
+        assert!(!on_edge_result_2);
     }
 
     #[test]

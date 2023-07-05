@@ -37,7 +37,7 @@ use collection::telemetry::CollectionTelemetry;
 use segment::common::cpu::get_num_cpus;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
-use tokio::sync::{RwLock, RwLockReadGuard, Semaphore};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use uuid::Uuid;
 
 use super::collection_meta_ops::{
@@ -61,7 +61,7 @@ use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
-pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
+pub const SNAPSHOTS_TEMP_DIR: &str = "snapshots_temp";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidden";
 
@@ -87,6 +87,9 @@ pub struct TableOfContent {
     ///
     /// If not defined - no rate limiting is applied.
     update_rate_limiter: Option<Semaphore>,
+    /// A lock to prevent concurrent collection creation.
+    /// Effectively, this lock ensures that `create_collection` is called sequentially.
+    collection_create_lock: Mutex<()>,
 }
 
 impl TableOfContent {
@@ -104,6 +107,10 @@ impl TableOfContent {
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
+        if let Some(path) = storage_config.temp_path.as_deref() {
+            let temp_path = Path::new(path);
+            create_dir_all(temp_path).expect("Can't create temporary files directory");
+        }
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
@@ -190,6 +197,7 @@ impl TableOfContent {
             is_write_locked: AtomicBool::new(false),
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
+            collection_create_lock: Default::default(),
         }
     }
 
@@ -212,15 +220,42 @@ impl TableOfContent {
         &self.storage_config.snapshots_path
     }
 
+    /// Get path for temporary snapshot files.
+    ///
+    /// Defaults to `snapshot_path()`.
+    /// A user may specify `storage.temp_path` to override this.
+    pub fn temp_snapshots_path(&self) -> &Path {
+        Path::new(self.temp_path().unwrap_or_else(|| self.snapshots_path()))
+    }
+
+    pub fn temp_path(&self) -> Option<&str> {
+        self.storage_config.temp_path.as_deref()
+    }
+
+    /// Get path for temporary storage files.
+    ///
+    /// Defaults to `storage_path()`.
+    /// A user may specify `storage.temp_path` to override this.
+    pub fn temp_storage_path(&self) -> &Path {
+        Path::new(self.temp_path().unwrap_or_else(|| self.storage_path()))
+    }
+
     fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
         snapshots_path.join(collection_name)
     }
 
-    async fn create_snapshots_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
-        let snapshots_path = Self::collection_snapshots_path(
+    pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
+        Self::collection_snapshots_path(
             Path::new(&self.storage_config.snapshots_path),
             collection_name,
-        );
+        )
+    }
+
+    pub async fn create_snapshots_path(
+        &self,
+        collection_name: &str,
+    ) -> Result<PathBuf, StorageError> {
+        let snapshots_path = self.snapshots_path_for_collection(collection_name);
         tokio::fs::create_dir_all(&snapshots_path)
             .await
             .map_err(|err| {
@@ -234,6 +269,27 @@ impl TableOfContent {
 
     async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
+
+        if path.exists() {
+            if CollectionConfig::check(&path) {
+                return Err(StorageError::bad_input(&format!(
+                    "Can't create collection with name {collection_name}. Collection data already exists at {path}",
+                    collection_name = collection_name,
+                    path = path.display(),
+                )));
+            } else {
+                // Collection doesn't have a valid config, remove it
+                log::debug!(
+                    "Removing invalid collection path {path} from storage",
+                    path = path.display(),
+                );
+                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
+                    StorageError::service_error(format!(
+                        "Can't clear directory for collection {collection_name}. Error: {err}"
+                    ))
+                })?;
+            }
+        }
 
         tokio::fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(format!(
@@ -249,22 +305,26 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - Name of the collection or alias to resolve
+    /// * `collections` - A reference to the collections map
+    /// * `aliases` - A reference to the aliases storage
     ///
     /// # Result
     ///
     /// If the collection exists - return its name
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
-    async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
-        let alias_collection_name = self.alias_persistence.read().await.get(collection_name);
+    async fn resolve_name(
+        collection_name: &str,
+        collections: &Collections,
+        aliases: &AliasPersistence,
+    ) -> Result<String, StorageError> {
+        let alias_collection_name = aliases.get(collection_name);
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
             Some(resolved_alias) => resolved_alias,
         };
-        self.collections
-            .read()
-            .await
+        collections
             .validate_collection_exists(&resolved_name)
             .await?;
         Ok(resolved_name)
@@ -276,6 +336,11 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
+        // Collection operations require multiple file operations,
+        // before collection can actually be registered in the service.
+        // To prevent parallel writing of the files, we use this lock.
+        let collection_create_guard = self.collection_create_lock.lock().await;
+
         let CreateCollection {
             vectors,
             shard_number,
@@ -406,6 +471,8 @@ impl TableOfContent {
             write_collections.insert(collection_name.to_string(), collection);
         }
 
+        drop(collection_create_guard);
+
         // Notify the collection is created and ready to use
         for shard_id in local_shards {
             self.on_peer_created(collection_name.to_string(), self.this_peer_id, shard_id)
@@ -427,11 +494,7 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         let collection = self.get_collection(source_collection).await?;
         let collection_vectors_schema = collection.state().await.config.params.vectors;
-        if &collection_vectors_schema != vectors {
-            return Err(StorageError::BadInput {
-                description: format!("Cannot take data from collection with vectors schema {collection_vectors_schema:?} to collection with vectors schema {vectors:?}")
-            });
-        }
+        collection_vectors_schema.check_compatible(vectors)?;
         Ok(())
     }
 
@@ -727,9 +790,7 @@ impl TableOfContent {
     }
 
     async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
-        if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
-            removed.before_drop().await;
-
+        if let Some(removed) = self.collections.write().await.remove(collection_name) {
             self.alias_persistence
                 .write()
                 .await
@@ -1001,7 +1062,11 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
-        let real_collection_name = self.resolve_name(collection_name).await?;
+
+        let real_collection_name = {
+            let alias_persistence = self.alias_persistence.read().await;
+            Self::resolve_name(collection_name, &read_collection, &alias_persistence).await?
+        };
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(RwLockReadGuard::map(read_collection, |collection| {
             collection.get(&real_collection_name).unwrap()
@@ -1447,12 +1512,12 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<SnapshotDescription, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        // We want to use tmp dir inside the storage, because it is possible, that
+        // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
-        let tmp_dir = Path::new(&self.storage_config.storage_path).join(SNAPSHOTS_TMP_DIR);
-        tokio::fs::create_dir_all(&tmp_dir).await?;
+        let temp_dir = self.temp_storage_path().join(SNAPSHOTS_TEMP_DIR);
+        tokio::fs::create_dir_all(&temp_dir).await?;
         Ok(collection
-            .create_snapshot(&tmp_dir, self.this_peer_id)
+            .create_snapshot(&temp_dir, self.this_peer_id)
             .await?)
     }
 
@@ -1652,16 +1717,5 @@ impl CollectionContainer for TableOfContent {
             }
             Ok(())
         })
-    }
-}
-
-// `TableOfContent` should not be dropped from async context.
-impl Drop for TableOfContent {
-    fn drop(&mut self) {
-        self.general_runtime.block_on(async {
-            for (_, mut collection) in self.collections.write().await.drain() {
-                collection.before_drop().await;
-            }
-        });
     }
 }

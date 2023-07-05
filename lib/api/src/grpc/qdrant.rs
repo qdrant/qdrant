@@ -766,6 +766,7 @@ pub enum PayloadSchemaType {
     Float = 3,
     Geo = 4,
     Text = 5,
+    Bool = 6,
 }
 impl PayloadSchemaType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -780,6 +781,7 @@ impl PayloadSchemaType {
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
+            PayloadSchemaType::Bool => "Bool",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -791,6 +793,7 @@ impl PayloadSchemaType {
             "Float" => Some(Self::Float),
             "Geo" => Some(Self::Geo),
             "Text" => Some(Self::Text),
+            "Bool" => Some(Self::Bool),
             _ => None,
         }
     }
@@ -2789,6 +2792,7 @@ pub mod with_vectors_selector {
         Include(super::VectorsSelector),
     }
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationSearchParams {
@@ -2800,7 +2804,19 @@ pub struct QuantizationSearchParams {
     /// If true, use original vectors to re-score top-k results. Default is true.
     #[prost(bool, optional, tag = "2")]
     pub rescore: ::core::option::Option<bool>,
+    ///
+    /// Oversampling factor for quantization.
+    ///
+    /// Defines how many extra vectors should be pre-selected using quantized index,
+    /// and then re-scored using original vectors.
+    ///
+    /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
+    /// and then top-100 will be returned after re-scoring.
+    #[prost(double, optional, tag = "3")]
+    #[validate(custom = "crate::grpc::validate::validate_f64_range_min_1")]
+    pub oversampling: ::core::option::Option<f64>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
@@ -2816,6 +2832,7 @@ pub struct SearchParams {
     ///
     /// If set to true, search will ignore quantized vector data
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
 }
 #[derive(validator::Validate)]
@@ -2841,6 +2858,7 @@ pub struct SearchPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "7")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "8")]
@@ -2910,6 +2928,7 @@ pub struct SearchPointGroups {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "6")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "7")]
@@ -2997,6 +3016,7 @@ pub struct RecommendPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "8")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "9")]
@@ -3058,6 +3078,7 @@ pub struct RecommendPointGroups {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "7")]
+    #[validate]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "8")]
@@ -3582,6 +3603,7 @@ pub enum FieldType {
     Float = 2,
     Geo = 3,
     Text = 4,
+    Bool = 5,
 }
 impl FieldType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -3595,6 +3617,7 @@ impl FieldType {
             FieldType::Float => "FieldTypeFloat",
             FieldType::Geo => "FieldTypeGeo",
             FieldType::Text => "FieldTypeText",
+            FieldType::Bool => "FieldTypeBool",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -3605,6 +3628,7 @@ impl FieldType {
             "FieldTypeFloat" => Some(Self::Float),
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
+            "FieldTypeBool" => Some(Self::Bool),
             _ => None,
         }
     }

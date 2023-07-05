@@ -67,7 +67,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         this_peer_id,
     );
 
-    let mut collection = Collection::new(
+    let collection = Collection::new(
         collection_name,
         this_peer_id,
         collection_dir.path(),
@@ -110,10 +110,9 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         .unwrap();
 
     // Take a snapshot
-    let snapshots_tmp_dir = collection_dir.path().join("snapshots_tmp");
-    std::fs::create_dir_all(&snapshots_tmp_dir).unwrap();
+    let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let snapshot_description = collection
-        .create_snapshot(&snapshots_tmp_dir, 0)
+        .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
 
@@ -123,11 +122,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         0,
         false,
     ) {
-        collection.before_drop().await;
         panic!("Failed to restore snapshot: {err}")
     }
 
-    let mut recovered_collection = Collection::load(
+    let recovered_collection = Collection::load(
         collection_name_rec,
         this_peer_id,
         recover_dir.path(),
@@ -171,17 +169,14 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         assert_eq!(reference.payload, recovered.payload);
         assert_eq!(reference.vector, recovered.vector);
     }
-
-    collection.before_drop().await;
-    recovered_collection.before_drop().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_and_recover_collection_normal() {
     _test_snapshot_and_recover_collection(NodeType::Normal).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_and_recover_collection_listener() {
     _test_snapshot_and_recover_collection(NodeType::Listener).await;
 }

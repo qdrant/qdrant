@@ -50,6 +50,8 @@ pub enum OperationError {
         description: String,
         backtrace: Option<String>,
     },
+    #[error("Inconsistent storage: {description}")]
+    InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
@@ -223,7 +225,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &NamedVectors,
+        vectors: NamedVectors,
     ) -> OperationResult<bool>;
 
     fn delete_point(
@@ -369,7 +371,9 @@ pub trait SegmentEntry {
     /// Take a snapshot of the segment.
     ///
     /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf>;
+    /// Uses `temp_path` to prepare files to archive.
+    fn take_snapshot(&self, temp_path: &Path, snapshot_dir_path: &Path)
+        -> OperationResult<PathBuf>;
 
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self) -> SegmentTelemetry;

@@ -3,6 +3,7 @@ use serde_json::Value;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
+use crate::index::field_index::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
@@ -16,7 +17,7 @@ use crate::types::{
 
 pub trait PayloadFieldIndex {
     /// Return number of points with at least one value indexed in here
-    fn indexed_points(&self) -> usize;
+    fn count_indexed_points(&self) -> usize;
 
     /// Load index from disk.
     fn load(&mut self) -> OperationResult<bool>;
@@ -44,9 +45,6 @@ pub trait PayloadFieldIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
-
-    /// Returns an amount of unique indexed points
-    fn count_indexed_points(&self) -> usize;
 }
 
 pub trait ValueIndexer<T> {
@@ -121,6 +119,7 @@ pub enum FieldIndex {
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
+    BinaryIndex(BinaryIndex),
 }
 
 impl FieldIndex {
@@ -142,6 +141,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(_) => None,
             FieldIndex::FloatIndex(_) => None,
             FieldIndex::GeoIndex(_) => None,
+            FieldIndex::BinaryIndex(_) => None,
             FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
                 Some(Match::Text(MatchText { text })) => {
                     let query = full_text_index.parse_query(text);
@@ -165,6 +165,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
+            FieldIndex::BinaryIndex(payload_field_index) => payload_field_index,
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
         }
     }
@@ -177,6 +178,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::BinaryIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index,
         }
     }
@@ -188,6 +190,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::BinaryIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index.load(),
         }
     }
@@ -199,6 +202,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.clear(),
             FieldIndex::FloatIndex(index) => index.clear(),
             FieldIndex::GeoIndex(index) => index.clear(),
+            FieldIndex::BinaryIndex(index) => index.clear(),
             FieldIndex::FullTextIndex(index) => index.clear(),
         }
     }
@@ -210,12 +214,13 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.recreate(),
             FieldIndex::FloatIndex(index) => index.recreate(),
             FieldIndex::GeoIndex(index) => index.recreate(),
+            FieldIndex::BinaryIndex(index) => index.recreate(),
             FieldIndex::FullTextIndex(index) => index.recreate(),
         }
     }
 
-    pub fn indexed_points(&self) -> usize {
-        self.get_payload_field_index().indexed_points()
+    pub fn count_indexed_points(&self) -> usize {
+        self.get_payload_field_index().count_indexed_points()
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -246,10 +251,6 @@ impl FieldIndex {
             .payload_blocks(threshold, key)
     }
 
-    pub fn count_indexed_points(&self) -> usize {
-        self.get_payload_field_index().count_indexed_points()
-    }
-
     pub fn add_point(
         &mut self,
         id: PointOffsetType,
@@ -271,6 +272,9 @@ impl FieldIndex {
             FieldIndex::GeoIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
+            FieldIndex::BinaryIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
             FieldIndex::FullTextIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
@@ -284,6 +288,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
             FieldIndex::FloatIndex(index) => index.remove_point(point_id),
             FieldIndex::GeoIndex(index) => index.remove_point(point_id),
+            FieldIndex::BinaryIndex(index) => index.remove_point(point_id),
             FieldIndex::FullTextIndex(index) => index.remove_point(point_id),
         }
     }
@@ -295,6 +300,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
             FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
+            FieldIndex::BinaryIndex(index) => index.get_telemetry_data(),
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
         }
     }
@@ -306,7 +312,20 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.values_count(point_id),
             FieldIndex::FloatIndex(index) => index.values_count(point_id),
             FieldIndex::GeoIndex(index) => index.values_count(point_id),
+            FieldIndex::BinaryIndex(index) => index.values_count(point_id),
             FieldIndex::FullTextIndex(index) => index.values_count(point_id),
+        }
+    }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            FieldIndex::IntIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::IntMapIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::FloatIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::BinaryIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
         }
     }
 }

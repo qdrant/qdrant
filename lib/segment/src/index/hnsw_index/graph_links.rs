@@ -267,13 +267,13 @@ impl GraphLinksConverter {
 
     pub fn save_as(&mut self, path: &Path) -> OperationResult<()> {
         self.path = Some(path.to_path_buf());
-        let tmp_path = path.with_extension("tmp");
+        let temp_path = path.with_extension("tmp");
         {
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
-                .open(tmp_path.as_path())?;
+                .open(temp_path.as_path())?;
 
             file.set_len(self.data_size())?;
             let m = unsafe { MmapMut::map_mut(&file) };
@@ -283,7 +283,7 @@ impl GraphLinksConverter {
 
             mmap.flush()?;
         }
-        std::fs::rename(tmp_path, path)?;
+        std::fs::rename(temp_path, path)?;
 
         Ok(())
     }

@@ -71,4 +71,64 @@ def test_payload_indexing_operations():
     )
     assert response.ok
     assert len(response.json()['result']['payload_schema']) == 0
+    
+    
+def set_payload(payload, points):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": payload,
+            "points": points
+        }
+    )
+    assert response.ok
+    
+    
+def test_boolean_index():
+    bool_key = "boolean_payload"
+    # create payload
+    set_payload({bool_key: False}, [1, 2, 3, 4])
+    set_payload({bool_key: [True, False]}, [5])
+    set_payload({bool_key: True}, [6, 7])
 
+    # Create index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": bool_key,
+            "field_schema": "bool"
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    assert response.json()['result']['payload_schema'][bool_key]['data_type'] == "bool"
+    assert response.json()['result']['payload_schema'][bool_key]['points'] == 7
+
+    # Delete index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index/{field_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name, 'field_name': bool_key},
+        query_params={'wait': 'true'},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload_schema']) == 0

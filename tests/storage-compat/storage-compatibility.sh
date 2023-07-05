@@ -17,19 +17,20 @@ git lfs pull
 # Uncompress snapshot storage
 tar -xvjf ./tests/storage-compat/storage.tar.bz2
 
-# Run in background
-./target/debug/qdrant &
+# Test it boots up fine with the old storage
+./target/debug/qdrant & PID=$!
 
-# Sleep to make sure the process has started (workaround for empty pidof)
-sleep 5
+sleep 1
 
-## Capture PID of the run
-PID=$(pidof "./target/debug/qdrant")
-echo $PID
-
+declare retry=0
 until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections; do
-  printf 'waiting for server to start...'
-  sleep 5
+  if ((retry++ < 30)); then
+      printf 'waiting for server to start...'
+      sleep 1
+  else
+      echo "Collections failed to load in ~30 seconds" >&2
+      exit 2
+  fi
 done
 
 echo "server ready to serve traffic"
@@ -40,25 +41,29 @@ echo "END"
 
 
 # Test recovering from an old snapshot
-gzip -d --keep ./tests/storage-compat/collection.snapshot.gz
+gzip -d --keep ./tests/storage-compat/full-snapshot.snapshot.gz
 
 rm -rf ./storage
-./target/debug/qdrant --snapshot ./tests/storage-compat/collection.snapshot:test_collection &
+./target/debug/qdrant \
+  --storage-snapshot ./tests/storage-compat/full-snapshot.snapshot \
+  & PID=$!
 
-# Sleep to make sure the process has started (workaround for empty pidof)
-sleep 5
-
-## Capture PID of the run
-PID=$(pidof "./target/debug/qdrant")
-echo $PID
-
+declare retry=0
 until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections/test_collection; do
-  printf 'waiting for server to start...'
-  sleep 5
+  if ((retry++ < 30)); then
+      printf 'waiting for server to start...'
+      sleep 1
+  else
+      echo "Collection failed to load in ~30 seconds" >&2
+      exit 2
+  fi
 done
 
 echo "server ready to serve traffic"
 
 echo "server is going down"
 kill -9 $PID
+
+rm tests/storage-compat/full-snapshot.snapshot
+
 echo "END"

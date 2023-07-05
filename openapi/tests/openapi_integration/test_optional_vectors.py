@@ -13,6 +13,15 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
+def compare_vectors(v1, v2):
+    if len(v1) != len(v2):
+        return False
+    for i in range(len(v1)):
+        if abs(v1[i] - v2[i]) > 1e-5:
+            return False
+    return True
+
+
 def test_delete_and_search():
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
@@ -158,7 +167,41 @@ def test_upsert_partial_vectors():
 
 
 def update_vectors():
-    text_vector = [0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98]
+    POINT_ID = 1000
+
+    # Put empty vector first
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": POINT_ID,
+                    "vector": {},
+                    "payload": {"city": "Berlin"}
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    assert result["vector"].get("text") is None
+
+    text_vector = [
+        0.34035879, 0.344099,
+        0.3478392, 0.35157941,
+        0.35531961, 0.35905982,
+        0.36280003, 0.36654023
+    ]
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
         method="PUT",
@@ -167,7 +210,7 @@ def update_vectors():
         body={
             "points": [
                 {
-                    "id": 1,
+                    "id": POINT_ID,
                     "vector": {
                         "text": text_vector,
                     }
@@ -180,13 +223,19 @@ def update_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'collection_name': collection_name, 'id': 1},
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
     )
     assert response.ok
     result = response.json()["result"]
-    assert result["vector"]["text"] == text_vector
+    assert compare_vectors(result["vector"]["text"], text_vector)
+    assert result["payload"]["city"] == "Berlin"
 
-    text_vector = [0.12, 0.34, 0.56, 0.78, 0.90, 0.12, 0.34, 0.56]
+    text_vector = [
+        0.07902951, 0.22391693,
+        0.36880436, 0.51369179,
+        0.59272129, 0.07902951,
+        0.22391693, 0.36880436
+    ]
     image_vector = [0.19, 0.28, 0.37, 0.46]
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
@@ -196,7 +245,7 @@ def update_vectors():
         body={
             "points": [
                 {
-                    "id": 1,
+                    "id": POINT_ID,
                     "vector": {
                         "text": text_vector,
                         "image": image_vector,
@@ -210,12 +259,12 @@ def update_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'collection_name': collection_name, 'id': 1},
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
     )
     assert response.ok
     result = response.json()["result"]
-    assert result["vector"]["image"] == image_vector
-    assert result["vector"]["text"] == text_vector
+    assert compare_vectors(result["vector"]["image"], image_vector)
+    assert compare_vectors(result["vector"]["text"], text_vector)
 
     image_vector = [0.00, 0.01, 0.00, 0.01]
     response = request_with_validation(
@@ -226,7 +275,7 @@ def update_vectors():
         body={
             "points": [
                 {
-                    "id": 1,
+                    "id": POINT_ID,
                     "vector": {
                         "image": image_vector,
                     }
@@ -239,12 +288,12 @@ def update_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'collection_name': collection_name, 'id': 1},
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
     )
     assert response.ok
     result = response.json()["result"]
-    assert result["vector"]["image"] == image_vector
-    assert result["vector"]["text"] == text_vector
+    assert compare_vectors(result["vector"]["image"], image_vector)
+    assert compare_vectors(result["vector"]["text"], text_vector)
 
 
 def test_update_vectors():
@@ -278,7 +327,12 @@ def update_empty_vectors():
     assert "text" not in result["vector"]
     assert "image" not in result["vector"]
 
-    text_vector = [0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98]
+    text_vector = [
+        0.34035879, 0.344099,
+        0.3478392, 0.35157941,
+        0.35531961, 0.35905982,
+        0.36280003, 0.36654023
+    ]
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
         method="PUT",
@@ -304,7 +358,7 @@ def update_empty_vectors():
     )
     assert response.ok
     result = response.json()["result"]
-    assert result["vector"]["text"] == text_vector
+    assert compare_vectors(result["vector"]["text"], text_vector)
     assert "image" not in result["vector"]
 
     image_vector = [0.19, 0.28, 0.37, 0.46]
@@ -333,8 +387,8 @@ def update_empty_vectors():
     )
     assert response.ok
     result = response.json()["result"]
-    assert result["vector"]["image"] == image_vector
-    assert result["vector"]["text"] == text_vector
+    assert compare_vectors(result["vector"]["image"], image_vector)
+    assert compare_vectors(result["vector"]["text"], text_vector)
 
 
 def test_update_empty_vectors():

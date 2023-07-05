@@ -13,7 +13,9 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_vector_name, check_vectors_set, mmap_ops};
+use crate::common::{
+    check_named_vectors, check_vector, check_vector_name, check_vectors, mmap_ops,
+};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -32,6 +34,7 @@ use crate::types::{
     SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::utils;
+use crate::utils::fs::find_symlink;
 use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -129,7 +132,7 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
             match vector {
@@ -166,9 +169,10 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(&vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
-            self.vector_data[vector_name.as_ref()]
+            let vector_data = &self.vector_data[vector_name.as_ref()];
+            vector_data
                 .vector_storage
                 .borrow_mut()
                 .insert_vector(internal_id, new_vector.as_ref())?;
@@ -187,8 +191,8 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
+        check_named_vectors(&vectors, &self.segment_config)?;
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
-        check_vectors_set(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
@@ -374,13 +378,24 @@ impl Segment {
             .borrow()
             .is_deleted_vector(point_offset);
         if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
-            Ok(Some(
-                vector_data
-                    .vector_storage
-                    .borrow()
-                    .get_vector(point_offset)
-                    .to_vec(),
-            ))
+            let vector_storage = vector_data.vector_storage.borrow();
+
+            if vector_storage.total_vector_count() <= point_offset as usize {
+                // Storage does not have vector with such offset.
+                // This is possible if the storage is inconsistent due to interrupted flush.
+                // Assume consistency will be restored with WAL replay.
+
+                // Without this check, the service will panic on the `get_vector` call.
+                Err(OperationError::InconsistentStorage {
+                    description: format!(
+                        "Vector storage is inconsistent, total_vector_count: {}, point_offset: {}",
+                        vector_storage.total_vector_count(),
+                        point_offset
+                    ),
+                })
+            } else {
+                Ok(Some(vector_storage.get_vector(point_offset).to_vec()))
+            }
         } else {
             Ok(None)
         }
@@ -461,6 +476,14 @@ impl Segment {
             }
 
             let files_path = snapshot_path.join(SNAPSHOT_FILES_PATH);
+
+            if let Some(symlink) = find_symlink(&files_path) {
+                return Err(OperationError::service_error(format!(
+                    "Snapshot is corrupted, can't read file: {:?}",
+                    symlink
+                )));
+            }
+
             utils::fs::move_all(&files_path, &segment_path)?;
 
             fs::remove_dir_all(&snapshot_path).map_err(|err| {
@@ -585,6 +608,7 @@ impl Segment {
 
         let ids_iterator = payload_index
             .query_points(condition)
+            .into_iter()
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {
@@ -714,16 +738,8 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        check_vector_name(vector_name, &self.segment_config)?;
+        check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
-        if vector.len() != expected_vector_dim {
-            return Err(OperationError::WrongVector {
-                expected_dim: expected_vector_dim,
-                received_dim: vector.len(),
-            });
-        }
-
         let internal_result =
             &vector_data
                 .vector_index
@@ -743,18 +759,8 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        check_vector_name(vector_name, &self.segment_config)?;
+        check_vectors(vector_name, vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
-        for vector in vectors {
-            if vector.len() != expected_vector_dim {
-                return Err(OperationError::WrongVector {
-                    expected_dim: expected_vector_dim,
-                    received_dim: vector.len(),
-                });
-            }
-        }
-
         let internal_results = vector_data
             .vector_index
             .borrow()
@@ -774,41 +780,18 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
-        check_vectors_set(vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
-            let mut processed_vectors = NamedVectors::default();
-            for (vector_name, vector) in vectors.iter() {
-                let vector_name: &str = vector_name;
-                let vector: &[VectorElementType] = vector;
-                let vector_data = &segment.vector_data[vector_name];
-                let vector_dim = vector_data.vector_storage.borrow().vector_dim();
-                if vector_dim != vector.len() {
-                    return Err(OperationError::WrongVector {
-                        expected_dim: vector_dim,
-                        received_dim: vector.len(),
-                    });
-                }
-
-                let processed_vector_opt = segment.segment_config.vector_data[vector_name]
-                    .distance
-                    .preprocess_vector(vector);
-                match processed_vector_opt {
-                    None => processed_vectors.insert_ref(vector_name, vector),
-                    Some(preprocess_vector) => {
-                        processed_vectors.insert(vector_name.to_string(), preprocess_vector)
-                    }
-                }
-            }
-
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, processed_vectors)?;
+                segment.replace_all_vectors(existing_internal_id, vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let new_index = segment.insert_new_vectors(point_id, processed_vectors)?;
+                let new_index = segment.insert_new_vectors(point_id, vectors)?;
                 Ok((false, Some(new_index)))
             }
         })
@@ -845,8 +828,10 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
+        check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -867,6 +852,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vector_name: &str,
     ) -> OperationResult<bool> {
+        check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -972,6 +958,7 @@ impl SegmentEntry for Segment {
         vector_name: &str,
         point_id: PointIdType,
     ) -> OperationResult<Option<Vec<VectorElementType>>> {
+        check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
         Ok(vector_opt)
@@ -1111,10 +1098,15 @@ impl SegmentEntry for Segment {
                 (key, PayloadIndexInfo::new(index_schema, points_count))
             })
             .collect();
+        let num_vectors = self
+            .vector_data
+            .values()
+            .map(|data| data.vector_storage.borrow().available_vector_count())
+            .sum();
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.available_point_count() * self.vector_data.len(),
+            num_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
@@ -1346,11 +1338,15 @@ impl SegmentEntry for Segment {
             .collect()
     }
 
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf> {
+    fn take_snapshot(
+        &self,
+        temp_path: &Path,
+        snapshot_dir_path: &Path,
+    ) -> OperationResult<PathBuf> {
         log::debug!(
             "Taking snapshot of segment {:?} into {:?}",
             self.current_path,
-            snapshot_dir_path
+            snapshot_dir_path,
         );
 
         if !snapshot_dir_path.exists() {
@@ -1368,10 +1364,9 @@ impl SegmentEntry for Segment {
         // flush segment to capture latest state
         self.flush(true)?;
 
-        let tmp_path = self.current_path.join(format!("tmp-{}", Uuid::new_v4()));
-
-        let db_backup_path = tmp_path.join(DB_BACKUP_PATH);
-        let payload_index_db_backup_path = tmp_path.join(PAYLOAD_DB_BACKUP_PATH);
+        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
+        let db_backup_path = temp_path.join(DB_BACKUP_PATH);
+        let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
 
         {
             let db = self.database.read();
@@ -1400,8 +1395,8 @@ impl SegmentEntry for Segment {
         let mut builder = Builder::new(file);
 
         builder
-            .append_dir_all(SNAPSHOT_PATH, &tmp_path)
-            .map_err(|err| utils::tar::failed_to_append_error(&tmp_path, err))?;
+            .append_dir_all(SNAPSHOT_PATH, &temp_path)
+            .map_err(|err| utils::tar::failed_to_append_error(&temp_path, err))?;
 
         let files = Path::new(SNAPSHOT_PATH).join(SNAPSHOT_FILES_PATH);
 
@@ -1450,11 +1445,11 @@ impl SegmentEntry for Segment {
 
         // remove tmp directory in background
         let _ = std::thread::spawn(move || {
-            let res = std::fs::remove_dir_all(&tmp_path);
+            let res = std::fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
                     "Failed to remove tmp directory at {}: {:?}",
-                    tmp_path.display(),
+                    temp_path.display(),
                     err
                 );
             }
@@ -1554,11 +1549,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
@@ -1623,7 +1618,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1713,7 +1708,7 @@ mod tests {
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
 
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         segment
@@ -1721,9 +1716,12 @@ mod tests {
             .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
 
         // snapshotting!
-        let archive = segment.take_snapshot(snapshot_dir.path()).unwrap();
+        let archive = segment
+            .take_snapshot(temp_dir.path(), snapshot_dir.path())
+            .unwrap();
         let archive_extension = archive.extension().unwrap();
         let archive_name = archive.file_name().unwrap().to_str().unwrap().to_string();
 
@@ -1800,7 +1798,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1832,11 +1830,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
 
         // first pass on consistent data
@@ -1904,5 +1902,319 @@ mod tests {
             segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn test_point_vector_count() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 1;
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                },
+            )]),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+        // Insert point ID 4 and 6, assert counts
+        segment
+            .upsert_point(100, 4.into(), only_default_vector(&[0.4]))
+            .unwrap();
+        segment
+            .upsert_point(101, 6.into(), only_default_vector(&[0.6]))
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 2);
+        assert_eq!(segment_info.num_vectors, 2);
+
+        // Delete non-existant point, counts should remain the same
+        segment.delete_point(102, 1.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 2);
+        assert_eq!(segment_info.num_vectors, 2);
+
+        // Delete point 4, counts should derease by 1
+        segment.delete_point(103, 4.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 1);
+        assert_eq!(segment_info.num_vectors, 1);
+
+        // Delete vector of point 6, vector count should now be zero
+        segment
+            .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 1);
+        assert_eq!(segment_info.num_vectors, 0);
+    }
+
+    #[test]
+    fn test_point_vector_count_multivec() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 1;
+        let config = SegmentConfig {
+            vector_data: HashMap::from([
+                (
+                    "a".into(),
+                    VectorDataConfig {
+                        size: dim,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+                (
+                    "b".into(),
+                    VectorDataConfig {
+                        size: dim,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+            ]),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+        // Insert point ID 4 and 6 fully, 8 and 10 partially, assert counts
+        segment
+            .upsert_point(
+                100,
+                4.into(),
+                NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+            )
+            .unwrap();
+        segment
+            .upsert_point(
+                101,
+                6.into(),
+                NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+            )
+            .unwrap();
+        segment
+            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
+            .unwrap();
+        segment
+            .upsert_point(
+                103,
+                10.into(),
+                NamedVectors::from([("b".into(), vec![1.0])]),
+            )
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 6);
+
+        // Delete non-existant point, counts should remain the same
+        segment.delete_point(104, 1.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 6);
+
+        // Delete point 4, counts should derease by 1
+        segment.delete_point(105, 4.into()).unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 4);
+
+        // Delete vector 'a' of point 6, vector count should decrease by 1
+        segment.delete_vector(106, 6.into(), "a").unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Deleting it again shouldn't chain anything
+        segment.delete_vector(107, 6.into(), "a").unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Replace vector 'a' for point 8, counts should remain the same
+        let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
+        segment
+            .replace_all_vectors(internal_8, NamedVectors::from([("a".into(), vec![0.1])]))
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Replace both vectors for point 8, adding a new vector
+        segment
+            .replace_all_vectors(
+                internal_8,
+                NamedVectors::from([("a".into(), vec![0.1]), ("b".into(), vec![0.1])]),
+            )
+            .unwrap();
+        let segment_info = segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 4);
+    }
+
+    /// Tests segment functions to ensure invalid requests do error
+    #[test]
+    fn test_vector_compatibility_checks() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let config = SegmentConfig {
+            vector_data: HashMap::from([
+                (
+                    "a".into(),
+                    VectorDataConfig {
+                        size: 4,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+                (
+                    "b".into(),
+                    VectorDataConfig {
+                        size: 2,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+            ]),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+        // Insert one point for a reference internal ID
+        let point_id = 4.into();
+        segment
+            .upsert_point(
+                100,
+                point_id,
+                NamedVectors::from([
+                    ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                    ("b".into(), vec![1.0, 0.9]),
+                ]),
+            )
+            .unwrap();
+        let internal_id = segment.lookup_internal_id(point_id).unwrap();
+
+        // A set of broken vectors
+        let wrong_vectors_single = vec![
+            // Incorrect dimensionality
+            ("a", vec![]),
+            ("a", vec![0.0, 1.0, 0.0]),
+            ("a", vec![0.0, 1.0, 0.0, 1.0, 0.0]),
+            ("b", vec![]),
+            ("b", vec![0.5]),
+            ("b", vec![0.0, 0.1, 0.2, 0.3]),
+            // Incorrect names
+            ("aa", vec![0.0, 0.1, 0.2, 0.3]),
+            ("bb", vec![0.0, 0.1]),
+        ];
+        let wrong_vectors_multi = vec![
+            // Incorrect dimensionality
+            NamedVectors::from_ref("a", &[]),
+            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0]),
+            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0, 1.0, 0.0]),
+            NamedVectors::from_ref("b", &[]),
+            NamedVectors::from_ref("b", &[0.5]),
+            NamedVectors::from_ref("b", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3]),
+                ("b".into(), vec![1.0, 0.9]),
+            ]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("b".into(), vec![1.0, 0.9, 0.0]),
+            ]),
+            // Incorrect names
+            NamedVectors::from_ref("aa", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from_ref("bb", &[0.0, 0.1]),
+            NamedVectors::from([
+                ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("b".into(), vec![1.0, 0.9]),
+            ]),
+            NamedVectors::from([
+                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
+                ("bb".into(), vec![1.0, 0.9]),
+            ]),
+        ];
+        let wrong_names = vec!["aa", "bb", ""];
+
+        for (vector_name, vector) in wrong_vectors_single.iter() {
+            check_vector(vector_name, vector, &config).err().unwrap();
+            segment
+                .search(
+                    vector_name,
+                    vector,
+                    &WithPayload {
+                        enable: false,
+                        payload_selector: None,
+                    },
+                    &WithVector::Bool(true),
+                    None,
+                    1,
+                    None,
+                )
+                .err()
+                .unwrap();
+            segment
+                .search_batch(
+                    vector_name,
+                    &[vector, vector],
+                    &WithPayload {
+                        enable: false,
+                        payload_selector: None,
+                    },
+                    &WithVector::Bool(true),
+                    None,
+                    1,
+                    None,
+                )
+                .err()
+                .unwrap();
+        }
+
+        for vectors in wrong_vectors_multi {
+            check_named_vectors(&vectors, &config).err().unwrap();
+            segment
+                .upsert_point(101, point_id, vectors.clone())
+                .err()
+                .unwrap();
+            segment
+                .update_vectors(internal_id, vectors.clone())
+                .err()
+                .unwrap();
+            segment
+                .insert_new_vectors(point_id, vectors.clone())
+                .err()
+                .unwrap();
+            segment
+                .replace_all_vectors(internal_id, vectors.clone())
+                .err()
+                .unwrap();
+        }
+
+        for wrong_name in wrong_names {
+            check_vector_name(wrong_name, &config).err().unwrap();
+            segment.vector(wrong_name, point_id).err().unwrap();
+            segment.vector_dim(wrong_name).err().unwrap();
+            segment
+                .delete_vector(101, point_id, wrong_name)
+                .err()
+                .unwrap();
+            segment.available_vector_count(wrong_name).err().unwrap();
+            segment
+                .vector_by_offset(wrong_name, internal_id)
+                .err()
+                .unwrap();
+        }
     }
 }

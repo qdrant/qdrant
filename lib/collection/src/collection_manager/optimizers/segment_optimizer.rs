@@ -529,6 +529,8 @@ pub trait SegmentOptimizer {
                 )?;
             }
 
+            optimized_segment.prefault_mmap_pages();
+
             let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
             let has_appendable_segments =
@@ -536,6 +538,7 @@ pub trait SegmentOptimizer {
 
             // Release reference counter of the optimized segments
             drop(optimizing_segments);
+
             // Append a temp segment to a collection if it is not empty or there is no other appendable segment
             if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
                 write_segments_guard.add_locked(tmp_segment);

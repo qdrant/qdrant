@@ -28,6 +28,7 @@ fn test_alias_operation() {
             .to_str()
             .unwrap()
             .to_string(),
+        temp_path: None,
         on_disk_payload: false,
         optimizers: OptimizersConfig {
             deleted_threshold: 0.5,
@@ -52,6 +53,7 @@ fn test_alias_operation() {
         update_queue_size: Default::default(),
         handle_collection_load_errors: false,
         recovery_mode: None,
+        async_scorer: false,
     };
 
     let search_runtime = Runtime::new().unwrap();

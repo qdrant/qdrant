@@ -86,12 +86,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
         let values_count = self.map.get(value).map(|p| p.len()).unwrap_or(0);
 
-        CardinalityEstimation {
-            primary_clauses: vec![],
-            min: values_count,
-            exp: values_count,
-            max: values_count,
-        }
+        CardinalityEstimation::exact(values_count)
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
@@ -181,6 +176,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
+    }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_values(point_id)
+            .map(|x| x.is_empty())
+            .unwrap_or(true)
     }
 
     /// Estimates cardinality for `except` clause
@@ -302,7 +303,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 }
 
 impl PayloadFieldIndex for MapIndex<String> {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.indexed_points
     }
 
@@ -386,14 +387,10 @@ impl PayloadFieldIndex for MapIndex<String> {
             });
         Box::new(iter)
     }
-
-    fn count_indexed_points(&self) -> usize {
-        self.indexed_points
-    }
 }
 
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.indexed_points
     }
 
@@ -476,10 +473,6 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 cardinality: point_ids.len(),
             });
         Box::new(iter)
-    }
-
-    fn count_indexed_points(&self) -> usize {
-        self.indexed_points
     }
 }
 
@@ -578,9 +571,9 @@ mod tests {
             vec![25],
         ];
 
-        let tmp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index(&data, tmp_dir.path());
-        load_map_index(&data, tmp_dir.path());
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index(&data, temp_dir.path());
+        load_map_index(&data, temp_dir.path());
     }
 
     #[test]
@@ -609,8 +602,8 @@ mod tests {
             vec![String::from("PPGG")],
         ];
 
-        let tmp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index(&data, tmp_dir.path());
-        load_map_index(&data, tmp_dir.path());
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index(&data, temp_dir.path());
+        load_map_index(&data, temp_dir.path());
     }
 }

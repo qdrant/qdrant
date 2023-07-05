@@ -122,6 +122,10 @@ impl FullTextIndex {
         // Maybe we want number of documents in the future?
         self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
     }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_doc(point_id).map(|x| x.is_empty()).unwrap_or(true)
+    }
 }
 
 impl ValueIndexer<String> for FullTextIndex {
@@ -171,7 +175,7 @@ impl ValueIndexer<String> for FullTextIndex {
 }
 
 impl PayloadFieldIndex for FullTextIndex {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.inverted_index.points_count
     }
 
@@ -225,10 +229,6 @@ impl PayloadFieldIndex for FullTextIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.inverted_index.payload_blocks(threshold, key)
     }
-
-    fn count_indexed_points(&self) -> usize {
-        self.inverted_index.points_count
-    }
 }
 
 #[cfg(test)]
@@ -267,7 +267,7 @@ mod tests {
             serde_json::json!("Yet now, for a day, perhaps for a week, even Multivac might celebrate the great time, and rest."),
         ];
 
-        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let config = TextIndexParams {
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::Word,
@@ -277,7 +277,7 @@ mod tests {
         };
 
         {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
             let mut index = FullTextIndex::new(db, config.clone(), "text");
 
@@ -328,7 +328,7 @@ mod tests {
         }
 
         {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
             let mut index = FullTextIndex::new(db, config, "text");
             let loaded = index.load().unwrap();
             assert!(loaded);
