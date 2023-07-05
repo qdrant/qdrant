@@ -89,7 +89,7 @@ impl ShardOperation for LocalShard {
 
         let with_payload = WithPayload::from(with_payload_interface);
         let mut points =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector).await?;
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
         points.sort_by_key(|point| point.id);
 
         Ok(points)
@@ -161,6 +161,6 @@ impl ShardOperation for LocalShard {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
-        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector).await
+        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)
     }
 }
