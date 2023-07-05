@@ -174,23 +174,23 @@ impl SegmentsSearcher {
             let use_sampling =
                 sampling_enabled && segments.len() > 1 && available_points_segments > 0;
 
-            let mut searches: Vec<_> = vec![];
-            for (_id, segment) in segments.iter() {
-                let segment = segment.clone();
-                let segment_ret = segment.clone();
-                let batch_request = batch_request.clone();
-                let search = runtime_handle.spawn_blocking(move || {
-                    search_in_segment(
-                        segment,
-                        batch_request,
-                        available_points_segments,
-                        use_sampling,
-                    )
-                });
-                searches.push((segment_ret, search));
-            }
-
-            searches.into_iter().unzip()
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    let search = runtime_handle.spawn_blocking({
+                        let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                        move || {
+                            search_in_segment(
+                                segment,
+                                batch_request,
+                                available_points_segments,
+                                use_sampling,
+                            )
+                        }
+                    });
+                    (segment.clone(), search)
+                })
+                .unzip()
         };
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
