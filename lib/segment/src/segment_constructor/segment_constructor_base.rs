@@ -109,11 +109,13 @@ fn create_segment(
             VectorStorageType::Mmap => open_memmap_vector_storage(
                 &vector_storage_path,
                 vector_config.size,
+                vector_config.size,
                 vector_config.distance,
             )?,
             // Chunked mmap on disk, appendable
             VectorStorageType::ChunkedMmap => open_appendable_memmap_vector_storage(
                 &vector_storage_path,
+                vector_config.size,
                 vector_config.size,
                 vector_config.distance,
             )?,

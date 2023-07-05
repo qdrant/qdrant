@@ -197,14 +197,14 @@ impl Metric for CosineMetric {
     }
 
     fn restore(vector: &[VectorElementType], dim: usize) -> Option<Vec<VectorElementType>> {
-        let length = if vector.len() > dim {
-            vector.last().copied()?
+        if vector.len() > dim {
+            let length = vector.last().copied()?;
+            let mut result = Vec::with_capacity(dim);
+            result.extend(vector.iter().copied().take(dim).map(|x| x * length));
+            Some(result)
         } else {
-            1.0
-        };
-        let mut result = Vec::with_capacity(dim);
-        result.extend(vector.iter().copied().take(dim).map(|x| x * length));
-        Some(result)
+            None
+        }
     }
 
     fn postprocess(score: ScoreType) -> ScoreType {

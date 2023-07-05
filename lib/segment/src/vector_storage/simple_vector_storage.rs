@@ -24,6 +24,7 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage {
     dim: usize,
+    preprocessed_dim: usize,
     distance: Distance,
     vectors: ChunkedVectors<VectorElementType>,
     quantized_vectors: Option<QuantizedVectors>,
@@ -47,7 +48,8 @@ pub fn open_simple_vector_storage(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let mut vectors = ChunkedVectors::new(dim);
+    let preprocessed_dim = distance.preprocessed_len(dim).unwrap_or(dim);
+    let mut vectors = ChunkedVectors::new(preprocessed_dim);
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
 
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
@@ -69,19 +71,20 @@ pub fn open_simple_vector_storage(
     debug!("Segment vectors: {}", vectors.len());
     debug!(
         "Estimated segment size {} MB",
-        vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
+        vectors.len() * preprocessed_dim * size_of::<VectorElementType>() / 1024 / 1024
     );
 
     Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Simple(
         SimpleVectorStorage {
             dim,
+            preprocessed_dim,
             distance,
             vectors,
             quantized_vectors: None,
             db_wrapper,
             update_buffer: StoredRecord {
                 deleted: false,
-                vector: vec![0.; dim],
+                vector: vec![0.; preprocessed_dim],
             },
             deleted,
             deleted_count,
@@ -131,8 +134,12 @@ impl SimpleVectorStorage {
 }
 
 impl VectorStorage for SimpleVectorStorage {
-    fn vector_dim(&self) -> usize {
+    fn dim(&self) -> usize {
         self.dim
+    }
+
+    fn preprocessed_dim(&self) -> usize {
+        self.preprocessed_dim
     }
 
     fn distance(&self) -> Distance {

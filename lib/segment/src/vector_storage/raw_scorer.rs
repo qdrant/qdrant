@@ -111,7 +111,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match vector_storage.distance() {
         Distance::Cosine => Box::new(RawScorerImpl::<'a, CosineMetric, TVectorStorage> {
-            dim: vector_storage.vector_dim(),
+            dim: vector_storage.dim(),
             points_count,
             query: CosineMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
@@ -120,7 +120,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             metric: PhantomData,
         }),
         Distance::Euclid => Box::new(RawScorerImpl::<'a, EuclidMetric, TVectorStorage> {
-            dim: vector_storage.vector_dim(),
+            dim: vector_storage.dim(),
             points_count,
             query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
@@ -129,7 +129,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             metric: PhantomData,
         }),
         Distance::Dot => Box::new(RawScorerImpl::<'a, DotProductMetric, TVectorStorage> {
-            dim: vector_storage.vector_dim(),
+            dim: vector_storage.dim(),
             points_count,
             query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,

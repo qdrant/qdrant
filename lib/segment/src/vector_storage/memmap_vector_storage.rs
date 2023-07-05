@@ -31,18 +31,20 @@ pub struct MemmapVectorStorage {
     deleted_path: PathBuf,
     mmap_store: Option<MmapVectors>,
     distance: Distance,
+    dim: usize,
 }
 
 pub fn open_memmap_vector_storage(
     path: &Path,
     dim: usize,
+    preprocessed_dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
-    let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
+    let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, preprocessed_dim)?;
 
     Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Memmap(
         Box::new(MemmapVectorStorage {
@@ -50,6 +52,7 @@ pub fn open_memmap_vector_storage(
             deleted_path,
             mmap_store: Some(mmap_store),
             distance,
+            dim,
         }),
     ))))
 }
@@ -69,7 +72,11 @@ impl MemmapVectorStorage {
 }
 
 impl VectorStorage for MemmapVectorStorage {
-    fn vector_dim(&self) -> usize {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn preprocessed_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim
     }
 
@@ -99,7 +106,7 @@ impl VectorStorage for MemmapVectorStorage {
         other_ids: &mut dyn Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let dim = self.vector_dim();
+        let dim = self.preprocessed_dim();
         let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
         self.mmap_store.take();
@@ -244,7 +251,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, 4, Distance::Dot).unwrap();
         let mut borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
@@ -330,7 +337,7 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
@@ -447,7 +454,7 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
@@ -524,7 +531,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
@@ -601,7 +608,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 

@@ -198,8 +198,8 @@ impl Segment {
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
             match vector_opt {
                 None => {
-                    let dim = vector_storage.vector_dim();
-                    vector_storage.insert_vector(new_index, &vec![1.0; dim])?;
+                    let preprocessed_dim = vector_storage.preprocessed_dim();
+                    vector_storage.insert_vector(new_index, &vec![1.0; preprocessed_dim])?;
                     vector_storage.delete_vector(new_index)?;
                 }
                 Some(vec) => {

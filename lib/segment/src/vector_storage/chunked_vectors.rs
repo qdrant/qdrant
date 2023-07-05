@@ -75,6 +75,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     }
 
     pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> Result<(), TryReserveError> {
+        debug_assert_eq!(vector.len(), self.dim);
         let key = key as usize;
         self.len = max(self.len, key + 1);
         self.chunks

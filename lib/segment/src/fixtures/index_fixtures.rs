@@ -29,6 +29,8 @@ impl FilterContext for FakeFilterContext {
 }
 
 pub struct TestRawScorerProducer<TMetric: Metric> {
+    pub dim: usize,
+    pub preprocess_dim: usize,
     pub vectors: ChunkedVectors<VectorElementType>,
     pub deleted_points: BitVec,
     pub deleted_vectors: BitVec,
@@ -36,8 +38,12 @@ pub struct TestRawScorerProducer<TMetric: Metric> {
 }
 
 impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
-    fn vector_dim(&self) -> usize {
-        self.vectors.get(0).len()
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn preprocessed_dim(&self) -> usize {
+        self.preprocess_dim
     }
 
     fn distance(&self) -> Distance {
@@ -125,13 +131,16 @@ where
     where
         R: Rng + ?Sized,
     {
-        let mut vectors = ChunkedVectors::new(dim);
+        let preprocess_dim = TMetric::preprocessed_len(dim).unwrap_or(dim);
+        let mut vectors = ChunkedVectors::new(preprocess_dim);
         for _ in 0..num_vectors {
             let rnd_vec = random_vector(rng, dim);
             let rnd_vec = TMetric::preprocess(&rnd_vec).unwrap_or(rnd_vec);
             vectors.push(&rnd_vec).unwrap();
         }
         TestRawScorerProducer::<TMetric> {
+            dim,
+            preprocess_dim,
             vectors,
             deleted_points: BitVec::repeat(false, num_vectors),
             deleted_vectors: BitVec::repeat(false, num_vectors),

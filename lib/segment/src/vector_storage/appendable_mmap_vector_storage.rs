@@ -20,6 +20,8 @@ const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
 pub struct AppendableMmapVectorStorage {
+    dim: usize,
+    preprocessed_dim: usize,
     vectors: ChunkedMmapVectors,
     deleted: DynamicMmapFlags,
     distance: Distance,
@@ -30,6 +32,7 @@ pub struct AppendableMmapVectorStorage {
 pub fn open_appendable_memmap_vector_storage(
     path: &Path,
     dim: usize,
+    preprocessed_dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     create_dir_all(path)?;
@@ -52,6 +55,8 @@ pub fn open_appendable_memmap_vector_storage(
     }
 
     let storage = AppendableMmapVectorStorage {
+        dim,
+        preprocessed_dim,
         vectors,
         deleted,
         distance,
@@ -86,8 +91,12 @@ impl AppendableMmapVectorStorage {
 }
 
 impl VectorStorage for AppendableMmapVectorStorage {
-    fn vector_dim(&self) -> usize {
-        self.vectors.dim()
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn preprocessed_dim(&self) -> usize {
+        self.preprocessed_dim
     }
 
     fn distance(&self) -> Distance {

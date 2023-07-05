@@ -48,7 +48,8 @@ fn test_async_raw_scorer(
         .prefix("immutable-storage")
         .tempdir()?;
 
-    let storage = open_memmap_vector_storage(dir.path(), dim, distance)?;
+    let preprocessed_dim = distance.preprocessed_len(dim).unwrap_or(dim);
+    let storage = open_memmap_vector_storage(dir.path(), dim, preprocessed_dim, distance)?;
     let mut storage = storage.borrow_mut();
 
     let mut id_tracker = FixtureIdTracker::new(points);
@@ -86,7 +87,7 @@ fn insert_random_vectors(
     let start = storage.total_vector_count() as u32;
     let end = start + vectors as u32;
 
-    let mut vector = vec![0.; storage.vector_dim()];
+    let mut vector = vec![0.; storage.dim()];
     let mut sampler = sampler(rng);
 
     for offset in start..end {
@@ -94,7 +95,11 @@ fn insert_random_vectors(
             *item = value;
         }
 
-        storage.insert_vector(offset, &vector)?;
+        let preprocessed_vec = storage
+            .distance()
+            .preprocess_vector(&vector)
+            .unwrap_or(vector.clone());
+        storage.insert_vector(offset, &preprocessed_vec)?;
     }
 
     Ok(())
@@ -121,7 +126,11 @@ fn test_random_score(
     storage: &VectorStorageEnum,
     deleted_points: &BitSlice,
 ) -> Result<()> {
-    let query: Vec<_> = sampler(&mut rng).take(storage.vector_dim()).collect();
+    let query: Vec<_> = sampler(&mut rng).take(storage.dim()).collect();
+    let query = storage
+        .distance()
+        .preprocess_vector(&query)
+        .unwrap_or(query.clone());
 
     let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points);
 

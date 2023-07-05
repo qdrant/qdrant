@@ -39,7 +39,9 @@ impl PartialOrd for ScoredPointOffset {
 /// El - type of vector element, expected numerical type
 /// Storage operates with internal IDs (`PointOffsetType`), which always starts with zero and have no skips
 pub trait VectorStorage {
-    fn vector_dim(&self) -> usize;
+    fn dim(&self) -> usize;
+
+    fn preprocessed_dim(&self) -> usize;
 
     fn distance(&self) -> Distance;
 
@@ -135,11 +137,19 @@ pub enum VectorStorageEnum {
 }
 
 impl VectorStorage for VectorStorageEnum {
-    fn vector_dim(&self) -> usize {
+    fn dim(&self) -> usize {
         match self {
-            VectorStorageEnum::Simple(v) => v.vector_dim(),
-            VectorStorageEnum::Memmap(v) => v.vector_dim(),
-            VectorStorageEnum::AppendableMemmap(v) => v.vector_dim(),
+            VectorStorageEnum::Simple(v) => v.dim(),
+            VectorStorageEnum::Memmap(v) => v.dim(),
+            VectorStorageEnum::AppendableMemmap(v) => v.dim(),
+        }
+    }
+
+    fn preprocessed_dim(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.preprocessed_dim(),
+            VectorStorageEnum::Memmap(v) => v.preprocessed_dim(),
+            VectorStorageEnum::AppendableMemmap(v) => v.preprocessed_dim(),
         }
     }
 
