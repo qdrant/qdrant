@@ -316,6 +316,9 @@ pub fn internal_create_index(
                     segment::types::PayloadSchemaType::Text => {
                         api::grpc::qdrant::FieldType::Text as i32
                     }
+                    segment::types::PayloadSchemaType::Bool => {
+                        api::grpc::qdrant::FieldType::Bool as i32
+                    }
                 },
                 None,
             ),

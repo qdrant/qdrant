@@ -6,6 +6,7 @@ use bitvec::prelude::{BitSlice, BitVec};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
+use super::payload_fixtures::BOOL_KEY;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
@@ -165,7 +166,7 @@ impl IdTracker for FixtureIdTracker {
 ///
 /// Payload storage fixture
 ///
-fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryPayloadStorage {
+pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryPayloadStorage {
     let mut payload_storage = InMemoryPayloadStorage::default();
     let mut rng = StdRng::seed_from_u64(seed);
 
@@ -241,6 +242,10 @@ pub fn create_struct_payload_index(
 
     index
         .set_indexed(TEXT_KEY, PayloadSchemaType::Text.into())
+        .unwrap();
+
+    index
+        .set_indexed(BOOL_KEY, PayloadSchemaType::Bool.into())
         .unwrap();
 
     index
