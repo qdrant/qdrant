@@ -134,6 +134,26 @@ impl Distance {
         }
     }
 
+    pub fn preprocessed_len(&self, dim: usize) -> Option<usize> {
+        match self {
+            Distance::Cosine => CosineMetric::preprocessed_len(dim),
+            Distance::Euclid => EuclidMetric::preprocessed_len(dim),
+            Distance::Dot => DotProductMetric::preprocessed_len(dim),
+        }
+    }
+
+    pub fn restore_vector(
+        &self,
+        vector: &[VectorElementType],
+        dim: usize,
+    ) -> Option<Vec<VectorElementType>> {
+        match self {
+            Distance::Cosine => CosineMetric::restore(vector, dim),
+            Distance::Euclid => EuclidMetric::restore(vector, dim),
+            Distance::Dot => DotProductMetric::restore(vector, dim),
+        }
+    }
+
     pub fn postprocess_score(&self, score: ScoreType) -> ScoreType {
         match self {
             Distance::Cosine => CosineMetric::postprocess(score),

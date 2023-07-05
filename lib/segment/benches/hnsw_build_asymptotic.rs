@@ -113,11 +113,19 @@ impl Metric for FakeMetric {
         unreachable!("FakeMetric::distance")
     }
 
-    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType], _dim: usize) -> ScoreType {
         v1[0] + v2[0]
     }
 
     fn preprocess(_vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+        None
+    }
+
+    fn preprocessed_len(_dim: usize) -> Option<usize> {
+        None
+    }
+
+    fn restore(_vector: &[VectorElementType], _dim: usize) -> Option<Vec<VectorElementType>> {
         None
     }
 
@@ -202,7 +210,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| FakeMetric::similarity(&vectors[x], &query))
+                .map(|x| FakeMetric::similarity(&vectors[x], &query, DIM))
                 .sum();
         })
     });
@@ -219,7 +227,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| FakeMetric::similarity(&vectors[x], &query))
+                .map(|x| FakeMetric::similarity(&vectors[x], &query, DIM))
                 .sum();
         })
     });

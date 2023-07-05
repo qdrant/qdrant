@@ -100,7 +100,11 @@ pub(crate) unsafe fn cosine_preprocess_avx(
         return None;
     }
     length = length.sqrt();
-    Some(vector.iter().map(|x| x / length).collect())
+
+    let mut result = Vec::with_capacity(vector.len() + 1);
+    result.extend(vector.iter().map(|x| x / length));
+    result.push(length);
+    Some(result)
 }
 
 #[target_feature(enable = "avx")]

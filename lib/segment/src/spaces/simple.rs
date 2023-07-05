@@ -32,7 +32,7 @@ impl Metric for EuclidMetric {
         Distance::Euclid
     }
 
-    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType], _dim: usize) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -64,6 +64,14 @@ impl Metric for EuclidMetric {
         None
     }
 
+    fn preprocessed_len(_dim: usize) -> Option<usize> {
+        None
+    }
+
+    fn restore(_vector: &[VectorElementType], _dim: usize) -> Option<Vec<VectorElementType>> {
+        None
+    }
+
     fn postprocess(score: ScoreType) -> ScoreType {
         score.abs().sqrt()
     }
@@ -74,7 +82,7 @@ impl Metric for DotProductMetric {
         Distance::Dot
     }
 
-    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType], _dim: usize) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -106,6 +114,14 @@ impl Metric for DotProductMetric {
         None
     }
 
+    fn preprocessed_len(_dim: usize) -> Option<usize> {
+        None
+    }
+
+    fn restore(_vector: &[VectorElementType], _dim: usize) -> Option<Vec<VectorElementType>> {
+        None
+    }
+
     fn postprocess(score: ScoreType) -> ScoreType {
         score
     }
@@ -116,7 +132,10 @@ impl Metric for CosineMetric {
         Distance::Cosine
     }
 
-    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType], dim: usize) -> ScoreType {
+        let v1 = &v1[..dim];
+        let v2 = &v2[..dim];
+
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -173,6 +192,21 @@ impl Metric for CosineMetric {
         cosine_preprocess(vector)
     }
 
+    fn preprocessed_len(dim: usize) -> Option<usize> {
+        Some(dim + 1)
+    }
+
+    fn restore(vector: &[VectorElementType], dim: usize) -> Option<Vec<VectorElementType>> {
+        let length = if vector.len() > dim {
+            vector.last().copied()?
+        } else {
+            1.0
+        };
+        let mut result = Vec::with_capacity(dim);
+        result.extend(vector.iter().copied().take(dim).map(|x| x * length));
+        Some(result)
+    }
+
     fn postprocess(score: ScoreType) -> ScoreType {
         score
     }
@@ -194,7 +228,10 @@ pub fn cosine_preprocess(vector: &[VectorElementType]) -> Option<Vec<VectorEleme
         return None;
     }
     length = length.sqrt();
-    Some(vector.iter().map(|x| x / length).collect())
+    let mut result = Vec::with_capacity(vector.len() + 1);
+    result.extend(vector.iter().map(|x| x / length));
+    result.push(length);
+    Some(result)
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {

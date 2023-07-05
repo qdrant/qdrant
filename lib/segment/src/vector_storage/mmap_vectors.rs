@@ -85,6 +85,10 @@ impl MmapVectors {
         })
     }
 
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
+
     pub fn flusher(&self) -> Flusher {
         self.deleted.flusher()
     }

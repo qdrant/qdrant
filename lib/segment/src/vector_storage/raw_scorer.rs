@@ -52,6 +52,7 @@ pub trait RawScorer {
 }
 
 pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
+    pub dim: usize,
     pub points_count: PointOffsetType,
     pub query: Vec<VectorElementType>,
     pub vector_storage: &'a TVectorStorage,
@@ -110,6 +111,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match vector_storage.distance() {
         Distance::Cosine => Box::new(RawScorerImpl::<'a, CosineMetric, TVectorStorage> {
+            dim: vector_storage.vector_dim(),
             points_count,
             query: CosineMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
@@ -118,6 +120,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             metric: PhantomData,
         }),
         Distance::Euclid => Box::new(RawScorerImpl::<'a, EuclidMetric, TVectorStorage> {
+            dim: vector_storage.vector_dim(),
             points_count,
             query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
@@ -126,6 +129,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             metric: PhantomData,
         }),
         Distance::Dot => Box::new(RawScorerImpl::<'a, DotProductMetric, TVectorStorage> {
+            dim: vector_storage.vector_dim(),
             points_count,
             query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
@@ -150,7 +154,7 @@ where
             let other_vector = self.vector_storage.get_vector(point_id);
             scores[size] = ScoredPointOffset {
                 idx: point_id,
-                score: TMetric::similarity(&self.query, other_vector),
+                score: TMetric::similarity(&self.query, other_vector, self.dim),
             };
 
             size += 1;
@@ -170,7 +174,7 @@ where
             let other_vector = self.vector_storage.get_vector(point_id);
             scores.push(ScoredPointOffset {
                 idx: point_id,
-                score: TMetric::similarity(&self.query, other_vector),
+                score: TMetric::similarity(&self.query, other_vector, self.dim),
             });
         }
         scores
@@ -196,13 +200,13 @@ where
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let other_vector = self.vector_storage.get_vector(point);
-        TMetric::similarity(&self.query, other_vector)
+        TMetric::similarity(&self.query, other_vector, self.dim)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.vector_storage.get_vector(point_a);
         let vector_b = self.vector_storage.get_vector(point_b);
-        TMetric::similarity(vector_a, vector_b)
+        TMetric::similarity(vector_a, vector_b, self.dim)
     }
 
     fn peek_top_iter(
@@ -216,7 +220,7 @@ where
                 let other_vector = self.vector_storage.get_vector(point_id);
                 ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: TMetric::similarity(&self.query, other_vector, self.dim),
                 }
             });
         peek_top_largest_iterable(scores, top)
@@ -230,7 +234,7 @@ where
                 let other_vector = &self.vector_storage.get_vector(point_id);
                 ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: TMetric::similarity(&self.query, other_vector, self.dim),
                 }
             });
         peek_top_largest_iterable(scores, top)

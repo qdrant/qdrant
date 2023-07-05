@@ -21,6 +21,7 @@ pub fn new<'a>(
 }
 
 pub struct AsyncRawScorerImpl<'a, TMetric: Metric> {
+    dim: usize,
     points_count: PointOffsetType,
     query: Vec<VectorElementType>,
     storage: &'a MmapVectors,
@@ -41,6 +42,7 @@ where
         vec_deleted: &'a BitSlice,
     ) -> Self {
         Self {
+            dim: storage.dim(),
             points_count,
             query: TMetric::preprocess(&vector).unwrap_or(vector),
             storage,
@@ -66,7 +68,7 @@ where
             .read_vectors_async(points_stream, |idx, point_id, other_vector| {
                 scores[idx] = ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: TMetric::similarity(&self.query, other_vector, self.dim),
                 };
                 processed += 1;
             })
@@ -89,7 +91,7 @@ where
             .read_vectors_async(points, |_idx, point_id, other_vector| {
                 scores.push(ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: TMetric::similarity(&self.query, other_vector, self.dim),
                 });
             })
             .unwrap();
@@ -121,13 +123,13 @@ where
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let other_vector = self.storage.get_vector(point);
-        TMetric::similarity(&self.query, other_vector)
+        TMetric::similarity(&self.query, other_vector, self.dim)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.storage.get_vector(point_a);
         let vector_b = self.storage.get_vector(point_b);
-        TMetric::similarity(vector_a, vector_b)
+        TMetric::similarity(vector_a, vector_b, self.dim)
     }
 
     fn peek_top_iter(
@@ -146,7 +148,7 @@ where
             .read_vectors_async(points_stream, |_, point_id, other_vector| {
                 let scored_point_offset = ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: TMetric::similarity(&self.query, other_vector, self.dim),
                 };
                 pq.push(scored_point_offset);
             })
@@ -171,7 +173,7 @@ where
             .read_vectors_async(points_stream, |_, point_id, other_vector| {
                 let scored_point_offset = ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: TMetric::similarity(&self.query, other_vector, self.dim),
                 };
                 pq.push(scored_point_offset);
             })

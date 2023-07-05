@@ -444,7 +444,7 @@ mod tests {
             let vec = &vector_holder.vectors.get(idx);
             reference_top.push(ScoredPointOffset {
                 idx,
-                score: M::similarity(vec, &processed_query),
+                score: M::similarity(vec, &processed_query, dim),
             });
         }
 
