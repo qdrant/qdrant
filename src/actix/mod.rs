@@ -148,7 +148,8 @@ pub fn init(
         })
         .workers(max_web_workers(&settings));
 
-        let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
+        let port = settings.service.http_port;
+        let bind_addr = format!("{}:{}", settings.service.host, port);
 
         // With TLS enabled, bind with certificate helper and Rustls, or bind regularly
         server = if settings.service.enable_tls {
@@ -171,6 +172,7 @@ pub fn init(
             server.bind(bind_addr)?
         };
 
+        log::info!("Qdrant HTTP listening on {}", port);
         server.run().await
     })
 }
