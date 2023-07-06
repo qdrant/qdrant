@@ -444,10 +444,6 @@ fn main() -> anyhow::Result<()> {
         );
         handle.join().expect("thread is not panicking")?;
     }
-    drop(search_runtime);
-    drop(update_runtime);
-    drop(general_runtime);
-    drop(settings);
     if let Ok(toc) = wait_unwrap(toc_arc, Duration::from_secs(30)) {
         drop(toc);
     }
