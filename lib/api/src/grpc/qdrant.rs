@@ -2492,7 +2492,6 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
-#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
@@ -2742,7 +2741,6 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
-#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {
