@@ -86,10 +86,6 @@ fn describe_error(
             Some(value) => format!("value {value} invalid, must not be empty"),
             None => err.to_string(),
         },
-        "no_bracket_syntax" => match params.get("value") {
-            Some(value) => format!("key {value} is invalid, bracket syntax is not supported here"),
-            None => err.to_string(),
-        },
         // Undescribed error codes
         _ => err.to_string(),
     }
