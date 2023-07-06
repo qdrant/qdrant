@@ -312,10 +312,7 @@ impl UpdateHandler {
                     .await;
                 }
 
-                OptimizerSignal::Stop => {
-                    let mut handles = optimization_handles.lock().await;
-                    handles.retain(|h| !h.is_finished())
-                }
+                OptimizerSignal::Stop => break,
             }
         }
     }
