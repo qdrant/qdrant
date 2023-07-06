@@ -68,6 +68,7 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
+        runtime_handle: &Handle,
     ) -> CollectionResult<Option<PointIdType>> {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
@@ -80,6 +81,7 @@ impl ForwardProxyShard {
                 &WithPayloadInterface::Bool(true),
                 &true.into(),
                 None,
+                runtime_handle,
             )
             .await?;
         let next_page_offset = if batch.len() < limit {
@@ -168,10 +170,18 @@ impl ShardOperation for ForwardProxyShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .scroll_by(offset, limit, with_payload_interface, with_vector, filter)
+            .scroll_by(
+                offset,
+                limit,
+                with_payload_interface,
+                with_vector,
+                filter,
+                search_runtime_handle,
+            )
             .await
     }
 
