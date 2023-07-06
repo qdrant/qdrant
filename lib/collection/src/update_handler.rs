@@ -163,7 +163,10 @@ impl UpdateHandler {
 
         let mut opt_handles_guard = self.optimization_handles.lock().await;
         let opt_handles = std::mem::take(&mut *opt_handles_guard);
-        let stopping_handles = opt_handles.into_iter().map(|h| h.stop()).collect_vec();
+        let stopping_handles = opt_handles
+            .into_iter()
+            .filter_map(|h| h.stop())
+            .collect_vec();
 
         for res in stopping_handles {
             res.await?;
@@ -308,7 +311,11 @@ impl UpdateHandler {
                     )
                     .await;
                 }
-                OptimizerSignal::Stop => break, // Stop gracefully
+
+                OptimizerSignal::Stop => {
+                    let mut handles = optimization_handles.lock().await;
+                    handles.retain(|h| !h.is_finished())
+                }
             }
         }
     }
