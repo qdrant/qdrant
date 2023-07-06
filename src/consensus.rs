@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -22,6 +21,7 @@ use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatu
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::watch;
 use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
@@ -59,7 +59,7 @@ pub struct Consensus {
     /// ToDo: Make if many
     config: ConsensusConfig,
     broker: RaftMessageBroker,
-    shutdown_requested: Arc<AtomicBool>,
+    shutdown_flag: watch::Receiver<bool>,
 }
 
 impl Consensus {
@@ -76,6 +76,7 @@ impl Consensus {
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
+        shutdown_flag: watch::Receiver<bool>,
     ) -> anyhow::Result<ConsensusHandles> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
@@ -93,8 +94,8 @@ impl Consensus {
             tls_client_config,
             channel_service,
             runtime.clone(),
+            shutdown_flag.clone(),
         )?;
-        let shutdown_requested = consensus.shutdown_requested.clone();
 
         let state_ref_clone = state_ref.clone();
 
@@ -149,7 +150,7 @@ impl Consensus {
                     server_tls,
                     message_sender,
                     runtime,
-                    shutdown_requested,
+                    shutdown_flag,
                 )
             })
             .unwrap();
@@ -169,6 +170,7 @@ impl Consensus {
         tls_config: Option<ClientTlsConfig>,
         channel_service: ChannelService,
         runtime: Handle,
+        shutdown_flag: watch::Receiver<bool>,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
@@ -240,15 +242,13 @@ impl Consensus {
             channel_service.channel_pool,
         );
 
-        let shutdown_requested = Arc::new(AtomicBool::new(false));
-
         let consensus = Self {
             node,
             receiver,
             runtime,
             config,
             broker,
-            shutdown_requested,
+            shutdown_flag,
         };
 
         Ok((consensus, sender))
@@ -441,10 +441,7 @@ impl Consensus {
         let mut t = Instant::now();
         let mut timeout = Duration::from_millis(self.config.tick_period_ms);
 
-        loop {
-            if self.shutdown_requested.load(Ordering::Acquire) {
-                return Ok(());
-            }
+        while !*self.shutdown_flag.borrow() {
             if !self
                 .try_promote_learner()
                 .map_err(|err| anyhow!("Failed to promote learner: {}", err))?
@@ -475,6 +472,7 @@ impl Consensus {
                 return Ok(());
             }
         }
+        Ok(())
     }
 
     fn try_sync_local_state(&mut self) -> anyhow::Result<()> {
@@ -1035,6 +1033,7 @@ mod tests {
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
     use tempfile::Builder;
+    use tokio::sync::watch;
 
     use super::Consensus;
     use crate::common::helpers::create_general_purpose_runtime;
@@ -1081,6 +1080,7 @@ mod tests {
         .into();
         let dispatcher = Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone());
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
+        let (_, shutdown_rx) = watch::channel(false);
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
             consensus_state.clone(),
@@ -1091,6 +1091,7 @@ mod tests {
             None,
             ChannelService::default(),
             handle.clone(),
+            shutdown_rx,
         )
         .unwrap();
 

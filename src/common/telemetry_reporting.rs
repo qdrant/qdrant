@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use segment::common::anonymize::Anonymize;
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 use crate::common::telemetry::TelemetryCollector;
 
@@ -46,11 +46,17 @@ impl TelemetryReporter {
             .await;
     }
 
-    pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
+    pub async fn run(
+        telemetry: Arc<Mutex<TelemetryCollector>>,
+        mut shutdown_flag: watch::Receiver<bool>,
+    ) {
         let reporter = Self::new(telemetry);
         loop {
             reporter.report().await;
-            tokio::time::sleep(REPORTING_INTERVAL).await;
+            tokio::select! {
+                _ = shutdown_flag.wait_for(|value| *value) => break,
+                _ = tokio::time::sleep(REPORTING_INTERVAL) => continue,
+            }
         }
     }
 }

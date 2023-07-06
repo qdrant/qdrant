@@ -32,6 +32,8 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
+use tokio::signal;
+use tokio::sync::watch;
 
 use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
@@ -241,6 +243,9 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
+    // Watch channel for communicating termination event for all system components
+    let (shutdown_flag_tx, shutdown_flag_rx) = watch::channel(false);
+
     let (telemetry_collector, dispatcher_arc) = if settings.cluster.enabled {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
@@ -277,6 +282,7 @@ fn main() -> anyhow::Result<()> {
             tonic_telemetry_collector,
             toc_arc.clone(),
             runtime_handle.clone(),
+            shutdown_flag_rx.clone(),
         )
         .expect("Can't initialize consensus");
 
@@ -340,7 +346,10 @@ fn main() -> anyhow::Result<()> {
     if reporting_enabled {
         log::info!("Telemetry reporting enabled, id: {}", reporting_id);
 
-        runtime_handle.spawn(TelemetryReporter::run(telemetry_collector.clone()));
+        runtime_handle.spawn(TelemetryReporter::run(
+            telemetry_collector.clone(),
+            shutdown_flag_rx.clone(),
+        ));
     } else {
         log::info!("Telemetry reporting disabled");
     }
@@ -391,6 +400,7 @@ fn main() -> anyhow::Result<()> {
                         settings,
                         grpc_port,
                         runtime_handle,
+                        shutdown_flag_rx.clone(),
                     ),
                 )
             })
@@ -437,6 +447,14 @@ fn main() -> anyhow::Result<()> {
 
     touch_started_file_indicator();
 
+    general_runtime.block_on(async {
+        wait_stop_signal().await;
+        // We should ignore send error here. It will happen if all the system
+        // components are already finished and dropped rx portion of the notification
+        // channel, which is totally fine in this case.
+        let _ = shutdown_flag_tx.send(true);
+    });
+
     for handle in handles.into_iter() {
         log::debug!(
             "Waiting for thread {} to finish",
@@ -470,4 +488,21 @@ fn wait_unwrap<T>(mut input: Arc<T>, duration: Duration) -> Result<T, ()> {
         }
     }
     Err(())
+}
+
+#[cfg(not(unix))]
+async fn wait_stop_signal() {
+    signal::ctrl_c().await.unwrap();
+    log::debug!("Stopping on SIGINT");
+}
+
+#[cfg(unix)]
+async fn wait_stop_signal() {
+    let mut term = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+    let mut intr = signal::unix::signal(signal::unix::SignalKind::interrupt()).unwrap();
+
+    tokio::select! {
+        _ = term.recv() => log::debug!("Stopping on SIGTERM"),
+        _ = intr.recv() => log::debug!("Stopping on SIGINT"),
+    }
 }
