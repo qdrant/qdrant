@@ -39,7 +39,7 @@ impl From<StoredPointId> for ExtendedPointId {
             StoredPointId::NumId(idx) => ExtendedPointId::NumId(idx),
             StoredPointId::Uuid(uuid) => ExtendedPointId::Uuid(uuid),
             StoredPointId::String(str) => {
-                unimplemented!("cannot convert internal string id '{}' to external id", str)
+                unimplemented!("cannot convert internal string id '{str}' to external id")
             }
         }
     }
