@@ -3,7 +3,8 @@ permissions:
   contents: write
 on:
   release:
-    types: [created]
+    # 'published' is triggered when publishing draft release, 'created' is not
+    types: [published]
 
 jobs:
   build-linux-binaries:
