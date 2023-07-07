@@ -4,14 +4,18 @@ use std::sync::{Arc, Weak};
 use tokio::task::JoinHandle;
 
 pub struct StoppableTaskHandle<T> {
-    pub join_handle: JoinHandle<T>,
-    finished: Arc<AtomicBool>,
+    pub join_handle: JoinHandle<Option<T>>,
+    started: Arc<AtomicBool>,
     stopped: Weak<AtomicBool>,
 }
 
 impl<T> StoppableTaskHandle<T> {
+    pub fn is_started(&self) -> bool {
+        self.started.load(Ordering::Relaxed)
+    }
+
     pub fn is_finished(&self) -> bool {
-        self.finished.load(Ordering::Relaxed)
+        self.join_handle.is_finished()
     }
 
     pub fn ask_to_stop(&self) {
@@ -20,20 +24,19 @@ impl<T> StoppableTaskHandle<T> {
         }
     }
 
-    pub fn stop(self) -> JoinHandle<T> {
+    pub fn stop(self) -> Option<JoinHandle<Option<T>>> {
         self.ask_to_stop();
-        self.join_handle
+        self.is_started().then_some(self.join_handle)
     }
 }
 
 pub fn spawn_stoppable<F, T>(f: F) -> StoppableTaskHandle<T>
 where
-    F: FnOnce(&AtomicBool) -> T,
-    F: Send + 'static,
+    F: FnOnce(&AtomicBool) -> T + Send + 'static,
     T: Send + 'static,
 {
-    let finished = Arc::new(AtomicBool::new(false));
-    let finished_c = finished.clone();
+    let started = Arc::new(AtomicBool::new(false));
+    let started_c = started.clone();
 
     let stopped = Arc::new(AtomicBool::new(false));
     // We are OK if original value is destroyed with the thread
@@ -42,14 +45,18 @@ where
 
     StoppableTaskHandle {
         join_handle: tokio::task::spawn_blocking(move || {
-            let res = f(&stopped);
-            // We use `Release` ordering to ensure that `f` won't be moved after the `store`
-            // by the compiler
-            finished.store(true, Ordering::Release);
-            res
+            // TODO: Should we use `Ordering::Acquire` or `Ordering::SeqCst`? 🤔
+            if stopped.load(Ordering::Relaxed) {
+                return None;
+            }
+
+            // TODO: Should we use `Ordering::Release` or `Ordering::SeqCst`? 🤔
+            started.store(true, Ordering::Relaxed);
+
+            Some(f(&stopped))
         }),
+        started: started_c,
         stopped: stopped_w,
-        finished: finished_c,
     }
 }
 
@@ -83,7 +90,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
         assert!(handle.is_finished());
 
-        let res = handle.stop().await.unwrap();
-        assert!(res < 10);
+        if let Some(handle) = handle.stop() {
+            if let Some(res) = handle.await.unwrap() {
+                assert!(res < 10);
+            }
+        }
     }
 }
