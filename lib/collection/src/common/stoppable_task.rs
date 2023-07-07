@@ -26,12 +26,7 @@ impl<T> StoppableTaskHandle<T> {
 
     pub fn stop(self) -> Option<JoinHandle<Option<T>>> {
         self.ask_to_stop();
-
-        if self.is_started() {
-            Some(self.join_handle)
-        } else {
-            None
-        }
+        self.is_started().then_some(self.join_handle)
     }
 }
 
