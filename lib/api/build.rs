@@ -166,8 +166,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendPointGroups.params", ""),
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
         ], &[])
-        .type_attribute("NamedVectors", "#[derive(serde::Serialize)]")
-        .type_attribute("Vector", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
             ("UpsertPointsInternal.upsert_points", ""),
