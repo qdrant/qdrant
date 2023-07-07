@@ -40,6 +40,7 @@ pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
 
     runtime::Builder::new_multi_thread()
         .worker_threads(search_threads)
+        .max_blocking_threads(search_threads)
         .enable_all()
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
