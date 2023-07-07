@@ -452,7 +452,7 @@ impl SegmentEntry for ProxySegment {
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         // iter_points is not available for Proxy implementation
         // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
-        unimplemented!()
+        unimplemented!("call to iter_points is not implemented for Proxy segment")
     }
 
     fn read_filtered<'a>(
