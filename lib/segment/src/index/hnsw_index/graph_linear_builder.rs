@@ -104,6 +104,10 @@ impl<'a> GraphLinearBuilder<'a> {
         builder
     }
 
+    pub fn max_level(&self) -> usize {
+        *self.point_levels.iter().max().unwrap()
+    }
+
     pub fn into_graph_layers<TGraphLinks: GraphLinks>(
         self,
         path: Option<&Path>,
@@ -134,22 +138,11 @@ impl<'a> GraphLinearBuilder<'a> {
 
     pub fn build(&mut self) {
         let mut requests: Vec<Option<GraphLinkRequest>> =
-            (0..self.num_vectors()).map(|_| None).collect();
+            (0..self.num_vectors()).map(|idx| self.get_link_request(idx as PointOffsetType)).collect();
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
             let mut level_requests = vec![];
             for idx in 0..self.num_vectors() as PointOffsetType {
-                let point_level = self.get_point_level(idx);
-                let min_level = std::cmp::min(
-                    point_level,
-                    self.entries[idx as usize]
-                        .as_ref()
-                        .map(|e| e.level)
-                        .unwrap_or(point_level),
-                );
-                if min_level == level {
-                    requests[idx as usize] = self.get_link_request(idx);
-                }
                 if let Some(request) = requests[idx as usize].clone() {
                     if request.level == level {
                         level_requests.push(request);
@@ -376,20 +369,30 @@ impl<'a> GraphLinearBuilder<'a> {
             score: self.score(id, entry_point),
         };
         for level in (target_level + 1..=top_level).rev() {
-            let mut changed = true;
-            while changed {
-                changed = false;
+            current_point = self.search_entry_on_level(id, current_point, level);
+        }
+        current_point
+    }
 
-                for &link in self.get_links(current_point.idx, level) {
-                    let score = self.score(link, id);
-                    if score > current_point.score {
-                        changed = true;
-                        current_point = ScoredPointOffset { idx: link, score };
-                    }
+    fn search_entry_on_level(
+        &self,
+        id: PointOffsetType,
+        mut entry: ScoredPointOffset,
+        level: usize,
+    ) -> ScoredPointOffset {
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for &link in self.get_links(entry.idx, level) {
+                let score = self.score(link, id);
+                if score > entry.score {
+                    changed = true;
+                    entry = ScoredPointOffset { idx: link, score };
                 }
             }
         }
-        current_point
+        entry
     }
 
     fn get_m(&self, level: usize) -> usize {
@@ -557,6 +560,19 @@ mod tests {
             graph_layers_1.link_new_point(idx, scorer);
         }
 
+        let max_level = graph_layers_2.max_level();
+        let mut cnt = 0;
+        for i in 0..num_vectors {
+            let level = graph_layers_2.get_point_level(i as PointOffsetType);
+            if level >= max_level + 10 {
+                cnt += 1;
+                let links_1 = graph_layers_1.links_layers[i][level].read().clone();
+                let links_2 = graph_layers_2.get_links(i as PointOffsetType, level);
+                assert_eq!(links_1.as_slice(), links_2);
+            }
+        }
+        println!("cnt = {}", cnt);
+
         let graph_1 = graph_layers_1
             .into_graph_layers::<GraphLinksRam>(None)
             .unwrap();
@@ -594,6 +610,9 @@ mod tests {
             total_sames_2 += sames_2;
         }
         let min_sames = top as f32 * 0.8 * attempts as f32;
+        println!("total_sames_1 = {}", total_sames_1);
+        println!("total_sames_2 = {}", total_sames_2);
+        println!("min_sames = {}", min_sames);
         assert!(total_sames_1 as f32 > min_sames);
         assert!(total_sames_2 as f32 > min_sames);
     }
