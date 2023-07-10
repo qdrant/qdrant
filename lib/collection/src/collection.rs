@@ -1021,6 +1021,7 @@ impl Collection {
                     &with_vector,
                     request.filter.as_ref(),
                     read_consistency,
+                    &self.search_runtime,
                 )
             });
 
