@@ -3,7 +3,8 @@ permissions:
   contents: write
 on:
   release:
-    types: [created]
+    # 'published' is triggered when publishing draft release, 'created' is not
+    types: [published]
 
 jobs:
   build-linux-binaries:
@@ -38,8 +39,8 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-            brew update
-            brew install gcc llvm cmake protobuf-c
+            brew update-reset
+            brew install gcc cmake protobuf-c
       - uses: actions/checkout@v3
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
