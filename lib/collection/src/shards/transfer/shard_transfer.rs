@@ -239,23 +239,22 @@ pub fn validate_transfer_exists(
 }
 
 /// Confirms that the transfer does not conflict with any other active transfers
+/// Allow only one transfer per node
 ///
 /// returns `None` if there is no conflicts, otherwise returns conflicting transfer
 pub fn check_transfer_conflicts<'a, I>(
     transfer: &ShardTransfer,
-    current_transfers: I,
+    mut current_transfers: I,
 ) -> Option<ShardTransfer>
 where
     I: Iterator<Item = &'a ShardTransfer>,
 {
-    let res = current_transfers
-        .filter(|t| t.shard_id == transfer.shard_id)
-        .find(|t| {
-            t.from == transfer.from
-                || t.to == transfer.from
-                || t.from == transfer.to
-                || t.to == transfer.to
-        });
+    let res = current_transfers.find(|t| {
+        t.from == transfer.from
+            || t.to == transfer.from
+            || t.from == transfer.to
+            || t.to == transfer.to
+    });
     res.cloned()
 }
 
