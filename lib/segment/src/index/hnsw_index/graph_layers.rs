@@ -239,6 +239,13 @@ where
             Ok(mut slf) => {
                 let links = TGraphLinks::load_from_file(links_path)?;
                 slf.links = links;
+                let mut sum = 0;
+                for i in 0..slf.num_points() {
+                    slf.links_map(i as PointOffsetType, 0, |_| {
+                        sum += 1;
+                    });
+                }
+                log::info!("Total avg links: {}", sum as f64 / slf.num_points() as f64);
                 Ok(slf)
             }
             Err(err) => {
