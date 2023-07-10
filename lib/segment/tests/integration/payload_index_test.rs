@@ -1,25 +1,34 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
+use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{
     generate_diverse_nested_payload, generate_diverse_payload, random_filter, random_nested_filter,
     random_vector, FLICKING_KEY, GEO_KEY, INT_KEY, INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY,
     STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
 };
 use segment::index::field_index::PrimaryCondition;
+use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
+use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+use segment::payload_storage::PayloadStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
+use segment::types::PayloadFieldSchema::FieldType;
+use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes, IsEmptyCondition,
-    Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig, VectorDataConfig,
-    VectorStorageType, WithPayload,
+    Payload, PayloadField, PayloadSchemaType, PointOffsetType, Range, SegmentConfig,
+    VectorDataConfig, VectorStorageType, WithPayload,
 };
+use serde_json::json;
 use tempfile::Builder;
 
 use crate::utils::scored_point_ties::ScoredPointTies;
@@ -678,4 +687,63 @@ fn test_struct_payload_index_nested_fields() {
                     assert!((r1.score - r2.score) < 0.0001)
                 });
     }
+}
+
+#[test]
+fn test_update_payload_index_type() {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let mut payload_storage = InMemoryPayloadStorage::default();
+
+    let point_num = 10;
+    let mut points = HashMap::new();
+
+    let mut payloads: Vec<Payload> = vec![];
+    for i in 0..point_num {
+        let payload = json!({
+            "field": i,
+        });
+        payloads.push(payload.into());
+    }
+
+    for (idx, payload) in payloads.into_iter().enumerate() {
+        points.insert(idx, payload.clone());
+        payload_storage
+            .assign(idx as PointOffsetType, &payload)
+            .unwrap();
+    }
+
+    let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
+    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(point_num)));
+
+    let mut index =
+        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path()).unwrap();
+
+    // set field to Integer type
+    index.set_indexed("field", Integer.into()).unwrap();
+    assert_eq!(
+        *index.indexed_fields().get("field").unwrap(),
+        FieldType(Integer)
+    );
+    let field_index = index.field_indexes.get("field").unwrap();
+    assert_eq!(field_index[0].count_indexed_points(), point_num);
+    assert_eq!(field_index[1].count_indexed_points(), point_num);
+
+    // update field to Keyword type
+    index.set_indexed("field", Keyword.into()).unwrap();
+    assert_eq!(
+        *index.indexed_fields().get("field").unwrap(),
+        FieldType(Keyword)
+    );
+    let field_index = index.field_indexes.get("field").unwrap();
+    assert_eq!(field_index[0].count_indexed_points(), 0); // only one field index for Keyword
+
+    // set field to Integer type (again)
+    index.set_indexed("field", Integer.into()).unwrap();
+    assert_eq!(
+        *index.indexed_fields().get("field").unwrap(),
+        FieldType(Integer)
+    );
+    let field_index = index.field_indexes.get("field").unwrap();
+    assert_eq!(field_index[0].count_indexed_points(), point_num);
+    assert_eq!(field_index[1].count_indexed_points(), point_num);
 }
