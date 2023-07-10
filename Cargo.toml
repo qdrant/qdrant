@@ -29,6 +29,7 @@ sealed_test = "1.0.0"
 
 tempfile = "3.6.0"
 rusty-hook = "^0.11.2"
+trycmd = "0.14.16"
 
 
 [dependencies]
