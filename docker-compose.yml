@@ -1,0 +1,20 @@
+version: '3.7'
+
+services:
+  qdrant_bench:
+    image: qdrant:latest
+    network_mode: host
+    environment:
+    - QDRANT__STORAGE__ASYNC_SCORER=true
+    volumes:
+    - /root/qdrant/storage:/qdrant/storage
+    - /root/qdrant/snapshots:/qdrant/snapshots
+    logging:
+      driver: "json-file"
+      options:
+        max-file: 1
+        max-size: 10m
+    deploy:
+      resources:
+        limits:
+          memory: 7Gb
