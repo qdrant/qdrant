@@ -69,6 +69,7 @@ mod tests {
         Args::command().debug_assert();
     }
 
+    // You can use `TRYCMD=overwrite` to update the expected output files.
     #[test]
     fn test_cmd_ui() {
         let t = trycmd::TestCases::new();
