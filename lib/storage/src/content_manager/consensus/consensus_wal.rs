@@ -124,7 +124,7 @@ impl ConsensusOpWal {
 
     /// Difference between raft index and WAL record number.
     /// Difference might be different because of consensus snapshot.
-    fn index_offset(&self) -> Result<Option<u64>, StorageError> {
+    pub fn index_offset(&self) -> Result<Option<u64>, StorageError> {
         let last_known_index = self.0.first_index();
         let first_entry = self.first_entry()?;
         let offset = first_entry.map(|entry| entry.index - last_known_index);
