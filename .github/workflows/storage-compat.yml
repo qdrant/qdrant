@@ -20,7 +20,7 @@ jobs:
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Run storage compatibility test
