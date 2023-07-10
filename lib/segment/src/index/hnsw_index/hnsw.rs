@@ -366,6 +366,9 @@ impl HNSWIndex<GraphLinksMmap> {
 
 impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
     fn rebuild(&mut self, m: usize, ef: usize) -> OperationResult<()> {
+        if self.config.m == m && self.config.ef_construct == ef {
+            return Ok(());
+        }
         self.config.m = m;
         self.config.ef_construct = ef;
         self.save_config()?;
@@ -490,7 +493,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 }
             }
         }
-    }
+    }//8459
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph

@@ -720,7 +720,7 @@ impl SegmentEntry for Segment {
     fn rebuild_hnsw(&mut self, m: usize, ef: usize) -> OperationResult<()> {
         self.segment_config.vector_data.values_mut().for_each(|vector_data_config| {
             match &mut vector_data_config.index {
-                crate::types::Indexes::Plain {  } => todo!(),
+                crate::types::Indexes::Plain {  } => {},
                 crate::types::Indexes::Hnsw(config) => {
                     config.ef_construct = ef;
                     config.m = m;
