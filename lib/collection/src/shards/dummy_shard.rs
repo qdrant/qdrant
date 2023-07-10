@@ -75,6 +75,7 @@ impl ShardOperation for DummyShard {
         _: &WithPayloadInterface,
         _: &WithVector,
         _: Option<&Filter>,
+        _: &Handle,
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()
     }

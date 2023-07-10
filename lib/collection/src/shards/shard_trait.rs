@@ -28,6 +28,7 @@ pub trait ShardOperation {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;

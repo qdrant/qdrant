@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -70,18 +71,31 @@ impl ShardOperation for LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
-        let point_ids = segments
-            .read()
-            .iter()
-            .flat_map(|(_, segment)| {
-                segment
-                    .get()
-                    .read()
-                    .read_filtered(offset, Some(limit), filter)
-            })
+        let read_handles: Vec<_> = {
+            let segments_guard = segments.read();
+            segments_guard
+                .iter()
+                .map(|(_, segment)| {
+                    let segment = segment.clone();
+                    let filter = filter.cloned();
+                    search_runtime_handle.spawn_blocking(move || {
+                        segment
+                            .get()
+                            .read()
+                            .read_filtered(offset, Some(limit), filter.as_ref())
+                    })
+                })
+                .collect()
+        };
+        let all_points = try_join_all(read_handles).await?;
+
+        let point_ids = all_points
+            .into_iter()
+            .flatten()
             .sorted()
             .dedup()
             .take(limit)
