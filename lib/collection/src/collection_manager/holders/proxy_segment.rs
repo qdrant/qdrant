@@ -752,6 +752,10 @@ impl SegmentEntry for ProxySegment {
     fn get_telemetry_data(&self) -> SegmentTelemetry {
         self.wrapped_segment.get().read().get_telemetry_data()
     }
+
+    fn rebuild_hnsw(&mut self, m: usize, ef: usize) -> OperationResult<()> {
+        self.write_segment.get().write().rebuild_hnsw(m, ef)
+    }
 }
 
 #[cfg(test)]

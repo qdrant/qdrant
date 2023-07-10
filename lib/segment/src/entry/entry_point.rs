@@ -377,4 +377,6 @@ pub trait SegmentEntry {
 
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self) -> SegmentTelemetry;
+
+    fn rebuild_hnsw(&mut self, m: usize, ef: usize) -> OperationResult<()>;
 }

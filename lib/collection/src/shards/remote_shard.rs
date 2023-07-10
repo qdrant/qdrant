@@ -590,4 +590,10 @@ impl ShardOperation for RemoteShard {
 
         result.map_err(|e| e.into())
     }
+
+    async fn rebuild_hnsw(&self, m: usize, ef: usize) -> CollectionResult<()> {
+        Err(CollectionError::service_error(
+            "Rebuild HNSW is not supported for remote shards".to_string(),
+        ))
+    }
 }

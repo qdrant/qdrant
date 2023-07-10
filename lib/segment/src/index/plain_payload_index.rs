@@ -224,6 +224,10 @@ impl PlainIndex {
 }
 
 impl VectorIndex for PlainIndex {
+    fn rebuild(&mut self, _m: usize, _ef: usize) -> OperationResult<()> {
+        Ok(())
+    }
+
     fn search(
         &self,
         vectors: &[&[VectorElementType]],

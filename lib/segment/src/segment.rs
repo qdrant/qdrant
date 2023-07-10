@@ -717,6 +717,26 @@ impl Segment {
 /// This is a basic implementation of `SegmentEntry`,
 /// meaning that it implements the _actual_ operations with data and not any kind of proxy or wrapping
 impl SegmentEntry for Segment {
+    fn rebuild_hnsw(&mut self, m: usize, ef: usize) -> OperationResult<()> {
+        self.segment_config.vector_data.values_mut().for_each(|vector_data_config| {
+            match &mut vector_data_config.index {
+                crate::types::Indexes::Plain {  } => todo!(),
+                crate::types::Indexes::Hnsw(config) => {
+                    config.ef_construct = ef;
+                    config.m = m;
+                },
+            }
+        });
+        self.save_current_state()?;
+        for vector_data in self.vector_data.values_mut() {
+            vector_data
+                .vector_index
+                .borrow_mut()
+                .rebuild(m, ef)?
+        }
+        Ok(())
+    }
+
     fn version(&self) -> SeqNumberType {
         self.version.unwrap_or(0)
     }

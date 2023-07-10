@@ -109,7 +109,7 @@ impl From<ProxySegment> for LockedSegment {
 
 #[derive(Default)]
 pub struct SegmentHolder {
-    segments: HashMap<SegmentId, LockedSegment>,
+    pub segments: HashMap<SegmentId, LockedSegment>,
     /// Seq number of the first un-recovered operation.
     /// If there are no failed operation - None
     pub failed_operation: BTreeSet<SeqNumberType>,

@@ -1511,6 +1511,18 @@ impl ShardReplicaSet {
         .await
     }
 
+    pub async fn rebuild_hnsw(&self, m: usize, ef: usize) -> CollectionResult<()> {
+        let local = self.local.read().await;
+        if let Some(local) = &*local {
+            local.get().rebuild_hnsw(m, ef).await
+        } else {
+            Err(CollectionError::service_error(format!(
+                "Cannot rebuild hnsw index for shard {} because it is not active",
+                self.shard_id
+            )))
+        }
+    }
+
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;

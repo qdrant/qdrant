@@ -105,6 +105,24 @@ async fn update_collection(
     process_response(response, timing)
 }
 
+#[derive(Debug, Deserialize, Validate)]
+pub struct RebuildHnsw {
+    pub m: usize,
+    pub ef: usize,
+}
+
+#[patch("/collections/{name}/rebuild_hnsw")]
+async fn rebuild_hnsw_collection(
+    toc: web::Data<TableOfContent>,
+    collection: Path<CollectionPath>,
+    request: Json<RebuildHnsw>,
+) -> impl Responder {
+    let timing = Instant::now();
+    let name = collection.name.clone();
+    let response = do_rebuild_hnsw(toc.get_ref(), &name, request.m, request.ef).await;
+    process_response(response, timing)
+}
+
 #[delete("/collections/{name}")]
 async fn delete_collection(
     dispatcher: web::Data<Dispatcher>,
@@ -176,6 +194,7 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_collection)
         .service(create_collection)
         .service(update_collection)
+        .service(rebuild_hnsw_collection)
         .service(delete_collection)
         .service(get_aliases)
         .service(get_collection_aliases)

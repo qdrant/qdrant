@@ -21,6 +21,16 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 
+pub async fn do_rebuild_hnsw(
+    toc: &TableOfContent,
+    name: &str,
+    m: usize,
+    ef: usize,
+) -> Result<(), StorageError> {
+    let collection = toc.get_collection(name).await?;
+    Ok(collection.rebuild_hnsw(m, ef).await?)
+}
+
 pub async fn do_get_collection(
     toc: &TableOfContent,
     name: &str,

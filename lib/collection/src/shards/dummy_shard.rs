@@ -100,4 +100,8 @@ impl ShardOperation for DummyShard {
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()
     }
+
+    async fn rebuild_hnsw(&self, _m: usize, _ef: usize) -> CollectionResult<()> {
+        self.dummy()
+    }
 }

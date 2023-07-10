@@ -12,6 +12,8 @@ use crate::vector_storage::ScoredPointOffset;
 
 /// Trait for vector searching
 pub trait VectorIndex {
+    fn rebuild(&mut self, m: usize, ef: usize) -> OperationResult<()>;
+
     /// Return list of Ids with fitting
     fn search(
         &self,
@@ -52,6 +54,14 @@ impl VectorIndexEnum {
 }
 
 impl VectorIndex for VectorIndexEnum {
+    fn rebuild(&mut self, m: usize, ef: usize) -> OperationResult<()> {
+        match self {
+            VectorIndexEnum::Plain(_) => Ok(()),
+            VectorIndexEnum::HnswRam(index) => index.rebuild(m, ef),
+            VectorIndexEnum::HnswMmap(index) => index.rebuild(m, ef),
+        }
+    }
+
     fn search(
         &self,
         vectors: &[&[VectorElementType]],

@@ -215,4 +215,10 @@ impl ShardOperation for ForwardProxyShard {
             .retrieve(request, with_payload, with_vector)
             .await
     }
+
+    async fn rebuild_hnsw(&self, _m: usize, _ef: usize) -> CollectionResult<()> {
+        Err(CollectionError::service_error(
+            "Rebuild HNSW is not supported for forward proxy shards".to_string(),
+        ))
+    }
 }

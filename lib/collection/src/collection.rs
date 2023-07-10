@@ -173,6 +173,15 @@ impl Collection {
         })
     }
 
+    pub async fn rebuild_hnsw(&self, m: usize, ef: usize) -> CollectionResult<()> {
+        let shard_holder = self.shards_holder.read().await;
+        let target_shards = shard_holder.target_shard(None)?;
+        for shard in target_shards {
+            shard.rebuild_hnsw(m, ef).await?;
+        }
+        Ok(())
+    }
+
     /// Check if stored version have consequent version.
     /// If major version is different, then it is not compatible.
     /// If the difference in consecutive versions is greater than 1 in patch,

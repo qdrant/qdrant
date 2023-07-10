@@ -39,7 +39,7 @@ use crate::types::{
 };
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
-const HNSW_USE_HEURISTIC: bool = true;
+const HNSW_USE_HEURISTIC: bool = false;
 const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
@@ -365,6 +365,14 @@ impl HNSWIndex<GraphLinksMmap> {
 }
 
 impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
+    fn rebuild(&mut self, m: usize, ef: usize) -> OperationResult<()> {
+        self.config.m = m;
+        self.config.ef_construct = ef;
+        self.save_config()?;
+        let stopped = Arc::new(AtomicBool::new(false));
+        self.build_index(&stopped)
+    }
+
     fn search(
         &self,
         vectors: &[&[VectorElementType]],
@@ -525,6 +533,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             let ids: Vec<_> = id_tracker.iter_ids_excluding(deleted_bitslice).collect();
 
             indexed_vectors = ids.len();
+            let timer = std::time::Instant::now();
 
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
@@ -551,7 +560,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 })
             })?;
 
-            debug!("finish main graph");
+            debug!("finish main graph in time {:?}", timer.elapsed());
         } else {
             debug!("skip building main HNSW graph");
         }

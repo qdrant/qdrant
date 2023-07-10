@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -176,5 +177,19 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
         SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)
+    }
+
+    async fn rebuild_hnsw(&self, m: usize, ef: usize) -> CollectionResult<()> {
+        let segments_lock = self.segments().read();
+        for segment in segments_lock.segments.values() {
+            match segment {
+                crate::collection_manager::holders::segment_holder::LockedSegment::Original(segment) => {
+                    let mut segment = segment.write();
+                    segment.rebuild_hnsw(m, ef)?;
+                },
+                _  => return Err(crate::operations::types::CollectionError::service_error("Cannot rebuild HNSW for a segment that is not original".to_string())),
+            }
+        }
+        Ok(())
     }
 }

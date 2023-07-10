@@ -47,6 +47,8 @@ pub trait ShardOperation {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;
+
+    async fn rebuild_hnsw(&self, m: usize, ef: usize) -> CollectionResult<()>;
 }
 
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;
