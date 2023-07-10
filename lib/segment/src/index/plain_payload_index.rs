@@ -87,14 +87,17 @@ impl PayloadIndex for PlainPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<()> {
-        if self
+        if let Some(prev_schema) = self
             .config
             .indexed_fields
-            .insert(field.to_owned(), payload_schema)
-            .is_none()
+            .insert(field.to_owned(), payload_schema.clone())
         {
-            return self.save_config();
+            // the field is already present with the same schema, no need to save the config
+            if prev_schema == payload_schema {
+                return Ok(());
+            }
         }
+        self.save_config()?;
 
         Ok(())
     }
