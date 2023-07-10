@@ -15,11 +15,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
     - name: Install minimal stable
-      uses: dtolnay/rust-toolchain@stable 
+      uses: dtolnay/rust-toolchain@stable
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
     - name: Install Protoc

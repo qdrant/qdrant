@@ -48,7 +48,7 @@ jobs:
           bin: qdrant
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          
+
   build-windows-binaries:
     strategy:
       matrix:
@@ -64,10 +64,10 @@ jobs:
         uses: arduino/setup-protoc@v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Build
         run: cargo build --release --locked
-        
+
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
         with:
