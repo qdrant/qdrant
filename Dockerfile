@@ -88,9 +88,6 @@ RUN PATH="$PATH:/opt/mold/bin" \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
-# to skip the compilation for testing
-# RUN mkdir /qdrant/qdrant
-
 
 # Download and extract web UI
 RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
