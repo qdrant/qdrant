@@ -216,7 +216,7 @@ impl MmapVectors {
     }
 
     /// Reads vectors for the given ids and calls the callback for each vector.
-    /// Tries to utilize asyncronous IO if possible.
+    /// Tries to utilize asynchronous IO if possible.
     /// In particular, uses io_uring on Linux and simple synchronous IO otherwise.
     pub fn read_vectors_async(
         &self,

@@ -174,7 +174,7 @@ pub fn init_internal(
             let mut server = Server::builder()
                 // Internally use a high limit for pending accept streams.
                 // We can have a huge number of reset/dropped HTTP2 streams in our internal
-                // communcation when there are a lot of clients dropping connections. This
+                // communication when there are a lot of clients dropping connections. This
                 // internally causes an GOAWAY/ENHANCE_YOUR_CALM error breaking cluster consensus.
                 // We prefer to keep more pending reset streams even though this may be expensive,
                 // versus an internal error that is very hard to handle.

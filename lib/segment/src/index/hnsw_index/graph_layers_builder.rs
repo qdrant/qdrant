@@ -23,7 +23,7 @@ pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 
 /// Same as `GraphLayers`,  but allows to build in parallel
-/// Convertable to `GraphLayers`
+/// Convertible to `GraphLayers`
 pub struct GraphLayersBuilder {
     max_level: AtomicUsize,
     m: usize,

@@ -427,7 +427,7 @@ impl LocalShard {
         // `SerdeWal::read_all` starts reading WAL from the first "un-truncated" index,
         // so no additional handling required to "skip" any potentially applied entries.
         //
-        // Note, that it's not guaranted that some operation won't be re-applied to the storage.
+        // Note, that it's not guaranteed that some operation won't be re-applied to the storage.
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
