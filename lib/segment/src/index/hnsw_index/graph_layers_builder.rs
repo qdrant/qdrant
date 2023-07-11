@@ -28,6 +28,7 @@ pub enum HeuristicMode {
     Default,
     Nearest,
     Combined,
+    DefaultAndNearest,
 }
 
 /// Same as `GraphLayers`,  but allows to build in parallel
@@ -258,6 +259,40 @@ impl GraphLayersBuilder {
             links.pop();
             links.insert(id_to_insert, new_point_id);
         }
+    }
+
+    fn select_candidate_with_heuristic_nearest<F>(
+        mut candidates: Vec<ScoredPointOffset>,
+        mut m: usize,
+        mut score_internal: F,
+    ) -> Vec<PointOffsetType>
+    where
+        F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
+    {
+        if candidates.len() <= m {
+            return candidates.iter().map(|x| x.idx).collect();
+        }
+
+        let mut result: Vec<ScoredPointOffset> = vec![];
+        let selected = Self::select_candidate_with_heuristic_from_sorted(
+            candidates.iter().copied(),
+            m,
+            |a, b| score_internal(a, b),
+        );
+        m -= selected.len();
+        // add selected to result
+        for &idx in &selected {
+            result.push(candidates.remove(
+                candidates
+                    .iter()
+                    .position(|x| x.idx == idx)
+                    .expect("selected point not found"),
+            ));
+        }
+        result.extend_from_slice(&candidates[0..m]);
+        result.sort();
+        result.reverse();
+        result.iter().map(|x| x.idx).collect()
     }
 
     fn select_candidate_with_heuristic_combined<F>(
@@ -502,6 +537,49 @@ impl GraphLayersBuilder {
                                     }
                                     let selected_candidates =
                                         Self::select_candidate_with_heuristic_combined(
+                                            candidates.into_sorted_vec(),
+                                            level_m,
+                                            scorer,
+                                        );
+                                    other_point_links.clear(); // this do not free memory, which is good
+                                    for selected in selected_candidates.iter().copied() {
+                                        other_point_links.push(selected);
+                                    }
+                                }
+                            }
+                        }
+                        HeuristicMode::DefaultAndNearest => {
+                            let selected_nearest = Self::select_candidate_with_heuristic_nearest(
+                                nearest_points.into_iter().collect_vec(),
+                                level_m,
+                                scorer,
+                            );
+                            self.links_layers[point_id as usize][curr_level]
+                                .write()
+                                .clone_from(&selected_nearest);
+
+                            for &other_point in &selected_nearest {
+                                let mut other_point_links =
+                                    self.links_layers[other_point as usize][curr_level].write();
+                                if other_point_links.len() < level_m {
+                                    // If linked point is lack of neighbours
+                                    other_point_links.push(point_id);
+                                } else {
+                                    let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                                    candidates.push(ScoredPointOffset {
+                                        idx: point_id,
+                                        score: scorer(point_id, other_point),
+                                    });
+                                    for other_point_link in
+                                        other_point_links.iter().take(level_m).copied()
+                                    {
+                                        candidates.push(ScoredPointOffset {
+                                            idx: other_point_link,
+                                            score: scorer(other_point_link, other_point),
+                                        });
+                                    }
+                                    let selected_candidates =
+                                        Self::select_candidate_with_heuristic_nearest(
                                             candidates.into_sorted_vec(),
                                             level_m,
                                             scorer,

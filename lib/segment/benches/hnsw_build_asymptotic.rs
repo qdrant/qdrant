@@ -7,7 +7,7 @@ use rand::{thread_rng, Rng};
 use segment::data_types::vectors::VectorElementType;
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
-use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use segment::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, HeuristicMode};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
@@ -20,7 +20,7 @@ const M: usize = 16;
 const TOP: usize = 10;
 const EF_CONSTRUCT: usize = 64;
 const EF: usize = 64;
-const USE_HEURISTIC: bool = true;
+const USE_HEURISTIC: HeuristicMode = HeuristicMode::Default;
 
 fn build_index<TMetric: Metric>(
     num_vectors: usize,

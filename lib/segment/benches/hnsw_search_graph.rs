@@ -5,7 +5,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::{thread_rng, SeedableRng};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
-use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use segment::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, HeuristicMode};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
@@ -17,7 +17,7 @@ const M: usize = 16;
 const TOP: usize = 10;
 const EF_CONSTRUCT: usize = 100;
 const EF: usize = 100;
-const USE_HEURISTIC: bool = true;
+const USE_HEURISTIC: HeuristicMode = HeuristicMode::Default;
 
 fn hnsw_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
