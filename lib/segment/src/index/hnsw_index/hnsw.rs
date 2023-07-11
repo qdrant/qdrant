@@ -40,7 +40,7 @@ use crate::types::{
 };
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
-const HNSW_HEURISTIC_MODE: HeuristicMode = HeuristicMode::Nearest;
+const HNSW_HEURISTIC_MODE: HeuristicMode = HeuristicMode::Combined;
 const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
@@ -374,9 +374,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         self.config.m = m;
         self.config.ef_construct = ef;
         self.config.ef = ef;
-        self.save_config()?;
+
         let stopped = Arc::new(AtomicBool::new(false));
-        self.build_index(&stopped)
+        self.build_index(&stopped)?;
+
+        self.save_config()?;
+        Ok(())
     }
 
     fn search(

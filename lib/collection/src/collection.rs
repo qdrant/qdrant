@@ -186,6 +186,8 @@ impl Collection {
         for shard in target_shards {
             shard.rebuild_hnsw(m, ef).await?;
         }
+
+        self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
 
