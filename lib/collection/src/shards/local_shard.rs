@@ -246,7 +246,7 @@ impl LocalShard {
         // Simple heuristic to exclude mmap prefaulting for colletions that won't benefit from it.
         //
         // We assume that mmap prefaulting is beneficial if we can put significant part of data
-        // into RAM in advance. However, if we can see tha the data is too big to fit into RAM,
+        // into RAM in advance. However, if we can see that the data is too big to fit into RAM,
         // it is better to avoid prefaulting, because it will only cause extra disk IO.
         //
         // This heuristic is not perfect, but it exclude cases when we don't have enough RAM
