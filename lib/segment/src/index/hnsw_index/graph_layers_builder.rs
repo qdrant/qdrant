@@ -282,12 +282,14 @@ impl GraphLayersBuilder {
         m -= selected.len();
         // add selected to result
         for &idx in &selected {
-            result.push(candidates.remove(
-                candidates
-                    .iter()
-                    .position(|x| x.idx == idx)
-                    .expect("selected point not found"),
-            ));
+            result.push(
+                candidates.remove(
+                    candidates
+                        .iter()
+                        .position(|x| x.idx == idx)
+                        .expect("selected point not found"),
+                ),
+            );
         }
         result.extend_from_slice(&candidates[0..m]);
         result.sort();
@@ -317,12 +319,14 @@ impl GraphLayersBuilder {
             m -= selected.len();
             // add selected to result
             for &idx in &selected {
-                result.push(candidates.remove(
-                    candidates
-                        .iter()
-                        .position(|x| x.idx == idx)
-                        .expect("selected point not found"),
-                ));
+                result.push(
+                    candidates.remove(
+                        candidates
+                            .iter()
+                            .position(|x| x.idx == idx)
+                            .expect("selected point not found"),
+                    ),
+                );
             }
         }
         result.sort();

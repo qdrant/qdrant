@@ -175,7 +175,11 @@ impl Collection {
 
     pub async fn rebuild_hnsw(&self, m: usize, ef: usize) -> CollectionResult<()> {
         self.collection_config.write().await.hnsw_config.m = m;
-        self.collection_config.write().await.hnsw_config.ef_construct = ef;
+        self.collection_config
+            .write()
+            .await
+            .hnsw_config
+            .ef_construct = ef;
 
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.target_shard(None)?;
