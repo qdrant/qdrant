@@ -9,7 +9,6 @@ import socket
 from contextlib import closing
 from pathlib import Path
 import pytest
-from .assertions import assert_http_ok
 
 # Tracks processes that need to be killed at the end of the test
 processes = []
@@ -453,3 +452,13 @@ def wait_collection_exists_and_active_on_all_peers(collection_name: str, peer_ap
     for peer_uri in peer_api_uris:
         # Collection is active on all peers
         wait_for_all_replicas_active(collection_name=collection_name, peer_api_uri=peer_uri)
+
+
+def assert_http_ok(response: requests.Response):
+    if response.status_code != 200:
+        base_msg = f"HTTP request to {response.url} failed with status code {response.status_code} after {response.elapsed.total_seconds()}s"
+        if not response.content:
+            raise Exception(f"{base_msg} and without response body")
+        else:
+            raise Exception(
+                f"{base_msg} with response body:\n{response.json()}")

@@ -2,6 +2,7 @@ import argparse
 import requests
 import time
 
+from utils import wait_for_collection_shard_transfers_count
 from assertions import assert_http_ok
 
 parser = argparse.ArgumentParser("Move all shards to first node and detach the last one")
@@ -50,13 +51,17 @@ to_peer = collection_cluster_status["result"]["remote_shards"][0]["peer_id"]
 
 for local_shards in collection_cluster_status["result"]["local_shards"]:
     shard_id = local_shards["shard_id"]
-    r = requests.post(f"http://127.0.0.1:{args.ports[0]}/collections/{args.collection_name}/cluster?timeout=60", json={
+    # do not create more than one shard transfer at a time
+    peer_uri = f"http://127.0.0.1:{args.ports[0]}"
+    wait_for_collection_shard_transfers_count(peer_uri, args.collection_name, 0)
+    r = requests.post(f"{peer_uri}/collections/{args.collection_name}/cluster?timeout=60", json={
         "move_shard": {
             "from_peer_id": from_peer,
             "shard_id": shard_id,
             "to_peer_id": to_peer
         }
     })
+    assert_http_ok(r)
 
 max_wait = 60
 
