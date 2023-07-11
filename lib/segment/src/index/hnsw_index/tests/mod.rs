@@ -4,6 +4,7 @@ use std::path::Path;
 
 use rand::Rng;
 
+use super::graph_layers_builder::HeuristicMode;
 use super::graph_links::GraphLinksRam;
 use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -33,7 +34,11 @@ where
         m * 2,
         ef_construct,
         entry_points_num,
-        use_heuristic,
+        if use_heuristic {
+            HeuristicMode::Default
+        } else {
+            HeuristicMode::Nearest
+        },
     );
 
     for idx in 0..(num_vectors as PointOffsetType) {

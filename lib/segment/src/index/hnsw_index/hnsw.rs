@@ -10,6 +10,7 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
+use super::graph_layers_builder::HeuristicMode;
 use super::graph_links::{GraphLinks, GraphLinksMmap};
 use crate::common::mmap_ops;
 use crate::common::operation_time_statistics::{
@@ -39,7 +40,7 @@ use crate::types::{
 };
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
-const HNSW_USE_HEURISTIC: bool = false;
+const HNSW_HEURISTIC_MODE: HeuristicMode = HeuristicMode::Combined;
 const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
@@ -493,7 +494,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 }
             }
         }
-    }//8459
+    }
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
@@ -516,7 +517,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 .unwrap_or(0)
                 * 10)
                 .max(1),
-            HNSW_USE_HEURISTIC,
+            HNSW_HEURISTIC_MODE,
         );
 
         let pool = rayon::ThreadPoolBuilder::new()
@@ -602,7 +603,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         self.config.payload_m0.unwrap_or(self.config.m0),
                         self.config.ef_construct,
                         1,
-                        HNSW_USE_HEURISTIC,
+                        HNSW_HEURISTIC_MODE,
                         false,
                     );
                     self.build_filtered_graph(

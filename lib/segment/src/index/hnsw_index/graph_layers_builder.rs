@@ -3,6 +3,7 @@ use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
+use itertools::Itertools;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -22,6 +23,13 @@ use crate::vector_storage::ScoredPointOffset;
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HeuristicMode {
+    Default,
+    Nearest,
+    Combined,
+}
+
 /// Same as `GraphLayers`,  but allows to build in parallel
 /// Convertable to `GraphLayers`
 pub struct GraphLayersBuilder {
@@ -32,7 +40,7 @@ pub struct GraphLayersBuilder {
     // Factor of level probability
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
-    use_heuristic: bool,
+    use_heuristic: HeuristicMode,
     links_layers: Vec<LockedLayersContainer>,
     entry_points: Mutex<EntryPoints>,
 
@@ -105,7 +113,7 @@ impl GraphLayersBuilder {
         m0: usize,          // Expected M for first layer
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
-        use_heuristic: bool,
+        use_heuristic: HeuristicMode,
         reserve: bool,
     ) -> Self {
         let mut links_layers: Vec<LockedLayersContainer> = vec![];
@@ -137,7 +145,7 @@ impl GraphLayersBuilder {
         m0: usize,          // Expected M for first layer
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
-        use_heuristic: bool,
+        use_heuristic: HeuristicMode,
     ) -> Self {
         Self::new_with_params(
             num_vectors,
@@ -250,6 +258,41 @@ impl GraphLayersBuilder {
             links.pop();
             links.insert(id_to_insert, new_point_id);
         }
+    }
+
+    fn select_candidate_with_heuristic_combined<F>(
+        mut candidates: Vec<ScoredPointOffset>,
+        mut m: usize,
+        mut score_internal: F,
+    ) -> Vec<PointOffsetType>
+    where
+        F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
+    {
+        if candidates.len() <= m {
+            return candidates.iter().map(|x| x.idx).collect();
+        }
+
+        let mut result: Vec<ScoredPointOffset> = vec![];
+        while m > 0 {
+            let selected = Self::select_candidate_with_heuristic_from_sorted(
+                candidates.iter().copied(),
+                m,
+                |a, b| score_internal(a, b),
+            );
+            m -= selected.len();
+            // add selected to result
+            for &idx in &selected {
+                result.push(candidates.remove(
+                    candidates
+                        .iter()
+                        .position(|x| x.idx == idx)
+                        .expect("selected point not found"),
+                ));
+            }
+        }
+        result.sort();
+        result.reverse();
+        result.iter().map(|x| x.idx).collect()
     }
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
@@ -383,70 +426,119 @@ impl GraphLayersBuilder {
 
                     let scorer = |a, b| points_scorer.score_internal(a, b);
 
-                    if self.use_heuristic {
-                        let selected_nearest =
-                            Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
-                        self.links_layers[point_id as usize][curr_level]
-                            .write()
-                            .clone_from(&selected_nearest);
+                    match self.use_heuristic {
+                        HeuristicMode::Default => {
+                            let selected_nearest = Self::select_candidates_with_heuristic(
+                                nearest_points,
+                                level_m,
+                                scorer,
+                            );
+                            self.links_layers[point_id as usize][curr_level]
+                                .write()
+                                .clone_from(&selected_nearest);
 
-                        for &other_point in &selected_nearest {
-                            let mut other_point_links =
-                                self.links_layers[other_point as usize][curr_level].write();
-                            if other_point_links.len() < level_m {
-                                // If linked point is lack of neighbours
-                                other_point_links.push(point_id);
-                            } else {
-                                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
-                                candidates.push(ScoredPointOffset {
-                                    idx: point_id,
-                                    score: scorer(point_id, other_point),
-                                });
-                                for other_point_link in
-                                    other_point_links.iter().take(level_m).copied()
-                                {
+                            for &other_point in &selected_nearest {
+                                let mut other_point_links =
+                                    self.links_layers[other_point as usize][curr_level].write();
+                                if other_point_links.len() < level_m {
+                                    // If linked point is lack of neighbours
+                                    other_point_links.push(point_id);
+                                } else {
+                                    let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                     candidates.push(ScoredPointOffset {
-                                        idx: other_point_link,
-                                        score: scorer(other_point_link, other_point),
+                                        idx: point_id,
+                                        score: scorer(point_id, other_point),
                                     });
-                                }
-                                let selected_candidates =
-                                    Self::select_candidate_with_heuristic_from_sorted(
-                                        candidates.into_sorted_vec().into_iter().rev(),
-                                        level_m,
-                                        scorer,
-                                    );
-                                other_point_links.clear(); // this do not free memory, which is good
-                                for selected in selected_candidates.iter().copied() {
-                                    other_point_links.push(selected);
+                                    for other_point_link in
+                                        other_point_links.iter().take(level_m).copied()
+                                    {
+                                        candidates.push(ScoredPointOffset {
+                                            idx: other_point_link,
+                                            score: scorer(other_point_link, other_point),
+                                        });
+                                    }
+                                    let selected_candidates =
+                                        Self::select_candidate_with_heuristic_from_sorted(
+                                            candidates.into_sorted_vec().into_iter().rev(),
+                                            level_m,
+                                            scorer,
+                                        );
+                                    other_point_links.clear(); // this do not free memory, which is good
+                                    for selected in selected_candidates.iter().copied() {
+                                        other_point_links.push(selected);
+                                    }
                                 }
                             }
                         }
-                    } else {
-                        for nearest_point in &nearest_points {
-                            {
-                                let mut links =
-                                    self.links_layers[point_id as usize][curr_level].write();
-                                Self::connect_new_point(
-                                    &mut links,
-                                    nearest_point.idx,
-                                    point_id,
-                                    level_m,
-                                    scorer,
-                                );
-                            }
+                        HeuristicMode::Combined => {
+                            let selected_nearest = Self::select_candidate_with_heuristic_combined(
+                                nearest_points.into_iter().collect_vec(),
+                                level_m,
+                                scorer,
+                            );
+                            self.links_layers[point_id as usize][curr_level]
+                                .write()
+                                .clone_from(&selected_nearest);
 
-                            {
-                                let mut links = self.links_layers[nearest_point.idx as usize]
-                                    [curr_level]
-                                    .write();
-                                Self::connect_new_point(
-                                    &mut links,
-                                    point_id,
-                                    nearest_point.idx,
-                                    level_m,
-                                    scorer,
-                                );
+                            for &other_point in &selected_nearest {
+                                let mut other_point_links =
+                                    self.links_layers[other_point as usize][curr_level].write();
+                                if other_point_links.len() < level_m {
+                                    // If linked point is lack of neighbours
+                                    other_point_links.push(point_id);
+                                } else {
+                                    let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                                    candidates.push(ScoredPointOffset {
+                                        idx: point_id,
+                                        score: scorer(point_id, other_point),
+                                    });
+                                    for other_point_link in
+                                        other_point_links.iter().take(level_m).copied()
+                                    {
+                                        candidates.push(ScoredPointOffset {
+                                            idx: other_point_link,
+                                            score: scorer(other_point_link, other_point),
+                                        });
+                                    }
+                                    let selected_candidates =
+                                        Self::select_candidate_with_heuristic_combined(
+                                            candidates.into_sorted_vec(),
+                                            level_m,
+                                            scorer,
+                                        );
+                                    other_point_links.clear(); // this do not free memory, which is good
+                                    for selected in selected_candidates.iter().copied() {
+                                        other_point_links.push(selected);
+                                    }
+                                }
+                            }
+                        }
+                        HeuristicMode::Nearest => {
+                            for nearest_point in &nearest_points {
+                                {
+                                    let mut links =
+                                        self.links_layers[point_id as usize][curr_level].write();
+                                    Self::connect_new_point(
+                                        &mut links,
+                                        nearest_point.idx,
+                                        point_id,
+                                        level_m,
+                                        scorer,
+                                    );
+                                }
+
+                                {
+                                    let mut links = self.links_layers[nearest_point.idx as usize]
+                                        [curr_level]
+                                        .write();
+                                    Self::connect_new_point(
+                                        &mut links,
+                                        point_id,
+                                        nearest_point.idx,
+                                        level_m,
+                                        scorer,
+                                    );
+                                }
                             }
                         }
                     }
@@ -479,7 +571,7 @@ mod tests {
     fn parallel_graph_build<TMetric: Metric + Sync + Send, R>(
         num_vectors: usize,
         dim: usize,
-        use_heuristic: bool,
+        heuristic_mode: HeuristicMode,
         rng: &mut R,
     ) -> (TestRawScorerProducer<TMetric>, GraphLayersBuilder)
     where
@@ -503,7 +595,7 @@ mod tests {
             m * 2,
             ef_construct,
             entry_points_num,
-            use_heuristic,
+            heuristic_mode,
         );
 
         for idx in 0..(num_vectors as PointOffsetType) {
@@ -529,7 +621,7 @@ mod tests {
     fn create_graph_layer<TMetric: Metric, R>(
         num_vectors: usize,
         dim: usize,
-        use_heuristic: bool,
+        heuristic_mode: HeuristicMode,
         rng: &mut R,
     ) -> (TestRawScorerProducer<TMetric>, GraphLayersBuilder)
     where
@@ -547,7 +639,7 @@ mod tests {
             m * 2,
             ef_construct,
             entry_points_num,
-            use_heuristic,
+            heuristic_mode,
         );
 
         for idx in 0..(num_vectors as PointOffsetType) {
@@ -579,7 +671,7 @@ mod tests {
         //     create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
 
         let (vector_holder, graph_layers_builder) =
-            parallel_graph_build::<M, _>(num_vectors, dim, false, &mut rng);
+            parallel_graph_build::<M, _>(num_vectors, dim, HeuristicMode::Nearest, &mut rng);
 
         let main_entry = graph_layers_builder
             .entry_points
@@ -646,7 +738,7 @@ mod tests {
         type M = CosineMetric;
 
         let (vector_holder, graph_layers_builder) =
-            create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
+            create_graph_layer::<M, _>(num_vectors, dim, HeuristicMode::Nearest, &mut rng);
 
         let (_vector_holder_orig, graph_layers_orig) =
             create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng2, None);
@@ -725,13 +817,13 @@ mod tests {
         const DIM: usize = 16;
         const M: usize = 16;
         const EF_CONSTRUCT: usize = 64;
-        const USE_HEURISTIC: bool = true;
+        const HEURISTIC_MODE: HeuristicMode = HeuristicMode::Default;
 
         let mut rng = StdRng::seed_from_u64(42);
 
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
         let mut graph_layers_builder =
-            GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+            GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, HEURISTIC_MODE);
         let fake_filter_context = FakeFilterContext {};
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let added_vector = vector_holder.vectors.get(idx).to_vec();
@@ -852,7 +944,8 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let graph_layers_builder = GraphLayersBuilder::new(num_points, m, m, ef_construct, 1, true);
+        let graph_layers_builder =
+            GraphLayersBuilder::new(num_points, m, m, ef_construct, 1, HeuristicMode::Default);
         insert_ids.shuffle(&mut rng);
         for &id in &insert_ids {
             let level_m = graph_layers_builder.get_m(0);

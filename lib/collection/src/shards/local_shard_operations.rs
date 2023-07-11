@@ -183,11 +183,17 @@ impl ShardOperation for LocalShard {
         let segments_lock = self.segments().read();
         for segment in segments_lock.segments.values() {
             match segment {
-                crate::collection_manager::holders::segment_holder::LockedSegment::Original(segment) => {
+                crate::collection_manager::holders::segment_holder::LockedSegment::Original(
+                    segment,
+                ) => {
                     let mut segment = segment.write();
                     segment.rebuild_hnsw(m, ef)?;
-                },
-                _  => return Err(crate::operations::types::CollectionError::service_error("Cannot rebuild HNSW for a segment that is not original".to_string())),
+                }
+                _ => {
+                    return Err(crate::operations::types::CollectionError::service_error(
+                        "Cannot rebuild HNSW for a segment that is not original".to_string(),
+                    ))
+                }
             }
         }
         Ok(())
