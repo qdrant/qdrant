@@ -28,15 +28,22 @@ pub enum LockedSegment {
     Proxy(Arc<RwLock<ProxySegment>>),
 }
 
-fn try_unwrap_with_timeout<T>(arc: Arc<T>, spin: Duration, timeout: Duration) -> Result<T, Arc<T>> {
+fn try_unwrap_with_timeout<T>(
+    mut arc: Arc<T>,
+    spin: Duration,
+    timeout: Duration,
+) -> Result<T, Arc<T>> {
     if timeout.is_zero() {
         return Err(arc);
     }
-    match Arc::try_unwrap(arc) {
-        Ok(t) => Ok(t),
-        Err(t) => {
-            sleep(spin);
-            try_unwrap_with_timeout(t, spin, timeout.saturating_sub(spin))
+
+    loop {
+        match Arc::try_unwrap(arc) {
+            inner @ Ok(_) => return inner,
+            Err(inner) => {
+                arc = inner;
+                sleep(spin);
+            }
         }
     }
 }
