@@ -52,7 +52,7 @@ use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
-    change_remote_shard_route, check_transfer_conflicts, finalize_partial_shard,
+    change_remote_shard_route, check_transfer_conflicts_strict, finalize_partial_shard,
     handle_transferred_shard_proxy, revert_proxy_shard_to_local, spawn_transfer_task,
     ShardTransfer, ShardTransferKey,
 };
@@ -1622,7 +1622,7 @@ impl Collection {
                     shard_id,
                     sync: true,
                 };
-                if check_transfer_conflicts(&transfer, transfers.iter()).is_some() {
+                if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
                     continue; // this transfer won't work
                 }
                 log::debug!(
