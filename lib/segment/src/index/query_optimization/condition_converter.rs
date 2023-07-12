@@ -104,7 +104,7 @@ pub fn condition_converter<'a>(
                             if check_payload(
                                 Box::new(get_payload),
                                 // None because has_id in nested is not supported. So retrieving
-                                // IDs throug the tracker would always return None.
+                                // IDs through the tracker would always return None.
                                 None,
                                 &nested.nested.filter,
                                 point_id,

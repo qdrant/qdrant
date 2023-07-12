@@ -35,7 +35,7 @@ pub struct PayloadBlockCondition {
 
 #[derive(Debug, Clone)]
 pub struct CardinalityEstimation {
-    /// Conditions that could be used to mane a primary point selection.
+    /// Conditions that could be used to make a primary point selection.
     pub primary_clauses: Vec<PrimaryCondition>,
     /// Minimal possible matched points in best case for a query
     pub min: usize,

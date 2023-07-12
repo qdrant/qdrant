@@ -390,7 +390,7 @@ def test_nested_payload_indexing_operations():
     assert len(response.json()['result']['points']) == 1
     assert response.json()['result']['points'][0]['payload']['country']['capital'] == "Paris"
 
-    # Search through array without payload index (indexed on array of objetcs)
+    # Search through array without payload index (indexed on array of objects)
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",

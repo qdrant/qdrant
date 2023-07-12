@@ -14,7 +14,7 @@
 //! # Safety
 //!
 //! Code in this module is `unsafe` and very error prone. It is therefore compacted in this single
-//! module to make it easer to review, to make it easier to check for soundness, and to make it
+//! module to make it easier to review, to make it easier to check for soundness, and to make it
 //! easier to reason about. The interface provided by types in this module is as-safe-as-possible
 //! and uses `unsafe` where appropriate.
 //!

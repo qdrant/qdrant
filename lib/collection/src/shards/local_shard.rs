@@ -246,7 +246,7 @@ impl LocalShard {
         // Simple heuristic to exclude mmap prefaulting for colletions that won't benefit from it.
         //
         // We assume that mmap prefaulting is beneficial if we can put significant part of data
-        // into RAM in advance. However, if we can see tha the data is too big to fit into RAM,
+        // into RAM in advance. However, if we can see that the data is too big to fit into RAM,
         // it is better to avoid prefaulting, because it will only cause extra disk IO.
         //
         // This heuristic is not perfect, but it exclude cases when we don't have enough RAM
@@ -427,7 +427,7 @@ impl LocalShard {
         // `SerdeWal::read_all` starts reading WAL from the first "un-truncated" index,
         // so no additional handling required to "skip" any potentially applied entries.
         //
-        // Note, that it's not guaranted that some operation won't be re-applied to the storage.
+        // Note, that it's not guaranteed that some operation won't be re-applied to the storage.
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 

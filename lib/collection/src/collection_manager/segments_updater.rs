@@ -79,7 +79,7 @@ pub(crate) fn delete_vectors(
         .map_err(Into::into)
 }
 
-/// Delete the given named vectors for points matching the given filter, keeping otehr vectors intact.
+/// Delete the given named vectors for points matching the given filter, keeping other vectors intact.
 pub(crate) fn delete_vectors_by_filter(
     segments: &SegmentHolder,
     op_num: SeqNumberType,

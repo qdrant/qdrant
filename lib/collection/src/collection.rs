@@ -509,7 +509,7 @@ impl Collection {
             let replica_set_opt = shards_holder.get_shard(&shard_id);
 
             // Check if current node owns the shard which should be transferred
-            // and therefor able to transfer
+            // and therefore able to transfer
             let replica_set = if let Some(replica_set) = replica_set_opt {
                 replica_set
             } else {

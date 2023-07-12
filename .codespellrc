@@ -1,0 +1,6 @@
+[codespell]
+# openapi.json is typically a released version and could carry old typos
+skip = .git,*.pdf,*.svg,openapi.json,key.pem
+# hel - Query token
+# generall - the boss
+ignore-words-list = crate,hel,generall
