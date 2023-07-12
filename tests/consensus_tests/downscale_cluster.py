@@ -57,6 +57,7 @@ for local_shards in collection_cluster_status["result"]["local_shards"]:
             "to_peer_id": to_peer
         }
     })
+    assert_http_ok(r)
 
 max_wait = 60
 
