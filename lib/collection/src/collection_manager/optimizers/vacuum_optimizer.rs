@@ -23,7 +23,7 @@ use crate::config::CollectionParams;
 /// Optimizer which looks for segments with high amount of soft-deleted points or vectors
 ///
 /// Since the creation of a segment, a lot of points or vectors may have been soft-deleted. This
-/// results in the index slowly breaking appart, and unnecessary storage usage.
+/// results in the index slowly breaking apart, and unnecessary storage usage.
 ///
 /// This optimizer will look for the worst segment to rebuilt the index and minimize storage usage.
 pub struct VacuumOptimizer {
@@ -73,7 +73,7 @@ impl VacuumOptimizer {
             .iter()
             .filter(|(idx, _segment)| !excluded_ids.contains(idx))
             .flat_map(|(idx, segment)| {
-                // Calcualte littered ratio for segment and named vectors
+                // Calculate littered ratio for segment and named vectors
                 let littered_ratio_segment = self.littered_ratio_segment(segment);
                 let littered_ratio_vectors = self.littered_vectors_index_ratio(segment);
                 [littered_ratio_segment, littered_ratio_vectors]

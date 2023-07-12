@@ -100,7 +100,7 @@ def test_retrieve_invalid_vector():
 
 
 def retrieve_invalid_vector():
-    # Retrieve non-existant vector name
+    # Retrieve non-existent vector name
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="POST",
