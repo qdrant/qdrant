@@ -259,6 +259,24 @@ where
     res.cloned()
 }
 
+/// Same as `check_transfer_conflicts` but doesn't allow transfers to/from the same peer
+/// more than once for the whole collection
+pub fn check_transfer_conflicts_strict<'a, I>(
+    transfer: &ShardTransfer,
+    mut current_transfers: I,
+) -> Option<ShardTransfer>
+where
+    I: Iterator<Item = &'a ShardTransfer>,
+{
+    let res = current_transfers.find(|t| {
+        t.from == transfer.from
+            || t.to == transfer.from
+            || t.from == transfer.to
+            || t.to == transfer.to
+    });
+    res.cloned()
+}
+
 /// Confirms that the transfer makes sense with the current state cluster
 ///
 /// Checks:
