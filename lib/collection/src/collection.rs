@@ -95,8 +95,6 @@ pub struct Collection {
     // Lock is acquired for read on update operation and can be acquired for write externally,
     // which will block all update operations until the lock is released.
     updates_lock: RwLock<()>,
-    // Search runtime handle.
-    search_runtime: Handle,
     // Update runtime handle.
     update_runtime: Handle,
 }
@@ -141,6 +139,7 @@ impl Collection {
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
+                search_runtime.clone().unwrap_or_else(Handle::current),
             )
             .await?;
 
@@ -168,7 +167,6 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
-            search_runtime: search_runtime.unwrap_or_else(Handle::current),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
         })
     }
@@ -258,6 +256,7 @@ impl Collection {
                 on_replica_failure.clone(),
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
+                search_runtime.clone().unwrap_or_else(Handle::current),
             )
             .await;
 
@@ -278,7 +277,6 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
-            search_runtime: search_runtime.unwrap_or_else(Handle::current),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
         }
     }
@@ -871,7 +869,7 @@ impl Collection {
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards
                 .iter()
-                .map(|shard| shard.search(request.clone(), read_consistency, &self.search_runtime));
+                .map(|shard| shard.search(request.clone(), read_consistency));
             try_join_all(all_searches).await?
         };
 
@@ -1021,7 +1019,6 @@ impl Collection {
                     &with_vector,
                     request.filter.as_ref(),
                     read_consistency,
-                    &self.search_runtime,
                 )
             });
 
