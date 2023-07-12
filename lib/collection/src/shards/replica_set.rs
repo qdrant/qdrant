@@ -169,6 +169,7 @@ pub struct ShardReplicaSet {
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
+    search_runtime: Handle,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
 }
@@ -263,6 +264,7 @@ impl ShardReplicaSet {
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         update_runtime: Handle,
+        search_runtime: Handle,
     ) -> CollectionResult<Self> {
         let shard_path = create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
@@ -319,6 +321,7 @@ impl ShardReplicaSet {
             collection_config,
             shared_storage_config,
             update_runtime,
+            search_runtime,
             write_ordering_lock: Mutex::new(()),
         })
     }
@@ -454,6 +457,7 @@ impl ShardReplicaSet {
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
+        search_runtime: Handle,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -535,6 +539,7 @@ impl ShardReplicaSet {
             collection_config,
             shared_storage_config,
             update_runtime,
+            search_runtime,
             write_ordering_lock: Mutex::new(()),
         }
     }
@@ -1171,7 +1176,7 @@ impl ShardReplicaSet {
         let read_local = self.local.read().await;
         if let Some(ForwardProxy(proxy)) = &*read_local {
             proxy
-                .transfer_batch(offset, batch_size, &self.update_runtime)
+                .transfer_batch(offset, batch_size, &self.search_runtime)
                 .await
         } else {
             Err(CollectionError::service_error(format!(
@@ -1488,7 +1493,6 @@ impl ShardReplicaSet {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         read_consistency: Option<ReadConsistency>,
-        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
@@ -1501,7 +1505,7 @@ impl ShardReplicaSet {
                     with_payload_interface,
                     with_vector,
                     filter,
-                    search_runtime_handle,
+                    &self.search_runtime,
                 )
             },
             &local,
@@ -1523,13 +1527,12 @@ impl ShardReplicaSet {
         &self,
         request: Arc<SearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
-        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
         self.execute_and_resolve_read_operation(
-            |shard| shard.search(request.clone(), search_runtime_handle),
+            |shard| shard.search(request.clone(), &self.search_runtime),
             &local,
             &remotes,
             read_consistency.unwrap_or_default(),
@@ -1605,6 +1608,8 @@ mod tests {
 
     async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
         let update_runtime = Handle::current();
+        let search_runtime = Handle::current();
+
         let wal_config = WalConfig {
             wal_capacity_mb: 1,
             wal_segments_ahead: 0,
@@ -1646,6 +1651,7 @@ mod tests {
             Default::default(),
             Default::default(),
             update_runtime,
+            search_runtime,
         )
         .await
         .unwrap()
