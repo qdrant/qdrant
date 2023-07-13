@@ -63,36 +63,79 @@ where
 #[cfg(test)]
 mod tests {
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
+
+    use tokio::time::sleep;
 
     use super::*;
 
-    const STEP_MILLIS: u64 = 5;
+    const STEP: Duration = Duration::from_millis(5);
 
-    fn long_task(stop: &AtomicBool) -> i32 {
-        let mut n = 0;
-        for i in 0..10 {
-            n = i;
-            if stop.load(Ordering::Relaxed) {
-                break;
+    /// Simple stoppable task counting steps until stopped. Panics after 1 minute.
+    fn counting_task(stop: &AtomicBool) -> usize {
+        let mut count = 0;
+        let start = Instant::now();
+
+        while !stop.load(Ordering::Relaxed) {
+            count += 1;
+
+            if start.elapsed() > Duration::from_secs(60) {
+                panic!("Task is not stopped within 60 seconds");
             }
-            thread::sleep(Duration::from_millis(STEP_MILLIS));
+
+            thread::sleep(STEP);
         }
-        n
+
+        count
     }
 
     #[tokio::test]
     async fn test_task_stop() {
-        let handle = spawn_stoppable(long_task);
-        tokio::time::sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
+        let handle = spawn_stoppable(counting_task);
+
+        // Signal task to stop after ~20 steps
+        sleep(STEP * 20).await;
         assert!(!handle.is_finished());
         handle.ask_to_stop();
-        tokio::time::sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
+
+        sleep(Duration::from_secs(1)).await;
         assert!(handle.is_finished());
 
+        // Expect task counter to be between [5, 25], we cannot be exact on busy systems
         if let Some(handle) = handle.stop() {
-            if let Some(res) = handle.await.unwrap() {
-                assert!(res < 10);
+            if let Some(count) = handle.await.unwrap() {
+                assert!(
+                    (5..=25).contains(&count),
+                    "Stoppable task should have count between [5, 25], but it is {count}",
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_stop_many() {
+        const TASKS: usize = 64;
+
+        let handles = (0..TASKS)
+            .map(|_| spawn_stoppable(counting_task))
+            .collect::<Vec<_>>();
+
+        // Signal tasks to stop after ~20 steps
+        sleep(STEP * 20).await;
+        for handle in &handles {
+            assert!(!handle.is_finished());
+            handle.ask_to_stop();
+        }
+
+        // Expect task counters to be between [5, 30], we cannot be exact on busy systems
+        for handle in handles {
+            if let Some(handle) = handle.stop() {
+                if let Some(count) = handle.await.unwrap() {
+                    assert!(
+                        (5..=30).contains(&count),
+                        "Stoppable task should have count between [5, 30], but it is {count}",
+                    );
+                }
             }
         }
     }
