@@ -15,7 +15,7 @@ use itertools::Itertools;
 use rand::seq::SliceRandom;
 use schemars::JsonSchema;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    ExtendedPointId, Filter, OrderBy, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
     WithVector,
 };
 use serde::{Deserialize, Serialize};
@@ -1486,12 +1486,22 @@ impl ShardReplicaSet {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         read_consistency: Option<ReadConsistency>,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
         self.execute_and_resolve_read_operation(
-            |shard| shard.scroll_by(offset, limit, with_payload_interface, with_vector, filter),
+            |shard| {
+                shard.scroll_by(
+                    offset,
+                    limit,
+                    with_payload_interface,
+                    with_vector,
+                    filter,
+                    order_by,
+                )
+            },
             &local,
             &remotes,
             read_consistency.unwrap_or_default(),

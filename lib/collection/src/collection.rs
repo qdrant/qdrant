@@ -12,7 +12,7 @@ use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
-    ExtendedPointId, Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Order, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
@@ -989,6 +989,7 @@ impl Collection {
         request: ScrollRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
@@ -1021,6 +1022,7 @@ impl Collection {
                     &with_vector,
                     request.filter.as_ref(),
                     read_consistency,
+                    order_by,
                 )
             });
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 
@@ -75,6 +75,7 @@ impl ShardOperation for DummyShard {
         _: &WithPayloadInterface,
         _: &WithVector,
         _: Option<&Filter>,
+        _: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()
     }

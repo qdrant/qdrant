@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    ExtendedPointId, Filter, OrderBy, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
     WithVector,
 };
 use tokio::runtime::Handle;
@@ -79,6 +79,7 @@ impl ForwardProxyShard {
                 limit,
                 &WithPayloadInterface::Bool(true),
                 &true.into(),
+                None,
                 None,
             )
             .await?;
@@ -168,10 +169,18 @@ impl ShardOperation for ForwardProxyShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .scroll_by(offset, limit, with_payload_interface, with_vector, filter)
+            .scroll_by(
+                offset,
+                limit,
+                with_payload_interface,
+                with_vector,
+                filter,
+                order_by,
+            )
             .await
     }
 
