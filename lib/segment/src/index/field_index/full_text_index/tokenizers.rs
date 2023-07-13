@@ -67,7 +67,9 @@ struct MultilingualTokenizer;
 impl MultilingualTokenizer {
     fn tokenize<C: FnMut(&str)>(text: &str, mut callback: C) {
         text.tokenize().for_each(|token| {
-            callback(token.lemma());
+            if token.is_word() {
+                callback(token.lemma());
+            }
         });
     }
 }
@@ -193,9 +195,11 @@ mod tests {
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens.get(0), Some(&"本日".to_owned()));
+        assert_eq!(tokens.get(0), Some(&"本".to_owned()));
+        assert_eq!(tokens.get(0), Some(&"日".to_owned()));
         assert_eq!(tokens.get(1), Some(&"の".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"日付".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"付".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"付".to_owned()));
         assert_eq!(tokens.get(3), Some(&"は".to_owned()));
     }
 
