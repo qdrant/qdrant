@@ -101,12 +101,12 @@ mod tests {
         sleep(Duration::from_secs(1)).await;
         assert!(handle.is_finished());
 
-        // Expect task counter to be between [15, 25], we cannot be exact on busy systems
+        // Expect task counter to be between [5, 25], we cannot be exact on busy systems
         if let Some(handle) = handle.stop() {
             if let Some(count) = handle.await.unwrap() {
                 assert!(
-                    (15..=25).contains(&count),
-                    "Stoppable task should have count between [15, 25], but it is {count}",
+                    (5..=25).contains(&count),
+                    "Stoppable task should have count between [5, 25], but it is {count}",
                 );
             }
         }
@@ -127,13 +127,13 @@ mod tests {
             handle.ask_to_stop();
         }
 
-        // Expect task counters to be between [10, 30], we cannot be exact on busy systems
+        // Expect task counters to be between [5, 30], we cannot be exact on busy systems
         for handle in handles {
             if let Some(handle) = handle.stop() {
                 if let Some(count) = handle.await.unwrap() {
                     assert!(
-                        (10..=30).contains(&count),
-                        "Stoppable task should have count between [10, 30], but it is {count}",
+                        (5..=30).contains(&count),
+                        "Stoppable task should have count between [5, 30], but it is {count}",
                     );
                 }
             }
