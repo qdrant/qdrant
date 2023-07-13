@@ -158,6 +158,31 @@ impl Distance {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+pub struct OrderBy {
+    pub key: String,
+    pub direction: Direction,
+    pub offset: Option<u32>, //offset
+}
+
+#[repr(u8)]
+// #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone)]
+pub enum Direction {
+    #[default]
+    ASC, //ascending
+    DESC, //descending
+}
+
+type OffsetValue = u16;
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+pub enum Offset {
+    Offset(OffsetValue),
+    Min(OffsetValue),
+    Max(OffsetValue),
+}
+
 pub enum Order {
     LargeBetter,
     SmallBetter,

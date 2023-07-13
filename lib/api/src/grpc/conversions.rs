@@ -4,11 +4,13 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{default_quantization_ignore_value, default_quantization_rescore_value};
+use segment::types::{
+    default_quantization_ignore_value, default_quantization_rescore_value, Direction,
+};
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{CompressionRatio, GroupId};
+use super::qdrant::{CompressionRatio, GroupId, OrderBy};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -106,6 +108,32 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
                 Ok(serde_json::Value::Array(list))
             }
         },
+    }
+}
+
+impl From<segment::types::OrderBy> for OrderBy {
+    fn from(value: segment::types::OrderBy) -> Self {
+        Self {
+            key: value.key,
+            direction: Some(match value.direction {
+                Direction::ASC => false,
+                Direction::DESC => true,
+            }),
+            offset: value.offset,
+        }
+    }
+}
+
+impl From<OrderBy> for segment::types::OrderBy {
+    fn from(value: OrderBy) -> Self {
+        Self {
+            key: value.key,
+            direction: value.direction.map_or_else(Default::default, |d| match d {
+                true => Direction::DESC,
+                false => Direction::ASC,
+            }),
+            offset: value.offset,
+        }
     }
 }
 
