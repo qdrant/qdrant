@@ -21,6 +21,7 @@ use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatu
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::watch;
 use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
@@ -760,7 +761,7 @@ fn handle_committed_entries(
 }
 
 struct RaftMessageBroker {
-    senders: HashMap<PeerId, Sender<RaftMessage>>,
+    senders: HashMap<PeerId, RaftMessageSenderHandle>,
     runtime: Handle,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
@@ -818,7 +819,7 @@ impl RaftMessageBroker {
 
                 let is_debug = log::max_level() >= log::Level::Debug;
                 let space = if is_debug { " " } else { "" };
-                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" };
+                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" }; // TODO: `fmt::Debug` for `""` prints `""`... 😒
 
                 log::error!(
                     "Failed to forward message{space}{message:?} to message sender task {peer_id}: \
@@ -826,7 +827,7 @@ impl RaftMessageBroker {
                 );
             };
 
-            match sender.try_send(message) {
+            match sender.send(message) {
                 Ok(()) => (),
 
                 Err(tokio::sync::mpsc::error::TrySendError::Full(message)) => {
@@ -850,11 +851,13 @@ impl RaftMessageBroker {
         }
     }
 
-    fn message_sender(&self) -> (RaftMessageSender, Sender<RaftMessage>) {
-        let (handle, messages) = tokio::sync::mpsc::channel(128);
+    fn message_sender(&self) -> (RaftMessageSender, RaftMessageSenderHandle) {
+        let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(128);
+        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(RaftMessage::default());
 
         let task = RaftMessageSender {
-            messages,
+            messages: messages_rx,
+            heartbeat: heartbeat_rx,
             bootstrap_uri: self.bootstrap_uri.clone(),
             tls_config: self.tls_config.clone(),
             consensus_config: self.consensus_config.clone(),
@@ -862,12 +865,43 @@ impl RaftMessageBroker {
             transport_channel_pool: self.transport_channel_pool.clone(),
         };
 
+        let handle = RaftMessageSenderHandle {
+            messages: messages_tx,
+            heartbeat: heartbeat_tx,
+        };
+
         (task, handle)
     }
 }
 
+struct RaftMessageSenderHandle {
+    messages: Sender<RaftMessage>,
+    heartbeat: watch::Sender<RaftMessage>,
+}
+
+impl RaftMessageSenderHandle {
+    #[allow(clippy::result_large_err)]
+    pub fn send(&self, message: RaftMessage) -> RaftMessageSenderResult<()> {
+        if !is_heartbeat(&message) {
+            self.messages.try_send(message)?;
+        } else {
+            self.heartbeat.send(message).map_err(
+                |tokio::sync::watch::error::SendError(message)| {
+                    tokio::sync::mpsc::error::TrySendError::Closed(message)
+                },
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+type RaftMessageSenderResult<T, E = RaftMessageSenderError> = Result<T, E>;
+type RaftMessageSenderError = tokio::sync::mpsc::error::TrySendError<RaftMessage>;
+
 struct RaftMessageSender {
     messages: Receiver<RaftMessage>,
+    heartbeat: watch::Receiver<RaftMessage>,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
     consensus_config: Arc<ConsensusConfig>,
@@ -877,54 +911,28 @@ struct RaftMessageSender {
 
 impl RaftMessageSender {
     pub async fn exec(mut self) {
-        let mut heartbeat = None;
-
         loop {
-            // Try to get a message from the queue without waiting
-            let mut message = match self.messages.try_recv() {
-                Ok(message) => Some(message),
-                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => None,
+            let message = match self.messages.try_recv() {
+                Ok(message) => message,
+
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                    tokio::select! {
+                        biased;
+
+                        Some(message) = self.messages.recv() => message,
+
+                        Ok(()) = self.heartbeat.changed() => {
+                            self.heartbeat.borrow_and_update().clone()
+                        }
+
+                        else => break,
+                    }
+                }
+
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
             };
 
-            // If the queue is empty and there's no heartbeat to send, wait for the next message
-            if message.is_none() && heartbeat.is_none() {
-                message = self.messages.recv().await;
-            }
-
-            // Check if the message is a heartbeat...
-            let is_heartbeat = message.as_ref().map_or(false, |message| {
-                message.msg_type == raft::eraftpb::MessageType::MsgHeartbeat as i32
-                    || message.msg_type == raft::eraftpb::MessageType::MsgHeartbeatResponse as i32
-            });
-
-            // ...and if it is, replace the earlier one and try to get the next message from the queue
-            if is_heartbeat {
-                heartbeat = message;
-                continue;
-            }
-
-            // At this point, if the message is `Some`, then it is not a heartbeat,
-            // and so we can send it right away and an earlier heartbeat (if any) can be skipped
-            if message.is_some() {
-                heartbeat = None;
-            }
-
-            // At this point, three conditions should be possible:
-            //
-            // - the message is `Some`
-            //   - (and if so, it should be a non-heartbeat one, and heartbeat should be `None`)
-            //   - which means we just got a message from the queue that we should send
-            //
-            // - the message is `None` and heartbeat is `Some`
-            //   - which means we just exhausted the queue, but we have an up-to-date heartbeat that we should send
-            //
-            // - or both the message and the hearbeat is `None`
-            //   - which means the queue has been closed
-            match message.or_else(|| heartbeat.take()) {
-                Some(message) => self.send(&message).await,
-                None => break,
-            }
+            self.send(&message).await;
         }
     }
 
@@ -1041,6 +1049,11 @@ impl RaftMessageSender {
 
         Ok(uri)
     }
+}
+
+fn is_heartbeat(message: &RaftMessage) -> bool {
+    message.msg_type == raft::eraftpb::MessageType::MsgHeartbeat as i32
+        || message.msg_type == raft::eraftpb::MessageType::MsgHeartbeatResponse as i32
 }
 
 #[cfg(test)]
