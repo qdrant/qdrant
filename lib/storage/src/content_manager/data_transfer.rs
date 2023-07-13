@@ -83,6 +83,7 @@ async fn replicate_shard_data(
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: WithVector::Bool(true),
+            order_by: todo!(),
         };
 
         let collections_read = collections.read().await;
