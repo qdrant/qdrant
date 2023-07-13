@@ -373,6 +373,7 @@ impl HnswConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self.m != other.m
             || self.ef_construct != other.ef_construct
+            || self.full_scan_threshold != other.full_scan_threshold
             || self.payload_m != other.payload_m
             // Data on disk is the same, we have a unit test for that. We can eventually optimize
             // this to just reload the collection rather than optimizing it again as a whole just
