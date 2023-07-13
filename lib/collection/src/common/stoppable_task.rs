@@ -122,10 +122,10 @@ mod tests {
 
         // Signal tasks to stop after ~20 steps
         sleep(STEP * 20).await;
-        handles
-            .iter()
-            .for_each(|handle| assert!(!handle.is_finished()));
-        handles.iter().for_each(|handle| handle.ask_to_stop());
+        for handle in &handles {
+            assert!(!handle.is_finished());
+            handle.ask_to_stop();
+        }
 
         // Expect task counters to be between [10, 30], we cannot be exact on busy systems
         for handle in handles {
