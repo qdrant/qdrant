@@ -104,7 +104,10 @@ mod tests {
         // Expect task counter to be between [15, 25], we cannot be exact on busy systems
         if let Some(handle) = handle.stop() {
             if let Some(count) = handle.await.unwrap() {
-                assert!((15..=25).contains(&count), "Stoppable task should have count between [15, 25], but it is {count}");
+                assert!(
+                    (15..=25).contains(&count),
+                    "Stoppable task should have count between [15, 25], but it is {count}",
+                );
             }
         }
     }
@@ -113,18 +116,25 @@ mod tests {
     async fn test_task_stop_many() {
         const TASKS: usize = 64;
 
-        let handles = (0..TASKS).map(|_| spawn_stoppable(counting_task)).collect::<Vec<_>>();
+        let handles = (0..TASKS)
+            .map(|_| spawn_stoppable(counting_task))
+            .collect::<Vec<_>>();
 
         // Signal tasks to stop after ~20 steps
         sleep(STEP * 20).await;
-        handles.iter().for_each(|handle| assert!(!handle.is_finished()));
+        handles
+            .iter()
+            .for_each(|handle| assert!(!handle.is_finished()));
         handles.iter().for_each(|handle| handle.ask_to_stop());
 
         // Expect task counters to be between [10, 30], we cannot be exact on busy systems
         for handle in handles {
             if let Some(handle) = handle.stop() {
                 if let Some(count) = handle.await.unwrap() {
-                    assert!((10..=30).contains(&count), "Stoppable task should have count between [10, 30], but it is {count}");
+                    assert!(
+                        (10..=30).contains(&count),
+                        "Stoppable task should have count between [10, 30], but it is {count}",
+                    );
                 }
             }
         }
