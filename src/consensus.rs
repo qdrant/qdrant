@@ -912,24 +912,11 @@ struct RaftMessageSender {
 impl RaftMessageSender {
     pub async fn exec(mut self) {
         loop {
-            let message = match self.messages.try_recv() {
-                Ok(message) => message,
-
-                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                    tokio::select! {
-                        biased;
-
-                        Some(message) = self.messages.recv() => message,
-
-                        Ok(()) = self.heartbeat.changed() => {
-                            self.heartbeat.borrow_and_update().clone()
-                        }
-
-                        else => break,
-                    }
-                }
-
-                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+            let message = tokio::select! {
+                biased;
+                Some(message) = self.messages.recv() => message,
+                Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
+                else => break,
             };
 
             self.send(&message).await;
