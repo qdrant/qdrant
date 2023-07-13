@@ -67,7 +67,7 @@ mod tests {
 
     use super::*;
 
-    const STEP_MILLIS: u64 = 5;
+    const STEP: Duration = Duration::from_millis(5);
 
     fn long_task(stop: &AtomicBool) -> i32 {
         let mut n = 0;
@@ -76,7 +76,7 @@ mod tests {
             if stop.load(Ordering::Relaxed) {
                 break;
             }
-            thread::sleep(Duration::from_millis(STEP_MILLIS));
+            thread::sleep(STEP);
         }
         n
     }
@@ -84,10 +84,10 @@ mod tests {
     #[tokio::test]
     async fn test_task_stop() {
         let handle = spawn_stoppable(long_task);
-        tokio::time::sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
+        tokio::time::sleep(STEP * 5).await;
         assert!(!handle.is_finished());
         handle.ask_to_stop();
-        tokio::time::sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
+        tokio::time::sleep(STEP * 3).await;
         assert!(handle.is_finished());
 
         if let Some(handle) = handle.stop() {
