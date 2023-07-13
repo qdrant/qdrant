@@ -95,11 +95,8 @@ harness = false
 [[bench]]
 name = "map_benchmark"
 harness = false
-<<<<<<< HEAD
 
 [[bench]]
 name = "boolean_filtering"
 harness = false
 
-=======
->>>>>>> 46bfcd65 (disable charabia default features)
