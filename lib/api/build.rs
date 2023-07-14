@@ -165,7 +165,9 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendPointGroups.limit", "range(min = 1)"),
             ("RecommendPointGroups.params", ""),
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
+            ("GeoPolygon.points", "custom = \"crate::grpc::validate::validate_geo_polygon\""),
         ], &[])
+        .type_attribute("GeoPoint", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
             ("UpsertPointsInternal.upsert_points", ""),
