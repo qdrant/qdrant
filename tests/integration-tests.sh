@@ -10,14 +10,17 @@ QDRANT_HOST='localhost:6333'
 export QDRANT__SERVICE__GRPC_PORT="6334"
 
 MODE=$1
+PID=0
 # Enable distributed mode on demand
 if [ $MODE == "distributed" ]; then
   export QDRANT__CLUSTER__ENABLED="true"
   # Run in background
   ./target/debug/qdrant --uri "http://127.0.0.1:6335" &
+  PID=$!
 else
   # Run in background
   ./target/debug/qdrant &
+  PID=$!
 fi
 
 
@@ -26,7 +29,6 @@ fi
 sleep 5
 
 ## Capture PID of the run
-PID=$(pidof "./target/debug/qdrant")
 echo $PID
 
 function clear_after_tests()
