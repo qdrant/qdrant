@@ -112,7 +112,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_task_stop_many() {
         const TASKS: usize = 64;
 
