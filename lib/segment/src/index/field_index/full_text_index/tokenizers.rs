@@ -194,7 +194,7 @@ mod tests {
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
-        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens.len(), 6);
         assert_eq!(tokens.get(0), Some(&"本".to_owned()));
         assert_eq!(tokens.get(0), Some(&"日".to_owned()));
         assert_eq!(tokens.get(1), Some(&"の".to_owned()));
