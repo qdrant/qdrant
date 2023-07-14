@@ -911,6 +911,61 @@ struct RaftMessageSender {
 
 impl RaftMessageSender {
     pub async fn exec(mut self) {
+        // Imagine that `raft` crate put four messages to be sent to some other Raft node into
+        // `RaftMessageSender`'s queue:
+        //
+        // | 4: AppendLog | 3: Heartbeat | 2: Heartbeat | 1: AppendLog |
+        //
+        // Heartbeat is the most basic message type in Raft. It only carries common "metadata"
+        // without any additional "payload". And all other message types in Raft also carry
+        // the same basic metadata as the heartbeat message.
+        //
+        // This way, message `3` instantly "outdates" message `2`: they both carrie the same data
+        // fields, but message `3` was produced more recently, and so it might contain newer values
+        // of these data fields.
+        //
+        // And because all messages carry the same basic data as the hearbeat message, message `4`
+        // instantly "outdates" both message `2` and `3`.
+        //
+        // This way, if there are more than one message queued for the `RaftMessageSender`,
+        // we can optimize delivery a bit and skip any heartbeat message if there's a more
+        // recent message scheduled later in the queue.
+        //
+        // `RaftMessageSender` have two separate "queues":
+        // - `messages` queue for non-heartbeat messages
+        // - and `heartbeat` "watch" channel for heartbeat messages
+        //   - "watch" is a special channel in Tokio, that only retains the *last* sent value
+        //   - so any heartbeat received from the `heartbeat` channel is always the *most recent* one
+        //
+        // We are using `tokio::select` to "simultaneously" check both queues for new messages...
+        // but we are using `tokio::select` in a "biased" mode!
+        //
+        // - in this mode select always polls `messages.recv()` future first
+        // - so even if there are new messages in both queues, it will always return a non-heartbeat
+        //   message from `messages` queue first
+        // - and it will only return a heartbeat message from `heartbeat` channel if there's no
+        //   messages left in the `messages` queue
+        //
+        // There's one special case that we should be careful about with our two queues:
+        //
+        // If we return to the diagram above, and imagine four messages were sent in the same order
+        // into our two queues, then `RaftMessageSender` might pull them from the queues in the
+        // `1`, `4`, `3` order.
+        //
+        // E.g., we pull non-heartbeat messages `1` and `4` first, heartbeat `2` was overwritten
+        // by heartbeat `3` (because of the "watch" channel), so once `messages` queue is empty
+        // we receive heartbeat `3`, which is now out-of-order.
+        //
+        // So we track `RaftMessage::index` field of the last message sent and skip any heartbeat
+        // message that has lower index.
+        //
+        // If either `messages` queue or `heartbeat` channel is closed (e.g., `messages.recv()`
+        // returns `None` or `heartbeat.changed()` returns an error), we assume that
+        // `RaftMessageSenderHandle` has been dropped, and treat it as a "shutdown"/"cancellation"
+        // signal (and break from the `loop`).
+
+        // TODO: Track last sent index (or commit?) and skip heartbeats with lower index!
+
         loop {
             let message = tokio::select! {
                 biased;
