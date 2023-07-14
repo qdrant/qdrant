@@ -76,7 +76,7 @@ mod tests {
         let mut count = 0;
         let start = Instant::now();
 
-        while !stop.load(Ordering::Relaxed) {
+        while !stop.load(Ordering::SeqCst) {
             count += 1;
 
             if start.elapsed() > Duration::from_secs(60) {
