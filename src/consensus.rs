@@ -929,7 +929,7 @@ impl RaftMessageSender {
         // fields, but message `3` was produced more recently, and so it might contain newer values
         // of these data fields.
         //
-        // And because all messages carry the same basic data as the hearbeat message, message `4`
+        // And because all messages carry the same basic data as the heartbeat message, message `4`
         // instantly "outdates" both message `2` and `3`.
         //
         // This way, if there are more than one message queued for the `RaftMessageSender`,

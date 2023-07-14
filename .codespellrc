@@ -3,5 +3,4 @@
 skip = .git,*.pdf,*.svg,openapi.json,key.pem,Cargo.lock
 # hel - Query token
 # generall - the boss
-# heartbeat - one of Raft message types
-ignore-words-list = crate,hel,generall,heartbeat
+ignore-words-list = crate,hel,generall
