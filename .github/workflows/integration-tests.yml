@@ -22,8 +22,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-      - name: Install dependencies
-        run: sudo apt-get install clang protobuf-compiler
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
         run: cargo build --features service_debug
       - name: Run integration tests
