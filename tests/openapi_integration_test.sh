@@ -15,8 +15,8 @@ if [ "$WITH_DOCKER" == "true" ]; then
       -e OPENAPI_FILE='openapi.json' \
       -v "${PWD}"/openapi/tests:/code \
       "$(docker buildx build --load -q ./openapi/tests)" sh -c /code/run_docker.sh
-
 else
+  export OPENAPI_FILE='./openapi.json'
   cd openapi/tests
   pip install -r requirements-freeze.txt
   bash -x run_docker.sh
