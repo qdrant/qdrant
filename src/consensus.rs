@@ -920,7 +920,7 @@ impl RaftMessageSender {
         // without any additional "payload". And all other message types in Raft also carry
         // the same basic metadata as the heartbeat message.
         //
-        // This way, message `3` instantly "outdates" message `2`: they both carrie the same data
+        // This way, message `3` instantly "outdates" message `2`: they both carry the same data
         // fields, but message `3` was produced more recently, and so it might contain newer values
         // of these data fields.
         //
@@ -962,7 +962,7 @@ impl RaftMessageSender {
         // If either `messages` queue or `heartbeat` channel is closed (e.g., `messages.recv()`
         // returns `None` or `heartbeat.changed()` returns an error), we assume that
         // `RaftMessageSenderHandle` has been dropped, and treat it as a "shutdown"/"cancellation"
-        // signal (and break from the `loop`).
+        // signal (and break from the loop).
 
         // TODO: Track last sent index (or commit?) and skip heartbeats with lower index!
 
