@@ -797,7 +797,7 @@ impl RaftMessageBroker {
         while let Some(message) = retry.take().or_else(|| messages.next()) {
             let peer_id = message.to;
 
-            let sender = match self.senders.get(&peer_id) {
+            let sender = match self.senders.get_mut(&peer_id) {
                 Some(sender) => sender,
                 None => {
                     log::debug!("Spawning message sender task for peer {peer_id}...");
@@ -809,7 +809,7 @@ impl RaftMessageBroker {
                     self.senders.insert(peer_id, handle);
 
                     self.senders
-                        .get(&peer_id)
+                        .get_mut(&peer_id)
                         .expect("message sender task spawned")
                 }
             };
@@ -830,14 +830,14 @@ impl RaftMessageBroker {
             match sender.send(message) {
                 Ok(()) => (),
 
-                Err(tokio::sync::mpsc::error::TrySendError::Full(message)) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Full((_, message))) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is full. Message will be dropped.",
                     );
                 }
 
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(message)) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Closed((_, message))) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is closed. \
@@ -853,7 +853,7 @@ impl RaftMessageBroker {
 
     fn message_sender(&self) -> (RaftMessageSender, RaftMessageSenderHandle) {
         let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(128);
-        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(RaftMessage::default());
+        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(Default::default());
 
         let task = RaftMessageSender {
             messages: messages_rx,
@@ -868,40 +868,45 @@ impl RaftMessageBroker {
         let handle = RaftMessageSenderHandle {
             messages: messages_tx,
             heartbeat: heartbeat_tx,
+            index: 0,
         };
 
         (task, handle)
     }
 }
 
+#[derive(Debug)]
 struct RaftMessageSenderHandle {
-    messages: Sender<RaftMessage>,
-    heartbeat: watch::Sender<RaftMessage>,
+    messages: Sender<(usize, RaftMessage)>,
+    heartbeat: watch::Sender<(usize, RaftMessage)>,
+    index: usize,
 }
 
 impl RaftMessageSenderHandle {
     #[allow(clippy::result_large_err)]
-    pub fn send(&self, message: RaftMessage) -> RaftMessageSenderResult<()> {
+    pub fn send(&mut self, message: RaftMessage) -> RaftMessageSenderResult<()> {
         if !is_heartbeat(&message) {
-            self.messages.try_send(message)?;
+            self.messages.try_send((self.index, message))?;
         } else {
-            self.heartbeat.send(message).map_err(
+            self.heartbeat.send((self.index, message)).map_err(
                 |tokio::sync::watch::error::SendError(message)| {
                     tokio::sync::mpsc::error::TrySendError::Closed(message)
                 },
             )?;
         }
 
+        self.index += 1;
+
         Ok(())
     }
 }
 
 type RaftMessageSenderResult<T, E = RaftMessageSenderError> = Result<T, E>;
-type RaftMessageSenderError = tokio::sync::mpsc::error::TrySendError<RaftMessage>;
+type RaftMessageSenderError = tokio::sync::mpsc::error::TrySendError<(usize, RaftMessage)>;
 
 struct RaftMessageSender {
-    messages: Receiver<RaftMessage>,
-    heartbeat: watch::Receiver<RaftMessage>,
+    messages: Receiver<(usize, RaftMessage)>,
+    heartbeat: watch::Receiver<(usize, RaftMessage)>,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
     consensus_config: Arc<ConsensusConfig>,
@@ -956,25 +961,30 @@ impl RaftMessageSender {
         // by heartbeat `3` (because of the "watch" channel), so once `messages` queue is empty
         // we receive heartbeat `3`, which is now out-of-order.
         //
-        // So we track `RaftMessage::index` field of the last message sent and skip any heartbeat
-        // message that has lower index.
+        // To handle this we explicitly enumerate each message and only send a message if its index
+        // is higher-or-equal than the index of a previous one. (This check can be expressed with
+        // both strict "higher" or "higher-or-equal" conditional, I just like the "or-equal" version
+        // a bit better.)
         //
         // If either `messages` queue or `heartbeat` channel is closed (e.g., `messages.recv()`
         // returns `None` or `heartbeat.changed()` returns an error), we assume that
         // `RaftMessageSenderHandle` has been dropped, and treat it as a "shutdown"/"cancellation"
         // signal (and break from the loop).
 
-        // TODO: Track last sent index (or commit?) and skip heartbeats with lower index!
+        let mut prev_index = 0;
 
         loop {
-            let message = tokio::select! {
+            let (index, message) = tokio::select! {
                 biased;
                 Some(message) = self.messages.recv() => message,
                 Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
                 else => break,
             };
 
-            self.send(&message).await;
+            if prev_index <= index {
+                self.send(&message).await;
+                prev_index = index;
+            }
         }
     }
 
