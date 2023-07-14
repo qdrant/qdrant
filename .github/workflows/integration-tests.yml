@@ -12,7 +12,7 @@ env:
 jobs:
   test:
 
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Install minimal stable
@@ -26,6 +26,7 @@ jobs:
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
+
   test-consensus:
 
     runs-on: ubuntu-latest
