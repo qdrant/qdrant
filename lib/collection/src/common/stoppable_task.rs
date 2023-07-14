@@ -132,7 +132,7 @@ mod tests {
             if let Some(handle) = handle.stop() {
                 if let Some(count) = handle.await.unwrap() {
                     assert!(
-                        count < 30, // 20 extra steps to stop all tasks
+                        count < 30, // 10 extra steps to stop all tasks
                         "Stoppable task should have count should be less than 30, but it is {count}",
                     );
                 }
