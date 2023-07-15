@@ -26,8 +26,6 @@ jobs:
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
-      - name: Install pytest
-        run: pip install pytest qdrant_client
       - name: Run API Key tests
         run: ./tests/integration-tests-api-key.sh
         shell: bash

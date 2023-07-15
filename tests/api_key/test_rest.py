@@ -1,5 +1,6 @@
 import requests
 import pytest
+import os
 
 
 def test_delete_collection():
@@ -105,17 +106,18 @@ def test_search_points():
     )
 
 
-QDRANT_HOST = "localhost:6333"
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = 6333
 
 
 def assert_read_only(method, path, data=None):
-    assert_rw_token_success(method, f"http://{QDRANT_HOST}{path}", data)
-    assert_ro_token_success(method, f"http://{QDRANT_HOST}{path}", data)
+    assert_rw_token_success(method, f"http://{QDRANT_HOST}:{QDRANT_PORT}{path}", data)
+    assert_ro_token_success(method, f"http://{QDRANT_HOST}:{QDRANT_PORT}{path}", data)
 
 
 def assert_read_write(method, path, data=None):
-    assert_rw_token_success(method, f"http://{QDRANT_HOST}{path}", data)
-    assert_ro_token_failure(method, f"http://{QDRANT_HOST}{path}", data)
+    assert_rw_token_success(method, f"http://{QDRANT_HOST}:{QDRANT_PORT}{path}", data)
+    assert_ro_token_failure(method, f"http://{QDRANT_HOST}:{QDRANT_PORT}{path}", data)
 
 
 def assert_rw_token_success(method, url, data=None):

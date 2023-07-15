@@ -7,8 +7,6 @@ set -o pipefail
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
-QDRANT_HOST='localhost:6333'
-export QDRANT__SERVICE__GRPC_PORT="6334"
 
 ./target/debug/qdrant --config-path config/production_auth.yml &
 
@@ -28,11 +26,17 @@ function clear_after_tests()
 
 trap clear_after_tests EXIT
 
-until curl --output /dev/null --silent --get --fail -H 'api-key: my-ro-secret' http://$QDRANT_HOST/collections; do
+QDRANT_HOST='localhost'
+until curl --output /dev/null --silent --get --fail -H 'api-key: my-ro-secret' http://$QDRANT_HOST:6333/collections; do
   printf 'waiting for server to start...'
   sleep 5
 done
 
 echo "server ready to serve traffic"
 
-pytest ./tests/api_key
+IMAGE_NAME=$(docker buildx build --load -q "tests/api_key")
+docker run --rm \
+       -e QDRANT_HOST=host.docker.internal \
+       --add-host host.docker.internal:host-gateway \
+       $IMAGE_NAME sh -c "pytest /tests"
+

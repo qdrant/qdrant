@@ -1,9 +1,11 @@
 from qdrant_client import QdrantClient, grpc as qgrpc
 import pytest
 from qdrant_client.conversions.conversion import payload_to_grpc
+import os
 
 
-CLIENT = QdrantClient(prefer_grpc=True, timeout=3.0)
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+CLIENT = QdrantClient(prefer_grpc=True, timeout=3.0, host=QDRANT_HOST)
 
 
 def test_create_collection():

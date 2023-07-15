@@ -3,5 +3,6 @@ debug: false
 log_level: INFO
 
 service:
+  host: 0.0.0.0
   api_key: my-secret
   read_only_api_key: my-ro-secret
