@@ -162,7 +162,7 @@ service:
   # Sending an api-key over an unencrypted channel is insecure.
   #
   # Uncomment to enable.
-  # api_key_read_only: your_secret_read_only_api_key_here
+  # read_only_api_key: your_secret_read_only_api_key_here
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode

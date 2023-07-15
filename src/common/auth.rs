@@ -24,7 +24,7 @@ impl AuthScheme {
     pub fn try_create(service_config: &ServiceConfig) -> Option<Self> {
         match (
             service_config.api_key.clone(),
-            service_config.api_key_read_only.clone(),
+            service_config.read_only_api_key.clone(),
         ) {
             (None, None) => None,
             (Some(read_write), Some(read_only)) => Some(Self::SeparateReadAndReadWrite {

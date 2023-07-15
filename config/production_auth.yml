@@ -4,4 +4,4 @@ log_level: INFO
 
 service:
   api_key: my-secret
-  api_key_read_only: my-ro-secret
+  read_only_api_key: my-ro-secret
