@@ -8,18 +8,18 @@ use tonic::Code;
 use tower::Service;
 use tower_layer::Layer;
 
-use crate::common::auth::AuthScheme;
+use crate::common::auth::AuthKeys;
 use crate::common::strings::ct_eq;
 
 #[derive(Clone)]
 pub struct ApiKeyMiddleware<T> {
     service: T,
-    auth_scheme: AuthScheme,
+    auth_keys: AuthKeys,
 }
 
 #[derive(Clone)]
 pub struct ApiKeyMiddlewareLayer {
-    auth_scheme: AuthScheme,
+    auth_keys: AuthKeys,
 }
 
 impl<S> Service<tonic::codegen::http::Request<tonic::transport::Body>> for ApiKeyMiddleware<S>
@@ -44,18 +44,8 @@ where
     ) -> Self::Future {
         if let Some(key) = request.headers().get("api-key") {
             if let Ok(key) = key.to_str() {
-                let is_allowed = match self.auth_scheme {
-                    AuthScheme::SeparateReadAndReadWrite {
-                        read_write: ref rw_key,
-                        read_only: ref ro_key,
-                    } => ct_eq(rw_key, key) || (is_read_only(&request) && ct_eq(ro_key, key)),
-                    AuthScheme::ReadWrite {
-                        read_write: ref rw_key,
-                    } => ct_eq(rw_key, key),
-                    AuthScheme::ReadOnly {
-                        read_only: ref ro_key,
-                    } => is_read_only(&request) && ct_eq(ro_key, key),
-                };
+                let is_allowed = self.auth_keys.can_write(key)
+                    || is_read_only(&request) && self.auth_keys.can_read(key);
                 if is_allowed {
                     return Box::pin(self.service.call(request));
                 }
@@ -77,8 +67,8 @@ where
 }
 
 impl ApiKeyMiddlewareLayer {
-    pub fn new(auth_scheme: AuthScheme) -> Self {
-        Self { auth_scheme }
+    pub fn new(auth_keys: AuthKeys) -> Self {
+        Self { auth_keys }
     }
 }
 
@@ -88,7 +78,7 @@ impl<S> Layer<S> for ApiKeyMiddlewareLayer {
     fn layer(&self, service: S) -> Self::Service {
         ApiKeyMiddleware {
             service,
-            auth_scheme: self.auth_scheme.clone(),
+            auth_keys: self.auth_keys.clone(),
         }
     }
 }

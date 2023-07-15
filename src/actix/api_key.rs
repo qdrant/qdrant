@@ -6,18 +6,18 @@ use actix_web::http::Method;
 use actix_web::{Error, HttpResponse};
 use futures_util::future::LocalBoxFuture;
 
-use crate::common::auth::AuthScheme;
+use crate::common::auth::AuthKeys;
 use crate::common::strings::ct_eq;
 
 pub struct ApiKey {
-    auth_scheme: Option<AuthScheme>,
+    auth_keys: Option<AuthKeys>,
     skip_prefixes: Vec<String>,
 }
 
 impl ApiKey {
-    pub fn new(auth_scheme: Option<AuthScheme>, skip_prefixes: Vec<String>) -> Self {
+    pub fn new(auth_keys: Option<AuthKeys>, skip_prefixes: Vec<String>) -> Self {
         Self {
-            auth_scheme,
+            auth_keys,
             skip_prefixes,
         }
     }
@@ -38,7 +38,7 @@ where
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(ApiKeyMiddleware {
             skip_prefixes: self.skip_prefixes.clone(),
-            auth_scheme: self.auth_scheme.clone(),
+            auth_keys: self.auth_keys.clone(),
             service,
         }))
     }
@@ -46,7 +46,7 @@ where
 
 pub struct ApiKeyMiddleware<S> {
     skip_prefixes: Vec<String>,
-    auth_scheme: Option<AuthScheme>,
+    auth_keys: Option<AuthKeys>,
     service: S,
 }
 
@@ -73,24 +73,14 @@ where
 
         if let Some(key) = req.headers().get("api-key") {
             if let Ok(key) = key.to_str() {
-                let is_allowed = match self.auth_scheme {
-                    Some(AuthScheme::SeparateReadAndReadWrite {
-                        read_write: ref rw_key,
-                        read_only: ref ro_key,
-                    }) => ct_eq(rw_key, key) || (is_read_only(&req) && ct_eq(ro_key, key)),
-                    Some(AuthScheme::ReadWrite {
-                        read_write: ref rw_key,
-                    }) => ct_eq(rw_key, key),
-                    Some(AuthScheme::ReadOnly {
-                        read_only: ref ro_key,
-                    }) => is_read_only(&req) && ct_eq(ro_key, key),
-                    None => {
-                        // This code path should not be reached
-                        log::warn!(
-                            "Auth for REST API is set up incorrectly. Denying access by default."
-                        );
-                        false
-                    }
+                let is_allowed = if let Some(ref auth_keys) = self.auth_keys {
+                    auth_keys.can_write(key) || is_read_only(&req) && auth_keys.can_read(key)
+                } else {
+                    // This code path should not be reached
+                    log::warn!(
+                        "Auth for REST API is set up incorrectly. Denying access by default."
+                    );
+                    false
                 };
                 if is_allowed {
                     return Box::pin(self.service.call(req));

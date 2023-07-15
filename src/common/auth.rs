@@ -1,23 +1,17 @@
+use super::strings::ct_eq;
 use crate::settings::ServiceConfig;
 
 /// The API keys used for auth
 #[derive(Clone, Debug)]
-pub enum AuthScheme {
-    /// A key is allowing Read/Write operations and another key is allowing Read operations while
-    /// forbidding all Write ones.
-    SeparateReadAndReadWrite {
-        read_write: String,
-        read_only: String,
-    },
+pub struct AuthKeys {
+    /// A key allowing Read or Write operations
+    read_write: Option<String>,
 
-    /// A key is allowing Read operations. All Write operations are forbidden.
-    ReadOnly { read_only: String },
-
-    /// A key is allowing all Read and Write operations.
-    ReadWrite { read_write: String },
+    /// A key allowing Read operations
+    read_only: Option<String>,
 }
 
-impl AuthScheme {
+impl AuthKeys {
     /// Defines the auth scheme given the service config
     ///
     /// Returns None if no scheme is specified.
@@ -27,12 +21,33 @@ impl AuthScheme {
             service_config.read_only_api_key.clone(),
         ) {
             (None, None) => None,
-            (Some(read_write), Some(read_only)) => Some(Self::SeparateReadAndReadWrite {
+            (read_write, read_only) => Some(Self {
                 read_write,
                 read_only,
             }),
-            (Some(read_write), None) => Some(Self::ReadWrite { read_write }),
-            (None, Some(read_only)) => Some(Self::ReadOnly { read_only }),
         }
+    }
+
+    /// Check if a key is allowed to read
+    #[inline]
+    pub fn can_read(&self, key: &str) -> bool {
+        self.read_write
+            .as_ref()
+            .map(|rw_key| ct_eq(rw_key, key))
+            .unwrap_or_default()
+            || self
+                .read_only
+                .as_ref()
+                .map(|ro_key| ct_eq(ro_key, key))
+                .unwrap_or_default()
+    }
+
+    /// Check if a key is allowed to write
+    #[inline]
+    pub fn can_write(&self, key: &str) -> bool {
+        self.read_write
+            .as_ref()
+            .map(|rw_key| ct_eq(rw_key, key))
+            .unwrap_or_default()
     }
 }
