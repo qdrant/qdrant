@@ -277,8 +277,13 @@ message ScrollPoints {
 
 message OrderBy {
     string key = 1; //numerical key to use for sorting
-    optional bool direction = 2; //direction: acsencding = 0, descending = 1; default should be ascending
+    optional Direction direction = 2; //default should be ascending
     optional uint32 offset = 3;
+}
+
+enum Direction{
+    ASC = 0;
+    DESC = 1;
 }
 
 message LookupLocation {

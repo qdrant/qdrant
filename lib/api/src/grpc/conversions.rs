@@ -116,8 +116,8 @@ impl From<segment::types::OrderBy> for OrderBy {
         Self {
             key: value.key,
             direction: Some(match value.direction {
-                Direction::ASC => false,
-                Direction::DESC => true,
+                Direction::ASC => 0,
+                Direction::DESC => 1,
             }),
             offset: value.offset,
         }
@@ -129,8 +129,9 @@ impl From<OrderBy> for segment::types::OrderBy {
         Self {
             key: value.key,
             direction: value.direction.map_or_else(Default::default, |d| match d {
-                true => Direction::DESC,
-                false => Direction::ASC,
+                0 => Direction::ASC,
+                1 => Direction::DESC,
+                _ => panic!("Undefined direction"),
             }),
             offset: value.offset,
         }

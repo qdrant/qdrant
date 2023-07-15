@@ -2988,9 +2988,9 @@ pub struct OrderBy {
     /// numerical key to use for sorting
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
-    /// direction: acsencding = 0, descending = 1; default should be ascending
-    #[prost(bool, optional, tag = "2")]
-    pub direction: ::core::option::Option<bool>,
+    /// default should be ascending
+    #[prost(enumeration = "Direction", optional, tag = "2")]
+    pub direction: ::core::option::Option<i32>,
     #[prost(uint32, optional, tag = "3")]
     pub offset: ::core::option::Option<u32>,
 }
@@ -3638,6 +3638,32 @@ impl FieldType {
             "FieldTypeFloat" => Some(Self::Float),
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Direction {
+    Asc = 0,
+    Desc = 1,
+}
+impl Direction {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Direction::Asc => "ASC",
+            Direction::Desc => "DESC",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ASC" => Some(Self::Asc),
+            "DESC" => Some(Self::Desc),
             _ => None,
         }
     }
