@@ -116,17 +116,13 @@ impl ConfigMismatchOptimizer {
                         .any(|(vector_name, vector_data)| {
                             // Check HNSW mismatch
                             match &vector_data.index {
-                                Indexes::Plain {} => {}
+                                Indexes::Plain {} => false,
                                 Indexes::Hnsw(effective_hnsw) => {
                                     // Select segment if we have an HNSW mismatch that requires rebuild
                                     let target_hnsw = self.get_required_hnsw_config(vector_name);
-                                    if effective_hnsw.mismatch_requires_rebuild(&target_hnsw) {
-                                        return true;
-                                    }
+                                    effective_hnsw.mismatch_requires_rebuild(&target_hnsw)
                                 }
                             }
-
-                            false
                         });
 
                 has_mismatch.then_some((*idx, vector_size))
