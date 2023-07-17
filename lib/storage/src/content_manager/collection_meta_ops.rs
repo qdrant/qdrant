@@ -180,7 +180,7 @@ impl CreateCollectionOperation {
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
     /// Custom params for Optimizers.  If none - it is left unchanged.
-    /// This operation is blocking, it will only proceed ones all current optimizations are complete
+    /// This operation is blocking, it will only proceed once all current optimizations are complete
     #[serde(alias = "optimizer_config")]
     pub optimizers_config: Option<OptimizersConfigDiff>, // TODO: Allow updates for other configuration params as well
     /// Collection base params. If none - it is left unchanged.
