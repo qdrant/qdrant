@@ -19,13 +19,13 @@ use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
-    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
-    HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match,
-    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
-    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig,
-    QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization,
-    ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
-    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
+    HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
+    ListValue, Match, NamedVectors, NestedCondition, PayloadExcludeSelector,
+    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
+    QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings,
+    ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value,
+    ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -796,18 +796,21 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_bounding_box,
             geo_radius,
             values_count,
+            geo_polygon,
         } = value;
 
         let geo_bounding_box =
             geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
+        let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         Ok(Self {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
-            range: range.map(|r| r.into()),
+            range: range.map(Into::into),
             geo_bounding_box,
             geo_radius,
-            values_count: values_count.map(|r| r.into()),
+            geo_polygon,
+            values_count: values_count.map(Into::into),
         })
     }
 }
@@ -820,18 +823,21 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             range,
             geo_bounding_box,
             geo_radius,
+            geo_polygon,
             values_count,
         } = value;
 
-        let geo_bounding_box = geo_bounding_box.map(|g| g.into());
-        let geo_radius = geo_radius.map(|g| g.into());
+        let geo_bounding_box = geo_bounding_box.map(Into::into);
+        let geo_radius = geo_radius.map(Into::into);
+        let geo_polygon = geo_polygon.map(Into::into);
         Self {
             key,
-            r#match: r#match.map(|m| m.into()),
-            range: range.map(|r| r.into()),
+            r#match: r#match.map(Into::into),
+            range: range.map(Into::into),
             geo_bounding_box,
             geo_radius,
-            values_count: values_count.map(|r| r.into()),
+            geo_polygon,
+            values_count: values_count.map(Into::into),
         }
     }
 }
@@ -884,6 +890,29 @@ impl From<segment::types::GeoRadius> for GeoRadius {
         Self {
             center: Some(value.center.into()),
             radius: value.radius as f32, // TODO lossy ok?
+        }
+    }
+}
+
+impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
+    type Error = Status;
+
+    fn try_from(value: GeoPolygon) -> Result<Self, Self::Error> {
+        if value.points.is_empty() {
+            return Err(Status::invalid_argument("Empty GeoPolygon"));
+        }
+
+        let points: Vec<segment::types::GeoPoint> =
+            value.points.into_iter().map(Into::into).collect();
+
+        Ok(Self { points })
+    }
+}
+
+impl From<segment::types::GeoPolygon> for GeoPolygon {
+    fn from(value: segment::types::GeoPolygon) -> Self {
+        Self {
+            points: value.points.into_iter().map(Into::into).collect(),
         }
     }
 }

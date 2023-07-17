@@ -801,6 +801,7 @@ mod tests {
             geo_bounding_box: None,
             geo_radius: None,
             values_count: None,
+            geo_polygon: None,
         };
 
         let offsets = index.filter(&condition).unwrap().collect_vec();

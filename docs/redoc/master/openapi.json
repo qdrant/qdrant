@@ -5000,6 +5000,17 @@
               }
             ]
           },
+          "geo_polygon": {
+            "description": "Check if geo point is within a given polygon",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoPolygon"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "values_count": {
             "description": "Check number of values of the field",
             "anyOf": [
@@ -5188,6 +5199,22 @@
             "description": "Radius of the area in meters",
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "GeoPolygon": {
+        "description": "Geo filter request\n\nMatches coordinates inside the polygon, defined by the given coordinates in order.",
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "description": "Ordered list of coordinates representing the vertices of a polygon.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoPoint"
+            }
           }
         }
       },

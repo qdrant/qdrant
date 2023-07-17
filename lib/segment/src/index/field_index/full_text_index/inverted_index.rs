@@ -245,6 +245,7 @@ impl InvertedIndex {
                         range: None,
                         geo_bounding_box: None,
                         geo_radius: None,
+                        geo_polygon: None,
                         values_count: None,
                     },
                     cardinality: posting.len(),

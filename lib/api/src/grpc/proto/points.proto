@@ -483,6 +483,7 @@ message FieldCondition {
   GeoBoundingBox geo_bounding_box = 4; // Check if points geolocation lies in a given area
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
   ValuesCount values_count = 6; // Check number of values for a specific field
+  GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
 }
 
 message Match {
@@ -521,6 +522,13 @@ message GeoBoundingBox {
 message GeoRadius {
   GeoPoint center = 1; // Center of the circle
   float radius = 2; // In meters
+}
+
+message GeoPolygon {
+  // Ordered list of coordinates representing the vertices of a polygon.
+  // The minimum size is 4, and the first coordinate and the last coordinate
+  // should be the same to form a closed polygon.
+  repeated GeoPoint points = 1;
 }
 
 message ValuesCount {
