@@ -89,7 +89,7 @@ mod tests {
         count
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_task_stop() {
         let handle = spawn_stoppable(counting_task);
 
