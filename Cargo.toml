@@ -66,7 +66,7 @@ tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.15"
-tar = "0.4.38"
+tar = "0.4.39"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
 rustls = "0.20.7"
 rustls-pemfile = "1.0.3"
