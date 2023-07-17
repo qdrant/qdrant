@@ -196,6 +196,17 @@ fn create_segment(
 }
 
 pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext == "deleted")
+        .unwrap_or(false)
+    {
+        log::warn!("Segment is marked as deleted, skipping: {}", path.display());
+        // Skip deleted segments
+        return Ok(None);
+    }
+
     if !SegmentVersion::check_exists(path) {
         // Assume segment was not properly saved.
         // Server might have crashed before saving the segment fully.

@@ -359,7 +359,13 @@ impl Segment {
 
     pub fn load_state(current_path: &Path) -> OperationResult<SegmentState> {
         let state_path = current_path.join(SEGMENT_STATE_FILE);
-        Ok(read_json(&state_path)?)
+        read_json(&state_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to read segment state {} error: {}",
+                current_path.display(),
+                err
+            ))
+        })
     }
 
     /// Retrieve vector by internal ID
