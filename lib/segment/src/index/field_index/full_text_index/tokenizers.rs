@@ -1,4 +1,5 @@
-use charabia::Tokenize;
+use charabia::segmenter::SegmenterOption;
+use charabia::{Segment, Tokenize, TokenizerBuilder};
 
 use crate::data_types::text_index::{TextIndexParams, TokenizerType};
 
@@ -189,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multilingual_tokenizer() {
+    fn test_multilingual_tokenizer_japanese() {
         let text = "本日の日付は";
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
@@ -201,6 +202,48 @@ mod tests {
         assert_eq!(tokens.get(3), Some(&"日".to_owned()));
         assert_eq!(tokens.get(4), Some(&"付".to_owned()));
         assert_eq!(tokens.get(5), Some(&"は".to_owned()));
+    }
+
+    #[test]
+    fn test_multilingual_tokenizer_chinese() {
+        let text = "今天是星期一";
+        let mut tokens = Vec::new();
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 6);
+        assert_eq!(tokens.get(0), Some(&"今".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"天".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"是".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"星".to_owned()));
+        assert_eq!(tokens.get(4), Some(&"期".to_owned()));
+        assert_eq!(tokens.get(5), Some(&"一".to_owned()));
+    }
+
+    #[test]
+    fn test_multilingual_tokenizer_thai() {
+        let text = "มาทำงานกันเถอะ";
+        let mut tokens = Vec::new();
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens.get(0), Some(&"มา".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"ทางาน".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"กน".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"เถอะ".to_owned()));
+    }
+
+    #[test]
+    fn test_multilingual_tokenizer_english() {
+        let text = "What are you waiting for?";
+        let mut tokens = Vec::new();
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 5);
+        assert_eq!(tokens.get(0), Some(&"what".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"are".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"you".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"waiting".to_owned()));
+        assert_eq!(tokens.get(4), Some(&"for".to_owned()));
     }
 
     #[test]
