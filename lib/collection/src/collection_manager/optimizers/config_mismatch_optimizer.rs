@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -50,6 +51,34 @@ impl ConfigMismatchOptimizer {
         }
     }
 
+    /// Calculates and HNSW config that should be used for a given vector
+    /// with current configuration.
+    ///
+    /// Takes vector-specific HNSW config (if any) and merges it with the collection-wide config.
+    fn get_required_hnsw_config(&self, vector_name: &str) -> Cow<HnswConfig> {
+        let target_hnsw_collection = &self.hnsw_config;
+        // Select vector specific target HNSW config
+        let target_hnsw_vector = self
+            .collection_params
+            .vectors
+            .get_params(vector_name)
+            .and_then(|vector_params| vector_params.hnsw_config)
+            .map(|vector_hnsw| vector_hnsw.update(target_hnsw_collection))
+            .and_then(|hnsw| match hnsw {
+                Ok(hnsw) => Some(hnsw),
+                Err(err) => {
+                    log::warn!(
+                        "Failed to merge collection and vector HNSW config, ignoring: {err}"
+                    );
+                    None
+                }
+            });
+        match target_hnsw_vector {
+            Some(target_hnsw) => Cow::Owned(target_hnsw),
+            None => Cow::Borrowed(target_hnsw_collection),
+        }
+    }
+
     fn worst_segment(
         &self,
         segments: LockedSegmentHolder,
@@ -89,27 +118,9 @@ impl ConfigMismatchOptimizer {
                             match &vector_data.index {
                                 Indexes::Plain {} => {}
                                 Indexes::Hnsw(effective_hnsw) => {
-                                    // Select vector specific target HNSW config
-                                    let target_hnsw_collection = &self.hnsw_config;
-                                    let target_hnsw_vector = self
-                                        .collection_params
-                                        .vectors
-                                        .get_params(vector_name)
-                                        .and_then(|vector_params| vector_params.hnsw_config)
-                                        .map(|vector_hnsw| vector_hnsw.update(target_hnsw_collection))
-                                        .and_then(|hnsw| match hnsw {
-                                            Ok(hnsw) => Some(hnsw),
-                                            Err(err) => {
-                                                log::warn!("Failed to merge collection and vector HNSW config, ignoring: {err}");
-                                                None
-                                            }
-                                        });
-                                    let target_hnsw = target_hnsw_vector
-                                        .as_ref()
-                                        .unwrap_or(target_hnsw_collection);
-
                                     // Select segment if we have an HNSW mismatch that requires rebuild
-                                    if effective_hnsw.mismatch_requires_rebuild(target_hnsw) {
+                                    let target_hnsw = self.get_required_hnsw_config(vector_name);
+                                    if effective_hnsw.mismatch_requires_rebuild(&target_hnsw) {
                                         return true;
                                     }
                                 }
