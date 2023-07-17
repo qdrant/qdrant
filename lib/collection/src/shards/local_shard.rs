@@ -178,15 +178,6 @@ impl LocalShard {
 
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
-            if segments_path.ends_with("deleted") {
-                remove_dir_all(&segments_path).await.map_err(|_| {
-                    CollectionError::service_error(format!(
-                        "Can't remove marked-for-remove segment {}",
-                        segments_path.to_str().unwrap()
-                    ))
-                })?;
-                continue;
-            }
             load_handlers.push(
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
@@ -194,6 +185,14 @@ impl LocalShard {
                         let mut res = load_segment(&segments_path)?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
+                        } else {
+                            std::fs::remove_dir_all(&segments_path).map_err(|err| {
+                                CollectionError::service_error(format!(
+                                    "Can't remove leftover segment {}, due to {}",
+                                    segments_path.to_str().unwrap(),
+                                    err
+                                ))
+                            })?;
                         }
                         Ok::<_, CollectionError>(res)
                     })?,

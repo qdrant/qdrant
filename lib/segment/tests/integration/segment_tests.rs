@@ -210,6 +210,26 @@ fn ordered_deletion_test() {
 }
 
 #[test]
+fn skip_deleted_segment() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let path = {
+        let mut segment = build_segment_1(dir.path());
+        segment.delete_point(6, 5.into()).unwrap();
+        segment.delete_point(6, 4.into()).unwrap();
+        segment.flush(true).unwrap();
+        segment.current_path.clone()
+    };
+
+    let new_path = path.with_extension("deleted");
+    std::fs::rename(&path, new_path).unwrap();
+
+    let segment = load_segment(&path).unwrap();
+
+    assert!(segment.is_none());
+}
+
+#[test]
 fn test_update_named_vector() {
     let num_points = 25;
     let dim = 4;
