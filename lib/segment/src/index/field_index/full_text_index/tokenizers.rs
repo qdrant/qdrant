@@ -1,5 +1,4 @@
-use charabia::segmenter::SegmenterOption;
-use charabia::{Segment, Tokenize, TokenizerBuilder};
+use charabia::Tokenize;
 
 use crate::data_types::text_index::{TextIndexParams, TokenizerType};
 
