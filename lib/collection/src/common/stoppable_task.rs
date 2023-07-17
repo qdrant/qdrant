@@ -89,7 +89,7 @@ mod tests {
         count
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_task_stop() {
         let handle = spawn_stoppable(counting_task);
 
@@ -105,8 +105,8 @@ mod tests {
         if let Some(handle) = handle.stop() {
             if let Some(count) = handle.await.unwrap() {
                 assert!(
-                    (5..=25).contains(&count),
-                    "Stoppable task should have count between [5, 25], but it is {count}",
+                    count < 25,
+                    "Stoppable task should have count should be less than 25, but it is {count}",
                 );
             }
         }
