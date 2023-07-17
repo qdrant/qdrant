@@ -24,24 +24,26 @@ use segment::segment_constructor::build_segment;
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes, IsEmptyCondition,
-    Payload, PayloadField, PayloadSchemaType, PointOffsetType, Range, SegmentConfig,
-    VectorDataConfig, VectorStorageType, WithPayload,
+    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
+    Indexes, IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, PointOffsetType, Range,
+    SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
 };
 use serde_json::json;
 use tempfile::Builder;
 
 use crate::utils::scored_point_ties::ScoredPointTies;
 
+const DIM: usize = 5;
+const ATTEMPTS: usize = 100;
+
 fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
     let mut rnd = StdRng::seed_from_u64(42);
-    let dim = 5;
 
     let config = SegmentConfig {
         vector_data: HashMap::from([(
             DEFAULT_VECTOR_NAME.to_owned(),
             VectorDataConfig {
-                size: dim,
+                size: DIM,
                 distance: Distance::Dot,
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
@@ -66,7 +68,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
     opnum += 1;
     for n in 0..num_points {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_vector(&mut rnd, DIM);
         let payload: Payload = generate_diverse_payload(&mut rnd);
 
         plain_segment
@@ -144,13 +146,12 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
 
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
     let mut rnd = StdRng::seed_from_u64(42);
-    let dim = 5;
 
     let config = SegmentConfig {
         vector_data: HashMap::from([(
             DEFAULT_VECTOR_NAME.to_owned(),
             VectorDataConfig {
-                size: dim,
+                size: DIM,
                 distance: Distance::Dot,
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
@@ -203,7 +204,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     opnum += 1;
     for n in 0..num_points {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_vector(&mut rnd, DIM);
         let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
         plain_segment
@@ -255,6 +256,72 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     }
 
     (struct_segment, plain_segment)
+}
+
+fn validate_geo_filter(query_filter: Filter) {
+    let mut rnd = rand::thread_rng();
+    let query_vector = random_vector(&mut rnd, DIM);
+    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+    let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
+
+    for _i in 0..ATTEMPTS {
+        let plain_result = plain_segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                &false.into(),
+                Some(&query_filter),
+                5,
+                None,
+            )
+            .unwrap();
+
+        let estimation = plain_segment
+            .payload_index
+            .borrow()
+            .estimate_cardinality(&query_filter);
+
+        assert!(estimation.min <= estimation.exp, "{estimation:#?}");
+        assert!(estimation.exp <= estimation.max, "{estimation:#?}");
+        assert!(
+            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+            "{estimation:#?}",
+        );
+
+        let struct_result = struct_segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                &false.into(),
+                Some(&query_filter),
+                5,
+                None,
+            )
+            .unwrap();
+
+        let estimation = struct_segment
+            .payload_index
+            .borrow()
+            .estimate_cardinality(&query_filter);
+
+        assert!(estimation.min <= estimation.exp, "{estimation:#?}");
+        assert!(estimation.exp <= estimation.max, "{estimation:#?}");
+        assert!(
+            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+            "{estimation:#?}",
+        );
+
+        plain_result
+            .iter()
+            .zip(struct_result.iter())
+            .for_each(|(r1, r2)| {
+                assert_eq!(r1.id, r2.id);
+                assert!((r1.score - r2.score) < 0.0001)
+            });
+    }
 }
 
 #[test]
@@ -462,15 +529,12 @@ fn test_struct_payload_index() {
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
     let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
-    let dim = 5;
-
     let mut rnd = rand::thread_rng();
 
     let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
 
-    let attempts = 100;
-    for _i in 0..attempts {
-        let query_vector = random_vector(&mut rnd, dim);
+    for _i in 0..ATTEMPTS {
+        let query_vector = random_vector(&mut rnd, DIM);
         let query_filter = random_filter(&mut rnd, 3);
 
         let plain_result = plain_segment
@@ -529,96 +593,75 @@ fn test_struct_payload_index() {
 }
 
 #[test]
-fn test_struct_payload_geo_index() {
-    // Compare search with plain and struct indexes
+fn test_struct_payload_geo_boundingbox_index() {
     let mut rnd = rand::thread_rng();
 
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+    let geo_bbox = GeoBoundingBox {
+        top_left: GeoPoint {
+            lon: rnd.gen_range(LON_RANGE),
+            lat: rnd.gen_range(LAT_RANGE),
+        },
+        bottom_right: GeoPoint {
+            lon: rnd.gen_range(LON_RANGE),
+            lat: rnd.gen_range(LAT_RANGE),
+        },
+    };
 
-    let dim = 5;
+    let condition = Condition::Field(FieldCondition::new_geo_bounding_box(
+        "geo_key".to_string(),
+        geo_bbox,
+    ));
 
-    let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
+    let query_filter = Filter::new_must(condition);
 
-    let attempts = 100;
-    for _i in 0..attempts {
-        let query_vector = random_vector(&mut rnd, dim);
-        let r_meters = rnd.gen_range(1.0..10000.0);
-        let geo_radius = GeoRadius {
-            center: GeoPoint {
-                lon: rnd.gen_range(LON_RANGE),
-                lat: rnd.gen_range(LAT_RANGE),
-            },
-            radius: r_meters,
-        };
+    validate_geo_filter(query_filter)
+}
 
-        let condition = Condition::Field(FieldCondition::new_geo_radius(
-            "geo_key".to_string(),
-            geo_radius,
-        ));
+#[test]
+fn test_struct_payload_geo_radius_index() {
+    let mut rnd = rand::thread_rng();
 
-        let query_filter = Filter {
-            should: None,
-            must: Some(vec![condition]),
-            must_not: None,
-        };
+    let r_meters = rnd.gen_range(1.0..10000.0);
+    let geo_radius = GeoRadius {
+        center: GeoPoint {
+            lon: rnd.gen_range(LON_RANGE),
+            lat: rnd.gen_range(LAT_RANGE),
+        },
+        radius: r_meters,
+    };
 
-        let plain_result = plain_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            )
-            .unwrap();
+    let condition = Condition::Field(FieldCondition::new_geo_radius(
+        "geo_key".to_string(),
+        geo_radius,
+    ));
 
-        let estimation = plain_segment
-            .payload_index
-            .borrow()
-            .estimate_cardinality(&query_filter);
+    let query_filter = Filter::new_must(condition);
 
-        assert!(estimation.min <= estimation.exp, "{estimation:#?}");
-        assert!(estimation.exp <= estimation.max, "{estimation:#?}");
-        assert!(
-            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
-            "{estimation:#?}",
-        );
+    validate_geo_filter(query_filter)
+}
 
-        let struct_result = struct_segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                Some(&query_filter),
-                5,
-                None,
-            )
-            .unwrap();
+#[test]
+fn test_struct_payload_geo_polygon_index() {
+    let mut rnd = rand::thread_rng();
 
-        let estimation = struct_segment
-            .payload_index
-            .borrow()
-            .estimate_cardinality(&query_filter);
+    let polygon_edge = 5;
 
-        assert!(estimation.min <= estimation.exp, "{estimation:#?}");
-        assert!(estimation.exp <= estimation.max, "{estimation:#?}");
-        assert!(
-            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
-            "{estimation:#?}",
-        );
+    let points: Vec<GeoPoint> = (0..polygon_edge)
+        .map(|_| GeoPoint {
+            lon: rnd.gen_range(LON_RANGE),
+            lat: rnd.gen_range(LAT_RANGE),
+        })
+        .collect();
+    let geo_polygon = GeoPolygon { points };
 
-        plain_result
-            .iter()
-            .zip(struct_result.iter())
-            .for_each(|(r1, r2)| {
-                assert_eq!(r1.id, r2.id);
-                assert!((r1.score - r2.score) < 0.0001)
-            });
-    }
+    let condition = Condition::Field(FieldCondition::new_geo_polygon(
+        "geo_key".to_string(),
+        geo_polygon,
+    ));
+
+    let query_filter = Filter::new_must(condition);
+
+    validate_geo_filter(query_filter)
 }
 
 #[test]
@@ -627,8 +670,6 @@ fn test_struct_payload_index_nested_fields() {
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
     let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
-    let dim = 5;
-
     let mut rnd = rand::thread_rng();
 
     let (struct_segment, plain_segment) =
@@ -636,7 +677,7 @@ fn test_struct_payload_index_nested_fields() {
 
     let attempts = 100;
     for _i in 0..attempts {
-        let query_vector = random_vector(&mut rnd, dim);
+        let query_vector = random_vector(&mut rnd, DIM);
         let query_filter = random_nested_filter(&mut rnd);
         let plain_result = plain_segment
             .search(

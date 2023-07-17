@@ -1238,6 +1238,8 @@ pub struct FieldCondition {
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
+    /// Check if geo point is within a given polygon
+    pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
     pub values_count: Option<ValuesCount>,
 }
@@ -1250,6 +1252,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1261,6 +1264,7 @@ impl FieldCondition {
             range: Some(range),
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1275,6 +1279,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: Some(geo_bounding_box),
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1286,6 +1291,19 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: Some(geo_radius),
+            geo_polygon: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_geo_polygon(key: impl Into<PayloadKeyType>, geo_polygon: GeoPolygon) -> Self {
+        Self {
+            key: key.into(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(geo_polygon),
             values_count: None,
         }
     }
@@ -1297,6 +1315,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: Some(values_count),
         }
     }
