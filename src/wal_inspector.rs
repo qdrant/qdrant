@@ -5,6 +5,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::wal::SerdeWal;
 use storage::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use storage::content_manager::consensus::persistent::Persistent;
+use storage::content_manager::consensus_ops::ConsensusOperations;
 use wal::WalOptions;
 
 /// Executable to inspect the content of a write ahead log folder (collection OR consensus WAL).
@@ -48,11 +49,14 @@ fn print_consensus_wal(wal_path: &Path) {
         .unwrap();
     for entry in entries {
         println!("==========================");
-        let data = entry.data;
-        println!(
-            "Entry ID:{} term:{} entry_type:{} data:{:?}",
-            entry.index, entry.term, entry.entry_type, data
-        );
+        let command = ConsensusOperations::try_from(&entry);
+        match command {
+            Ok(command) => println!("Command: {:?}", command),
+            Err(_) => println!(
+                "Entry ID:{} term:{} entry_type:{} data:{:?}",
+                entry.index, entry.term, entry.entry_type, entry.data
+            ),
+        }
     }
 }
 
