@@ -2,7 +2,7 @@
 
 set -ex
 
-function clear_after_tests()
+clear_after_tests()
 {
   rm -rf .hypothesis .pytest_cache
 }
