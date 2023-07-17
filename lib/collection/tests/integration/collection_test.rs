@@ -148,6 +148,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             geo_bounding_box: None,
             geo_radius: None,
             values_count: None,
+            geo_polygon: None,
         }))),
         exact: true,
     };
