@@ -28,7 +28,7 @@ serde_cbor = "0.11.2"
 rmp-serde = "~1.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "a32f6a38acf7ffd761df83b0790eaefeb107cd60"}
 ordered-float = "3.7"
-hashring = "0.3.0"
+hashring = "0.3.1"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 
 tokio = {version = "~1.29", features = ["full"]}
