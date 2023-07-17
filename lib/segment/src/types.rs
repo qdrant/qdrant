@@ -161,7 +161,7 @@ impl Distance {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct OrderBy {
     pub key: String,
-    pub direction: Direction,
+    pub direction: Option<Direction>,
     pub offset: Option<u32>, //offset
 }
 
@@ -1250,7 +1250,7 @@ impl GeoPolygon {
 }
 
 /// All possible payload filtering conditions
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
     /// Payload key

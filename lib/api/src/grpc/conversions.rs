@@ -115,7 +115,7 @@ impl From<segment::types::OrderBy> for OrderBy {
     fn from(value: segment::types::OrderBy) -> Self {
         Self {
             key: value.key,
-            direction: Some(match value.direction {
+            direction: value.direction.map(|d| match d {
                 Direction::ASC => 0,
                 Direction::DESC => 1,
             }),
@@ -128,7 +128,7 @@ impl From<OrderBy> for segment::types::OrderBy {
     fn from(value: OrderBy) -> Self {
         Self {
             key: value.key,
-            direction: value.direction.map_or_else(Default::default, |d| match d {
+            direction: value.direction.map(|d| match d {
                 0 => Direction::ASC,
                 1 => Direction::DESC,
                 _ => panic!("Undefined direction"),
