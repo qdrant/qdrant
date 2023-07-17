@@ -178,7 +178,12 @@ impl LocalShard {
 
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
-            if segments_path.ends_with("deleted") {
+            if segments_path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext == "deleted")
+                .unwrap_or(false)
+            {
                 remove_dir_all(&segments_path).await.map_err(|_| {
                     CollectionError::service_error(format!(
                         "Can't remove marked-for-remove segment {}",
