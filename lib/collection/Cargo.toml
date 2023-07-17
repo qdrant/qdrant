@@ -54,7 +54,7 @@ indicatif = "0.17.5"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono", "url"] }
 num_cpus = "1.16.0"
-tar = "0.4.38"
+tar = "0.4.39"
 fs_extra = "1.3.0"
 semver = "1.0.17"
 
