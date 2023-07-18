@@ -6,7 +6,7 @@ paths:
       tags:
         - cluster
       summary: Get cluster status info
-      description: Get information about the current state and composition of the cluster
+      description: This endpoint retrieves information about the current state and composition of the cluster.
       operationId: cluster_status
       responses: #@ response(reference("ClusterStatus"))
 
@@ -15,6 +15,7 @@ paths:
       tags:
         - cluster
       summary: Tries to recover current peer Raft state.
+      description: This endpoint tries to recover the Raft state for a current peer cluster.
       operationId: recover_current_peer
       responses: #@ response(type("boolean"))
 
@@ -23,7 +24,7 @@ paths:
       tags:
         - cluster
       summary: Remove peer from the cluster
-      description: Tries to remove peer from the cluster. Will return an error if peer has shards on it.
+      description: This endpoint tries to remove peer from the cluster. Will return an error if peer has shards on it.
       operationId: remove_peer
       parameters:
         - name: peer_id
