@@ -4,7 +4,7 @@ paths:
   /telemetry:
     get:
       summary: Collect telemetry data
-      description: Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics
+      description: This endpoint collect telemetry data including app info, system info, collections info, cluster info, configs and statistics.
       operationId: telemetry
       tags:
         - service
@@ -20,7 +20,7 @@ paths:
   /metrics:
     get:
       summary: Collect Prometheus metrics data
-      description: Collect metrics data including app info, collections info, cluster info and statistics
+      description: This endpoint collects metrics data including app info, collections info, cluster info and statistics.
       operationId: metrics
       tags:
         - service
@@ -54,7 +54,7 @@ paths:
   /locks:
     post:
       summary: Set lock options
-      description: Set lock options. If write is locked, all write operations and collection creation are forbidden. Returns previous lock options
+      description: This endpoint sets lock options. If write is locked, all write operations and collection creation are forbidden. It also returns previous lock options.
       operationId: post_locks
       tags:
         - service
@@ -68,7 +68,7 @@ paths:
 
     get:
       summary: Get lock options
-      description: Get lock options. If write is locked, all write operations and collection creation are forbidden
+      description: This endpoint retrieves lock options. If write is locked, all write operations and collection creation are forbidden.
       operationId: get_locks
       tags:
         - service
