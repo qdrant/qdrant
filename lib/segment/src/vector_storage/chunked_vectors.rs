@@ -65,10 +65,15 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         self.chunks.resize(num_chunks, vec![]);
         for chunk_idx in 0..num_chunks {
             if chunk_idx == last_chunk_idx {
-                self.chunks[chunk_idx]
-                    .try_reserve_exact((num_vectors % self.chunk_capacity) * self.dim)?;
+                let desired_capacity = (num_vectors % self.chunk_capacity) * self.dim;
+                let additional_capacity =
+                    desired_capacity.saturating_sub(self.chunks[chunk_idx].capacity());
+                self.chunks[chunk_idx].try_reserve_exact(additional_capacity)?;
             } else {
-                self.chunks[chunk_idx].try_reserve_exact(self.chunk_capacity * self.dim)?;
+                let desired_capacity = self.chunk_capacity * self.dim;
+                let additional_capacity =
+                    desired_capacity.saturating_sub(self.chunks[chunk_idx].capacity());
+                self.chunks[chunk_idx].try_reserve_exact(additional_capacity)?;
             }
         }
         Ok(())
@@ -87,11 +92,15 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             if chunk_idx == 0 {
                 // Do not overallocate the first chunk, because it is likely to be small
                 // and we don't want to waste memory.
-                chunk_data.try_reserve(idx + self.dim)?;
+                let desired_capacity = idx + self.dim;
+                let additional_capacity = desired_capacity.saturating_sub(chunk_data.capacity());
+                chunk_data.try_reserve(additional_capacity)?;
             } else {
                 // Once we have more than one chunk, we don't want to overallocate
                 // and we keep the exact capacity of each chunk.
-                chunk_data.try_reserve_exact(self.chunk_capacity * self.dim)?;
+                let desired_capacity = self.chunk_capacity * self.dim;
+                let additional_capacity = desired_capacity.saturating_sub(chunk_data.capacity());
+                chunk_data.try_reserve_exact(additional_capacity)?;
             }
             chunk_data.resize(idx + self.dim, T::default());
         }
