@@ -16,11 +16,11 @@ info:
     which makes it possible to use in applications when object could not be described solely by vector.
     It could be location features, availability flags, and other custom properties businesses should take into account.
 
-    ## Examples
+    ## Quickstart
 
     This examples cover the most basic use-cases - collection creation and basic vector search.
 
-    ### Create collection
+    ### Create a collection
 
     First - let's create a collection with dot-production metric.
 
@@ -207,7 +207,7 @@ info:
     ```
 
   contact:
-    email: andrey@vasnetsov.com
+    email: andrey@qdrant.com
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
@@ -273,7 +273,7 @@ paths:
       tags:
         - points
       summary: Search points
-      description: Retrieve closest points based on vector similarity and given filtering conditions
+      description: This endpoint retrieves the closest points based on vector similarity and given filtering conditions.
       operationId: search_points
       requestBody:
         description: Search request with optional filtering
@@ -302,7 +302,7 @@ paths:
       tags:
         - points
       summary: Search batch points
-      description: Retrieve by batch the closest points based on vector similarity and given filtering conditions
+      description: This endpoint retrieves in batches the closest points based on vector similarity and given filtering conditions.
       operationId: search_batch_points
       requestBody:
         description: Search batch request
@@ -331,7 +331,7 @@ paths:
       tags:
         - points
       summary: Search point groups
-      description: Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field
+      description: This endpoint retrieves the closest points based on vector similarity and given filtering conditions, grouped by a given payload field.
       operationId: search_point_groups
       requestBody:
         description: Search request with optional filtering, grouped by a given payload field
@@ -360,7 +360,7 @@ paths:
       tags:
         - points
       summary: Recommend points
-      description: Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+      description: This endpoint look for points which are closer to stored positive examples and at the same time further from negative examples.
       operationId: recommend_points
       requestBody:
         description: Request points based on positive and negative examples.
@@ -389,7 +389,7 @@ paths:
       tags:
         - points
       summary: Recommend batch points
-      description: Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+      description: This endpoint look for points which are closer to stored positive examples and at the same time further from negative examples.
       operationId: recommend_batch_points
       requestBody:
         description: Request points based on positive and negative examples.
@@ -418,7 +418,7 @@ paths:
       tags:
         - points
       summary: Recommend point groups
-      description: Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.
+      description: This endpoint look for points which are closer to stored positive examples and at the same time further from negative examples, grouped by a given payload field.
       operationId: recommend_point_groups
       requestBody:
         description: Request points based on positive and negative examples, grouped by a payload field.
@@ -447,7 +447,7 @@ paths:
       tags:
         - points
       summary: Count points
-      description: Count points which matches given filtering condition
+      description: This endpoint counts the points which match a given filtering condition.
       operationId: count_points
       requestBody:
         description: Request counts of points which matches given filtering condition
