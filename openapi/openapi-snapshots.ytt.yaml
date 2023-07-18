@@ -7,7 +7,7 @@ paths:
         - snapshots
         - collections
       summary: Recover from an uploaded snapshot
-      description: Recover local collection data from an uploaded snapshot. This will overwrite any data, stored on this node, for the collection. If collection does not exist - it will be created.
+      description: This endpoint recovers local collection data from an uploaded snapshot. This will overwrite any data stored on this node for the specified collection. If specified collection does not exist, it will be created.
       operationId: recover_from_uploaded_snapshot
       parameters:
         - name: collection_name
@@ -45,7 +45,7 @@ paths:
         - snapshots
         - collections
       summary: Recover from a snapshot
-      description: Recover local collection data from a snapshot. This will overwrite any data, stored on this node, for the collection. If collection does not exist - it will be created.
+      description: This endpoint recovers local collection data from a snapshot. This will overwrite any data stored on this node for the specified collection. If the specified collection does not exist, it will be created.
       operationId: recover_from_snapshot
       parameters:
         - name: collection_name
@@ -74,7 +74,7 @@ paths:
         - snapshots
         - collections
       summary: List collection snapshots
-      description: Get list of snapshots for a collection
+      description: This endpoint retrieves a list of snapshots for the specified collection.
       operationId: list_snapshots
       parameters:
         - name: collection_name
@@ -90,7 +90,7 @@ paths:
         - snapshots
         - collections
       summary: Create collection snapshot
-      description: Create new snapshot for a collection
+      description: This endpoint creates a new snapshot for the specified collection.
       operationId: create_snapshot
       parameters:
         - name: collection_name
@@ -113,7 +113,7 @@ paths:
         - snapshots
         - collections
       summary: Delete collection snapshot
-      description: Delete snapshot for a collection
+      description: This endpoint deletes a snapshot for the specified collection.
       operationId: delete_snapshot
       parameters:
         - name: collection_name
@@ -140,7 +140,7 @@ paths:
         - snapshots
         - collections
       summary: Download collection snapshot
-      description: Download specified snapshot from a collection as a file
+      description: This endpoint download the specified snapshot from a collection as a file.
       operationId: get_snapshot
       parameters:
         - name: collection_name
@@ -182,7 +182,7 @@ paths:
       tags:
         - snapshots
       summary: List of storage snapshots
-      description: Get list of snapshots of the whole storage
+      description: This endpoint retrieves a list of snapshots from the entire storage directory.
       operationId: list_full_snapshots
       responses: #@ response(array(reference("SnapshotDescription")))
 
@@ -190,7 +190,7 @@ paths:
       tags:
         - snapshots
       summary: Create storage snapshot
-      description: Create new snapshot of the whole storage
+      description: This endpoint creates a new snapshot of the entire storage directory.
       operationId: create_full_snapshot
       parameters:
         - name: wait
@@ -206,7 +206,7 @@ paths:
       tags:
         - snapshots
       summary: Delete storage snapshot
-      description: Delete snapshot of the whole storage
+      description: This endpoint deletes the snapshot of the entire storage directory.
       operationId: delete_full_snapshot
       parameters:
         - name: snapshot_name
@@ -226,7 +226,7 @@ paths:
       tags:
         - snapshots
       summary: Download storage snapshot
-      description: Download specified snapshot of the whole storage as a file
+      description: This endpoint downloads the specified snapshot of the entire storage as a file.
       operationId: get_full_snapshot
       parameters:
         - name: snapshot_name

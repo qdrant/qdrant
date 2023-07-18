@@ -6,7 +6,7 @@ paths:
       tags:
         - collections
       summary: List collections
-      description: This endpoints lists the names of all existing collections.
+      description: This endpoint lists the names of all existing collections.
       operationId: get_collections
       responses: #@ response(reference("CollectionsResponse"))
 
