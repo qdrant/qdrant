@@ -188,34 +188,31 @@ mod tests {
         assert_eq!(tokens.get(1), Some(&"мир".to_owned()));
     }
 
+    #[cfg(feature = "multiling-japanese")]
     #[test]
     fn test_multilingual_tokenizer_japanese() {
         let text = "本日の日付は";
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
-        assert_eq!(tokens.len(), 6);
-        assert_eq!(tokens.get(0), Some(&"本".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"日".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"の".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"日".to_owned()));
-        assert_eq!(tokens.get(4), Some(&"付".to_owned()));
-        assert_eq!(tokens.get(5), Some(&"は".to_owned()));
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens.get(0), Some(&"本日".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"の".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"日付".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"は".to_owned()));
     }
 
+    #[cfg(feature = "multiling-chinese")]
     #[test]
     fn test_multilingual_tokenizer_chinese() {
         let text = "今天是星期一";
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
-        assert_eq!(tokens.len(), 6);
-        assert_eq!(tokens.get(0), Some(&"今".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"天".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"是".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"星".to_owned()));
-        assert_eq!(tokens.get(4), Some(&"期".to_owned()));
-        assert_eq!(tokens.get(5), Some(&"一".to_owned()));
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens.get(0), Some(&"jīntiān".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"shì".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"xīngqīyī".to_owned()));
     }
 
     #[test]
