@@ -5869,7 +5869,7 @@
         "type": "object",
         "properties": {
           "optimizers_config": {
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
+            "description": "Custom params for Optimizers.  If none - it is left unchanged. This operation is blocking, it will only proceed once all current optimizations are complete",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OptimizersConfigDiff"
@@ -5880,10 +5880,21 @@
             ]
           },
           "params": {
-            "description": "Collection base params.  If none - values from service configuration file are used.",
+            "description": "Collection base params. If none - it is left unchanged.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CollectionParamsDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "hnsw_config": {
+            "description": "HNSW parameters to update for the collection index. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
               },
               {
                 "nullable": true

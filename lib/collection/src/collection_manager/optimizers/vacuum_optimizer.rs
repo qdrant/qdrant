@@ -71,6 +71,7 @@ impl VacuumOptimizer {
         let segments_read_guard = segments.read();
         segments_read_guard
             .iter()
+            // Excluded externally, might already be scheduled for optimization
             .filter(|(idx, _segment)| !excluded_ids.contains(idx))
             .flat_map(|(idx, segment)| {
                 // Calculate littered ratio for segment and named vectors
