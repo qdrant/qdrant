@@ -6,7 +6,7 @@ paths:
       tags:
         - collections
       summary: List collections
-      description: Get list name of all existing collections
+      description: This endpoints lists the names of all existing collections.
       operationId: get_collections
       responses: #@ response(reference("CollectionsResponse"))
 
@@ -15,7 +15,7 @@ paths:
       tags:
         - collections
       summary: Collection info
-      description: Get detailed information about specified existing collection
+      description: This endpoint retrieves detailed information about the specified existing collection.
       operationId: get_collection
       parameters:
         - name: collection_name
@@ -30,7 +30,7 @@ paths:
       tags:
         - collections
       summary: Create collection
-      description: Create new collection with given parameters
+      description: This endpoint creates a new collection with specifiedzf parameters.
       operationId: create_collection
       requestBody:
         description: Parameters of a new collection
@@ -59,7 +59,7 @@ paths:
       tags:
         - collections
       summary: Update collection parameters
-      description: Update parameters of the existing collection
+      description: This endpoint updates specified parameters from the existing collection.
       operationId: update_collection
       requestBody:
         description: New parameters
@@ -88,7 +88,7 @@ paths:
       tags:
         - collections
       summary: Delete collection
-      description: Drop collection and all associated data
+      description: This endpoint drops the specified collection and all associated data.
       operationId: delete_collection
       parameters:
         - name: collection_name
@@ -133,7 +133,7 @@ paths:
       tags:
         - collections
       summary: Create index for field in collection
-      description: Create index for field in collection
+      description: This endpoint creates an index for a specified field in the collection.
       operationId: create_field_index
       parameters:
         - name: collection_name
@@ -168,7 +168,7 @@ paths:
       tags:
         - collections
       summary: Delete index for field in collection
-      description: Delete field index for collection
+      description: This endpoint deletes a field index for a specified collection.
       operationId: delete_field_index
       parameters:
         - name: collection_name
@@ -203,7 +203,7 @@ paths:
         - collections
         - cluster
       summary: Collection cluster info
-      description: Get cluster information for a collection
+      description: This endpoint retrieves cluster information for a specified collection.
       operationId: collection_cluster_info
       parameters:
         - name: collection_name
@@ -221,7 +221,7 @@ paths:
       summary: Update collection cluster setup
       operationId: update_collection_cluster
       requestBody:
-        description: Collection cluster update operations
+        description: This endpoint applies chosen cluster operations to a specified collection.
         content:
           application/json:
             schema:
@@ -247,7 +247,7 @@ paths:
       tags:
         - collections
       summary: List aliases for collection
-      description: Get list of all aliases for a collection
+      description: This endpoint retrieves a list of all aliases for a specified collection.
       operationId: get_collection_aliases
       parameters:
         - name: collection_name
@@ -263,6 +263,6 @@ paths:
       tags:
         - collections
       summary: List collections aliases
-      description: Get list of all existing collections aliases
+      description: This endpoint retrieves a list of all aliases belonging to all existing collections.
       operationId: get_collections_aliases
       responses: #@ response(reference("CollectionsAliasesResponse"))
