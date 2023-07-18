@@ -361,6 +361,27 @@ pub struct HnswConfig {
     pub payload_m: Option<usize>,
 }
 
+impl HnswConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a HNSW rebuild is required
+    ///
+    /// For example, a change in `max_indexing_threads` will not require rebuilding because it
+    /// doesn't affect the final index, and thus this would return false.
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self.m != other.m
+            || self.ef_construct != other.ef_construct
+            || self.full_scan_threshold != other.full_scan_threshold
+            || self.payload_m != other.payload_m
+            // Data on disk is the same, we have a unit test for that. We can eventually optimize
+            // this to just reload the collection rather than optimizing it again as a whole just
+            // to flip this flag
+            || self.on_disk != other.on_disk
+    }
+}
+
 const fn default_max_indexing_threads() -> usize {
     0
 }
