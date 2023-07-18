@@ -105,6 +105,7 @@ pub mod consensus_ops {
                 UpdateCollection {
                     optimizers_config: None,
                     params: None,
+                    hnsw_config: None,
                 },
             );
             operation

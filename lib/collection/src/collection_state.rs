@@ -75,10 +75,16 @@ impl State {
         collection
             .update_optimizer_params(new_config.optimizer_config)
             .await?;
-        // updating replication factor
-        let mut config = collection.collection_config.write().await;
-        config.params.replication_factor = new_config.params.replication_factor;
-        config.params.write_consistency_factor = new_config.params.write_consistency_factor;
+
+        // Update replication factor
+        {
+            let mut config = collection.collection_config.write().await;
+            config.params.replication_factor = new_config.params.replication_factor;
+            config.params.write_consistency_factor = new_config.params.write_consistency_factor;
+        }
+
+        collection.recreate_optimizers_blocking().await?;
+
         Ok(())
     }
 

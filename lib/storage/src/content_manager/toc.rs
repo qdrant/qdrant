@@ -775,16 +775,30 @@ impl TableOfContent {
         let UpdateCollection {
             optimizers_config,
             params,
+            hnsw_config,
         } = operation.update_collection;
         let collection = self.get_collection(&operation.collection_name).await?;
+        let mut recreate_optimizers = false;
+
         if let Some(diff) = optimizers_config {
-            collection.update_optimizer_params_from_diff(diff).await?
+            collection.update_optimizer_params_from_diff(diff).await?;
+            recreate_optimizers = true;
         }
         if let Some(diff) = params {
             collection.update_params_from_diff(diff).await?;
+            recreate_optimizers = true;
+        }
+        if let Some(diff) = hnsw_config {
+            collection.update_hnsw_config_from_diff(diff).await?;
+            recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;
+        }
+
+        // Recreate optimizers
+        if recreate_optimizers {
+            collection.recreate_optimizers_blocking().await?;
         }
         Ok(true)
     }
