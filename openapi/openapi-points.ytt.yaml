@@ -6,7 +6,7 @@ paths:
       tags:
         - points
       summary: Get point
-      description: Retrieve full information of single point by id
+      description: This endpoint retrieves full information belonging to single point, as specified by id.
       operationId: get_point
       parameters:
         - name: collection_name
@@ -34,7 +34,7 @@ paths:
       tags:
         - points
       summary: Get points
-      description: Retrieve multiple points by specified IDs
+      description: This endpoint retrieves multiple points by specified IDs.
       operationId: get_points
       requestBody:
         description: List of points to retrieve
@@ -62,7 +62,7 @@ paths:
       tags:
         - points
       summary: Upsert points
-      description: Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
+      description: This endpoint performs insert and updates on points. If point with given ID already exists, it will be overwritten.
       operationId: upsert_points
       requestBody:
         description: Operation to perform on points
@@ -97,7 +97,7 @@ paths:
       tags:
         - points
       summary: Delete points
-      description: Delete points
+      description: This endpoing deletes points from a specified collection.
       operationId: delete_points
       requestBody:
         description: Operation to perform on points
@@ -132,7 +132,7 @@ paths:
       tags:
         - points
       summary: Update vectors
-      description: Update specified named vectors on points, keep unspecified vectors intact.
+      description: This endpoint updates specified named vectors on points. It keeps unspecified vectors intact.
       operationId: update_vectors
       requestBody:
         description: Update named vectors on points
@@ -167,7 +167,7 @@ paths:
       tags:
         - points
       summary: Delete vectors
-      description: Delete named vectors from the given points.
+      description: This endpoint deletes named vectors from the given points.
       operationId: delete_vectors
       requestBody:
         description: Delete named vectors from points
@@ -202,7 +202,7 @@ paths:
       tags:
         - points
       summary: Set payload
-      description: Set payload values for points
+      description: This endpoint sets payload values for points.
       operationId: set_payload
       requestBody:
         description: Set payload on points
@@ -270,7 +270,7 @@ paths:
       tags:
         - points
       summary: Delete payload
-      description: Delete specified key payload for points
+      description: This endpoint delete specified key payload for points/.
       operationId: delete_payload
       requestBody:
         description: delete payload on points
@@ -305,7 +305,7 @@ paths:
       tags:
         - points
       summary: Clear payload
-      description: Remove all payload for specified points
+      description: This endpoint removes all payload for specified points.
       operationId: clear_payload
       requestBody:
         description: clear payload on points
