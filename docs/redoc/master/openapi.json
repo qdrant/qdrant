@@ -5869,7 +5869,7 @@
         "type": "object",
         "properties": {
           "optimizers_config": {
-            "description": "Custom params for Optimizers.  If none - it is left unchanged. This operation is blocking, it will only proceed ones all current optimizations are complete",
+            "description": "Custom params for Optimizers.  If none - it is left unchanged. This operation is blocking, it will only proceed once all current optimizations are complete",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OptimizersConfigDiff"
