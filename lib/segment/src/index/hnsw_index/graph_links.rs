@@ -8,6 +8,7 @@ use std::sync::Arc;
 use memmap2::{Mmap, MmapMut};
 
 use crate::common::mmap_ops;
+use crate::common::vector_utils::TrySetCapacityExact;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
 use crate::types::PointOffsetType;
@@ -403,19 +404,19 @@ impl GraphLinksRam {
         let mut reindex: Vec<PointOffsetType> = Vec::new();
 
         let link_slice = get_links_slice(data, &header);
-        links.try_reserve_exact(link_slice.len())?;
+        links.try_set_capacity_exact(link_slice.len())?;
         links.extend_from_slice(link_slice);
 
         let offsets_slice = get_offsets_slice(data, &header);
-        offsets.try_reserve_exact(offsets_slice.len())?;
+        offsets.try_set_capacity_exact(offsets_slice.len())?;
         offsets.extend_from_slice(offsets_slice);
 
         let level_offsets_slice = get_level_offsets(data, &header);
-        level_offsets.try_reserve_exact(level_offsets_slice.len())?;
+        level_offsets.try_set_capacity_exact(level_offsets_slice.len())?;
         level_offsets.extend_from_slice(level_offsets_slice);
 
         let reindex_slice = get_reindex_slice(data, &header);
-        reindex.try_reserve_exact(reindex_slice.len())?;
+        reindex.try_set_capacity_exact(reindex_slice.len())?;
         reindex.extend_from_slice(reindex_slice);
 
         let graph_links = Self {
