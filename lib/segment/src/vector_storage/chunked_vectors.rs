@@ -58,10 +58,12 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         Ok(new_id)
     }
 
-    pub fn try_reserve_exact(&mut self, num_vectors: usize) -> Result<(), TryReserveError> {
+    pub fn try_reserve_size(&mut self, num_vectors: usize) -> Result<(), TryReserveError> {
         let num_chunks = div_ceil(num_vectors, self.chunk_capacity);
         let last_chunk_idx = num_vectors / self.chunk_capacity;
-        self.chunks.try_reserve_exact(num_chunks)?;
+        let current_chunks_capacity = self.chunks.capacity();
+        let additional_chunks_capacity = num_chunks.saturating_sub(current_chunks_capacity);
+        self.chunks.try_reserve_exact(additional_chunks_capacity)?;
         self.chunks.resize(num_chunks, vec![]);
         for chunk_idx in 0..num_chunks {
             if chunk_idx == last_chunk_idx {
@@ -121,7 +123,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         vectors_count: usize,
     ) -> std::io::Result<Self> {
         let mut vectors = Self::new(quantized_vector_size);
-        vectors.try_reserve_exact(vectors_count).map_err(|err| {
+        vectors.try_reserve_size(vectors_count).map_err(|err| {
             std::io::Error::new(
                 std::io::ErrorKind::OutOfMemory,
                 format!("Failed to load quantized vectors from file: {err}"),

@@ -403,19 +403,25 @@ impl GraphLinksRam {
         let mut reindex: Vec<PointOffsetType> = Vec::new();
 
         let link_slice = get_links_slice(data, &header);
-        links.try_reserve_exact(link_slice.len())?;
+        let additional_capacity = link_slice.len().saturating_sub(links.capacity());
+        links.try_reserve_exact(additional_capacity)?;
         links.extend_from_slice(link_slice);
 
         let offsets_slice = get_offsets_slice(data, &header);
-        offsets.try_reserve_exact(offsets_slice.len())?;
+        let additional_capacity = offsets_slice.len().saturating_sub(offsets.capacity());
+        offsets.try_reserve_exact(additional_capacity)?;
         offsets.extend_from_slice(offsets_slice);
 
         let level_offsets_slice = get_level_offsets(data, &header);
-        level_offsets.try_reserve_exact(level_offsets_slice.len())?;
+        let additional_capacity = level_offsets_slice
+            .len()
+            .saturating_sub(level_offsets.capacity());
+        level_offsets.try_reserve_exact(additional_capacity)?;
         level_offsets.extend_from_slice(level_offsets_slice);
 
         let reindex_slice = get_reindex_slice(data, &header);
-        reindex.try_reserve_exact(reindex_slice.len())?;
+        let additional_capacity = reindex_slice.len().saturating_sub(reindex.capacity());
+        reindex.try_reserve_exact(additional_capacity)?;
         reindex.extend_from_slice(reindex_slice);
 
         let graph_links = Self {
