@@ -16,7 +16,7 @@ use crate::operations::types::{
     Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::shards::local_shard::{LocalShard, DEFAULT_SEARCH_TIMEOUT};
+use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
 
@@ -135,12 +135,12 @@ impl ShardOperation for LocalShard {
             true,
             is_stopped.clone(),
         );
-
+        let timeout = self.shred_storage_config.search_timeout;
         let res: Vec<Vec<ScoredPoint>> = tokio::select! {
             res = search_request => res,
-            _ = tokio::time::sleep(DEFAULT_SEARCH_TIMEOUT) => {
+            _ = tokio::time::sleep(timeout) => {
                 is_stopped.store(true, std::sync::atomic::Ordering::Relaxed);
-                Err(CollectionError::timeout(DEFAULT_SEARCH_TIMEOUT.as_secs() as usize, "Search"))
+                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
             }
         }?;
 
