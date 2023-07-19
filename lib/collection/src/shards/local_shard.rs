@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -44,6 +45,10 @@ use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
 pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
+
+/// Default timeout for search requests.
+/// In cluster mode, this should be aligned with collection timeout.
+pub const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// LocalShard
 ///
