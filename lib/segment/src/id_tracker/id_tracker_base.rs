@@ -36,6 +36,7 @@ pub trait IdTracker {
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
 
     /// Iterate over all external IDs
+    /// Iterator is guaranteed to be sorted
     ///
     /// Count should match `available_point_count`.
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
