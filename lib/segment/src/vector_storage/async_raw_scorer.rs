@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
@@ -65,6 +65,9 @@ where
     TMetric: Metric,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return 0;
+        }
         let points_stream = points
             .iter()
             .copied()
@@ -92,6 +95,9 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
     ) -> Vec<ScoredPointOffset> {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return vec![];
+        }
         let mut scores = vec![];
 
         self.storage
@@ -149,7 +155,9 @@ where
         }
 
         let mut pq = FixedLengthPriorityQueue::new(top);
-        let points_stream = points.filter(|point_id| self.check_vector(*point_id));
+        let points_stream = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
 
         self.storage
             .read_vectors_async(points_stream, |_, point_id, other_vector| {
@@ -173,7 +181,9 @@ where
             return vec![];
         }
 
-        let points_stream = (0..self.points_count).filter(|point_id| self.check_vector(*point_id));
+        let points_stream = (0..self.points_count)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
 
         let mut pq = FixedLengthPriorityQueue::new(top);
         self.storage

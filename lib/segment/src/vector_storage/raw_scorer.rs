@@ -160,6 +160,9 @@ where
     TVectorStorage: VectorStorage,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return 0;
+        }
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
             if !self.check_vector(point_id) {
@@ -183,6 +186,9 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
     ) -> Vec<ScoredPointOffset> {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return vec![];
+        }
         let mut scores = vec![];
         for point_id in points {
             let other_vector = self.vector_storage.get_vector(point_id);
@@ -229,6 +235,7 @@ where
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let scores = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let other_vector = self.vector_storage.get_vector(point_id);
@@ -242,6 +249,7 @@ where
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let scores = (0..self.points_count)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let point_id = point_id as PointOffsetType;

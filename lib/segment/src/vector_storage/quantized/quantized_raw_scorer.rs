@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
@@ -27,6 +27,9 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return 0;
+        }
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
             if !self.check_vector(point_id) {
@@ -48,6 +51,9 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
     ) -> Vec<ScoredPointOffset> {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return vec![];
+        }
         let mut scores = vec![];
         for point in points {
             scores.push(ScoredPointOffset {
@@ -90,15 +96,19 @@ where
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let scores = points.filter(|idx| self.check_vector(*idx)).map(|idx| {
-            let score = self.score_point(idx);
-            ScoredPointOffset { idx, score }
-        });
+        let scores = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|idx| self.check_vector(*idx))
+            .map(|idx| {
+                let score = self.score_point(idx);
+                ScoredPointOffset { idx, score }
+            });
         peek_top_largest_iterable(scores, top)
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let scores = (0..self.point_deleted.len() as PointOffsetType)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|idx| self.check_vector(*idx))
             .map(|idx| {
                 let score = self.score_point(idx);
