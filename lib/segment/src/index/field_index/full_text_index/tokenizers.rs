@@ -1,3 +1,5 @@
+use charabia::Tokenize;
+
 use crate::data_types::text_index::{TextIndexParams, TokenizerType};
 
 struct WhiteSpaceTokenizer;
@@ -60,6 +62,18 @@ impl PrefixTokenizer {
     }
 }
 
+struct MultilingualTokenizer;
+
+impl MultilingualTokenizer {
+    fn tokenize<C: FnMut(&str)>(text: &str, mut callback: C) {
+        text.tokenize().for_each(|token| {
+            if token.is_word() {
+                callback(token.lemma());
+            }
+        });
+    }
+}
+
 pub struct Tokenizer;
 
 impl Tokenizer {
@@ -95,6 +109,7 @@ impl Tokenizer {
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
+            TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize(
                 text,
                 config.min_token_len.unwrap_or(1),
@@ -109,6 +124,7 @@ impl Tokenizer {
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
+            TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize_query(
                 text,
                 config.max_token_len.unwrap_or(usize::MAX),
@@ -170,6 +186,60 @@ mod tests {
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.get(0), Some(&"hell".to_owned()));
         assert_eq!(tokens.get(1), Some(&"мир".to_owned()));
+    }
+
+    #[cfg(feature = "multiling-japanese")]
+    #[test]
+    fn test_multilingual_tokenizer_japanese() {
+        let text = "本日の日付は";
+        let mut tokens = Vec::new();
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens.get(0), Some(&"本日".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"の".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"日付".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"は".to_owned()));
+    }
+
+    #[cfg(feature = "multiling-chinese")]
+    #[test]
+    fn test_multilingual_tokenizer_chinese() {
+        let text = "今天是星期一";
+        let mut tokens = Vec::new();
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens.get(0), Some(&"jīntiān".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"shì".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"xīngqīyī".to_owned()));
+    }
+
+    #[test]
+    fn test_multilingual_tokenizer_thai() {
+        let text = "มาทำงานกันเถอะ";
+        let mut tokens = Vec::new();
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens.get(0), Some(&"มา".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"ทางาน".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"กน".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"เถอะ".to_owned()));
+    }
+
+    #[test]
+    fn test_multilingual_tokenizer_english() {
+        let text = "What are you waiting for?";
+        let mut tokens = Vec::new();
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 5);
+        assert_eq!(tokens.get(0), Some(&"what".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"are".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"you".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"waiting".to_owned()));
+        assert_eq!(tokens.get(4), Some(&"for".to_owned()));
     }
 
     #[test]
