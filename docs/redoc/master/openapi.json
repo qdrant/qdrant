@@ -4595,7 +4595,8 @@
         "enum": [
           "prefix",
           "whitespace",
-          "word"
+          "word",
+          "multilingual"
         ]
       },
       "PointRequest": {

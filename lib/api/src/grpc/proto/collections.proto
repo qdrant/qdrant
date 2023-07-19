@@ -261,6 +261,7 @@ enum TokenizerType {
   Prefix = 1;
   Whitespace = 2;
   Word = 3;
+  Multilingual = 4;
 }
 
 message TextIndexParams {
