@@ -8,6 +8,11 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+[features]
+multiling-chinese = ["charabia/chinese"]
+multiling-japanese = ["charabia/japanese"]
+multiling-korean = ["charabia/korean"]
+
 [dev-dependencies]
 tempfile = "3.6.0"
 criterion = "0.5"
@@ -57,6 +62,7 @@ chrono = { version = "0.4.26", features = ["serde"] }
 
 sysinfo = "0.29"
 futures = "0.3.28"
+charabia = { version = "0.8.1", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
