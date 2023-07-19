@@ -165,12 +165,13 @@ fn test_filterable_hnsw() {
                 hnsw_ef: Some(ef),
                 ..Default::default()
             }),
+            &false.into(),
         );
 
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None);
+            .search(&[&query], filter_query, top, None, &false.into());
 
         if plain_result.get(0).unwrap() == &index_result {
             hits += 1;

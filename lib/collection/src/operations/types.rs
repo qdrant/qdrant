@@ -492,9 +492,21 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Operation '{operation}' timed out after {timeout_sec} seconds")]
+    Timeout {
+        operation: String,
+        timeout_sec: usize,
+    },
 }
 
 impl CollectionError {
+    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> CollectionError {
+        CollectionError::Timeout {
+            operation: operation.into(),
+            timeout_sec,
+        }
+    }
+
     pub fn service_error(error: String) -> CollectionError {
         CollectionError::ServiceError {
             error,

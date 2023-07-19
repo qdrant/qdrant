@@ -60,6 +60,9 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
     pub vec_deleted: &'a BitSlice,
     pub metric: PhantomData<TMetric>,
+    /// This flag indicates that the search process is stopped externally,
+    /// the search result is no longer needed and the search process should be stopped as soon as possible.
+    pub is_stopped: &'a AtomicBool,
 }
 
 static ASYNC_SCORER: AtomicBool = AtomicBool::new(false);
@@ -72,13 +75,14 @@ pub fn get_async_scorer() -> bool {
     ASYNC_SCORER.load(Ordering::Relaxed)
 }
 
-pub fn new_raw_scorer<'a>(
+pub fn new_stoppable_raw_scorer<'a>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     match vector_storage {
-        VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted),
+        VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted, is_stopped),
 
         VectorStorageEnum::Memmap(vs) => {
             if get_async_scorer() {
@@ -92,19 +96,35 @@ pub fn new_raw_scorer<'a>(
                 log::warn!("async raw scorer is only supported on Linux");
             }
 
-            raw_scorer_impl(vector, vs.as_ref(), point_deleted)
+            raw_scorer_impl(vector, vs.as_ref(), point_deleted, is_stopped)
         }
 
         VectorStorageEnum::AppendableMemmap(vs) => {
-            raw_scorer_impl(vector, vs.as_ref(), point_deleted)
+            raw_scorer_impl(vector, vs.as_ref(), point_deleted, is_stopped)
         }
     }
+}
+
+pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
+
+pub fn new_raw_scorer<'a>(
+    vector: Vec<VectorElementType>,
+    vector_storage: &'a VectorStorageEnum,
+    point_deleted: &'a BitSlice,
+) -> Box<dyn RawScorer + 'a> {
+    new_stoppable_raw_scorer(
+        vector,
+        vector_storage,
+        point_deleted,
+        &DEFAULT_STOPPED,
+    )
 }
 
 pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
     let vec_deleted = vector_storage.deleted_vector_bitslice();
@@ -116,6 +136,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             point_deleted,
             vec_deleted,
             metric: PhantomData,
+            is_stopped,
         }),
         Distance::Euclid => Box::new(RawScorerImpl::<'a, EuclidMetric, TVectorStorage> {
             points_count,
@@ -124,6 +145,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             point_deleted,
             vec_deleted,
             metric: PhantomData,
+            is_stopped,
         }),
         Distance::Dot => Box::new(RawScorerImpl::<'a, DotProductMetric, TVectorStorage> {
             points_count,
@@ -132,6 +154,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             point_deleted,
             vec_deleted,
             metric: PhantomData,
+            is_stopped,
         }),
     }
 }

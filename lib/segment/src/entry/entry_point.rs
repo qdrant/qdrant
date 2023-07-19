@@ -207,6 +207,7 @@ pub trait SegmentEntry {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
     #[allow(clippy::too_many_arguments)]
@@ -219,6 +220,7 @@ pub trait SegmentEntry {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
     fn upsert_point(

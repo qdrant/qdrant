@@ -129,6 +129,7 @@ impl ShardOperation for LocalShard {
             request.clone(),
             search_runtime_handle,
             true,
+            Arc::new(false.into())
         )
         .await?;
         let top_results = res
