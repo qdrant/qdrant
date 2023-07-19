@@ -148,7 +148,7 @@ fn exact_search_test() {
                 exact: true,
                 ..Default::default()
             }),
-            &false.into()
+            &false.into(),
         );
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index

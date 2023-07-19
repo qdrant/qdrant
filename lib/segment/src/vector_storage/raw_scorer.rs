@@ -112,12 +112,7 @@ pub fn new_raw_scorer<'a>(
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
 ) -> Box<dyn RawScorer + 'a> {
-    new_stoppable_raw_scorer(
-        vector,
-        vector_storage,
-        point_deleted,
-        &DEFAULT_STOPPED,
-    )
+    new_stoppable_raw_scorer(vector, vector_storage, point_deleted, &DEFAULT_STOPPED)
 }
 
 pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(

@@ -422,7 +422,7 @@ fn search_in_segment(
                     prev_params.filter,
                     top,
                     prev_params.params,
-                    is_stopped
+                    is_stopped,
                 )?;
                 for batch_result in &res {
                     further_results.push(batch_result.len() == top);
@@ -459,7 +459,7 @@ fn search_in_segment(
             prev_params.filter,
             top,
             prev_params.params,
-            is_stopped
+            is_stopped,
         )?;
         for batch_result in &res {
             further_results.push(batch_result.len() == top);

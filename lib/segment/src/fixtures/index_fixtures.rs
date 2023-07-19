@@ -14,7 +14,9 @@ use crate::spaces::metric::Metric;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{DEFAULT_STOPPED, raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum, DEFAULT_STOPPED,
+};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen_range(0.0..1.0)).collect()

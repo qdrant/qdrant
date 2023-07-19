@@ -63,8 +63,12 @@ impl VectorIndex for VectorIndexEnum {
     ) -> Vec<Vec<ScoredPointOffset>> {
         match self {
             VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params, is_stopped),
-            VectorIndexEnum::HnswRam(index) => index.search(vectors, filter, top, params, is_stopped),
-            VectorIndexEnum::HnswMmap(index) => index.search(vectors, filter, top, params, is_stopped),
+            VectorIndexEnum::HnswRam(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
+            VectorIndexEnum::HnswMmap(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
         }
     }
 

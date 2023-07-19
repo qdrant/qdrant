@@ -110,7 +110,7 @@ fn hnsw_quantized_search_test(
                 hnsw_ef: Some(ef),
                 ..Default::default()
             }),
-            &false.into()
+            &false.into(),
         );
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index

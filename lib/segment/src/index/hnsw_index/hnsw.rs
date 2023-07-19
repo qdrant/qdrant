@@ -252,7 +252,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     vector.to_owned(),
                     &vector_storage,
                     id_tracker.deleted_point_bitslice(),
-                    is_stopped
+                    is_stopped,
                 );
 
                 (scorer, false)
@@ -462,14 +462,21 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    return self.search_vectors_plain(vectors, query_filter, top, params, is_stopped);
+                    return self.search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        top,
+                        params,
+                        is_stopped,
+                    );
                 }
 
                 if query_cardinality.min > self.config.full_scan_threshold {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    return self.search_vectors_with_graph(vectors, filter, top, params, is_stopped);
+                    return self
+                        .search_vectors_with_graph(vectors, filter, top, params, is_stopped);
                 }
 
                 let filter_context = payload_index.filter_context(query_filter);

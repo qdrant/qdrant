@@ -26,9 +26,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{
-    new_stoppable_raw_scorer, ScoredPointOffset, VectorStorageEnum,
-};
+use crate::vector_storage::{new_stoppable_raw_scorer, ScoredPointOffset, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
