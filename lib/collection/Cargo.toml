@@ -11,7 +11,7 @@ edition = "2021"
 [dev-dependencies]
 tempfile = "3.6.0"
 criterion = "0.5"
-rstest = "0.17.0"
+rstest = "0.18.1"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
