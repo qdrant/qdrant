@@ -532,14 +532,10 @@ impl<'s> SegmentHolder {
         let mut heap = iterators
             .iter_mut()
             .filter_map(|(&segment_id, iter)| {
-                if let Some(point_id) = iter.next() {
-                    Some(DedupPoint {
-                        segment_id,
-                        point_id,
-                    })
-                } else {
-                    None
-                }
+                iter.next().map(|point_id| DedupPoint {
+                    segment_id,
+                    point_id,
+                })
             })
             .collect::<BinaryHeap<_>>();
 
@@ -551,8 +547,7 @@ impl<'s> SegmentHolder {
         while let Some(mut entry) = heap.pop() {
             let point_id = entry.point_id;
             let segment_id = entry.segment_id;
-            if let Some(next_point_id) = iterators.get_mut(&segment_id).map(|i| i.next()).flatten()
-            {
+            if let Some(next_point_id) = iterators.get_mut(&segment_id).and_then(|i| i.next()) {
                 entry.point_id = next_point_id;
                 heap.push(entry);
             }
