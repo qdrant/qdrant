@@ -87,7 +87,7 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::Memmap(vs) => {
             if get_async_scorer() {
                 #[cfg(target_os = "linux")]
-                match super::async_raw_scorer::new(vector.clone(), vs, point_deleted) {
+                match super::async_raw_scorer::new(vector.clone(), vs, point_deleted, is_stopped) {
                     Ok(raw_scorer) => return raw_scorer,
                     Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
                 }
