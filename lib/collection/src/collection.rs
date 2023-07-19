@@ -989,7 +989,6 @@ impl Collection {
         request: ScrollRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
-        order_by: Option<&OrderBy>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
@@ -1008,6 +1007,8 @@ impl Collection {
                 description: "Limit cannot be 0".to_string(),
             });
         }
+
+        let order_by = request.order_by.as_ref();
 
         // Needed to return next page offset.
         let limit = limit + 1;

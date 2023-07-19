@@ -3,15 +3,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use segment::types::{
-    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Condition, Direction, ExtendedPointId, FieldCondition, Filter, OrderBy, ScoredPoint,
+    WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequestBatch, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -72,6 +73,58 @@ impl ShardOperation for LocalShard {
         filter: Option<&Filter>,
         order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
+        if let Some(OrderBy { key, direction, .. }) = order_by {
+            let order = match direction.to_owned().unwrap_or_default() {
+                Direction::ASC => 1,
+                Direction::DESC => -1,
+            };
+
+            dbg!(key);
+            let key_filter = Filter::new_must(Condition::Field(FieldCondition {
+                key: key.to_owned(),
+                ..Default::default()
+            }));
+            let combined_filter = if let Some(filter) = filter {
+                filter.merge(&key_filter)
+            } else {
+                key_filter
+            };
+            let point_ids = self
+                .segments()
+                .read()
+                .iter()
+                .flat_map(|(_, segment)| {
+                    segment.get().read().read_filtered(
+                        offset,
+                        Some(limit),
+                        Some(&combined_filter),
+                        order_by,
+                    )
+                })
+                .sorted()
+                .dedup()
+                // .take(limit)
+                .collect_vec();
+            dbg!(&point_ids);
+
+            let with_payload = WithPayload::from(with_payload_interface);
+            let mut points =
+                SegmentsSearcher::retrieve(self.segments(), &point_ids, &with_payload, with_vector)
+                    .await?;
+            dbg!(&points);
+            points.sort_by_key(|point| {
+                point.payload.as_ref().map_or(0i64, |p| {
+                    p.0.get(key)
+                        .unwrap_or(&Default::default())
+                        .as_i64()
+                        .unwrap_or(0)
+                        * order
+                })
+                // .map_or<>(0, |p| order * p.0.get(key).ok_or::<CollectionError>(todo!())?.as_i64().unwrap())
+            });
+            return Ok(points);
+        }
+
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
         let point_ids = segments
@@ -92,6 +145,8 @@ impl ShardOperation for LocalShard {
         let mut points =
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector).await?;
         points.sort_by_key(|point| point.id);
+
+        dbg!(&points);
 
         Ok(points)
     }

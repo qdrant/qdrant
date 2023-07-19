@@ -993,7 +993,7 @@ impl SegmentEntry for Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-        order_by: Option<&OrderBy>,
+        _order_by: Option<&OrderBy>,
     ) -> Vec<PointIdType> {
         match filter {
             None => self
