@@ -474,12 +474,11 @@ impl<'s> SegmentHolder {
     ///
     /// Deduplication works with plain segments only.
     pub fn deduplicate_points(&self) -> OperationResult<usize> {
-        let mut seen_points: Vec<HashMap<PointIdType, (SegmentId, SeqNumberType)>> =
+        let mut seen_points: HashMap<SegmentId, HashMap<PointIdType, SeqNumberType>> =
             Default::default();
         let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
         let all_segment_ids: Vec<SegmentId> = self.segments.keys().cloned().collect();
-        for (segment_index, segment_id) in all_segment_ids.into_iter().enumerate() {
-            seen_points.push(Default::default());
+        for segment_id in all_segment_ids {
             let locked_segment = self.segments.get(&segment_id).unwrap();
             let segment_arc = locked_segment.get();
             let read_segment = segment_arc.read();
@@ -487,8 +486,13 @@ impl<'s> SegmentHolder {
                 let point_version_opt = read_segment.point_version(point_id);
                 let seen = seen_points
                     .iter()
-                    .map(|m| m.get(&point_id).cloned())
-                    .find(|o| o.is_some())
+                    .map(|(&segment_id, points)| {
+                        points
+                            .get(&point_id)
+                            .cloned()
+                            .map(|version| (segment_id, version))
+                    })
+                    .find(|x| x.is_some())
                     .flatten();
 
                 // Ignore points without version, those are partially updated and will be overwritten
@@ -505,8 +509,13 @@ impl<'s> SegmentHolder {
                         } else {
                             // This version is newer
                             // Remove point from other segment and update seen
-                            seen_points[seen_segment_id]
-                                .insert(point_id, (segment_id, point_version));
+                            seen_points
+                                .get_mut(&seen_segment_id)
+                                .map(|map| map.remove(&point_id));
+                            seen_points
+                                .entry(segment_id)
+                                .or_default()
+                                .insert(point_id, point_version);
                             points_to_remove
                                 .entry(seen_segment_id)
                                 .or_default()
@@ -514,7 +523,10 @@ impl<'s> SegmentHolder {
                         }
                     } else {
                         // No other version exists
-                        seen_points[segment_index].insert(point_id, (segment_id, point_version));
+                        seen_points
+                            .entry(segment_id)
+                            .or_default()
+                            .insert(point_id, point_version);
                     }
                 }
             }
