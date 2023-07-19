@@ -192,6 +192,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                                 &vector,
                                 id_tracker.deleted_point_bitslice(),
                                 deleted_bitslice,
+                                stopped,
                             )
                         } else {
                             new_raw_scorer(
@@ -242,6 +243,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
+                    is_stopped,
                 );
 
                 (scorer, true)
@@ -350,6 +352,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                                 vector,
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
+                                is_stopped,
                             )
                             .peek_top_iter(&mut filtered_points.iter().copied(), top)
                     } else {
@@ -555,6 +558,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                                 &vector,
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
+                                stopped,
                             )
                         } else {
                             new_raw_scorer(

@@ -303,6 +303,7 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
             &query,
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
+            &stopped,
         );
         let scorer_orig = new_raw_scorer(
             query.clone(),
@@ -329,6 +330,7 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         &query,
         borrowed_id_tracker.deleted_point_bitslice(),
         borrowed_storage.deleted_vector_bitslice(),
+        &stopped,
     );
     let scorer_orig = new_raw_scorer(
         query.clone(),

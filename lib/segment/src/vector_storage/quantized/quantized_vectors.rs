@@ -49,6 +49,7 @@ impl QuantizedVectors {
         query: &[VectorElementType],
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
+        is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
             .distance
@@ -62,6 +63,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
             QuantizedVectorStorage::ScalarMmap(storage) => {
@@ -71,6 +73,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
             QuantizedVectorStorage::PQRam(storage) => {
@@ -80,6 +83,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
             QuantizedVectorStorage::PQMmap(storage) => {
@@ -89,6 +93,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
         }

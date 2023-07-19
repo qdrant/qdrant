@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use bitvec::prelude::BitSlice;
 
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -14,6 +16,9 @@ where
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
     pub(super) vec_deleted: &'a BitSlice,
     pub quantized_data: &'a TEncodedVectors,
+    /// This flag indicates that the search process is stopped externally,
+    /// the search result is no longer needed and the search process should be stopped as soon as possible.
+    pub is_stopped: &'a AtomicBool,
 }
 
 impl<TEncodedQuery, TEncodedVectors> RawScorer
