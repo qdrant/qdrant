@@ -1,5 +1,5 @@
-use std::{error, result};
 use std::sync::atomic::AtomicBool;
+use std::{error, result};
 
 use bitvec::slice::BitSlice;
 use rand::seq::IteratorRandom as _;
