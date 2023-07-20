@@ -128,29 +128,21 @@ impl ShardOperation for LocalShard {
 
         let is_stopped = Arc::new(AtomicBool::new(false));
 
-        let segments = self.segments.clone();
-        let search_runtime_handle_clone = search_runtime_handle.clone();
-        let timeout = self.shared_storage_config.search_timeout;
-        let request_clone = request.clone();
-
-        let res: Vec<Vec<ScoredPoint>> = tokio::task::spawn(async move {
-            let search_request = SegmentsSearcher::search(
-                &segments,
-                request_clone,
-                &search_runtime_handle_clone,
-                true,
-                is_stopped.clone(),
-            );
-
-            tokio::select! {
-                res = search_request => res,
-                _ = tokio::time::sleep(timeout) => {
-                    is_stopped.store(true, std::sync::atomic::Ordering::Relaxed);
-                    Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
-                }
+        let search_request = SegmentsSearcher::search(
+            self.segments(),
+            request.clone(),
+            search_runtime_handle,
+            true,
+            is_stopped.clone(),
+        );
+        let timeout = self.shred_storage_config.search_timeout;
+        let res: Vec<Vec<ScoredPoint>> = tokio::select! {
+            res = search_request => res,
+            _ = tokio::time::sleep(timeout) => {
+                is_stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
             }
-        })
-        .await??;
+        }?;
 
         let top_results = res
             .into_iter()
