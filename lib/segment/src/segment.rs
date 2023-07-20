@@ -14,9 +14,7 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{
-    check_named_vectors, check_vector, check_vector_name, check_vectors, mmap_ops,
-};
+use crate::common::{check_named_vectors, check_stopped, check_vector, check_vector_name, check_vectors, mmap_ops};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -754,6 +752,7 @@ impl SegmentEntry for Segment {
                 .borrow()
                 .search(&[vector], filter, top, params, is_stopped)[0];
 
+        check_stopped(is_stopped)?;
         self.process_search_result(internal_result, with_payload, with_vector)
     }
 
@@ -774,6 +773,8 @@ impl SegmentEntry for Segment {
             .vector_index
             .borrow()
             .search(vectors, filter, top, params, is_stopped);
+
+        check_stopped(is_stopped)?;
 
         let res = internal_results
             .iter()
