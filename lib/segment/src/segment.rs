@@ -14,7 +14,9 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_named_vectors, check_stopped, check_vector, check_vector_name, check_vectors, mmap_ops};
+use crate::common::{
+    check_named_vectors, check_stopped, check_vector, check_vector_name, check_vectors, mmap_ops,
+};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;

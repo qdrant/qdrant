@@ -13,6 +13,7 @@ pub mod vector_utils;
 pub mod version;
 
 use std::sync::atomic::AtomicBool;
+
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
