@@ -1,4 +1,3 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -11,6 +10,7 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult, UpdateStatus,
@@ -126,20 +126,20 @@ impl ShardOperation for LocalShard {
             collection_params.get_vector_params(req.vector.get_name())?;
         }
 
-        let is_stopped = Arc::new(AtomicBool::new(false));
+        let is_stopped = StoppingGuard::new();
 
         let search_request = SegmentsSearcher::search(
             self.segments(),
             request.clone(),
             search_runtime_handle,
             true,
-            is_stopped.clone(),
+            is_stopped.get_is_stopped(),
         );
-        let timeout = self.shred_storage_config.search_timeout;
+        let timeout = self.shared_storage_config.search_timeout;
         let res: Vec<Vec<ScoredPoint>> = tokio::select! {
             res = search_request => res,
             _ = tokio::time::sleep(timeout) => {
-                is_stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+                is_stopped.stop();
                 Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
             }
         }?;
