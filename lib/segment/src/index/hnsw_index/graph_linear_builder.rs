@@ -137,8 +137,9 @@ impl<'a> GraphLinearBuilder<'a> {
     }
 
     pub fn build(&mut self) {
-        let mut requests: Vec<Option<GraphLinkRequest>> =
-            (0..self.num_vectors()).map(|idx| self.get_link_request(idx as PointOffsetType)).collect();
+        let mut requests: Vec<Option<GraphLinkRequest>> = (0..self.num_vectors())
+            .map(|idx| self.get_link_request(idx as PointOffsetType))
+            .collect();
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
             let mut level_requests = vec![];
