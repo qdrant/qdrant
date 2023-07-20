@@ -137,16 +137,41 @@ impl<'a> GraphLinearBuilder<'a> {
     }
 
     pub fn build(&mut self) {
-        let mut requests: Vec<Option<GraphLinkRequest>> = (0..self.num_vectors())
-            .map(|idx| self.get_link_request(idx as PointOffsetType))
+        let mut requests: Vec<Option<GraphLinkRequest>> = (0..self.num_vectors()
+            as PointOffsetType)
+            .map(|point_id| {
+                let level = self.get_point_level(point_id);
+                let entry_point_opt = self.entries[point_id as usize].clone();
+                match entry_point_opt {
+                    None => None,
+                    Some(entry_point) => {
+                        let entry = ScoredPointOffset {
+                            idx: entry_point.point_id,
+                            score: self.score(point_id, entry_point.point_id),
+                        };
+                        let level = std::cmp::min(level, entry_point.level);
+                        Some(GraphLinkRequest {
+                            point_id,
+                            level,
+                            entry,
+                        })
+                    }
+                }
+            })
             .collect();
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
             let mut level_requests = vec![];
             for idx in 0..self.num_vectors() as PointOffsetType {
-                if let Some(request) = requests[idx as usize].clone() {
+                if let Some(Some(request)) = requests.get_mut(idx as usize) {
+                    let entry = self.entries[idx as usize].clone().unwrap();
+                    let point_level = self.get_point_level(idx);
+                    if entry.level > point_level && request.level > level {
+                        request.entry = self.search_entry_on_level(idx, request.entry, level);
+                    }
+
                     if request.level == level {
-                        level_requests.push(request);
+                        level_requests.push(request.clone());
                     }
                 }
             }
