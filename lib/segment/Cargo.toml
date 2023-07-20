@@ -19,7 +19,7 @@ criterion = "0.5"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
 walkdir = "2.3.3"
-rstest = "0.17.0"
+rstest = "0.18.1"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
