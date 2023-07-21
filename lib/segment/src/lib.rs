@@ -21,6 +21,9 @@ pub mod vector_storage;
 extern crate num_derive;
 extern crate core;
 
+#[macro_use]
+extern crate lazy_static;
+
 #[cfg(test)]
 mod tests {
     #[test]

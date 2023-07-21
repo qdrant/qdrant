@@ -9,6 +9,7 @@ pub mod graph_links;
 pub mod hnsw;
 pub mod point_scorer;
 mod search_context;
+pub mod recorder;
 
 #[cfg(test)]
 mod tests;

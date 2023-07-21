@@ -54,6 +54,7 @@ tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
 chrono = { version = "0.4.26", features = ["serde"] }
+lazy_static = "1.4.0"
 
 sysinfo = "0.29"
 futures = "0.3.28"

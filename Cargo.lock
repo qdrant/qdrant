@@ -3748,6 +3748,7 @@ dependencies = [
  "geohash",
  "io-uring",
  "itertools 0.11.0",
+ "lazy_static",
  "log",
  "memmap2 0.7.1",
  "num-derive",
