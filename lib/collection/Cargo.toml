@@ -9,7 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dev-dependencies]
-tempfile = "3.6.0"
+tempfile = "3.7.0"
 criterion = "0.5"
 rstest = "0.18.1"
 
