@@ -1,4 +1,5 @@
-use std::{collections::VecDeque, sync::Mutex};
+use std::collections::VecDeque;
+use std::sync::Mutex;
 
 use crate::types::PointOffsetType;
 
@@ -8,7 +9,9 @@ pub struct Recorder<T> {
 
 impl<T: Eq + std::fmt::Debug> Recorder<T> {
     fn new() -> Self {
-        Recorder { items: Default::default() }
+        Recorder {
+            items: Default::default(),
+        }
     }
 
     fn write(&mut self, item: T) {
@@ -24,7 +27,7 @@ impl<T: Eq + std::fmt::Debug> Recorder<T> {
 type RecorderType = (PointOffsetType, Vec<PointOffsetType>);
 
 lazy_static! {
-static ref RECORDER: Mutex<Recorder<RecorderType>> = Mutex::new(Recorder::new());
+    static ref RECORDER: Mutex<Recorder<RecorderType>> = Mutex::new(Recorder::new());
 }
 
 pub fn record_write(item: RecorderType) {

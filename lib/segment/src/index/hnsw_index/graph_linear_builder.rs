@@ -167,7 +167,11 @@ impl<'a> GraphLinearBuilder<'a> {
                     let point_level = self.get_point_level(idx);
                     if request.level > level && start_entry.level > point_level {
                         //request.entry = self.search_entry_on_level(idx, request.entry, level);
-                        request.entry = self.search_on_level(idx, request.entry, level).top().cloned().unwrap()
+                        request.entry = self
+                            .search_on_level(idx, request.entry, level)
+                            .top()
+                            .cloned()
+                            .unwrap()
                     } else if request.level == level {
                         let response = self.link(request.clone());
                         self.apply_link_response(&response);

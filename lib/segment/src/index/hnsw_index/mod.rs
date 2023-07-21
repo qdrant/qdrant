@@ -8,8 +8,8 @@ pub mod graph_linear_builder;
 pub mod graph_links;
 pub mod hnsw;
 pub mod point_scorer;
-mod search_context;
 pub mod recorder;
+mod search_context;
 
 #[cfg(test)]
 mod tests;
