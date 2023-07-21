@@ -1340,6 +1340,16 @@ impl FieldCondition {
             values_count: Some(values_count),
         }
     }
+
+    /// Only the `key` is defined, most likely a client error.
+    pub fn all_fields_none(&self) -> bool {
+        self.r#match.is_none()
+            && self.range.is_none()
+            && self.geo_bounding_box.is_none()
+            && self.geo_radius.is_none()
+            && self.geo_polygon.is_none()
+            && self.values_count.is_none()
+    }
 }
 
 /// Payload field

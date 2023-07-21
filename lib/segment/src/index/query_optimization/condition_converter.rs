@@ -24,20 +24,27 @@ pub fn condition_converter<'a>(
     id_tracker: &IdTrackerSS,
 ) -> ConditionCheckerFn<'a> {
     match condition {
-        Condition::Field(field_condition) => field_indexes
-            .get(&field_condition.key)
-            .and_then(|indexes| {
-                indexes
-                    .iter()
-                    .find_map(|index| field_condition_index(index, field_condition))
-            })
-            .unwrap_or_else(|| {
-                Box::new(move |point_id| {
-                    payload_provider.with_payload(point_id, |payload| {
-                        check_field_condition(field_condition, &payload, field_indexes)
+        Condition::Field(field_condition) => {
+            if field_condition.all_fields_none() {
+                // all points match an empty field condition
+                Box::new(|_| true)
+            } else {
+                field_indexes
+                    .get(&field_condition.key)
+                    .and_then(|indexes| {
+                        indexes
+                            .iter()
+                            .find_map(|index| field_condition_index(index, field_condition))
                     })
-                })
-            }),
+                    .unwrap_or_else(|| {
+                        Box::new(move |point_id| {
+                            payload_provider.with_payload(point_id, |payload| {
+                                check_field_condition(field_condition, &payload, field_indexes)
+                            })
+                        })
+                    })
+            }
+        }
         // We can use index for `is_empty` condition effectively only when it is not empty.
         // If the index says it is "empty", we still need to check the payload.
         Condition::IsEmpty(is_empty) => {
@@ -123,6 +130,7 @@ pub fn condition_converter<'a>(
     }
 }
 
+/// Returns None if all fields are None
 pub fn field_condition_index<'a>(
     index: &'a FieldIndex,
     field_condition: &FieldCondition,

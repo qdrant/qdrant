@@ -1,5 +1,3 @@
-import random
-
 import pytest
 
 from .helpers.helpers import request_with_validation
@@ -42,5 +40,34 @@ def test_match_any():
 
     ids = [x['id'] for x in json['result']]
     assert 2 in ids
+    assert 3 in ids
+    assert 4 in ids
+
+
+def test_just_key():
+    # the filter will be ignored as the condition is not well-formed
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 3,
+            "filter": {
+                "must": [
+                    {
+                        "key": "city",
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+
+    json = response.json()
+    assert len(json['result']) == 3
+
+    ids = [x['id'] for x in json['result']]
+    assert 1 in ids
     assert 3 in ids
     assert 4 in ids
