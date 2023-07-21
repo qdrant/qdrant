@@ -1031,6 +1031,7 @@ dependencies = [
  "async-trait",
  "atomicwrites",
  "chrono",
+ "common",
  "criterion",
  "env_logger",
  "fs_extra",
@@ -1081,6 +1082,13 @@ dependencies = [
  "is-terminal",
  "lazy_static",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -4267,6 +4275,7 @@ dependencies = [
  "cgroups-rs",
  "charabia",
  "chrono",
+ "common",
  "criterion",
  "fs_extra",
  "futures",
