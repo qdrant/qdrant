@@ -918,6 +918,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
                 Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
                 Distance::Dot => api::grpc::qdrant::Distance::Dot,
+                Distance::Jaccard => api::grpc::qdrant::Distance::Jaccard,
             }
             .into(),
             hnsw_config: value.hnsw_config.map(Into::into),

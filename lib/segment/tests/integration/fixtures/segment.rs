@@ -142,6 +142,16 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         quantization_config: None,
                     },
                 ),
+                (
+                    "vector4".to_owned(),
+                    VectorDataConfig {
+                        size: 4,
+                        distance: Distance::Jaccard,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
             ]),
             payload_storage_type: Default::default(),
         },
