@@ -141,8 +141,7 @@ impl<'a> GraphLinearBuilder<'a> {
             as PointOffsetType)
             .map(|point_id| {
                 let level = self.get_point_level(point_id);
-                let entry_point_opt = self.entries[point_id as usize].clone();
-                match entry_point_opt {
+                match &self.entries[point_id as usize] {
                     None => None,
                     Some(entry_point) => {
                         let entry = ScoredPointOffset {
@@ -159,28 +158,22 @@ impl<'a> GraphLinearBuilder<'a> {
                 }
             })
             .collect();
+
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
-            let mut level_requests = vec![];
             for idx in 0..self.num_vectors() as PointOffsetType {
                 if let Some(Some(request)) = requests.get_mut(idx as usize) {
-                    let entry = self.entries[idx as usize].clone().unwrap();
+                    let start_entry = self.entries[idx as usize].clone().unwrap();
                     let point_level = self.get_point_level(idx);
-                    if entry.level > point_level && request.level > level {
-                        request.entry = self.search_entry_on_level(idx, request.entry, level);
-                    }
-
-                    if request.level == level {
-                        level_requests.push(request.clone());
+                    if request.level > level && start_entry.level > point_level {
+                        //request.entry = self.search_entry_on_level(idx, request.entry, level);
+                        request.entry = self.search_on_level(idx, request.entry, level).top().cloned().unwrap()
+                    } else if request.level == level {
+                        let response = self.link(request.clone());
+                        self.apply_link_response(&response);
+                        requests[idx as usize] = response.next_request();
                     }
                 }
-            }
-
-            for request in level_requests {
-                let point_id = request.point_id;
-                let response = self.link(request);
-                self.apply_link_response(&response);
-                requests[point_id as usize] = response.next_request();
             }
         }
         for idx in 0..self.num_vectors() {
