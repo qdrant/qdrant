@@ -16,13 +16,13 @@ use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
+use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::max_rayon_threads;
+use crate::index::hnsw_index::graph_linear_builder::GraphLinearBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
@@ -484,7 +484,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         }
     }
 
-    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
@@ -495,7 +495,23 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         debug!("building HNSW for {} vectors", total_vector_count);
         let indexing_threshold = self.config.full_scan_threshold;
-        let mut graph_layers_builder = GraphLayersBuilder::new(
+
+        let vector = vector_storage.get_vector(0).to_vec();
+        let raw_scorer =
+            if let Some(quantized_storage) = vector_storage.quantized_storage() {
+                quantized_storage.raw_scorer(
+                    &vector,
+                    id_tracker.deleted_point_bitslice(),
+                    vector_storage.deleted_vector_bitslice(),
+                )
+            } else {
+                new_raw_scorer(
+                    vector.to_owned(),
+                    &vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                )
+            };
+        let mut graph_layers_builder = GraphLinearBuilder::new(
             total_vector_count,
             self.config.m,
             self.config.m0,
@@ -505,110 +521,30 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 .unwrap_or(0)
                 * 10)
                 .max(1),
-            HNSW_USE_HEURISTIC,
+            raw_scorer,
+            &mut rng,
         );
-
-        let pool = rayon::ThreadPoolBuilder::new()
-            .thread_name(|idx| format!("hnsw-build-{idx}"))
-            .num_threads(max_rayon_threads(self.config.max_indexing_threads))
-            .build()?;
-
-        for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
-            check_process_stopped(stopped)?;
-            let level = graph_layers_builder.get_random_layer(&mut rng);
-            graph_layers_builder.set_levels(vector_id, level);
-        }
 
         let mut indexed_vectors = 0;
 
         if self.config.m > 0 {
             let ids: Vec<_> = id_tracker.iter_ids_excluding(deleted_bitslice).collect();
-
             indexed_vectors = ids.len();
 
-            pool.install(|| {
-                ids.into_par_iter().try_for_each(|vector_id| {
-                    check_process_stopped(stopped)?;
-                    let vector = vector_storage.get_vector(vector_id).to_vec();
-                    let raw_scorer =
-                        if let Some(quantized_storage) = vector_storage.quantized_storage() {
-                            quantized_storage.raw_scorer(
-                                &vector,
-                                id_tracker.deleted_point_bitslice(),
-                                vector_storage.deleted_vector_bitslice(),
-                            )
-                        } else {
-                            new_raw_scorer(
-                                vector.to_owned(),
-                                &vector_storage,
-                                id_tracker.deleted_point_bitslice(),
-                            )
-                        };
-                    let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-
-                    graph_layers_builder.link_new_point(vector_id, points_scorer);
-                    Ok::<_, OperationError>(())
-                })
-            })?;
+            graph_layers_builder.build();
 
             debug!("finish main graph");
         } else {
             debug!("skip building main HNSW graph");
         }
 
-        let mut block_filter_list = VisitedList::new(total_vector_count);
-        let visits_iteration = block_filter_list.get_current_iteration_id();
-
         let payload_index = self.payload_index.borrow();
         let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
         if payload_m > 0 {
-            for (field, _) in payload_index.indexed_fields() {
-                debug!("building additional index for field {}", &field);
-
-                // It is expected, that graph will become disconnected less than
-                // $1/m$ points left.
-                // So blocks larger than $1/m$ are not needed.
-                // We add multiplier for the extra safety.
-                let percolation_multiplier = 2;
-                let max_block_size = if self.config.m > 0 {
-                    total_vector_count / self.config.m * percolation_multiplier
-                } else {
-                    usize::MAX
-                };
-                let min_block_size = indexing_threshold;
-
-                for payload_block in payload_index.payload_blocks(&field, min_block_size) {
-                    check_process_stopped(stopped)?;
-                    if payload_block.cardinality > max_block_size {
-                        continue;
-                    }
-                    // ToDo: re-use graph layer for same payload
-                    let mut additional_graph = GraphLayersBuilder::new_with_params(
-                        total_vector_count,
-                        payload_m,
-                        self.config.payload_m0.unwrap_or(self.config.m0),
-                        self.config.ef_construct,
-                        1,
-                        HNSW_USE_HEURISTIC,
-                        false,
-                    );
-                    self.build_filtered_graph(
-                        &pool,
-                        stopped,
-                        &mut additional_graph,
-                        payload_block.condition,
-                        &mut block_filter_list,
-                    )?;
-                    graph_layers_builder.merge_from_other(additional_graph);
-                }
+            if !payload_index.indexed_fields().is_empty() {
+                panic!("Payload HNSW disabled");
             }
-
-            let indexed_payload_vectors = block_filter_list.count_visits_since(visits_iteration);
-
-            debug_assert!(indexed_vectors >= indexed_payload_vectors || self.config.m == 0);
-            indexed_vectors = indexed_vectors.max(indexed_payload_vectors);
-            debug_assert!(indexed_payload_vectors <= total_vector_count);
         } else {
             debug!("skip building additional HNSW links");
         }
