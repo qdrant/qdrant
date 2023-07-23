@@ -216,7 +216,7 @@ impl<'a> GraphLinearBuilder<'a> {
             if let Some(Some(request)) = requests.get_mut(idx) {
                 let start_entry = self.entries[idx as usize].clone().unwrap();
                 let point_level = self.get_point_level(idx as PointOffsetType);
-                if request.level > level && start_entry.level > point_level {
+                if level > request.level && start_entry.level > point_level {
                     request.entry =
                         self.search_entry_on_level(idx as PointOffsetType, request.entry, level);
                     //request.entry = self
@@ -511,7 +511,7 @@ mod tests {
             raw_scorer,
             &mut rng,
         );
-        graph_layers_2.prebuild(num_vectors);
+        graph_layers_2.build(0);
 
         let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
             num_vectors,
