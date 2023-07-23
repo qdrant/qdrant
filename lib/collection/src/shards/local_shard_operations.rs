@@ -140,6 +140,7 @@ impl ShardOperation for LocalShard {
             res = search_request => res,
             _ = tokio::time::sleep(timeout) => {
                 is_stopped.stop();
+                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
                 Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
             }
         }?;
