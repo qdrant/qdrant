@@ -39,7 +39,6 @@ use crate::types::{
 };
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
-const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
