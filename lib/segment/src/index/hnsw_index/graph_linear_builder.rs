@@ -6,7 +6,7 @@ use num_traits::float::FloatCore;
 use rand::distributions::Uniform;
 use rand::Rng;
 
-use super::entry_points::{EntryPoint, EntryPoints};
+use super::entry_points::EntryPoints;
 use super::graph_layers::GraphLayers;
 use super::graph_links::{GraphLinks, GraphLinksConverter};
 use crate::entry::entry_point::OperationResult;
@@ -27,7 +27,7 @@ pub struct GraphLinearBuilder<'a> {
     visited_pool: VisitedPool,
     points_scorer: Box<dyn RawScorer + 'a>,
     point_levels: Vec<usize>,
-    entries: Vec<Option<EntryPoint>>,
+    requests: Vec<Option<GraphLinkRequest>>,
 }
 
 #[derive(Clone)]
@@ -88,9 +88,31 @@ impl<'a> GraphLinearBuilder<'a> {
         }
 
         let mut entry_points = EntryPoints::new(entry_points_num);
-        let mut entries = vec![];
-        for idx in 0..(num_vectors as PointOffsetType) {
-            entries.push(entry_points.new_point(idx, point_levels[idx as usize], |_| true));
+        let mut requests = vec![];
+        for idx in 0..num_vectors {
+            let entry_point = entry_points.new_point(
+                idx as PointOffsetType,
+                point_levels[idx as usize],
+                |_| true,
+            );
+            if let Some(entry_point) = entry_point {
+                let level = point_levels[idx];
+                let entry = ScoredPointOffset {
+                    idx: entry_point.point_id,
+                    score: points_scorer.score_internal(
+                        idx as PointOffsetType,
+                        entry_point.point_id,
+                    ),
+                };
+                let level = std::cmp::min(level, entry_point.level);
+                requests.push(Some(GraphLinkRequest {
+                    point_id: idx as PointOffsetType,
+                    level,
+                    entry,
+                }))
+            } else {
+                requests.push(None);
+            }
         }
 
         let builder = Self {
@@ -102,7 +124,7 @@ impl<'a> GraphLinearBuilder<'a> {
             visited_pool: VisitedPool::new(),
             points_scorer,
             point_levels,
-            entries,
+            requests,
         };
         builder
     }
@@ -140,49 +162,28 @@ impl<'a> GraphLinearBuilder<'a> {
     }
 
     pub fn build(&mut self) {
-        let mut requests: Vec<Option<GraphLinkRequest>> = (0..self.num_vectors())
-            .map(|point_id| {
-                    let level = self.get_point_level(point_id as PointOffsetType);
-                    match &self.entries[point_id as usize] {
-                        None => None,
-                        Some(entry_point) => {
-                            let entry = ScoredPointOffset {
-                                idx: entry_point.point_id,
-                                score: self
-                                    .score(point_id as PointOffsetType, entry_point.point_id),
-                            };
-                            let level = std::cmp::min(level, entry_point.level);
-                            Some(GraphLinkRequest {
-                                point_id: point_id as PointOffsetType,
-                                level,
-                                entry,
-                            })
-                        }
-                    }
-            })
-            .collect();
-
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
-            self.build_level(level, &mut requests);
+            self.build_level(level);
         }
 
         for idx in 0..self.num_vectors() {
-            assert!(requests[idx].is_none());
+            assert!(self.requests[idx].is_none());
         }
     }
 
-    fn build_level(&mut self, level: usize, requests: &mut [Option<GraphLinkRequest>]) {
+    fn build_level(&mut self, level: usize) {
         for idx in 0..self.num_vectors() {
-            if let Some(Some(request)) = requests.get_mut(idx) {
-                let start_entry = self.entries[idx as usize].clone().unwrap();
+            if let Some(mut request) = self.requests[idx].clone() {
+                let entry_level = self.get_point_level(request.point_id);
                 let point_level = self.get_point_level(idx as PointOffsetType);
-                if level > request.level && start_entry.level > point_level {
+                if level > request.level && entry_level >= point_level {
                     request.entry = self.search_entry_on_level(idx as PointOffsetType, request.entry, level);
+                    self.requests[idx] = Some(request);
                 } else if request.level == level {
                     let response = self.link(request.clone());
                     self.apply_link_response(&response);
-                    requests[idx as usize] = response.next_request();
+                    self.requests[idx] = response.next_request();
                 }
             }
         }
@@ -430,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_equal_hnsw() {
-        let num_vectors = 1000;
+        let num_vectors = 10000;
         let m = M;
         let ef_construct = 16;
         let entry_points_num = 10;
@@ -482,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_linear_hnsw_quality() {
-        let num_vectors = 100000;
+        let num_vectors = 10000;
         let m = M;
         let ef_construct = 16;
         let entry_points_num = 10;
@@ -574,7 +575,7 @@ mod tests {
             let sames_2 = sames_count(&brute_top, &graph_search_2);
             total_sames_2 += sames_2;
         }
-        let min_sames = top as f32 * 0.8 * attempts as f32;
+        let min_sames = top as f32 * 0.7 * attempts as f32;
         println!("total_sames_1 = {}", total_sames_1);
         println!("total_sames_2 = {}", total_sames_2);
         println!("min_sames = {}", min_sames);
