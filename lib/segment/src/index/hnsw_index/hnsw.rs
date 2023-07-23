@@ -529,7 +529,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             let ids: Vec<_> = id_tracker.iter_ids_excluding(deleted_bitslice).collect();
             indexed_vectors = ids.len();
 
-            graph_layers_builder.build();
+            graph_layers_builder.build(0);
 
             debug!("finish main graph");
         } else {

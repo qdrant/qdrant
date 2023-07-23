@@ -5,22 +5,28 @@ use crate::types::PointOffsetType;
 
 pub struct Recorder<T> {
     pub items: VecDeque<T>,
+    pub check: bool,
 }
 
 impl<T: Eq + std::fmt::Debug> Recorder<T> {
     fn new() -> Self {
         Recorder {
             items: Default::default(),
+            check: false,
         }
     }
 
     fn write(&mut self, item: T) {
-        self.items.push_back(item);
+        if self.check {
+            let check_item = self.items.pop_front().unwrap();
+            assert_eq!(check_item, item);
+        } else {
+            self.items.push_back(item);
+        }
     }
 
-    fn check(&mut self, item: T) {
-        let check_item = self.items.pop_front().unwrap();
-        assert_eq!(check_item, item);
+    fn check(&mut self, check: bool) {
+        self.check = check;
     }
 }
 
@@ -30,12 +36,12 @@ lazy_static! {
     static ref RECORDER: Mutex<Recorder<RecorderType>> = Mutex::new(Recorder::new());
 }
 
-pub fn record_write(item: RecorderType) {
+pub fn record(item: RecorderType) {
     RECORDER.lock().unwrap().write(item);
 }
 
-pub fn record_check(item: RecorderType) {
-    RECORDER.lock().unwrap().check(item);
+pub fn recorder_check(check: bool) {
+    RECORDER.lock().unwrap().check(check);
 }
 
 pub fn record_finish() {

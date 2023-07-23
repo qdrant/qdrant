@@ -15,6 +15,9 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
+// const PREBUILD_SIZE: usize = 5000;
+// const CHUNK_SIZE: usize = 500;
+
 pub struct GraphLinearBuilder<'a> {
     m: usize,
     m0: usize,
@@ -136,62 +139,96 @@ impl<'a> GraphLinearBuilder<'a> {
         })
     }
 
-    pub fn build(&mut self) {
-        let mut requests: Vec<Option<GraphLinkRequest>> = (0..self.num_vectors()
-            as PointOffsetType)
-            .map(|point_id| {
-                let level = self.get_point_level(point_id);
-                match &self.entries[point_id as usize] {
-                    None => None,
-                    Some(entry_point) => {
-                        let entry = ScoredPointOffset {
+    pub fn prebuild(&mut self, count: usize) {
+        let count = std::cmp::min(self.num_vectors(), count);
+        for point_id in 0..count as PointOffsetType {
+            let level = self.get_point_level(point_id);
+            let entry_point_opt = self.entries[point_id as usize].clone();
+            let mut request = match entry_point_opt {
+                None => None,
+                Some(entry_point) => {
+                    let entry = if entry_point.level > level {
+                        self.search_entry(point_id, entry_point.point_id, entry_point.level, level)
+                    } else {
+                        ScoredPointOffset {
                             idx: entry_point.point_id,
                             score: self.score(point_id, entry_point.point_id),
-                        };
-                        let level = std::cmp::min(level, entry_point.level);
-                        Some(GraphLinkRequest {
-                            point_id,
-                            level,
-                            entry,
-                        })
+                        }
+                    };
+                    let level = std::cmp::min(level, entry_point.level);
+                    Some(GraphLinkRequest {
+                        point_id,
+                        level,
+                        entry,
+                    })
+                }
+            };
+
+            while let Some(r) = request {
+                let response = self.link(r);
+                self.apply_link_response(&response);
+                request = response.next_request();
+            }
+        }
+    }
+
+    pub fn build(&mut self, prebuild_count: usize) {
+        self.prebuild(prebuild_count);
+
+        let mut requests: Vec<Option<GraphLinkRequest>> = (0..self.num_vectors())
+            .map(|point_id| {
+                if point_id > prebuild_count {
+                    let level = self.get_point_level(point_id as PointOffsetType);
+                    match &self.entries[point_id as usize] {
+                        None => None,
+                        Some(entry_point) => {
+                            let entry = ScoredPointOffset {
+                                idx: entry_point.point_id,
+                                score: self
+                                    .score(point_id as PointOffsetType, entry_point.point_id),
+                            };
+                            let level = std::cmp::min(level, entry_point.level);
+                            Some(GraphLinkRequest {
+                                point_id: point_id as PointOffsetType,
+                                level,
+                                entry,
+                            })
+                        }
                     }
+                } else {
+                    None
                 }
             })
             .collect();
 
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
-            for idx in 0..self.num_vectors() as PointOffsetType {
-                if let Some(Some(request)) = requests.get_mut(idx as usize) {
-                    let start_entry = self.entries[idx as usize].clone().unwrap();
-                    let point_level = self.get_point_level(idx);
-                    if request.level > level && start_entry.level > point_level {
-                        //request.entry = self.search_entry_on_level(idx, request.entry, level);
-                        request.entry = self
-                            .search_on_level(idx, request.entry, level)
-                            .top()
-                            .cloned()
-                            .unwrap()
-                    } else if request.level == level {
-                        let response = self.link(request.clone());
-                        self.apply_link_response(&response);
-                        requests[idx as usize] = response.next_request();
-                    }
-                }
-            }
+            self.build_level(level, &mut requests);
         }
+
         for idx in 0..self.num_vectors() {
             assert!(requests[idx].is_none());
         }
     }
 
-    pub fn build_one_by_one(&mut self) {
+    fn build_level(&mut self, level: usize, requests: &mut [Option<GraphLinkRequest>]) {
         for idx in 0..self.num_vectors() {
-            let mut request = self.get_link_request(idx as PointOffsetType);
-            while let Some(r) = request {
-                let response = self.link(r);
-                self.apply_link_response(&response);
-                request = response.next_request();
+            if let Some(Some(request)) = requests.get_mut(idx) {
+                let start_entry = self.entries[idx as usize].clone().unwrap();
+                let point_level = self.get_point_level(idx as PointOffsetType);
+                if request.level > level && start_entry.level > point_level {
+                    request.entry =
+                        self.search_entry_on_level(idx as PointOffsetType, request.entry, level);
+                    //request.entry = self
+                    //    .search_on_level(idx as PointOffsetType, request.entry, level)
+                    //    .top()
+                    //    .cloned()
+                    //    .unwrap()
+                } else if request.level == level {
+                    let response = self.link(request.clone());
+                    self.apply_link_response(&response);
+                    requests[idx as usize] = response.next_request();
+                }
             }
         }
     }
@@ -204,39 +241,6 @@ impl<'a> GraphLinearBuilder<'a> {
             .zip(response.neighbor_links.iter())
         {
             self.set_links(*id, response.level, links);
-        }
-    }
-
-    pub fn get_link_request(&mut self, point_id: PointOffsetType) -> Option<GraphLinkRequest> {
-        let level = self.get_point_level(point_id);
-        let entry_point_opt = self.entries[point_id as usize].clone();
-        match entry_point_opt {
-            None => None,
-            Some(entry_point) => {
-                let entry = if entry_point.level > level {
-                    self.search_entry(point_id, entry_point.point_id, entry_point.level, level)
-                } else {
-                    ScoredPointOffset {
-                        idx: entry_point.point_id,
-                        score: self.score(point_id, entry_point.point_id),
-                    }
-                };
-                let level = std::cmp::min(level, entry_point.level);
-                Some(GraphLinkRequest {
-                    point_id,
-                    level,
-                    entry,
-                })
-            }
-        }
-    }
-
-    pub fn link_new_point(&mut self, point_id: PointOffsetType) {
-        let mut request = self.get_link_request(point_id);
-        while let Some(r) = request {
-            let response = self.link(r);
-            self.apply_link_response(&response);
-            request = response.next_request();
         }
     }
 
@@ -507,7 +511,7 @@ mod tests {
             raw_scorer,
             &mut rng,
         );
-        graph_layers_2.build_one_by_one();
+        graph_layers_2.prebuild(num_vectors);
 
         let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
             num_vectors,
@@ -540,13 +544,13 @@ mod tests {
 
     #[test]
     fn test_linear_hnsw_quality() {
-        let num_vectors = 1000;
+        let num_vectors = 100000;
         let m = M;
         let ef_construct = 16;
         let entry_points_num = 10;
         let dim = 16;
 
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(41);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
@@ -561,7 +565,7 @@ mod tests {
             &mut rng,
         );
         //graph_layers_2.build_one_by_one();
-        graph_layers_2.build();
+        graph_layers_2.build(0);
 
         let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
             num_vectors,
