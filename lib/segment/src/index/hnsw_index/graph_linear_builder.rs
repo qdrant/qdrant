@@ -89,12 +89,10 @@ impl<'a> GraphLinearBuilder<'a> {
 
         let mut entry_points = EntryPoints::new(entry_points_num);
         let mut requests = vec![];
-        for idx in 0..num_vectors {
+        for (idx, &level) in point_levels.iter().enumerate() {
             let entry_point =
-                entry_points
-                    .new_point(idx as PointOffsetType, point_levels[idx as usize], |_| true);
+                entry_points.new_point(idx as PointOffsetType, point_levels[idx], |_| true);
             if let Some(entry_point) = entry_point {
-                let level = point_levels[idx];
                 let entry = ScoredPointOffset {
                     idx: entry_point.point_id,
                     score: points_scorer
@@ -111,7 +109,7 @@ impl<'a> GraphLinearBuilder<'a> {
             }
         }
 
-        let builder = Self {
+        Self {
             m,
             m0,
             ef_construct,
@@ -121,8 +119,7 @@ impl<'a> GraphLinearBuilder<'a> {
             points_scorer,
             point_levels,
             requests,
-        };
-        builder
+        }
     }
 
     pub fn max_level(&self) -> usize {
@@ -178,7 +175,7 @@ impl<'a> GraphLinearBuilder<'a> {
                         self.search_entry_on_level(idx as PointOffsetType, request.entry, level);
                     self.requests[idx] = Some(request);
                 } else if request.level == level {
-                    let response = self.link(request.clone());
+                    let response = self.link(request);
                     self.apply_link_response(&response);
                     self.requests[idx] = response.next_request();
                 }
