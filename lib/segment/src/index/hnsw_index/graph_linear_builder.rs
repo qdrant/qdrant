@@ -90,19 +90,15 @@ impl<'a> GraphLinearBuilder<'a> {
         let mut entry_points = EntryPoints::new(entry_points_num);
         let mut requests = vec![];
         for idx in 0..num_vectors {
-            let entry_point = entry_points.new_point(
-                idx as PointOffsetType,
-                point_levels[idx as usize],
-                |_| true,
-            );
+            let entry_point =
+                entry_points
+                    .new_point(idx as PointOffsetType, point_levels[idx as usize], |_| true);
             if let Some(entry_point) = entry_point {
                 let level = point_levels[idx];
                 let entry = ScoredPointOffset {
                     idx: entry_point.point_id,
-                    score: points_scorer.score_internal(
-                        idx as PointOffsetType,
-                        entry_point.point_id,
-                    ),
+                    score: points_scorer
+                        .score_internal(idx as PointOffsetType, entry_point.point_id),
                 };
                 let level = std::cmp::min(level, entry_point.level);
                 requests.push(Some(GraphLinkRequest {
@@ -178,7 +174,8 @@ impl<'a> GraphLinearBuilder<'a> {
                 let entry_level = self.get_point_level(request.point_id);
                 let point_level = self.get_point_level(idx as PointOffsetType);
                 if level > request.level && entry_level >= point_level {
-                    request.entry = self.search_entry_on_level(idx as PointOffsetType, request.entry, level);
+                    request.entry =
+                        self.search_entry_on_level(idx as PointOffsetType, request.entry, level);
                     self.requests[idx] = Some(request);
                 } else if request.level == level {
                     let response = self.link(request.clone());
