@@ -579,7 +579,6 @@ impl<'s> SegmentHolder {
                         .entry(last_segment_id)
                         .or_default()
                         .push(last_point_id);
-                    continue;
                 }
             } else {
                 last_point_id_opt = Some(point_id);
