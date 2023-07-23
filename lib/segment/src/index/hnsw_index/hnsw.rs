@@ -497,20 +497,19 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let indexing_threshold = self.config.full_scan_threshold;
 
         let vector = vector_storage.get_vector(0).to_vec();
-        let raw_scorer =
-            if let Some(quantized_storage) = vector_storage.quantized_storage() {
-                quantized_storage.raw_scorer(
-                    &vector,
-                    id_tracker.deleted_point_bitslice(),
-                    vector_storage.deleted_vector_bitslice(),
-                )
-            } else {
-                new_raw_scorer(
-                    vector.to_owned(),
-                    &vector_storage,
-                    id_tracker.deleted_point_bitslice(),
-                )
-            };
+        let raw_scorer = if let Some(quantized_storage) = vector_storage.quantized_storage() {
+            quantized_storage.raw_scorer(
+                &vector,
+                id_tracker.deleted_point_bitslice(),
+                vector_storage.deleted_vector_bitslice(),
+            )
+        } else {
+            new_raw_scorer(
+                vector.to_owned(),
+                &vector_storage,
+                id_tracker.deleted_point_bitslice(),
+            )
+        };
         let mut graph_layers_builder = GraphLinearBuilder::new(
             total_vector_count,
             self.config.m,
