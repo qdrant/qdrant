@@ -566,7 +566,7 @@ impl<'s> SegmentHolder {
                 };
 
                 // choose newer version between point_id and last_point_id
-                if last_point_version > point_version {
+                if point_version < last_point_version {
                     points_to_remove
                         .entry(segment_id)
                         .or_default()
