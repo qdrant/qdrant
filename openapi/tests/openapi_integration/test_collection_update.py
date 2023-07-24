@@ -20,7 +20,7 @@ def test_collection_update():
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                "hnsw": {
+                "hnsw_config": {
                     "m": 16,
                 },
             },
@@ -28,7 +28,7 @@ def test_collection_update():
                 "default_segment_number": 6,
                 "indexing_threshold": 10000,
             },
-            "hnsw": {
+            "hnsw_config": {
                 "ef_construct": 123,
             },
         }
