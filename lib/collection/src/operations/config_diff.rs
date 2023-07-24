@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use validator::Validate;
 
+use super::types::{VectorParams, VectorParamsDiff};
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
@@ -188,6 +189,10 @@ impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
 impl DiffConfig<WalConfig> for WalConfigDiff {}
 
 impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
+
+impl DiffConfig<VectorParams> for VectorParamsDiff {}
+
+impl DiffConfig<VectorParamsDiff> for VectorParamsDiff {}
 
 impl From<HnswConfig> for HnswConfigDiff {
     fn from(config: HnswConfig) -> Self {

@@ -31,7 +31,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
-use super::config_diff::{self, DiffConfig};
+use super::config_diff;
 use crate::config::CollectionConfig;
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
@@ -967,10 +967,6 @@ pub struct VectorParamsDiff {
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
 }
-
-impl DiffConfig<VectorParams> for VectorParamsDiff {}
-
-impl DiffConfig<VectorParamsDiff> for VectorParamsDiff {}
 
 /// Vector update params separator for single and multiple vector modes
 ///
