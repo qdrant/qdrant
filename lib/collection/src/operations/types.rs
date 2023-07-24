@@ -30,6 +30,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
+use super::config_diff::DiffConfig;
 use crate::config::CollectionConfig;
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
@@ -37,8 +38,6 @@ use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::wal::WalError;
-
-use super::config_diff::DiffConfig;
 
 /// Current state of the collection.
 /// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
