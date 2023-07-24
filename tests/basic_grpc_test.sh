@@ -96,6 +96,16 @@ $docker_grpcurl -d '{
 
 $docker_grpcurl -d '{
   "collection_name": "test_collection",
+  "limit": 2,
+  "with_vectors": {"enable": true},
+  "order_by": {
+    "key": "population",
+    "direction": "ASC"
+  }
+}' $QDRANT_HOST qdrant.Points/Scroll
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
   "with_vectors": {"enable": true},
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
 }' $QDRANT_HOST qdrant.Points/Get
