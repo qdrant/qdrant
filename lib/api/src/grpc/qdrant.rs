@@ -24,7 +24,7 @@ pub struct VectorParams {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateVectorParams {
+pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset
     #[prost(message, optional, tag = "1")]
     #[validate]
@@ -41,12 +41,12 @@ pub struct VectorParamsMap {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateVectorParamsMap {
+pub struct VectorParamsDiffMap {
     #[prost(map = "string, message", tag = "1")]
     #[validate]
     pub map: ::std::collections::HashMap<
         ::prost::alloc::string::String,
-        UpdateVectorParams,
+        VectorParamsDiff,
     >,
 }
 #[derive(validator::Validate)]
@@ -82,9 +82,9 @@ pub mod update_vectors_config {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Config {
         #[prost(message, tag = "1")]
-        Params(super::UpdateVectorParams),
+        Params(super::VectorParamsDiff),
         #[prost(message, tag = "2")]
-        ParamsMap(super::UpdateVectorParamsMap),
+        ParamsMap(super::VectorParamsDiffMap),
     }
 }
 #[derive(validator::Validate)]

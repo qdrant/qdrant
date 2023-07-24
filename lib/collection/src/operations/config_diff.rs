@@ -92,13 +92,6 @@ impl HnswConfigDiff {
             && self.on_disk.is_none()
             && self.payload_m.is_none()
     }
-
-    /// Transform into an option
-    ///
-    /// Will be `Some` if not `is_empty`.
-    pub fn into_option(self) -> Option<Self> {
-        (!self.is_empty()).then_some(self)
-    }
 }
 
 #[derive(

@@ -45,11 +45,11 @@
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
     - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
-    - [UpdateVectorParams](#qdrant-UpdateVectorParams)
-    - [UpdateVectorParamsMap](#qdrant-UpdateVectorParamsMap)
-    - [UpdateVectorParamsMap.MapEntry](#qdrant-UpdateVectorParamsMap-MapEntry)
     - [UpdateVectorsConfig](#qdrant-UpdateVectorsConfig)
     - [VectorParams](#qdrant-VectorParams)
+    - [VectorParamsDiff](#qdrant-VectorParamsDiff)
+    - [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap)
+    - [VectorParamsDiffMap.MapEntry](#qdrant-VectorParamsDiffMap-MapEntry)
     - [VectorParamsMap](#qdrant-VectorParamsMap)
     - [VectorParamsMap.MapEntry](#qdrant-VectorParamsMap-MapEntry)
     - [VectorsConfig](#qdrant-VectorsConfig)
@@ -899,52 +899,6 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
-<a name="qdrant-UpdateVectorParams"></a>
-
-### UpdateVectorParams
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Update params for HNSW index. If empty object - it will be unset |
-
-
-
-
-
-
-<a name="qdrant-UpdateVectorParamsMap"></a>
-
-### UpdateVectorParamsMap
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| map | [UpdateVectorParamsMap.MapEntry](#qdrant-UpdateVectorParamsMap-MapEntry) | repeated |  |
-
-
-
-
-
-
-<a name="qdrant-UpdateVectorParamsMap-MapEntry"></a>
-
-### UpdateVectorParamsMap.MapEntry
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| key | [string](#string) |  |  |
-| value | [UpdateVectorParams](#qdrant-UpdateVectorParams) |  |  |
-
-
-
-
-
-
 <a name="qdrant-UpdateVectorsConfig"></a>
 
 ### UpdateVectorsConfig
@@ -953,8 +907,8 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| params | [UpdateVectorParams](#qdrant-UpdateVectorParams) |  |  |
-| params_map | [UpdateVectorParamsMap](#qdrant-UpdateVectorParamsMap) |  |  |
+| params | [VectorParamsDiff](#qdrant-VectorParamsDiff) |  |  |
+| params_map | [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap) |  |  |
 
 
 
@@ -974,6 +928,52 @@ Note: 1kB = 1 vector of size 256. |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Configuration of vector HNSW graph. If omitted - the collection configuration will be used |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of vector quantization config. If omitted - the collection configuration will be used |
 | on_disk | [bool](#bool) | optional | If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM. |
+
+
+
+
+
+
+<a name="qdrant-VectorParamsDiff"></a>
+
+### VectorParamsDiff
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Update params for HNSW index. If empty object - it will be unset |
+
+
+
+
+
+
+<a name="qdrant-VectorParamsDiffMap"></a>
+
+### VectorParamsDiffMap
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| map | [VectorParamsDiffMap.MapEntry](#qdrant-VectorParamsDiffMap-MapEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-VectorParamsDiffMap-MapEntry"></a>
+
+### VectorParamsDiffMap.MapEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [VectorParamsDiff](#qdrant-VectorParamsDiff) |  |  |
 
 
 

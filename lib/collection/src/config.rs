@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
+use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{
     CollectionError, CollectionResult, UpdateVectorsConfig, VectorParams, VectorsConfig,
 };
@@ -183,8 +184,10 @@ impl CollectionParams {
         update_vectors_diff: &UpdateVectorsConfig,
     ) -> CollectionResult<()> {
         for (vector_name, update_params) in update_vectors_diff.params_iter() {
-            self.get_vector_params_mut(vector_name)?
-                .update_from_diff(update_params)?;
+            let vector_params = self.get_vector_params_mut(vector_name)?;
+
+            // Update and replace vector params from vector specific diff
+            *vector_params = update_params.clone().update(vector_params)?;
         }
         Ok(())
     }

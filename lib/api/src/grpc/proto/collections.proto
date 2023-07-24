@@ -9,7 +9,7 @@ message VectorParams {
   optional bool on_disk = 5; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
 }
 
-message UpdateVectorParams {
+message VectorParamsDiff {
   optional HnswConfigDiff hnsw_config = 1; // Update params for HNSW index. If empty object - it will be unset
 }
 
@@ -17,8 +17,8 @@ message VectorParamsMap {
   map<string, VectorParams> map = 1;
 }
 
-message UpdateVectorParamsMap {
-  map<string, UpdateVectorParams> map = 1;
+message VectorParamsDiffMap {
+  map<string, VectorParamsDiff> map = 1;
 }
 
 message VectorsConfig {
@@ -30,8 +30,8 @@ message VectorsConfig {
 
 message UpdateVectorsConfig {
   oneof config {
-    UpdateVectorParams params = 1;
-    UpdateVectorParamsMap params_map = 2;
+    VectorParamsDiff params = 1;
+    VectorParamsDiffMap params_map = 2;
   }
 }
 

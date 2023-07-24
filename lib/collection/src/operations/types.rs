@@ -8,6 +8,7 @@ use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
+use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
@@ -792,25 +793,6 @@ pub struct VectorParams {
     pub on_disk: Option<bool>,
 }
 
-impl VectorParams {
-    /// Update the vector parameters from the given diff
-    pub fn update_from_diff(&mut self, update_params: &UpdateVectorParams) -> CollectionResult<()> {
-        let UpdateVectorParams { hnsw_config } = update_params;
-
-        // Update vector HNSW config or unset if empty
-        if let Some(diff) = hnsw_config {
-            self.hnsw_config = diff.into_option().map(|new_diff| {
-                // Update any existing diff with parameters from new diff
-                self.hnsw_config
-                    .and_then(|current_diff| new_diff.update(&current_diff).ok())
-                    .unwrap_or(new_diff)
-            });
-        }
-
-        Ok(())
-    }
-}
-
 /// Is considered empty if `None` or if diff has no field specified
 fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
     hnsw_config
@@ -977,15 +959,20 @@ impl From<VectorParams> for VectorsConfig {
     }
 }
 
-/// Update params of single vector data storage
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[derive(
+    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Merge,
+)]
 #[serde(rename_all = "snake_case")]
-pub struct UpdateVectorParams {
+pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset.
     #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
 }
+
+impl DiffConfig<VectorParams> for VectorParamsDiff {}
+
+impl DiffConfig<VectorParamsDiff> for VectorParamsDiff {}
 
 /// Vector update params separator for single and multiple vector modes
 ///
@@ -1004,12 +991,12 @@ pub struct UpdateVectorParams {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum UpdateVectorsConfig {
-    Single(UpdateVectorParams),
-    Multi(BTreeMap<String, UpdateVectorParams>),
+    Single(VectorParamsDiff),
+    Multi(BTreeMap<String, VectorParamsDiff>),
 }
 
 impl UpdateVectorsConfig {
-    pub fn get_params(&self, name: &str) -> Option<&UpdateVectorParams> {
+    pub fn get_params(&self, name: &str) -> Option<&VectorParamsDiff> {
         match self {
             UpdateVectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
             UpdateVectorsConfig::Multi(params) => params.get(name),
@@ -1019,7 +1006,7 @@ impl UpdateVectorsConfig {
     /// Iterate over the named vector parameters.
     ///
     /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
-    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &UpdateVectorParams)> + 'a> {
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParamsDiff)> + 'a> {
         match self {
             UpdateVectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
             UpdateVectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
@@ -1045,8 +1032,8 @@ impl Validate for UpdateVectorsConfig {
     }
 }
 
-impl From<UpdateVectorParams> for UpdateVectorsConfig {
-    fn from(params: UpdateVectorParams) -> Self {
+impl From<VectorParamsDiff> for UpdateVectorsConfig {
+    fn from(params: VectorParamsDiff) -> Self {
         UpdateVectorsConfig::Single(params)
     }
 }

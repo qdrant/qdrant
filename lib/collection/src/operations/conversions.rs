@@ -14,7 +14,7 @@ use tonic::Status;
 
 use super::types::{
     BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
-    UpdateVectorParams, UpdateVectorsConfig,
+    UpdateVectorsConfig, VectorParamsDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -397,10 +397,10 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::UpdateVectorParams> for UpdateVectorParams {
+impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
     type Error = Status;
 
-    fn try_from(vector_params: api::grpc::qdrant::UpdateVectorParams) -> Result<Self, Self::Error> {
+    fn try_from(vector_params: api::grpc::qdrant::VectorParamsDiff) -> Result<Self, Self::Error> {
         Ok(Self {
             hnsw_config: vector_params.hnsw_config.map(Into::into),
         })
