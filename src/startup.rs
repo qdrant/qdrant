@@ -2,6 +2,7 @@
 
 use std::backtrace::Backtrace;
 use std::panic;
+use std::path::PathBuf;
 
 use log::LevelFilter;
 
@@ -9,8 +10,10 @@ use crate::common::error_reporting::ErrorReporter;
 
 const DEFAULT_INITIALIZED_FILE: &str = ".qdrant-initialized";
 
-fn get_init_file_path() -> String {
-    std::env::var("QDRANT_INIT_FILE_PATH").unwrap_or_else(|_| DEFAULT_INITIALIZED_FILE.to_owned())
+fn get_init_file_path() -> PathBuf {
+    std::env::var("QDRANT_INIT_FILE_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| DEFAULT_INITIALIZED_FILE.into())
 }
 
 pub fn setup_logger(log_level: &str) {
@@ -74,7 +77,7 @@ pub fn touch_started_file_indicator() {
 /// Use before server initialization to avoid false positives.
 pub fn remove_started_file_indicator() {
     let path = get_init_file_path();
-    if std::path::Path::new(&path).exists() {
+    if path.exists() {
         if let Err(err) = std::fs::remove_file(path) {
             log::warn!("Failed to remove init file indicator: {}", err);
         }
