@@ -544,12 +544,14 @@ impl<'s> SegmentHolder {
         let mut last_point_version_opt = None;
         let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
 
-        while let Some(mut entry) = heap.pop() {
+        while let Some(entry) = heap.pop() {
             let point_id = entry.point_id;
             let segment_id = entry.segment_id;
             if let Some(next_point_id) = iterators.get_mut(&segment_id).and_then(|i| i.next()) {
-                entry.point_id = next_point_id;
-                heap.push(entry);
+                heap.push(DedupPoint {
+                    segment_id,
+                    point_id: next_point_id,
+                });
             }
 
             if last_point_id_opt == Some(point_id) {
