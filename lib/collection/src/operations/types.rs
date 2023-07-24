@@ -31,7 +31,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
-use super::config_diff::DiffConfig;
+use super::config_diff::{self, DiffConfig};
 use crate::config::CollectionConfig;
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
@@ -796,7 +796,7 @@ pub struct VectorParams {
 fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
     hnsw_config
         .as_ref()
-        .map(HnswConfigDiff::is_empty)
+        .and_then(|config| config_diff::is_empty(config).ok())
         .unwrap_or(true)
 }
 

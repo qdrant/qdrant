@@ -82,18 +82,6 @@ pub struct HnswConfigDiff {
     pub payload_m: Option<usize>,
 }
 
-impl HnswConfigDiff {
-    /// Whether this diff has no field specified
-    pub fn is_empty(&self) -> bool {
-        self.m.is_none()
-            && self.ef_construct.is_none()
-            && self.full_scan_threshold.is_none()
-            && self.max_indexing_threads.is_none()
-            && self.on_disk.is_none()
-            && self.payload_m.is_none()
-    }
-}
-
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
 )]
@@ -270,6 +258,26 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
     merge_level_0(&mut config_values, diff_values);
     let res = serde_json::from_value(config_values)?;
     Ok(res)
+}
+
+/// Hacky way to figure out if the given configuration is considered empty
+///
+/// The following types are considered empty:
+/// - Null
+/// - Emtpy string
+/// - Array or object with zero items
+///
+/// Intended to only be used in non critical for speed places.
+pub fn is_empty<T: Serialize>(config: &T) -> CollectionResult<bool> {
+    let config_values = serde_json::to_value(config)?;
+
+    Ok(match config_values {
+        Value::Null => true,
+        Value::String(value) => value.is_empty(),
+        Value::Array(values) => values.is_empty(),
+        Value::Object(values) => values.is_empty(),
+        Value::Bool(_) | Value::Number(_) => false,
+    })
 }
 
 #[cfg(test)]
