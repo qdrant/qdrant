@@ -524,11 +524,17 @@ message GeoRadius {
   float radius = 2; // In meters
 }
 
+message GeoLineString {
+  repeated GeoPoint points = 1;  // Ordered sequence of GeoPoints representing the line
+}
+
 message GeoPolygon {
-  // Ordered list of coordinates representing the vertices of a polygon.
-  // The minimum size is 4, and the first coordinate and the last coordinate
-  // should be the same to form a closed polygon.
-  repeated GeoPoint points = 1;
+    // An ordered list of lists of GeoPoint coordinates, arranged in order.
+    // For Polygons with more than one of these rings, the first MUST be
+    // the exterior ring, and any others MUST be interior rings. The exterior
+    // ring bounds the surface, and the interior rings (if present) bound holes
+    // within the surface.
+  repeated GeoLineString rings = 1;
 }
 
 message ValuesCount {

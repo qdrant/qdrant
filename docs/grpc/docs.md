@@ -85,6 +85,7 @@
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
+    - [GeoLineString](#qdrant-GeoLineString)
     - [GeoPoint](#qdrant-GeoPoint)
     - [GeoPolygon](#qdrant-GeoPolygon)
     - [GeoRadius](#qdrant-GeoRadius)
@@ -1489,6 +1490,21 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-GeoLineString"></a>
+
+### GeoLineString
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| points | [GeoPoint](#qdrant-GeoPoint) | repeated | Ordered sequence of GeoPoints representing the line |
+
+
+
+
+
+
 <a name="qdrant-GeoPoint"></a>
 
 ### GeoPoint
@@ -1513,7 +1529,7 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| points | [GeoPoint](#qdrant-GeoPoint) | repeated | Ordered list of coordinates representing the vertices of a polygon. The minimum size is 4, and the first coordinate and the last coordinate should be the same to form a closed polygon. |
+| rings | [GeoLineString](#qdrant-GeoLineString) | repeated | An ordered list of lists of GeoPoint coordinates, arranged in order. For Polygons with more than one of these rings, the first MUST be the exterior ring, and any others MUST be interior rings. The exterior ring bounds the surface, and the interior rings (if present) bound holes within the surface. |
 
 
 

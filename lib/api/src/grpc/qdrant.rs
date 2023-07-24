@@ -3484,16 +3484,26 @@ pub struct GeoRadius {
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoLineString {
+    /// Ordered sequence of GeoPoints representing the line
+    #[prost(message, repeated, tag = "1")]
+    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
+}
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPolygon {
-    /// Ordered list of coordinates representing the vertices of a polygon.
-    /// The minimum size is 4, and the first coordinate and the last coordinate
-    /// should be the same to form a closed polygon.
+    /// An ordered list of lists of GeoPoint coordinates, arranged in order.
+    /// For Polygons with more than one of these rings, the first MUST be
+    /// the exterior ring, and any others MUST be interior rings. The exterior
+    /// ring bounds the surface, and the interior rings (if present) bound holes
+    /// within the surface.
     #[prost(message, repeated, tag = "1")]
     #[validate(custom = "crate::grpc::validate::validate_geo_polygon")]
-    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
+    pub rings: ::prost::alloc::vec::Vec<GeoLineString>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

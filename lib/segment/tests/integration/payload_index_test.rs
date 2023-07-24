@@ -24,9 +24,9 @@ use segment::segment_constructor::build_segment;
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
-    Indexes, IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, PointOffsetType, Range,
-    SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
+    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString, GeoPoint,
+    GeoPolygon, GeoRadius, Indexes, IsEmptyCondition, Payload, PayloadField, PayloadSchemaType,
+    PointOffsetType, Range, SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
 };
 use serde_json::json;
 use tempfile::Builder;
@@ -642,17 +642,28 @@ fn test_struct_payload_geo_radius_index() {
 
 #[test]
 fn test_struct_payload_geo_polygon_index() {
-    let mut rnd = rand::thread_rng();
-
     let polygon_edge = 5;
+    let interiors_num = 3;
 
-    let points: Vec<GeoPoint> = (0..polygon_edge)
-        .map(|_| GeoPoint {
-            lon: rnd.gen_range(LON_RANGE),
-            lat: rnd.gen_range(LAT_RANGE),
-        })
+    fn generate_ring(polygon_edge: i32) -> GeoLineString {
+        let mut rnd = rand::thread_rng();
+        let mut line = GeoLineString {
+            points: (0..polygon_edge)
+                .map(|_| GeoPoint {
+                    lon: rnd.gen_range(LON_RANGE),
+                    lat: rnd.gen_range(LAT_RANGE),
+                })
+                .collect(),
+        };
+        line.points.push(line.points[0].clone()); // add last point that is identical to the first
+        line
+    }
+
+    let rings: Vec<GeoLineString> = std::iter::once(generate_ring(polygon_edge))
+        .chain(std::iter::repeat_with(|| generate_ring(polygon_edge)).take(interiors_num))
         .collect();
-    let geo_polygon = GeoPolygon { points };
+
+    let geo_polygon = GeoPolygon { rings };
 
     let condition = Condition::Field(FieldCondition::new_geo_polygon(
         "geo_key".to_string(),

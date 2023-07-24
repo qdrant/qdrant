@@ -8,7 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{CompressionRatio, GroupId};
+use super::qdrant::{CompressionRatio, GeoLineString, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -904,21 +904,20 @@ impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
     type Error = Status;
 
     fn try_from(value: GeoPolygon) -> Result<Self, Self::Error> {
-        if value.points.is_empty() {
+        if value.rings.is_empty() {
             return Err(Status::invalid_argument("Empty GeoPolygon"));
         }
 
-        let points: Vec<segment::types::GeoPoint> =
-            value.points.into_iter().map(Into::into).collect();
-
-        Ok(Self { points })
+        Ok(Self {
+            rings: value.rings.into_iter().map(Into::into).collect(),
+        })
     }
 }
 
 impl From<segment::types::GeoPolygon> for GeoPolygon {
     fn from(value: segment::types::GeoPolygon) -> Self {
         Self {
-            points: value.points.into_iter().map(Into::into).collect(),
+            rings: value.rings.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -928,6 +927,22 @@ impl From<GeoPoint> for segment::types::GeoPoint {
         Self {
             lon: value.lon,
             lat: value.lat,
+        }
+    }
+}
+
+impl From<GeoLineString> for segment::types::GeoLineString {
+    fn from(value: GeoLineString) -> Self {
+        Self {
+            points: value.points.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<segment::types::GeoLineString> for GeoLineString {
+    fn from(value: segment::types::GeoLineString) -> Self {
+        Self {
+            points: value.points.into_iter().map(Into::into).collect(),
         }
     }
 }

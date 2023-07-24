@@ -82,17 +82,15 @@ fn describe_error(
             Some(pattern) => format!("cannot contain {pattern}"),
             None => err.to_string(),
         },
-        "not_empty" => match params.get("value") {
-            Some(value) => format!("value {value} invalid, must not be empty"),
-            None => err.to_string(),
+        "not_empty" => {
+            "value invalid, must not be empty".to_string()
         },
-        "closed_polygon" => {
-            "the first and the last points should be same to form a closed polygon".to_string()
+        "closed_ring" => match params.get("index") {
+            Some(index) => format!("rings[{}] invalid, the first and the last points should be same to form a closed ring", index),
+            None => err.to_string(),
         }
-        "min_polygon_length" => match (params.get("min_length"), params.get("length")) {
-            (Some(min_length), Some(length)) => {
-                format! {"size must be at least {}, got {}", min_length, length}
-            }
+        "min_polygon_length" => match (params.get("min_length"), params.get("length"), params.get("index")) {
+            (Some(min_length), Some(length), Some(index)) => format!("rings[{}] invalid, the size must be at least {}, got {}", index, min_length, length),
             _ => err.to_string(),
         },
         // Undescribed error codes
@@ -102,7 +100,7 @@ fn describe_error(
 
 #[cfg(test)]
 mod tests {
-    use api::grpc::qdrant::{GeoPoint, GeoPolygon};
+    use api::grpc::qdrant::{GeoLineString, GeoPoint, GeoPolygon};
     use validator::Validate;
 
     use super::*;
@@ -119,6 +117,20 @@ mod tests {
         pub things: Vec<SomeThing>,
     }
 
+    fn build_polygon(lines: Vec<Vec<(f64, f64)>>) -> GeoPolygon {
+        let mut polygon = GeoPolygon { rings: vec![] };
+
+        for line in lines {
+            let mut points = vec![];
+            for (lon, lat) in line {
+                points.push(GeoPoint { lon, lat });
+            }
+            polygon.rings.push(GeoLineString { points });
+        }
+
+        polygon
+    }
+
     #[test]
     fn test_validation() {
         let bad_config = OtherThing {
@@ -131,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validation_render() {
+    fn test_config_validation_render() {
         let bad_config = OtherThing {
             things: vec![
                 SomeThing { idx: 0 },
@@ -151,43 +163,51 @@ mod tests {
                 "value 0 invalid, must be 1.0 or larger".into()
             )]
         );
+    }
 
-        let bad_polygon = GeoPolygon {
-            points: vec![
-                GeoPoint { lat: 1., lon: 1. },
-                GeoPoint { lat: 2., lon: 2. },
-                GeoPoint { lat: 1., lon: 1. },
-            ],
-        };
+    #[test]
+    fn test_polygon_validation_render() {
+        let test_cases = vec![
+            (
+                build_polygon(vec![]),
+                vec![("rings".into(), "value invalid, must not be empty".into())],
+            ),
+            (
+                build_polygon(vec![vec![(1., 1.),(2., 2.),(1., 1.)]]),
+                vec![("rings".into(), "rings[0] invalid, the size must be at least 4, got 3".into())],
+            ),
+            (
+                build_polygon(vec![vec![(1., 1.),(2., 2.),(3., 3.),(4., 4.)]]),
+                vec![(
+                    "rings".into(),
+                    "rings[0] invalid, the first and the last points should be same to form a closed ring".into(),
+                )],
+            ),
+            (
+                build_polygon(vec![
+                    vec![(1., 1.),(2., 2.),(3., 3.),(1., 1.)],
+                    vec![(1., 1.),(2., 2.),(1., 1.)],
+                ]),
+                vec![("rings".into(), "rings[1] invalid, the size must be at least 4, got 3".into())],
+            ),
+            (
+                build_polygon(vec![
+                    vec![(1., 1.),(2., 2.),(3., 3.),(1., 1.)],
+                    vec![(1., 1.),(2., 2.),(3., 3.),(4., 4.)],
+                ]),
+                vec![(
+                    "rings".into(),
+                    "rings[1] invalid, the first and the last points should be same to form a closed ring".into(),
+                )],
+            ),
+        ];
 
-        let errors = bad_polygon
-            .validate()
-            .expect_err("validation of bad polygon should fail");
+        for (polygon, expected_errors) in test_cases {
+            let errors = polygon
+                .validate()
+                .expect_err("validation of bad polygon should fail");
 
-        assert_eq!(
-            describe_errors(&errors),
-            vec![("points".into(), "size must be at least 4, got 3".into())]
-        );
-
-        let bad_polygon = GeoPolygon {
-            points: vec![
-                GeoPoint { lat: 1., lon: 1. },
-                GeoPoint { lat: 2., lon: 2. },
-                GeoPoint { lat: 3., lon: 3. },
-                GeoPoint { lat: 4., lon: 4. },
-            ],
-        };
-
-        let errors = bad_polygon
-            .validate()
-            .expect_err("validation of bad polygon should fail");
-
-        assert_eq!(
-            describe_errors(&errors),
-            vec![(
-                "points".into(),
-                "the first and the last points should be same to form a closed polygon".into()
-            )]
-        );
+            assert_eq!(describe_errors(&errors), expected_errors);
+        }
     }
 }

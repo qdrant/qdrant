@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use geo::prelude::HaversineDistance;
-use geo::{Contains, Coord, Point, Polygon};
+use geo::{Contains, Coord, LineString, Point, Polygon};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -642,6 +642,12 @@ pub struct GeoPoint {
     pub lat: f64,
 }
 
+/// Ordered sequence of GeoPoints representing the line
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct GeoLineString {
+    pub points: Vec<GeoPoint>,
+}
+
 #[derive(Deserialize)]
 struct GeoPointShadow {
     pub lon: f64,
@@ -1221,23 +1227,42 @@ impl GeoRadius {
 
 /// Geo filter request
 ///
-/// Matches coordinates inside the polygon, defined by the given coordinates in order.
+/// Matches coordinates inside the polygon, defined by exterior and interiors.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPolygon {
-    /// Ordered list of coordinates representing the vertices of a polygon.
-    pub points: Vec<GeoPoint>,
+    /// An ordered list of lists of GeoPoint coordinates, arranged in order.
+    /// For Polygons with more than one of these rings, the first MUST be
+    /// the exterior ring, and any others MUST be interior rings. The exterior
+    /// ring bounds the surface, and the interior rings (if present) bound holes
+    /// within the surface.
+    pub rings: Vec<GeoLineString>,
 }
 
 impl GeoPolygon {
     pub fn check_point(&self, lon: f64, lat: f64) -> bool {
-        let polygon_points: Vec<Coord<f64>> = self
-            .points
+        let exterior_ring: LineString = LineString(
+            self.rings[0]
+                .points
+                .iter()
+                .map(|p| Coord { x: p.lon, y: p.lat })
+                .collect(),
+        );
+
+        // Convert the interior rings points to coordinates (if any)
+        let interior_rings: Vec<LineString> = self.rings[1..]
             .iter()
-            .map(|p| Coord { x: p.lon, y: p.lat })
+            .map(|interior_points| {
+                interior_points
+                    .points
+                    .iter()
+                    .map(|p| Coord { x: p.lon, y: p.lat })
+                    .collect()
+            })
+            .map(LineString)
             .collect();
 
-        let polygon = Polygon::new(polygon_points.into(), vec![]);
+        let polygon = Polygon::new(exterior_ring, interior_rings);
 
         let point = Coord { x: lon, y: lat };
 
@@ -1687,11 +1712,39 @@ impl Filter {
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use super::{GeoLineString, GeoPoint, GeoPolygon};
+
+    pub fn build_polygon(interior: Vec<(f64, f64)>, exteriors: Vec<Vec<(f64, f64)>>) -> GeoPolygon {
+        let exterior_ring = interior.into_iter().map(|(lon, lat)| GeoPoint { lon, lat });
+
+        let interior_rings: Vec<GeoLineString> = exteriors
+            .into_iter()
+            .map(|line| GeoLineString {
+                points: line
+                    .into_iter()
+                    .map(|(lon, lat)| GeoPoint { lon, lat })
+                    .collect(),
+            })
+            .collect();
+
+        GeoPolygon {
+            rings: std::iter::once(GeoLineString {
+                points: exterior_ring.collect(),
+            })
+            .chain(interior_rings)
+            .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
 
+    use super::test_utils::build_polygon;
     use super::*;
     use crate::common::utils::remove_value_from_json_map;
 
@@ -1753,61 +1806,68 @@ mod tests {
 
     #[test]
     fn test_geo_polygon_check_point() {
-        // Create a GeoPolygon with a square shape
-        let polygon_1 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -1.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: 1.0,
-                    lat: -1.0,
-                },
-                GeoPoint { lon: 1.0, lat: 1.0 },
-                GeoPoint {
-                    lon: -1.0,
-                    lat: 1.0,
-                },
-            ],
-        };
+        let test_cases = [
+            // Create a GeoPolygon with a square shape
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.0, -1.0),
+                    (1.0, 1.0),
+                    (-1.0, 1.0),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![]],
+                // Expected results
+                vec![((0.5, 0.5), true), ((1.5, 1.5), false), ((1.0, 0.0), false)],
+            ),
+            // Create a GeoPolygon as a `twisted square`
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.0, 1.0),
+                    (1.0, -1.0),
+                    (-1.0, 1.0),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![]],
+                // Expected results
+                vec![((0.5, 0.0), true), ((0.0, 0.5), false), ((0.0, 0.0), false)],
+            ),
+            // Create a GeoPolygon with an interior (a 'hole' inside the polygon)
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.5, -1.0),
+                    (1.5, 1.5),
+                    (-1.0, 1.5),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![
+                    (-0.5, -0.5),
+                    (-0.5, 0.5),
+                    (0.5, 0.5),
+                    (0.5, -0.5),
+                    (-0.5, -0.5),
+                ]],
+                // Expected results
+                vec![((0.6, 0.6), true), ((0.0, 0.0), false), ((0.5, 0.5), false)],
+            ),
+        ];
 
-        let inside_result = polygon_1.check_point(0.5, 0.5);
-        assert!(inside_result);
+        for (exterior, interiors, points) in &test_cases {
+            let polygon = build_polygon(exterior.clone(), interiors.clone());
 
-        let outside_result = polygon_1.check_point(1.5, 1.5);
-        assert!(!outside_result);
-
-        let on_edge_result = polygon_1.check_point(1.0, 0.0);
-        assert!(!on_edge_result);
-
-        // Create a GeoPolygon as a `twisted square`
-        let polygon_2 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -1.0,
-                    lat: -1.0,
-                },
-                GeoPoint { lon: 1.0, lat: 1.0 },
-                GeoPoint {
-                    lon: 1.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: -1.0,
-                    lat: 1.0,
-                },
-            ],
-        };
-
-        let inside_result_2 = polygon_2.check_point(0.5, 0.0);
-        assert!(inside_result_2);
-
-        let outside_result_2 = polygon_2.check_point(0.0, 0.5);
-        assert!(!outside_result_2);
-
-        let on_edge_result_2 = polygon_2.check_point(0.0, 0.0);
-        assert!(!on_edge_result_2);
+            for ((lon, lat), expected_result) in points {
+                let inside_result = polygon.check_point(*lon, *lat);
+                assert_eq!(inside_result, *expected_result);
+            }
+        }
     }
 
     #[test]

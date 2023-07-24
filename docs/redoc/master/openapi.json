@@ -5204,14 +5204,29 @@
         }
       },
       "GeoPolygon": {
-        "description": "Geo filter request\n\nMatches coordinates inside the polygon, defined by the given coordinates in order.",
+        "description": "Geo filter request\n\nMatches coordinates inside the polygon, defined by exterior and interiors.",
+        "type": "object",
+        "required": [
+          "rings"
+        ],
+        "properties": {
+          "rings": {
+            "description": "An ordered list of lists of GeoPoint coordinates, arranged in order. For Polygons with more than one of these rings, the first MUST be the exterior ring, and any others MUST be interior rings. The exterior ring bounds the surface, and the interior rings (if present) bound holes within the surface.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoLineString"
+            }
+          }
+        }
+      },
+      "GeoLineString": {
+        "description": "Ordered sequence of GeoPoints representing the line",
         "type": "object",
         "required": [
           "points"
         ],
         "properties": {
           "points": {
-            "description": "Ordered list of coordinates representing the vertices of a polygon.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/GeoPoint"
