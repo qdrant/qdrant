@@ -21,15 +21,13 @@ def test_collection_update():
         body={
             "vectors": {
                 "hnsw_config": {
-                    "m": 16,
+                    "m": 32,
+                    "ef_construct": 123,
                 },
             },
             "optimizers_config": {
                 "default_segment_number": 6,
                 "indexing_threshold": 10000,
-            },
-            "hnsw_config": {
-                "ef_construct": 123,
             },
         }
     )
