@@ -269,7 +269,7 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
 ///
 /// The following types are considered empty:
 /// - Null
-/// - Emtpy string
+/// - Empty string
 /// - Array or object with zero items
 ///
 /// Intended to only be used in non critical for speed places.
