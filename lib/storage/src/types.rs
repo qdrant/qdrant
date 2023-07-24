@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::config::WalConfig;
@@ -23,6 +24,8 @@ pub struct PerformanceConfig {
     pub max_optimization_threads: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_rate_limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_timeout_sec: Option<usize>,
 }
 
 const fn default_max_optimization_threads() -> usize {
@@ -75,6 +78,9 @@ impl StorageConfig {
             self.node_type,
             self.handle_collection_load_errors,
             self.recovery_mode.clone(),
+            self.performance
+                .search_timeout_sec
+                .map(|x| Duration::from_secs(x as u64)),
         )
     }
 }

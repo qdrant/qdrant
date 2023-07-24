@@ -26,7 +26,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorageEnum};
+use crate::vector_storage::{new_stoppable_raw_scorer, ScoredPointOffset, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -230,6 +230,7 @@ impl VectorIndex for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         match filter {
             Some(filter) => {
@@ -241,10 +242,11 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        new_raw_scorer(
+                        new_stoppable_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
+                            is_stopped,
                         )
                         .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
@@ -257,10 +259,11 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        new_raw_scorer(
+                        new_stoppable_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
+                            is_stopped,
                         )
                         .peek_top_all(top)
                     })

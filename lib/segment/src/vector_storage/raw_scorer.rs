@@ -60,6 +60,9 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
     pub vec_deleted: &'a BitSlice,
     pub metric: PhantomData<TMetric>,
+    /// This flag indicates that the search process is stopped externally,
+    /// the search result is no longer needed and the search process should be stopped as soon as possible.
+    pub is_stopped: &'a AtomicBool,
 }
 
 static ASYNC_SCORER: AtomicBool = AtomicBool::new(false);
@@ -72,18 +75,19 @@ pub fn get_async_scorer() -> bool {
     ASYNC_SCORER.load(Ordering::Relaxed)
 }
 
-pub fn new_raw_scorer<'a>(
+pub fn new_stoppable_raw_scorer<'a>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     match vector_storage {
-        VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted),
+        VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted, is_stopped),
 
         VectorStorageEnum::Memmap(vs) => {
             if get_async_scorer() {
                 #[cfg(target_os = "linux")]
-                match super::async_raw_scorer::new(vector.clone(), vs, point_deleted) {
+                match super::async_raw_scorer::new(vector.clone(), vs, point_deleted, is_stopped) {
                     Ok(raw_scorer) => return raw_scorer,
                     Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
                 }
@@ -92,19 +96,30 @@ pub fn new_raw_scorer<'a>(
                 log::warn!("async raw scorer is only supported on Linux");
             }
 
-            raw_scorer_impl(vector, vs.as_ref(), point_deleted)
+            raw_scorer_impl(vector, vs.as_ref(), point_deleted, is_stopped)
         }
 
         VectorStorageEnum::AppendableMemmap(vs) => {
-            raw_scorer_impl(vector, vs.as_ref(), point_deleted)
+            raw_scorer_impl(vector, vs.as_ref(), point_deleted, is_stopped)
         }
     }
+}
+
+pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
+
+pub fn new_raw_scorer<'a>(
+    vector: Vec<VectorElementType>,
+    vector_storage: &'a VectorStorageEnum,
+    point_deleted: &'a BitSlice,
+) -> Box<dyn RawScorer + 'a> {
+    new_stoppable_raw_scorer(vector, vector_storage, point_deleted, &DEFAULT_STOPPED)
 }
 
 pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
     let vec_deleted = vector_storage.deleted_vector_bitslice();
@@ -116,6 +131,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             point_deleted,
             vec_deleted,
             metric: PhantomData,
+            is_stopped,
         }),
         Distance::Euclid => Box::new(RawScorerImpl::<'a, EuclidMetric, TVectorStorage> {
             points_count,
@@ -124,6 +140,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             point_deleted,
             vec_deleted,
             metric: PhantomData,
+            is_stopped,
         }),
         Distance::Dot => Box::new(RawScorerImpl::<'a, DotProductMetric, TVectorStorage> {
             points_count,
@@ -132,6 +149,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             point_deleted,
             vec_deleted,
             metric: PhantomData,
+            is_stopped,
         }),
     }
 }
@@ -142,6 +160,9 @@ where
     TVectorStorage: VectorStorage,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return 0;
+        }
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
             if !self.check_vector(point_id) {
@@ -165,6 +186,9 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
     ) -> Vec<ScoredPointOffset> {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return vec![];
+        }
         let mut scores = vec![];
         for point_id in points {
             let other_vector = self.vector_storage.get_vector(point_id);
@@ -211,6 +235,7 @@ where
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let scores = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let other_vector = self.vector_storage.get_vector(point_id);
@@ -224,6 +249,7 @@ where
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let scores = (0..self.points_count)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let point_id = point_id as PointOffsetType;
