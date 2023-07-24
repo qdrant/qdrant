@@ -275,6 +275,7 @@ fn validate_geo_filter(query_filter: Filter) {
                 Some(&query_filter),
                 5,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -299,6 +300,7 @@ fn validate_geo_filter(query_filter: Filter) {
                 Some(&query_filter),
                 5,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -546,6 +548,7 @@ fn test_struct_payload_index() {
                 Some(&query_filter),
                 5,
                 None,
+                &false.into(),
             )
             .unwrap();
         let struct_result = struct_segment
@@ -557,6 +560,7 @@ fn test_struct_payload_index() {
                 Some(&query_filter),
                 5,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -691,6 +695,7 @@ fn test_struct_payload_index_nested_fields() {
                 Some(&query_filter),
                 5,
                 None,
+                &false.into(),
             )
             .unwrap();
         let struct_result = struct_segment
@@ -705,6 +710,7 @@ fn test_struct_payload_index_nested_fields() {
                 Some(&query_filter),
                 5,
                 None,
+                &false.into(),
             )
             .unwrap();
 

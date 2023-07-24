@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -176,6 +177,7 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let deleted_points = self.deleted_points.read();
 
@@ -198,6 +200,7 @@ impl SegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 top,
                 params,
+                is_stopped,
             )?
         } else {
             self.wrapped_segment.get().read().search(
@@ -208,6 +211,7 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
+                is_stopped,
             )?
         };
 
@@ -219,6 +223,7 @@ impl SegmentEntry for ProxySegment {
             filter,
             top,
             params,
+            is_stopped,
         )?;
 
         wrapped_result.append(&mut write_result);
@@ -234,6 +239,7 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -256,6 +262,7 @@ impl SegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 top,
                 params,
+                is_stopped,
             )?
         } else {
             self.wrapped_segment.get().read().search_batch(
@@ -266,6 +273,7 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
+                is_stopped,
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -276,6 +284,7 @@ impl SegmentEntry for ProxySegment {
             filter,
             top,
             params,
+            is_stopped,
         )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
@@ -808,6 +817,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -875,6 +885,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -889,6 +900,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -928,6 +940,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -942,6 +955,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -990,6 +1004,7 @@ mod tests {
                     None,
                     10,
                     None,
+                    &false.into(),
                 )
                 .unwrap();
             all_single_results.push(res);
@@ -1006,6 +1021,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 

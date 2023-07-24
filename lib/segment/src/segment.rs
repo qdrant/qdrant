@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
@@ -14,7 +15,7 @@ use uuid::Uuid;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
-    check_named_vectors, check_vector, check_vector_name, check_vectors, mmap_ops,
+    check_named_vectors, check_stopped, check_vector, check_vector_name, check_vectors, mmap_ops,
 };
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
@@ -743,6 +744,7 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
@@ -750,8 +752,9 @@ impl SegmentEntry for Segment {
             &vector_data
                 .vector_index
                 .borrow()
-                .search(&[vector], filter, top, params)[0];
+                .search(&[vector], filter, top, params, is_stopped)[0];
 
+        check_stopped(is_stopped)?;
         self.process_search_result(internal_result, with_payload, with_vector)
     }
 
@@ -764,13 +767,16 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_vectors(vector_name, vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let internal_results = vector_data
             .vector_index
             .borrow()
-            .search(vectors, filter, top, params);
+            .search(vectors, filter, top, params, is_stopped);
+
+        check_stopped(is_stopped)?;
 
         let res = internal_results
             .iter()
@@ -1573,6 +1579,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
         eprintln!("search_result = {search_result:#?}");
@@ -1586,6 +1593,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -1666,6 +1674,7 @@ mod tests {
                 Some(&filter_valid),
                 1,
                 None,
+                &false.into(),
             )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
@@ -1679,6 +1688,7 @@ mod tests {
                 Some(&filter_invalid),
                 1,
                 None,
+                &false.into(),
             )
             .unwrap();
         assert!(results_with_invalid_filter.is_empty());
@@ -1856,6 +1866,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -1882,6 +1893,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -2168,6 +2180,7 @@ mod tests {
                     None,
                     1,
                     None,
+                    &false.into(),
                 )
                 .err()
                 .unwrap();
@@ -2183,6 +2196,7 @@ mod tests {
                     None,
                     1,
                     None,
+                    &false.into(),
                 )
                 .err()
                 .unwrap();

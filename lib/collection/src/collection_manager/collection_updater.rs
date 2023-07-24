@@ -3,7 +3,7 @@ use segment::types::SeqNumberType;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::segments_updater::*;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
 
 /// Implementation of the update operation
@@ -30,16 +30,15 @@ impl CollectionUpdater {
                     }
                 }
             }
-            Err(collection_error) => match collection_error {
-                CollectionError::ServiceError { error, .. } => {
+            Err(collection_error) => {
+                if collection_error.is_transient() {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
-                    log::error!("Update operation failed: {}", error)
-                }
-                _ => {
+                    log::error!("Update operation failed: {}", collection_error)
+                } else {
                     log::warn!("Update operation declined: {}", collection_error)
                 }
-            },
+            }
         }
     }
 

@@ -10,9 +10,10 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequestBatch, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -124,13 +125,26 @@ impl ShardOperation for LocalShard {
         for req in &request.searches {
             collection_params.get_vector_params(req.vector.get_name())?;
         }
-        let res = SegmentsSearcher::search(
+
+        let is_stopped = StoppingGuard::new();
+
+        let search_request = SegmentsSearcher::search(
             self.segments(),
             request.clone(),
             search_runtime_handle,
             true,
-        )
-        .await?;
+            is_stopped.get_is_stopped(),
+        );
+        let timeout = self.shared_storage_config.search_timeout;
+        let res: Vec<Vec<ScoredPoint>> = tokio::select! {
+            res = search_request => res,
+            _ = tokio::time::sleep(timeout) => {
+                is_stopped.stop();
+                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
+                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
+            }
+        }?;
+
         let top_results = res
             .into_iter()
             .zip(request.searches.iter())

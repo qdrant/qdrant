@@ -492,9 +492,20 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Timeout error: {description}")]
+    Timeout { description: String },
 }
 
 impl CollectionError {
+    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> CollectionError {
+        CollectionError::Timeout {
+            description: format!(
+                "Operation '{}' timed out after {timeout_sec} seconds",
+                operation.into()
+            ),
+        }
+    }
+
     pub fn service_error(error: String) -> CollectionError {
         CollectionError::ServiceError {
             error,
@@ -525,6 +536,26 @@ impl CollectionError {
         match self {
             Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
             _ => None,
+        }
+    }
+
+    /// Returns true if the error is transient and the operation can be retried.
+    /// Returns false if the error is not transient and the operation should fail on all replicas.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            // Transient
+            Self::ServiceError { .. } => true,
+            Self::Timeout { .. } => true,
+            Self::Cancelled { .. } => true,
+            Self::OutOfMemory { .. } => true,
+            // Not transient
+            Self::BadInput { .. } => false,
+            Self::NotFound { .. } => false,
+            Self::PointNotFound { .. } => false,
+            Self::BadRequest { .. } => false,
+            Self::BadShardSelection { .. } => false,
+            Self::InconsistentShardFailure { .. } => false,
+            Self::ForwardProxyError { .. } => false,
         }
     }
 }
@@ -675,6 +706,9 @@ impl From<tonic::Status> for CollectionError {
                 error: format!("Internal error: {err}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
             },
+            tonic::Code::DeadlineExceeded => CollectionError::Timeout {
+                description: format!("Deadline Exceeded: {err}"),
+            },
             other => CollectionError::ServiceError {
                 error: format!("Tonic status error: {other}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
@@ -731,13 +765,6 @@ impl From<validator::ValidationErrors> for CollectionError {
 }
 
 pub type CollectionResult<T> = Result<T, CollectionError>;
-
-pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
-    match err {
-        Ok(_) => false,
-        Err(error) => matches!(error, CollectionError::ServiceError { .. }),
-    }
-}
 
 impl Record {
     pub fn vector_names(&self) -> Vec<&str> {

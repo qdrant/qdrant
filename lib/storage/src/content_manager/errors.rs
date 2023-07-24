@@ -22,6 +22,8 @@ pub enum StorageError {
     BadRequest { description: String },
     #[error("Storage locked: {description}")]
     Locked { description: String },
+    #[error("Timeout: {description}")]
+    Timeout { description: String },
 }
 
 impl StorageError {
@@ -86,6 +88,9 @@ impl StorageError {
                 description: overriding_description,
                 backtrace: None,
             },
+            CollectionError::Timeout { .. } => StorageError::Timeout {
+                description: overriding_description,
+            },
         }
     }
 }
@@ -123,6 +128,9 @@ impl From<CollectionError> for StorageError {
             CollectionError::OutOfMemory { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
                 backtrace: None,
+            },
+            CollectionError::Timeout { .. } => StorageError::Timeout {
+                description: format!("{err}"),
             },
         }
     }

@@ -12,6 +12,8 @@ pub mod utils;
 pub mod vector_utils;
 pub mod version;
 
+use std::sync::atomic::AtomicBool;
+
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -96,6 +98,15 @@ fn check_vector_against_config(
         return Err(OperationError::WrongVector {
             expected_dim: dim,
             received_dim: vector.len(),
+        });
+    }
+    Ok(())
+}
+
+pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {
+    if is_stopped.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(OperationError::Cancelled {
+            description: "Operation is stopped externally".to_string(),
         });
     }
     Ok(())
