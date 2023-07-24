@@ -474,9 +474,9 @@ fn main() -> anyhow::Result<()> {
 /// This methods move a value out from an [`Arc`] when there is only one reference left
 /// and it is safe to do so. `Err()` is returned if an [`Arc`] still has more than 1 reference
 /// after given duration is passed.
-fn wait_unwrap<T>(mut input: Arc<T>, duration: Duration) -> Result<T, ()> {
+fn wait_unwrap<T>(mut input: Arc<T>, timeout: Duration) -> Result<T, ()> {
     let start_time = Instant::now();
-    while start_time.elapsed() < duration {
+    while start_time.elapsed() < timeout {
         match Arc::try_unwrap(input) {
             Ok(input) => {
                 return Ok(input);
