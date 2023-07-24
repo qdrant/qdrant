@@ -14,7 +14,9 @@ use crate::spaces::metric::Metric;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum, DEFAULT_STOPPED,
+};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen_range(0.0..1.0)).collect()
@@ -141,6 +143,11 @@ where
 
     pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         let query = TMetric::preprocess(&query).unwrap_or(query);
-        raw_scorer_impl(query, self, self.deleted_vector_bitslice())
+        raw_scorer_impl(
+            query,
+            self,
+            self.deleted_vector_bitslice(),
+            &DEFAULT_STOPPED,
+        )
     }
 }

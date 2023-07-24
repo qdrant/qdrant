@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
@@ -10,14 +11,17 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage as _};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage as _, DEFAULT_STOPPED};
 
 pub fn new<'a>(
     vector: Vec<VectorElementType>,
     storage: &'a MemmapVectorStorage,
     point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    Ok(AsyncRawScorerBuilder::new(vector, storage, point_deleted)?.build())
+    Ok(AsyncRawScorerBuilder::new(vector, storage, point_deleted)?
+        .with_is_stopped(is_stopped)
+        .build())
 }
 
 pub struct AsyncRawScorerImpl<'a, TMetric: Metric> {
@@ -27,6 +31,9 @@ pub struct AsyncRawScorerImpl<'a, TMetric: Metric> {
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     metric: PhantomData<TMetric>,
+    /// This flag indicates that the search process is stopped externally,
+    /// the search result is no longer needed and the search process should be stopped as soon as possible.
+    pub is_stopped: &'a AtomicBool,
 }
 
 impl<'a, TMetric> AsyncRawScorerImpl<'a, TMetric>
@@ -39,6 +46,7 @@ where
         storage: &'a MmapVectors,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
+        is_stopped: &'a AtomicBool,
     ) -> Self {
         Self {
             points_count,
@@ -47,6 +55,7 @@ where
             point_deleted,
             vec_deleted,
             metric: PhantomData,
+            is_stopped,
         }
     }
 }
@@ -56,6 +65,9 @@ where
     TMetric: Metric,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return 0;
+        }
         let points_stream = points
             .iter()
             .copied()
@@ -83,6 +95,9 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
     ) -> Vec<ScoredPointOffset> {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return vec![];
+        }
         let mut scores = vec![];
 
         self.storage
@@ -140,7 +155,9 @@ where
         }
 
         let mut pq = FixedLengthPriorityQueue::new(top);
-        let points_stream = points.filter(|point_id| self.check_vector(*point_id));
+        let points_stream = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
 
         self.storage
             .read_vectors_async(points_stream, |_, point_id, other_vector| {
@@ -164,7 +181,9 @@ where
             return vec![];
         }
 
-        let points_stream = (0..self.points_count).filter(|point_id| self.check_vector(*point_id));
+        let points_stream = (0..self.points_count)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
 
         let mut pq = FixedLengthPriorityQueue::new(top);
         self.storage
@@ -192,6 +211,7 @@ struct AsyncRawScorerBuilder<'a> {
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     distance: Distance,
+    is_stopped: Option<&'a AtomicBool>,
 }
 
 impl<'a> AsyncRawScorerBuilder<'a> {
@@ -213,6 +233,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             vec_deleted,
             storage,
             distance,
+            is_stopped: None,
         };
 
         Ok(builder)
@@ -226,6 +247,11 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         }
     }
 
+    pub fn with_is_stopped(mut self, is_stopped: &'a AtomicBool) -> Self {
+        self.is_stopped = Some(is_stopped);
+        self
+    }
+
     fn with_metric<TMetric: Metric>(self) -> AsyncRawScorerImpl<'a, TMetric> {
         AsyncRawScorerImpl::new(
             self.points_count,
@@ -233,6 +259,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             self.storage,
             self.point_deleted,
             self.vec_deleted,
+            self.is_stopped.unwrap_or(&DEFAULT_STOPPED),
         )
     }
 }

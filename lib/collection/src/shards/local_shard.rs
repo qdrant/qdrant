@@ -53,7 +53,7 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
 pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
-    pub(super) shred_storage_config: Arc<SharedStorageConfig>,
+    pub(super) shared_storage_config: Arc<SharedStorageConfig>,
     pub(super) wal: LockedWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
@@ -131,7 +131,7 @@ impl LocalShard {
         Self {
             segments: segment_holder,
             collection_config,
-            shred_storage_config: shared_storage_config,
+            shared_storage_config,
             wal: locked_wal,
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
@@ -471,7 +471,7 @@ impl LocalShard {
         let mut update_handler = self.update_handler.lock().await;
 
         let (update_sender, update_receiver) =
-            mpsc::channel(self.shred_storage_config.update_queue_size);
+            mpsc::channel(self.shared_storage_config.update_queue_size);
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
         old_sender.send(UpdateSignal::Stop).await?;

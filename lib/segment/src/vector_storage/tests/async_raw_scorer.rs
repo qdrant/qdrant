@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
 use bitvec::slice::BitSlice;
@@ -125,8 +126,9 @@ fn test_random_score(
 
     let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points);
 
+    let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::Memmap(storage) = storage {
-        async_raw_scorer::new(query, storage, deleted_points)?
+        async_raw_scorer::new(query, storage, deleted_points, &is_stopped)?
     } else {
         unreachable!();
     };

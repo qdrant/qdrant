@@ -706,18 +706,15 @@ impl ShardReplicaSet {
         if let Some(local) = local {
             if self.peer_is_active(&self.this_peer_id()) {
                 let read_operation_res = read_operation(local.get()).await;
-                match read_operation_res {
+                match &read_operation_res {
                     Ok(_) => return read_operation_res,
-                    res @ Err(CollectionError::ServiceError { .. }) => {
-                        log::debug!("Local read op. failed: {}", res.as_ref().err().unwrap());
-                        local_result = Some(res);
-                    }
-                    res @ Err(CollectionError::Cancelled { .. }) => {
-                        log::debug!("Local read op. cancelled: {}", res.as_ref().err().unwrap());
-                        local_result = Some(res);
-                    }
-                    res @ Err(_) => {
-                        return res; // Validation errors are not recoverable, reply immediately
+                    Err(error) => {
+                        if error.is_transient() {
+                            log::debug!("Local read op. failed: {}", error);
+                            local_result = Some(read_operation_res);
+                        } else {
+                            return read_operation_res;
+                        }
                     }
                 }
             }
@@ -758,17 +755,16 @@ impl ShardReplicaSet {
         // shortcut at first successful result
         let mut captured_error = None;
         while let Some(result) = futures.next().await {
-            match result {
-                Ok(res) => return Ok(res), // We only need one successful result
-                err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote read op. failed: {}", err.as_ref().err().unwrap());
-                    captured_error = Some(err)
-                } // capture error for possible error reporting
-                err @ Err(CollectionError::Cancelled { .. }) => {
-                    log::debug!("Remote read op. cancelled: {}", err.as_ref().err().unwrap());
-                    captured_error = Some(err)
-                } // capture error for possible error reporting
-                err @ Err(_) => return err, // Validation or user errors reported immediately
+            match &result {
+                Ok(_) => return result,
+                Err(error) => {
+                    if error.is_transient() {
+                        log::debug!("Local read op. failed: {}", error);
+                        captured_error = Some(result);
+                    } else {
+                        return result;
+                    }
+                }
             }
         }
         debug_assert!(
@@ -785,23 +781,16 @@ impl ShardReplicaSet {
 
         // shortcut at first successful result
         while let Some(result) = futures.next().await {
-            match result {
-                Ok(res) => return Ok(res), // We only need one successful result
-                err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!(
-                        "Remote fallback read op. failed: {}",
-                        err.as_ref().err().unwrap()
-                    );
-                    captured_error = Some(err)
-                } // capture error for possible error reporting
-                err @ Err(CollectionError::Cancelled { .. }) => {
-                    log::debug!(
-                        "Remote fallback read op. cancelled: {}",
-                        err.as_ref().err().unwrap()
-                    );
-                    captured_error = Some(err)
-                } // capture error for possible error reporting
-                err @ Err(_) => return err, // Validation or user errors reported immediately
+            match &result {
+                Ok(_) => return result,
+                Err(error) => {
+                    if error.is_transient() {
+                        log::debug!("Local read op. failed: {}", error);
+                        captured_error = Some(result);
+                    } else {
+                        return result;
+                    }
+                }
             }
         }
         captured_error.expect("at this point `captured_error` must be defined by construction")
@@ -892,10 +881,7 @@ impl ShardReplicaSet {
                 Ok(resp) => responses.push(resp),
 
                 Err(err) => {
-                    let is_transient = matches!(
-                        &err,
-                        CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. },
-                    );
+                    let is_transient = err.is_transient();
 
                     if is_transient {
                         log::debug!("Read operation failed: {err}");
@@ -1214,15 +1200,12 @@ impl ShardReplicaSet {
                 err
             );
             if let Some(ReplicaState::Active) = state.get_peer_state(peer_id) {
-                match err {
-                    CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. } => {
-                        // If the error is service error, we should deactivate the peer
-                        // before allowing other operations to continue.
-                        // Otherwise, the failed node can become responsive again, before
-                        // the other nodes deactivate it, so the storage might be inconsistent.
-                        wait_for_deactivation = true;
-                    }
-                    _ => {}
+                if err.is_transient() {
+                    // If the error is transient, we should not deactivate the peer
+                    // before allowing other operations to continue.
+                    // Otherwise, the failed node can become responsive again, before
+                    // the other nodes deactivate it, so the storage might be inconsistent.
+                    wait_for_deactivation = true;
                 }
 
                 log::debug!(
@@ -1292,17 +1275,16 @@ impl ShardReplicaSet {
                     self.forward_update(leader_peer, operation, wait, ordering)
                         .await
                         .map_err(|err| {
-                            match err {
-                                CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. } => {
-                                    // Deactivate the peer if forwarding failed with service error
-                                    self.locally_disabled_peers.write().insert(leader_peer);
-                                    self.notify_peer_failure(leader_peer);
-                                    // return service error
-                                    CollectionError::service_error(format!(
-                                        "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
-                                    ))
-                                }
-                                _ => err // return the original error
+                            if err.is_transient() {
+                                // Deactivate the peer if forwarding failed with transient error
+                                self.locally_disabled_peers.write().insert(leader_peer);
+                                self.notify_peer_failure(leader_peer);
+                                // return service error
+                                CollectionError::service_error(format!(
+                                    "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
+                                ))
+                            } else {
+                                err
                             }
                         })
                 }

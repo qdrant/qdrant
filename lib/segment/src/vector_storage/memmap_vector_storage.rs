@@ -645,6 +645,7 @@ mod tests {
                 &query,
                 borrowed_id_tracker.deleted_point_bitslice(),
                 borrowed_storage.deleted_vector_bitslice(),
+                &stopped,
             );
             let scorer_orig = new_raw_scorer(
                 query.clone(),
@@ -669,6 +670,7 @@ mod tests {
             &query,
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
+            &stopped,
         );
         let scorer_orig = new_raw_scorer(
             query,

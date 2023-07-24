@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use futures::future::try_join_all;
@@ -148,6 +149,7 @@ impl SegmentsSearcher {
         batch_request: Arc<SearchRequestBatch>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
+        is_stopped: Arc<AtomicBool>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
@@ -179,12 +181,14 @@ impl SegmentsSearcher {
                 .map(|(_id, segment)| {
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                        let is_stopped_clone = is_stopped.clone();
                         move || {
                             search_in_segment(
                                 segment,
                                 batch_request,
                                 available_points_segments,
                                 use_sampling,
+                                &is_stopped_clone,
                             )
                         }
                     });
@@ -225,9 +229,15 @@ impl SegmentsSearcher {
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
                             .collect(),
                     });
-
-                    res.push(runtime_handle.spawn_blocking(|| {
-                        search_in_segment(segment, partial_batch_request, 0, false)
+                    let is_stopped_clone = is_stopped.clone();
+                    res.push(runtime_handle.spawn_blocking(move || {
+                        search_in_segment(
+                            segment,
+                            partial_batch_request,
+                            0,
+                            false,
+                            &is_stopped_clone,
+                        )
                     }))
                 }
                 res
@@ -361,6 +371,7 @@ fn search_in_segment(
     request: Arc<SearchRequestBatch>,
     total_points: usize,
     use_sampling: bool,
+    is_stopped: &AtomicBool,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
 
@@ -411,6 +422,7 @@ fn search_in_segment(
                     prev_params.filter,
                     top,
                     prev_params.params,
+                    is_stopped,
                 )?;
                 for batch_result in &res {
                     further_results.push(batch_result.len() == top);
@@ -447,6 +459,7 @@ fn search_in_segment(
             prev_params.filter,
             top,
             prev_params.params,
+            is_stopped,
         )?;
         for batch_result in &res {
             further_results.push(batch_result.len() == top);
@@ -508,6 +521,7 @@ mod tests {
             Arc::new(batch_request),
             &Handle::current(),
             true,
+            Arc::new(AtomicBool::new(false)),
         )
         .await
         .unwrap()
@@ -570,6 +584,7 @@ mod tests {
                 Arc::new(batch_request.clone()),
                 &Handle::current(),
                 false,
+                Arc::new(false.into()),
             )
             .await
             .unwrap();
@@ -581,6 +596,7 @@ mod tests {
                 Arc::new(batch_request),
                 &Handle::current(),
                 true,
+                Arc::new(false.into()),
             )
             .await
             .unwrap();

@@ -148,11 +148,12 @@ fn exact_search_test() {
                 exact: true,
                 ..Default::default()
             }),
+            &false.into(),
         );
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None);
+            .search(&[&query], None, top, None, &false.into());
 
         assert_eq!(
             index_result, plain_result,
@@ -183,11 +184,12 @@ fn exact_search_test() {
                 exact: true,
                 ..Default::default()
             }),
+            &false.into(),
         );
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None);
+            .search(&[&query], filter_query, top, None, &false.into());
 
         assert_eq!(
             index_result, plain_result,
