@@ -14,7 +14,7 @@
     "apt-get": "sudo apt-get update -y && sudo apt-get upgrade -y && sudo apt-get install -y clang lld cmake protobuf-compiler jq gcc g++ git-lfs",
     // mostly for running cargo +nightly fmt
     "nightly": "rustup toolchain install nightly",
-    "pip": "install jsonschema pytest requests jsonschmea schemathesis"
+    "pytest": "pip install jsonschema pytest requests schemathesis"
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
