@@ -299,8 +299,7 @@ pub struct PointRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
     Name(String),
 }
@@ -821,8 +820,7 @@ impl Anonymize for VectorParams {
 ///      }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case", untagged)]
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
@@ -988,8 +986,7 @@ impl DiffConfig<VectorParamsDiff> for VectorParamsDiff {}
 ///     }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case", untagged)]
 pub enum VectorsConfigDiff {
     Single(VectorParamsDiff),
     Multi(BTreeMap<String, VectorParamsDiff>),
