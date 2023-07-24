@@ -64,6 +64,8 @@ sysinfo = "0.29"
 futures = "0.3.28"
 charabia = { version = "0.8.2", default-features = false, features = ["greek", "hebrew", "thai"] }
 
+common = {path = "../common"}
+
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.15", default-features = false }

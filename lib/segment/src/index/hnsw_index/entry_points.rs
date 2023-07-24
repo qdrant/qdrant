@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use serde::{Deserialize, Serialize};
 
-use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::PointOffsetType;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
