@@ -38,6 +38,8 @@ use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
+use super::config_diff::DiffConfig;
+
 /// Current state of the collection.
 /// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
 #[derive(
@@ -789,6 +791,25 @@ pub struct VectorParams {
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+impl VectorParams {
+    /// Update the vector parameters from the given diff
+    pub fn update_from_diff(&mut self, update_params: &UpdateVectorParams) -> CollectionResult<()> {
+        let UpdateVectorParams { hnsw_config } = update_params;
+
+        // Update vector HNSW config or unset if empty
+        if let Some(diff) = hnsw_config {
+            self.hnsw_config = diff.into_option().map(|new_diff| {
+                // Update any existing diff with parameters from new diff
+                self.hnsw_config
+                    .and_then(|current_diff| new_diff.update(&current_diff).ok())
+                    .unwrap_or(new_diff)
+            });
+        }
+
+        Ok(())
+    }
 }
 
 /// Is considered empty if `None` or if diff has no field specified

@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
+use crate::operations::types::{
+    CollectionError, CollectionResult, UpdateVectorsConfig, VectorParams, VectorsConfig,
+};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
@@ -163,10 +165,7 @@ impl CollectionParams {
             })
     }
 
-    pub fn get_vector_params_mut(
-        &mut self,
-        vector_name: &str,
-    ) -> CollectionResult<&mut VectorParams> {
+    fn get_vector_params_mut(&mut self, vector_name: &str) -> CollectionResult<&mut VectorParams> {
         self.vectors
             .get_params_mut(vector_name)
             .ok_or_else(|| CollectionError::BadInput {
@@ -176,6 +175,18 @@ impl CollectionParams {
                     format!("Vector params for {vector_name} are not specified in config")
                 },
             })
+    }
+
+    /// Update collection vectors from the given update vectors config
+    pub fn update_vectors_from_diff(
+        &mut self,
+        update_vectors_diff: &UpdateVectorsConfig,
+    ) -> CollectionResult<()> {
+        for (vector_name, update_params) in update_vectors_diff.params_iter() {
+            self.get_vector_params_mut(vector_name)?
+                .update_from_diff(update_params)?;
+        }
+        Ok(())
     }
 
     /// Convert into unoptimized named vector data configs

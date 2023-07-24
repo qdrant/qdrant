@@ -18,6 +18,8 @@ use crate::optimizers_builder::OptimizersConfig;
 pub trait DiffConfig<T: DeserializeOwned + Serialize> {
     /// Update the given `config` with fields in this diff
     ///
+    /// This clones, modifies and returns `config`.
+    ///
     /// This diff has higher priority, meaning that fields specified in this diff will always be in
     /// the returned object.
     fn update(self, config: &T) -> CollectionResult<T>

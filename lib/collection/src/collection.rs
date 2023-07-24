@@ -1137,28 +1137,11 @@ impl Collection {
     /// the updated configuration.
     pub async fn update_vectors_from_diff(
         &self,
-        update_vectors_diff: UpdateVectorsConfig,
+        update_vectors_diff: &UpdateVectorsConfig,
     ) -> CollectionResult<()> {
         let mut config = self.collection_config.write().await;
-
-        // For each vector, update params
-        for (vector_name, update_params) in update_vectors_diff.params_iter() {
-            let vector_params = config.params.get_vector_params_mut(vector_name)?;
-
-            // Update vector HNSW config or unset if empty
-            if let Some(diff) = update_params.hnsw_config {
-                vector_params.hnsw_config = diff.into_option().map(|new_diff| {
-                    // Update any existing diff with parameters from new diff
-                    vector_params
-                        .hnsw_config
-                        .and_then(|current_diff| new_diff.update(&current_diff).ok())
-                        .unwrap_or(new_diff)
-                });
-            }
-        }
-
+        config.params.update_vectors_from_diff(update_vectors_diff)?;
         config.save(&self.path)?;
-
         Ok(())
     }
 
