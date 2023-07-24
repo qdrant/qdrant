@@ -285,6 +285,7 @@ pub trait SegmentEntry {
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
+    /// Iterator over all points in segment in ascending order.
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.

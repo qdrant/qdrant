@@ -1,11 +1,12 @@
 use std::cmp::{max, min};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::{Deref, Mul};
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
+use itertools::Itertools;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
@@ -26,6 +27,25 @@ const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub enum LockedSegment {
     Original(Arc<RwLock<Segment>>),
     Proxy(Arc<RwLock<ProxySegment>>),
+}
+
+/// Internal structure for deduplication of points. Used for BinaryHeap
+#[derive(Eq, PartialEq)]
+struct DedupPoint {
+    point_id: PointIdType,
+    segment_id: SegmentId,
+}
+
+impl Ord for DedupPoint {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.point_id.cmp(&other.point_id).reverse()
+    }
+}
+
+impl PartialOrd for DedupPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 fn try_unwrap_with_timeout<T>(
@@ -474,44 +494,7 @@ impl<'s> SegmentHolder {
     ///
     /// Deduplication works with plain segments only.
     pub fn deduplicate_points(&self) -> OperationResult<usize> {
-        let mut seen_points: HashMap<PointIdType, (SegmentId, SeqNumberType)> = Default::default();
-        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
-        let all_segment_ids: Vec<SegmentId> = self.segments.keys().cloned().collect();
-        for segment_id in all_segment_ids {
-            let locked_segment = self.segments.get(&segment_id).unwrap();
-            let segment_arc = locked_segment.get();
-            let read_segment = segment_arc.read();
-            for point_id in read_segment.iter_points() {
-                let point_version_opt = read_segment.point_version(point_id);
-                let seen = seen_points.get(&point_id).cloned();
-
-                // Ignore points without version, those are partially updated and will be overwritten
-                if let Some(point_version) = point_version_opt {
-                    if let Some((seen_segment_id, seen_version)) = seen {
-                        // Other version exists
-                        if seen_version > point_version {
-                            // Other version is newer
-                            // Remove this point
-                            points_to_remove
-                                .entry(segment_id)
-                                .or_default()
-                                .push(point_id);
-                        } else {
-                            // This version is newer
-                            // Remove point from other segment and update seen
-                            seen_points.insert(point_id, (segment_id, point_version));
-                            points_to_remove
-                                .entry(seen_segment_id)
-                                .or_default()
-                                .push(point_id);
-                        }
-                    } else {
-                        // No other version exists
-                        seen_points.insert(point_id, (segment_id, point_version));
-                    }
-                }
-            }
-        }
+        let points_to_remove = self.find_duplicated_points()?;
 
         let mut removed_points = 0;
         for (segment_id, points) in points_to_remove {
@@ -526,6 +509,86 @@ impl<'s> SegmentHolder {
             }
         }
         Ok(removed_points)
+    }
+
+    fn find_duplicated_points(&self) -> OperationResult<HashMap<SegmentId, Vec<PointIdType>>> {
+        let segments = self
+            .segments
+            .iter()
+            .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
+            .collect_vec();
+        let locked_segments = BTreeMap::from_iter(
+            segments
+                .iter()
+                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read())),
+        );
+        let mut iterators = BTreeMap::from_iter(
+            locked_segments
+                .iter()
+                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points())),
+        );
+
+        // heap contains the current iterable point id from each segment
+        let mut heap = iterators
+            .iter_mut()
+            .filter_map(|(&segment_id, iter)| {
+                iter.next().map(|point_id| DedupPoint {
+                    segment_id,
+                    point_id,
+                })
+            })
+            .collect::<BinaryHeap<_>>();
+
+        let mut last_point_id_opt = None;
+        let mut last_segment_id_opt = None;
+        let mut last_point_version_opt = None;
+        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
+
+        while let Some(entry) = heap.pop() {
+            let point_id = entry.point_id;
+            let segment_id = entry.segment_id;
+            if let Some(next_point_id) = iterators.get_mut(&segment_id).and_then(|i| i.next()) {
+                heap.push(DedupPoint {
+                    segment_id,
+                    point_id: next_point_id,
+                });
+            }
+
+            if last_point_id_opt == Some(point_id) {
+                let last_point_id = last_point_id_opt.unwrap();
+                let last_segment_id = last_segment_id_opt.unwrap();
+
+                let point_version = locked_segments[&segment_id].point_version(point_id);
+                let last_point_version = if let Some(last_point_version) = last_point_version_opt {
+                    last_point_version
+                } else {
+                    let version = locked_segments[&last_segment_id].point_version(last_point_id);
+                    last_point_version_opt = Some(version);
+                    version
+                };
+
+                // choose newer version between point_id and last_point_id
+                if point_version < last_point_version {
+                    points_to_remove
+                        .entry(segment_id)
+                        .or_default()
+                        .push(point_id);
+                } else {
+                    last_point_id_opt = Some(point_id);
+                    last_segment_id_opt = Some(segment_id);
+                    last_point_version_opt = Some(point_version);
+                    points_to_remove
+                        .entry(last_segment_id)
+                        .or_default()
+                        .push(last_point_id);
+                }
+            } else {
+                last_point_id_opt = Some(point_id);
+                last_segment_id_opt = Some(segment_id);
+            }
+        }
+
+        Ok(points_to_remove)
     }
 }
 
