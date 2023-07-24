@@ -533,9 +533,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.71"
+version = "0.1.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a564d521dd56509c4c47480d00b80ee55f7e385ae48db5744c67ad50c92d2ebf"
+checksum = "cc6dde6e4ed435a4c1ee4e73592f5ba9da2151af10076cc04858746af9352d09"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5336,7 +5336,7 @@ dependencies = [
  "memmap2 0.7.1",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.19",
+ "rustix 0.38.3",
  "serde",
 ]
 
