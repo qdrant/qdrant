@@ -15,9 +15,6 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
-// const PREBUILD_SIZE: usize = 5000;
-// const CHUNK_SIZE: usize = 500;
-
 pub struct GraphLinearBuilder<'a> {
     m: usize,
     m0: usize,
@@ -168,7 +165,7 @@ impl<'a> GraphLinearBuilder<'a> {
     fn build_level(&mut self, level: usize) {
         for idx in 0..self.num_vectors() {
             if let Some(mut request) = self.requests[idx].clone() {
-                let entry_level = self.get_point_level(request.point_id);
+                let entry_level = self.get_point_level(request.entry.idx);
                 let point_level = self.get_point_level(idx as PointOffsetType);
                 if level > request.level && entry_level >= point_level {
                     request.entry =
