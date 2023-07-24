@@ -37,7 +37,7 @@ use crate::operations::snapshot_ops::{
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
-    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, UpdateVectorsConfig,
+    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, VectorsConfigDiff,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
@@ -1137,7 +1137,7 @@ impl Collection {
     /// the updated configuration.
     pub async fn update_vectors_from_diff(
         &self,
-        update_vectors_diff: &UpdateVectorsConfig,
+        update_vectors_diff: &VectorsConfigDiff,
     ) -> CollectionResult<()> {
         let mut config = self.collection_config.write().await;
         config

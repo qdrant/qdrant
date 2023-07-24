@@ -106,7 +106,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("OptimizersConfigDiff.deleted_threshold", "custom = \"crate::grpc::validate::validate_f64_range_1\""),
             ("OptimizersConfigDiff.vacuum_min_vector_number", "custom = \"crate::grpc::validate::validate_u64_range_min_100\""),
             ("VectorsConfig.config", ""),
-            ("UpdateVectorsConfig.config", ""),
+            ("VectorsConfigDiff.config", ""),
             ("VectorParams.size", "range(min = 1)"),
             ("VectorParams.hnsw_config", ""),
             ("VectorParams.quantization_config", ""),

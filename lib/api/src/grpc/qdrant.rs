@@ -71,13 +71,13 @@ pub mod vectors_config {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateVectorsConfig {
-    #[prost(oneof = "update_vectors_config::Config", tags = "1, 2")]
+pub struct VectorsConfigDiff {
+    #[prost(oneof = "vectors_config_diff::Config", tags = "1, 2")]
     #[validate]
-    pub config: ::core::option::Option<update_vectors_config::Config>,
+    pub config: ::core::option::Option<vectors_config_diff::Config>,
 }
-/// Nested message and enum types in `UpdateVectorsConfig`.
-pub mod update_vectors_config {
+/// Nested message and enum types in `VectorsConfigDiff`.
+pub mod vectors_config_diff {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Config {
@@ -363,10 +363,10 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "5")]
     #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
-    /// Configuration for vectors
+    /// New vector parameters
     #[prost(message, optional, tag = "6")]
     #[validate]
-    pub vectors_config: ::core::option::Option<UpdateVectorsConfig>,
+    pub vectors_config: ::core::option::Option<VectorsConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

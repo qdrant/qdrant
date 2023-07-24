@@ -45,7 +45,6 @@
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
     - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
-    - [UpdateVectorsConfig](#qdrant-UpdateVectorsConfig)
     - [VectorParams](#qdrant-VectorParams)
     - [VectorParamsDiff](#qdrant-VectorParamsDiff)
     - [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap)
@@ -53,6 +52,7 @@
     - [VectorParamsMap](#qdrant-VectorParamsMap)
     - [VectorParamsMap.MapEntry](#qdrant-VectorParamsMap-MapEntry)
     - [VectorsConfig](#qdrant-VectorsConfig)
+    - [VectorsConfigDiff](#qdrant-VectorsConfigDiff)
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
     - [CollectionStatus](#qdrant-CollectionStatus)
@@ -857,7 +857,7 @@ Note: 1kB = 1 vector of size 256. |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied |
 | params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | New HNSW parameters for the collection index |
-| vectors_config | [UpdateVectorsConfig](#qdrant-UpdateVectorsConfig) | optional | Configuration for vectors |
+| vectors_config | [VectorsConfigDiff](#qdrant-VectorsConfigDiff) | optional | New vector parameters |
 
 
 
@@ -893,22 +893,6 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | result | [bool](#bool) |  |  |
-
-
-
-
-
-
-<a name="qdrant-UpdateVectorsConfig"></a>
-
-### UpdateVectorsConfig
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| params | [VectorParamsDiff](#qdrant-VectorParamsDiff) |  |  |
-| params_map | [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap) |  |  |
 
 
 
@@ -1021,6 +1005,22 @@ Note: 1kB = 1 vector of size 256. |
 | ----- | ---- | ----- | ----------- |
 | params | [VectorParams](#qdrant-VectorParams) |  |  |
 | params_map | [VectorParamsMap](#qdrant-VectorParamsMap) |  |  |
+
+
+
+
+
+
+<a name="qdrant-VectorsConfigDiff"></a>
+
+### VectorsConfigDiff
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| params | [VectorParamsDiff](#qdrant-VectorParamsDiff) |  |  |
+| params_map | [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap) |  |  |
 
 
 

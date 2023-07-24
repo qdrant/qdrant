@@ -28,7 +28,7 @@ message VectorsConfig {
   }
 }
 
-message UpdateVectorsConfig {
+message VectorsConfigDiff {
   oneof config {
     VectorParamsDiff params = 1;
     VectorParamsDiffMap params_map = 2;
@@ -236,7 +236,7 @@ message UpdateCollection {
   optional uint64 timeout = 3; // Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
   optional CollectionParamsDiff params = 4; // New configuration parameters for the collection
   optional HnswConfigDiff hnsw_config = 5; // New HNSW parameters for the collection index
-  optional UpdateVectorsConfig vectors_config = 6; // Configuration for vectors
+  optional VectorsConfigDiff vectors_config = 6; // New vector parameters
 }
 
 message DeleteCollection {

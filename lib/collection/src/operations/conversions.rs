@@ -14,7 +14,7 @@ use tonic::Status;
 
 use super::types::{
     BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
-    UpdateVectorsConfig, VectorParamsDiff,
+    VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -354,22 +354,22 @@ impl TryFrom<api::grpc::qdrant::vectors_config::Config> for VectorsConfig {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::update_vectors_config::Config> for UpdateVectorsConfig {
+impl TryFrom<api::grpc::qdrant::vectors_config_diff::Config> for VectorsConfigDiff {
     type Error = Status;
 
     fn try_from(
-        value: api::grpc::qdrant::update_vectors_config::Config,
+        value: api::grpc::qdrant::vectors_config_diff::Config,
     ) -> Result<Self, Self::Error> {
         Ok(match value {
-            api::grpc::qdrant::update_vectors_config::Config::Params(vector_params) => {
-                UpdateVectorsConfig::Single(vector_params.try_into()?)
+            api::grpc::qdrant::vectors_config_diff::Config::Params(vector_params) => {
+                VectorsConfigDiff::Single(vector_params.try_into()?)
             }
-            api::grpc::qdrant::update_vectors_config::Config::ParamsMap(vectors_params) => {
+            api::grpc::qdrant::vectors_config_diff::Config::ParamsMap(vectors_params) => {
                 let mut params_map = BTreeMap::new();
                 for (name, params) in vectors_params.map {
                     params_map.insert(name, params.try_into()?);
                 }
-                UpdateVectorsConfig::Multi(params_map)
+                VectorsConfigDiff::Multi(params_map)
             }
         })
     }

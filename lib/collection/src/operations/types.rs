@@ -990,16 +990,16 @@ impl DiffConfig<VectorParamsDiff> for VectorParamsDiff {}
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
-pub enum UpdateVectorsConfig {
+pub enum VectorsConfigDiff {
     Single(VectorParamsDiff),
     Multi(BTreeMap<String, VectorParamsDiff>),
 }
 
-impl UpdateVectorsConfig {
+impl VectorsConfigDiff {
     pub fn get_params(&self, name: &str) -> Option<&VectorParamsDiff> {
         match self {
-            UpdateVectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
-            UpdateVectorsConfig::Multi(params) => params.get(name),
+            VectorsConfigDiff::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            VectorsConfigDiff::Multi(params) => params.get(name),
         }
     }
 
@@ -1008,17 +1008,17 @@ impl UpdateVectorsConfig {
     /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
     pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParamsDiff)> + 'a> {
         match self {
-            UpdateVectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
-            UpdateVectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+            VectorsConfigDiff::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            VectorsConfigDiff::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
         }
     }
 }
 
-impl Validate for UpdateVectorsConfig {
+impl Validate for VectorsConfigDiff {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            UpdateVectorsConfig::Single(single) => single.validate(),
-            UpdateVectorsConfig::Multi(multi) => {
+            VectorsConfigDiff::Single(single) => single.validate(),
+            VectorsConfigDiff::Multi(multi) => {
                 let errors = multi
                     .values()
                     .filter_map(|v| v.validate().err())
@@ -1032,9 +1032,9 @@ impl Validate for UpdateVectorsConfig {
     }
 }
 
-impl From<VectorParamsDiff> for UpdateVectorsConfig {
+impl From<VectorParamsDiff> for VectorsConfigDiff {
     fn from(params: VectorParamsDiff) -> Self {
-        UpdateVectorsConfig::Single(params)
+        VectorsConfigDiff::Single(params)
     }
 }
 

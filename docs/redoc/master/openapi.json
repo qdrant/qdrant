@@ -5872,7 +5872,7 @@
             "description": "Vector data parameters to update. It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/UpdateVectorsConfig"
+                "$ref": "#/components/schemas/VectorsConfigDiff"
               },
               {
                 "nullable": true
@@ -5914,7 +5914,7 @@
           }
         }
       },
-      "UpdateVectorsConfig": {
+      "VectorsConfigDiff": {
         "description": "Vector update params separator for single and multiple vector modes\n\nSingle mode:\n\n{ \"hnsw_config\": { \"m\": 8 } }\n\nor multiple mode:\n\n{ \"default\": { \"hnsw_config\": { \"m\": 8 } } }",
         "anyOf": [
           {

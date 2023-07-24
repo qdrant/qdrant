@@ -2,7 +2,7 @@ use collection::config::CollectionConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
-use collection::operations::types::{UpdateVectorsConfig, VectorsConfig};
+use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
@@ -182,7 +182,7 @@ pub struct UpdateCollection {
     /// Vector data parameters to update.
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
     #[validate]
-    pub vectors: Option<UpdateVectorsConfig>,
+    pub vectors: Option<VectorsConfigDiff>,
     /// Custom params for Optimizers.  If none - it is left unchanged.
     /// This operation is blocking, it will only proceed once all current optimizations are complete
     #[serde(alias = "optimizer_config")]

@@ -18,7 +18,7 @@ use wal::WalOptions;
 
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{
-    CollectionError, CollectionResult, UpdateVectorsConfig, VectorParams, VectorsConfig,
+    CollectionError, CollectionResult, VectorParams, VectorsConfig, VectorsConfigDiff,
 };
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -181,7 +181,7 @@ impl CollectionParams {
     /// Update collection vectors from the given update vectors config
     pub fn update_vectors_from_diff(
         &mut self,
-        update_vectors_diff: &UpdateVectorsConfig,
+        update_vectors_diff: &VectorsConfigDiff,
     ) -> CollectionResult<()> {
         for (vector_name, update_params) in update_vectors_diff.params_iter() {
             let vector_params = self.get_vector_params_mut(vector_name)?;
