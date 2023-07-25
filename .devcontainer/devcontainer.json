@@ -1,14 +1,23 @@
-// For format details, see https://aka.ms/devcontainer.json. For config options, see the
-// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
-    "name": "Existing Dockerfile",
-    "build": {
-        "context": "..",
-        "dockerfile": "Dockerfile"
-    },
+    "name": "Debian",
+    "image": "mcr.microsoft.com/devcontainers/base:bullseye",
+  
     "features": {
-        "ghcr.io/devcontainers/features/common-utils:latest": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:latest": {},
-		"ghcr.io/devcontainers/features/rust:latest": {}
-    }
+      "ghcr.io/devcontainers/features/common-utils:latest": {},
+      "ghcr.io/devcontainers/features/docker-in-docker:latest": {},
+      "ghcr.io/devcontainers/features/rust:latest": {
+        "profile": "default"
+      },
+      "ghcr.io/devcontainers-contrib/features/protoc:latest": {}
+    },
+    "postCreateCommand": {
+      "apt-get": "sudo apt-get update -y && sudo apt-get upgrade -y && sudo apt-get install -y clang lld cmake protobuf-compiler jq gcc g++ git-lfs",
+      // mostly for running cargo +nightly fmt
+      "nightly": "rustup toolchain install nightly",
+      "pytest": "pip install jsonschema pytest requests schemathesis"
+    },
+  
+    // Use 'forwardPorts' to make a list of ports inside the container available locally.
+    "forwardPorts": [6333, 6334]
 }
+
