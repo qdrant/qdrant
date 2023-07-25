@@ -1,0 +1,14 @@
+#ifndef COMMON_HEADER
+#define COMMON_HEADER
+
+#define CONCAT(a, b) a##_##b
+
+float positive_infinity = 1.0 / 0.0;
+float negative_infinity = -1.0 / 0.0;
+
+struct ScoredPoint {
+    uint id;
+    float score;
+};
+
+#endif
