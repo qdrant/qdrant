@@ -81,6 +81,16 @@ impl Validate for crate::grpc::qdrant::vectors_config::Config {
     }
 }
 
+impl Validate for crate::grpc::qdrant::vectors_config_diff::Config {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::vectors_config_diff::Config;
+        match self {
+            Config::Params(params) => params.validate(),
+            Config::ParamsMap(params_map) => params_map.validate(),
+        }
+    }
+}
+
 impl Validate for crate::grpc::qdrant::quantization_config::Quantization {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use crate::grpc::qdrant::quantization_config::Quantization;

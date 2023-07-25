@@ -46,9 +46,13 @@
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
     - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
     - [VectorParams](#qdrant-VectorParams)
+    - [VectorParamsDiff](#qdrant-VectorParamsDiff)
+    - [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap)
+    - [VectorParamsDiffMap.MapEntry](#qdrant-VectorParamsDiffMap-MapEntry)
     - [VectorParamsMap](#qdrant-VectorParamsMap)
     - [VectorParamsMap.MapEntry](#qdrant-VectorParamsMap-MapEntry)
     - [VectorsConfig](#qdrant-VectorsConfig)
+    - [VectorsConfigDiff](#qdrant-VectorsConfigDiff)
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
     - [CollectionStatus](#qdrant-CollectionStatus)
@@ -853,6 +857,7 @@ Note: 1kB = 1 vector of size 256. |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied |
 | params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | New HNSW parameters for the collection index |
+| vectors_config | [VectorsConfigDiff](#qdrant-VectorsConfigDiff) | optional | New vector parameters |
 
 
 
@@ -913,6 +918,52 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-VectorParamsDiff"></a>
+
+### VectorParamsDiff
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Update params for HNSW index. If empty object - it will be unset |
+
+
+
+
+
+
+<a name="qdrant-VectorParamsDiffMap"></a>
+
+### VectorParamsDiffMap
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| map | [VectorParamsDiffMap.MapEntry](#qdrant-VectorParamsDiffMap-MapEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-VectorParamsDiffMap-MapEntry"></a>
+
+### VectorParamsDiffMap.MapEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [VectorParamsDiff](#qdrant-VectorParamsDiff) |  |  |
+
+
+
+
+
+
 <a name="qdrant-VectorParamsMap"></a>
 
 ### VectorParamsMap
@@ -954,6 +1005,22 @@ Note: 1kB = 1 vector of size 256. |
 | ----- | ---- | ----- | ----------- |
 | params | [VectorParams](#qdrant-VectorParams) |  |  |
 | params_map | [VectorParamsMap](#qdrant-VectorParamsMap) |  |  |
+
+
+
+
+
+
+<a name="qdrant-VectorsConfigDiff"></a>
+
+### VectorsConfigDiff
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| params | [VectorParamsDiff](#qdrant-VectorParamsDiff) |  |  |
+| params_map | [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap) |  |  |
 
 
 

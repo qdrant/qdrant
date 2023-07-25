@@ -8,6 +8,7 @@ use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
+use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
@@ -30,6 +31,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
+use super::config_diff;
 use crate::config::CollectionConfig;
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
@@ -297,8 +299,7 @@ pub struct PointRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
     Name(String),
 }
@@ -801,7 +802,7 @@ pub struct VectorParams {
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Custom params for HNSW index. If none - values from collection configuration are used.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for quantization. If none - values from collection configuration are used.
@@ -816,6 +817,14 @@ pub struct VectorParams {
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+/// Is considered empty if `None` or if diff has no field specified
+fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
+    hnsw_config
+        .as_ref()
+        .and_then(|config| config_diff::is_empty(config).ok())
+        .unwrap_or(true)
 }
 
 impl Anonymize for VectorParams {
@@ -838,8 +847,7 @@ impl Anonymize for VectorParams {
 ///      }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case", untagged)]
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
@@ -850,6 +858,13 @@ impl VectorsConfig {
         match self {
             VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
             VectorsConfig::Multi(params) => params.get(name),
+        }
+    }
+
+    pub fn get_params_mut(&mut self, name: &str) -> Option<&mut VectorParams> {
+        match self {
+            VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            VectorsConfig::Multi(params) => params.get_mut(name),
         }
     }
 
@@ -966,6 +981,80 @@ impl Validate for VectorsConfig {
 impl From<VectorParams> for VectorsConfig {
     fn from(params: VectorParams) -> Self {
         VectorsConfig::Single(params)
+    }
+}
+
+#[derive(
+    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Merge,
+)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorParamsDiff {
+    /// Update params for HNSW index. If empty object - it will be unset.
+    #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
+}
+
+/// Vector update params separator for single and multiple vector modes
+///
+/// Single mode:
+///
+/// { "hnsw_config": { "m": 8 } }
+///
+/// or multiple mode:
+///
+/// {
+///     "default": {
+///         "hnsw_config": { "m": 8 }
+///     }
+/// }
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case", untagged)]
+pub enum VectorsConfigDiff {
+    Single(VectorParamsDiff),
+    Multi(BTreeMap<String, VectorParamsDiff>),
+}
+
+impl VectorsConfigDiff {
+    pub fn get_params(&self, name: &str) -> Option<&VectorParamsDiff> {
+        match self {
+            VectorsConfigDiff::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            VectorsConfigDiff::Multi(params) => params.get(name),
+        }
+    }
+
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParamsDiff)> + 'a> {
+        match self {
+            VectorsConfigDiff::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            VectorsConfigDiff::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
+}
+
+impl Validate for VectorsConfigDiff {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            VectorsConfigDiff::Single(single) => single.validate(),
+            VectorsConfigDiff::Multi(multi) => {
+                let errors = multi
+                    .values()
+                    .filter_map(|v| v.validate().err())
+                    .fold(Err(ValidationErrors::new()), |bag, err| {
+                        ValidationErrors::merge(bag, "?", Err(err))
+                    })
+                    .unwrap_err();
+                errors.errors().is_empty().then_some(()).ok_or(errors)
+            }
+        }
+    }
+}
+
+impl From<VectorParamsDiff> for VectorsConfigDiff {
+    fn from(params: VectorParamsDiff) -> Self {
+        VectorsConfigDiff::Single(params)
     }
 }
 

@@ -19,13 +19,15 @@ def test_collection_update():
         method="PATCH",
         path_params={'collection_name': collection_name},
         body={
+            "vectors": {
+                "hnsw_config": {
+                    "m": 32,
+                    "ef_construct": 123,
+                },
+            },
             "optimizers_config": {
                 "default_segment_number": 6,
                 "indexing_threshold": 10000,
-            },
-            "hnsw": {
-                "m": 42,
-                "ef_construct": 123,
             },
         }
     )
@@ -54,3 +56,72 @@ def test_collection_update():
         path_params={'collection_name': collection_name, 'id': 7},
     )
     assert response.ok
+
+
+def test_hnsw_update():
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    config = result["config"]
+    assert "hnsw_config" not in config["params"]["vectors"]
+    assert config["hnsw_config"]["m"] == 16
+    assert config["hnsw_config"]["ef_construct"] == 100
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "hnsw_config": {
+                    "m": 32,
+                },
+            },
+            "hnsw_config": {
+                "ef_construct": 123,
+            },
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    config = result["config"]
+    assert config["params"]["vectors"]["hnsw_config"]["m"] == 32
+    assert config["hnsw_config"]["m"] == 16
+    assert config["hnsw_config"]["ef_construct"] == 123
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "hnsw_config": {
+                    "m": 10,
+                    "ef_construct": 100,
+                },
+            },
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    config = result["config"]
+    assert config["params"]["vectors"]["hnsw_config"]["m"] == 10
+    assert config["params"]["vectors"]["hnsw_config"]["ef_construct"] == 100
