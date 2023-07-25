@@ -86,6 +86,7 @@
     - [Filter](#qdrant-Filter)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
     - [GeoPoint](#qdrant-GeoPoint)
+    - [GeoPolygon](#qdrant-GeoPolygon)
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
@@ -848,9 +849,10 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
-| optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | New configuration parameters for the collection |
-| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+| optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | New configuration parameters for the collection. This operation is blocking, it will only proceed once all current optimizations are complete |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied |
 | params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
+| hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | New HNSW parameters for the collection index |
 
 
 
@@ -1032,6 +1034,7 @@ Note: 1kB = 1 vector of size 256. |
 | Float | 3 |  |
 | Geo | 4 |  |
 | Text | 5 |  |
+| Bool | 6 |  |
 
 
 
@@ -1073,6 +1076,7 @@ Note: 1kB = 1 vector of size 256. |
 | Prefix | 1 |  |
 | Whitespace | 2 |  |
 | Word | 3 |  |
+| Multilingual | 4 |  |
 
 
  
@@ -1445,6 +1449,7 @@ The JSON representation for `Value` is a JSON value.
 | geo_bounding_box | [GeoBoundingBox](#qdrant-GeoBoundingBox) |  | Check if points geolocation lies in a given area |
 | geo_radius | [GeoRadius](#qdrant-GeoRadius) |  | Check if geo point is within a given radius |
 | values_count | [ValuesCount](#qdrant-ValuesCount) |  | Check number of values for a specific field |
+| geo_polygon | [GeoPolygon](#qdrant-GeoPolygon) |  | Check if geo point is within a given polygon |
 
 
 
@@ -1494,6 +1499,21 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | lon | [double](#double) |  |  |
 | lat | [double](#double) |  |  |
+
+
+
+
+
+
+<a name="qdrant-GeoPolygon"></a>
+
+### GeoPolygon
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| points | [GeoPoint](#qdrant-GeoPoint) | repeated | Ordered list of coordinates representing the vertices of a polygon. The minimum size is 4, and the first coordinate and the last coordinate should be the same to form a closed polygon. |
 
 
 
@@ -2548,6 +2568,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | FieldTypeFloat | 2 |  |
 | FieldTypeGeo | 3 |  |
 | FieldTypeText | 4 |  |
+| FieldTypeBool | 5 |  |
 
 
 

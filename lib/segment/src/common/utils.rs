@@ -256,7 +256,7 @@ fn delete_array_path(
                         return MultiValue::one(array.remove(array_index as usize));
                     }
                 } else {
-                    return MultiValue::one(Value::Array(array.drain(..).collect()));
+                    return MultiValue::one(Value::Array(std::mem::take(array)));
                 }
             }
             Some(rest_path) => {

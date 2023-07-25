@@ -12,8 +12,8 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
-    circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
-    GeoHash,
+    circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, polygon_hashes,
+    rectangle_hashes, GeoHash,
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
@@ -29,7 +29,7 @@ use crate::types::{
 const GEO_QUERY_MAX_REGION: usize = 12;
 
 pub struct GeoMapIndex {
-    /**
+    /*
     {
         "d": 10,
         "dr": 10,
@@ -42,7 +42,7 @@ pub struct GeoMapIndex {
      */
     points_per_hash: BTreeMap<GeoHash, usize>,
     values_per_hash: BTreeMap<GeoHash, usize>,
-    /**
+    /*
     {
         "dr5ru": {1},
         "dr5rr": {2, 3},
@@ -503,7 +503,7 @@ impl ValueIndexer<GeoPoint> for GeoMapIndex {
 }
 
 impl PayloadFieldIndex for GeoMapIndex {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.points_count
     }
 
@@ -540,6 +540,20 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION);
             let geo_condition_copy = geo_radius.clone();
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    self.point_to_values
+                        .get(*point as usize)
+                        .unwrap()
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                },
+            )));
+        }
+
+        if let Some(geo_polygon) = &condition.geo_polygon {
+            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION);
+            let geo_condition_copy = geo_polygon.clone();
             return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
                     self.point_to_values
@@ -591,10 +605,6 @@ impl PayloadFieldIndex for GeoMapIndex {
                     cardinality: size,
                 }),
         )
-    }
-
-    fn count_indexed_points(&self) -> usize {
-        self.points_count
     }
 }
 

@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
@@ -14,7 +15,7 @@ use uuid::Uuid;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
-    check_named_vectors, check_vector, check_vector_name, check_vectors, mmap_ops,
+    check_named_vectors, check_stopped, check_vector, check_vector_name, check_vectors, mmap_ops,
 };
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
@@ -218,7 +219,7 @@ impl Segment {
     ///
     /// * `op_num` - sequential operation of the current operation
     /// * `op_point_offset` - if operation is point-related, specify this point offset.
-    ///     If point offset is specified, handler will use point version for comparision.
+    ///     If point offset is specified, handler will use point version for comparison.
     ///     Otherwise, it will use global storage version
     /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
     ///     and optionally new offset of the changed point.
@@ -359,7 +360,13 @@ impl Segment {
 
     pub fn load_state(current_path: &Path) -> OperationResult<SegmentState> {
         let state_path = current_path.join(SEGMENT_STATE_FILE);
-        Ok(read_json(&state_path)?)
+        read_json(&state_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to read segment state {} error: {}",
+                current_path.display(),
+                err
+            ))
+        })
     }
 
     /// Retrieve vector by internal ID
@@ -378,13 +385,24 @@ impl Segment {
             .borrow()
             .is_deleted_vector(point_offset);
         if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
-            Ok(Some(
-                vector_data
-                    .vector_storage
-                    .borrow()
-                    .get_vector(point_offset)
-                    .to_vec(),
-            ))
+            let vector_storage = vector_data.vector_storage.borrow();
+
+            if vector_storage.total_vector_count() <= point_offset as usize {
+                // Storage does not have vector with such offset.
+                // This is possible if the storage is inconsistent due to interrupted flush.
+                // Assume consistency will be restored with WAL replay.
+
+                // Without this check, the service will panic on the `get_vector` call.
+                Err(OperationError::InconsistentStorage {
+                    description: format!(
+                        "Vector storage is inconsistent, total_vector_count: {}, point_offset: {}",
+                        vector_storage.total_vector_count(),
+                        point_offset
+                    ),
+                })
+            } else {
+                Ok(Some(vector_storage.get_vector(point_offset).to_vec()))
+            }
         } else {
             Ok(None)
         }
@@ -726,6 +744,7 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
@@ -733,8 +752,9 @@ impl SegmentEntry for Segment {
             &vector_data
                 .vector_index
                 .borrow()
-                .search(&[vector], filter, top, params)[0];
+                .search(&[vector], filter, top, params, is_stopped)[0];
 
+        check_stopped(is_stopped)?;
         self.process_search_result(internal_result, with_payload, with_vector)
     }
 
@@ -747,13 +767,16 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_vectors(vector_name, vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let internal_results = vector_data
             .vector_index
             .borrow()
-            .search(vectors, filter, top, params);
+            .search(vectors, filter, top, params, is_stopped);
+
+        check_stopped(is_stopped)?;
 
         let res = internal_results
             .iter()
@@ -769,31 +792,18 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
-        check_named_vectors(vectors, &self.segment_config)?;
+        check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
-            let mut processed_vectors = NamedVectors::default();
-            for (vector_name, vector) in vectors.iter() {
-                let vector_name: &str = vector_name;
-                let processed_vector_opt = segment.segment_config.vector_data[vector_name]
-                    .distance
-                    .preprocess_vector(vector);
-                match processed_vector_opt {
-                    None => processed_vectors.insert_ref(vector_name, vector),
-                    Some(preprocess_vector) => {
-                        processed_vectors.insert(vector_name.to_string(), preprocess_vector)
-                    }
-                }
-            }
-
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, processed_vectors)?;
+                segment.replace_all_vectors(existing_internal_id, vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let new_index = segment.insert_new_vectors(point_id, processed_vectors)?;
+                let new_index = segment.insert_new_vectors(point_id, vectors)?;
                 Ok((false, Some(new_index)))
             }
         })
@@ -830,9 +840,10 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
+        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -1550,11 +1561,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
@@ -1568,6 +1579,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
         eprintln!("search_result = {search_result:#?}");
@@ -1581,6 +1593,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -1619,7 +1632,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1661,6 +1674,7 @@ mod tests {
                 Some(&filter_valid),
                 1,
                 None,
+                &false.into(),
             )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
@@ -1674,6 +1688,7 @@ mod tests {
                 Some(&filter_invalid),
                 1,
                 None,
+                &false.into(),
             )
             .unwrap();
         assert!(results_with_invalid_filter.is_empty());
@@ -1709,7 +1724,7 @@ mod tests {
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
 
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         segment
@@ -1799,7 +1814,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1831,11 +1846,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
 
         // first pass on consistent data
@@ -1851,6 +1866,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -1877,6 +1893,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -1926,16 +1943,16 @@ mod tests {
 
         // Insert point ID 4 and 6, assert counts
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&[0.4]))
+            .upsert_point(100, 4.into(), only_default_vector(&[0.4]))
             .unwrap();
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&[0.6]))
+            .upsert_point(101, 6.into(), only_default_vector(&[0.6]))
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 2);
         assert_eq!(segment_info.num_vectors, 2);
 
-        // Delete non-existant point, counts should remain the same
+        // Delete non-existent point, counts should remain the same
         segment.delete_point(102, 1.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 2);
@@ -1992,35 +2009,31 @@ mod tests {
             .upsert_point(
                 100,
                 4.into(),
-                &NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
             )
             .unwrap();
         segment
             .upsert_point(
                 101,
                 6.into(),
-                &NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
             )
             .unwrap();
         segment
-            .upsert_point(
-                102,
-                8.into(),
-                &NamedVectors::from([("a".into(), vec![0.0])]),
-            )
+            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
             .unwrap();
         segment
             .upsert_point(
                 103,
                 10.into(),
-                &NamedVectors::from([("b".into(), vec![1.0])]),
+                NamedVectors::from([("b".into(), vec![1.0])]),
             )
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete non-existant point, counts should remain the same
+        // Delete non-existent point, counts should remain the same
         segment.delete_point(104, 1.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 4);
@@ -2102,7 +2115,7 @@ mod tests {
             .upsert_point(
                 100,
                 point_id,
-                &NamedVectors::from([
+                NamedVectors::from([
                     ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
                     ("b".into(), vec![1.0, 0.9]),
                 ]),
@@ -2167,6 +2180,7 @@ mod tests {
                     None,
                     1,
                     None,
+                    &false.into(),
                 )
                 .err()
                 .unwrap();
@@ -2182,6 +2196,7 @@ mod tests {
                     None,
                     1,
                     None,
+                    &false.into(),
                 )
                 .err()
                 .unwrap();
@@ -2189,7 +2204,10 @@ mod tests {
 
         for vectors in wrong_vectors_multi {
             check_named_vectors(&vectors, &config).err().unwrap();
-            segment.upsert_point(101, point_id, &vectors).err().unwrap();
+            segment
+                .upsert_point(101, point_id, vectors.clone())
+                .err()
+                .unwrap();
             segment
                 .update_vectors(internal_id, vectors.clone())
                 .err()

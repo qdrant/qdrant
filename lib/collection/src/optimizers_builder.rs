@@ -7,6 +7,7 @@ use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
@@ -156,6 +157,14 @@ pub fn build_optimizers(
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
             optimizers_config.vacuum_min_vector_number,
+            threshold_config.clone(),
+            segments_path.clone(),
+            temp_segments_path.clone(),
+            collection_params.clone(),
+            hnsw_config.clone(),
+            quantization_config.clone(),
+        )),
+        Arc::new(ConfigMismatchOptimizer::new(
             threshold_config,
             segments_path,
             temp_segments_path,

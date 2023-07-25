@@ -386,6 +386,27 @@ pub struct HnswConfig {
     pub payload_m: Option<usize>,
 }
 
+impl HnswConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a HNSW rebuild is required
+    ///
+    /// For example, a change in `max_indexing_threads` will not require rebuilding because it
+    /// doesn't affect the final index, and thus this would return false.
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self.m != other.m
+            || self.ef_construct != other.ef_construct
+            || self.full_scan_threshold != other.full_scan_threshold
+            || self.payload_m != other.payload_m
+            // Data on disk is the same, we have a unit test for that. We can eventually optimize
+            // this to just reload the collection rather than optimizing it again as a whole just
+            // to flip this flag
+            || self.on_disk != other.on_disk
+    }
+}
+
 const fn default_max_indexing_threads() -> usize {
     0
 }
@@ -879,6 +900,7 @@ pub enum PayloadSchemaType {
     Float,
     Geo,
     Text,
+    Bool,
 }
 
 /// Payload type with parameters
@@ -1037,8 +1059,7 @@ pub enum Match {
 }
 
 impl Match {
-    #[cfg(test)]
-    fn new_value(value: ValueVariants) -> Self {
+    pub fn new_value(value: ValueVariants) -> Self {
         Self::Value(MatchValue { value })
     }
 
@@ -1263,6 +1284,8 @@ pub struct FieldCondition {
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
+    /// Check if geo point is within a given polygon
+    pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
     pub values_count: Option<ValuesCount>,
 }
@@ -1275,6 +1298,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1286,6 +1310,7 @@ impl FieldCondition {
             range: Some(range),
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1300,6 +1325,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: Some(geo_bounding_box),
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1311,6 +1337,19 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: Some(geo_radius),
+            geo_polygon: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_geo_polygon(key: impl Into<PayloadKeyType>, geo_polygon: GeoPolygon) -> Self {
+        Self {
+            key: key.into(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(geo_polygon),
             values_count: None,
         }
     }
@@ -1322,6 +1361,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: Some(values_count),
         }
     }

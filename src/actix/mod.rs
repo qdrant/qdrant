@@ -122,7 +122,9 @@ pub fn init(
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)
-                .app_data(TempFileConfig::default().directory(dispatcher_data.snapshots_path()))
+                .app_data(
+                    TempFileConfig::default().directory(dispatcher_data.temp_snapshots_path()),
+                )
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
                 .service(index)
                 .configure(config_collections_api)
@@ -146,7 +148,8 @@ pub fn init(
         })
         .workers(max_web_workers(&settings));
 
-        let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
+        let port = settings.service.http_port;
+        let bind_addr = format!("{}:{}", settings.service.host, port);
 
         // With TLS enabled, bind with certificate helper and Rustls, or bind regularly
         server = if settings.service.enable_tls {
@@ -169,6 +172,7 @@ pub fn init(
             server.bind(bind_addr)?
         };
 
+        log::info!("Qdrant HTTP listening on {}", port);
         server.run().await
     })
 }

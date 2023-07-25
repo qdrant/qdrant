@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::types::{
     Condition, Direction, ExtendedPointId, FieldCondition, Filter, OrderBy, ScoredPoint,
@@ -10,6 +11,7 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult, UpdateStatus,
@@ -72,6 +74,7 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         order_by: Option<&OrderBy>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
         if let Some(OrderBy { key, direction, .. }) = order_by {
             let order = match direction.to_owned().unwrap_or_default() {
@@ -106,9 +109,12 @@ impl ShardOperation for LocalShard {
             dbg!(&point_ids);
 
             let with_payload = WithPayload::from(with_payload_interface);
-            let mut points =
-                SegmentsSearcher::retrieve(self.segments(), &point_ids, &with_payload, with_vector)
-                    .await?;
+            let mut points = SegmentsSearcher::retrieve(
+                self.segments(),
+                &point_ids,
+                &with_payload,
+                with_vector,
+            )?;
             dbg!(&points);
             points.sort_by_key(|point| {
                 point.payload.as_ref().map_or(0i64, |p| {
@@ -125,15 +131,27 @@ impl ShardOperation for LocalShard {
 
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
-        let point_ids = segments
-            .read()
-            .iter()
-            .flat_map(|(_, segment)| {
-                segment
-                    .get()
-                    .read()
-                    .read_filtered(offset, Some(limit), filter)
-            })
+        let read_handles: Vec<_> = {
+            let segments_guard = segments.read();
+            segments_guard
+                .iter()
+                .map(|(_, segment)| {
+                    let segment = segment.clone();
+                    let filter = filter.cloned();
+                    search_runtime_handle.spawn_blocking(move || {
+                        segment
+                            .get()
+                            .read()
+                            .read_filtered(offset, Some(limit), filter.as_ref())
+                    })
+                })
+                .collect()
+        };
+        let all_points = try_join_all(read_handles).await?;
+
+        let point_ids = all_points
+            .into_iter()
+            .flatten()
             .sorted()
             .dedup()
             .take(limit)
@@ -141,7 +159,7 @@ impl ShardOperation for LocalShard {
 
         let with_payload = WithPayload::from(with_payload_interface);
         let mut points =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector).await?;
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
         points.sort_by_key(|point| point.id);
 
         dbg!(&points);
@@ -164,13 +182,26 @@ impl ShardOperation for LocalShard {
         for req in &request.searches {
             collection_params.get_vector_params(req.vector.get_name())?;
         }
-        let res = SegmentsSearcher::search(
+
+        let is_stopped = StoppingGuard::new();
+
+        let search_request = SegmentsSearcher::search(
             self.segments(),
             request.clone(),
             search_runtime_handle,
             true,
-        )
-        .await?;
+            is_stopped.get_is_stopped(),
+        );
+        let timeout = self.shared_storage_config.search_timeout;
+        let res: Vec<Vec<ScoredPoint>> = tokio::select! {
+            res = search_request => res,
+            _ = tokio::time::sleep(timeout) => {
+                is_stopped.stop();
+                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
+                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
+            }
+        }?;
+
         let top_results = res
             .into_iter()
             .zip(request.searches.iter())
@@ -215,6 +246,6 @@ impl ShardOperation for LocalShard {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
-        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector).await
+        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)
     }
 }

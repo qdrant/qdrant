@@ -12,6 +12,7 @@ pub mod map_index;
 pub mod numeric_index;
 mod stat_tools;
 
+pub mod binary_index;
 #[cfg(test)]
 mod tests;
 
@@ -34,7 +35,7 @@ pub struct PayloadBlockCondition {
 
 #[derive(Debug, Clone)]
 pub struct CardinalityEstimation {
-    /// Conditions that could be used to mane a primary point selection.
+    /// Conditions that could be used to make a primary point selection.
     pub primary_clauses: Vec<PrimaryCondition>,
     /// Minimal possible matched points in best case for a query
     pub min: usize,
@@ -63,5 +64,11 @@ impl CardinalityEstimation {
             exp: total / 2,
             max: total,
         }
+    }
+
+    /// Push a primary clause to the estimation
+    pub fn with_primary_clause(mut self, clause: PrimaryCondition) -> Self {
+        self.primary_clauses.push(clause);
+        self
     }
 }

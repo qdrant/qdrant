@@ -306,7 +306,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
 }
 
 impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.points_count
     }
 
@@ -449,10 +449,6 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
             };
         }
         Box::new(payload_conditions.into_iter())
-    }
-
-    fn count_indexed_points(&self) -> usize {
-        self.points_count
     }
 }
 
@@ -805,6 +801,7 @@ mod tests {
             geo_bounding_box: None,
             geo_radius: None,
             values_count: None,
+            geo_polygon: None,
         };
 
         let offsets = index.filter(&condition).unwrap().collect_vec();

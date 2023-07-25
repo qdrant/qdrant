@@ -344,15 +344,19 @@ impl PayloadIndex for StructPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<()> {
-        if self
+        if let Some(prev_schema) = self
             .config
             .indexed_fields
             .insert(field.to_owned(), payload_schema.clone())
-            .is_none()
         {
-            self.build_and_save(field, payload_schema)?;
-            self.save_config()?;
+            // the field is already indexed with the same schema
+            // no need to rebuild index and to save the config
+            if prev_schema == payload_schema {
+                return Ok(());
+            }
         }
+        self.build_and_save(field, payload_schema)?;
+        self.save_config()?;
 
         Ok(())
     }

@@ -59,12 +59,9 @@ impl IndexingOptimizer {
     ) -> Option<(SegmentId, usize)> {
         segments
             .iter()
+            // Excluded externally, might already be scheduled for optimization
+            .filter(|(idx, _)| !excluded_ids.contains(idx))
             .filter_map(|(idx, segment)| {
-                if excluded_ids.contains(idx) {
-                    // This segment is excluded externally. It might already be scheduled for optimization
-                    return None;
-                }
-
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let point_count = read_segment.available_point_count();
@@ -103,12 +100,9 @@ impl IndexingOptimizer {
         let segments_read_guard = segments.read();
         let candidates: Vec<_> = segments_read_guard
             .iter()
+            // Excluded externally, might already be scheduled for optimization
+            .filter(|(idx, _)| !excluded_ids.contains(idx))
             .filter_map(|(idx, segment)| {
-                if excluded_ids.contains(idx) {
-                    // This segment is excluded externally. It might already be scheduled for optimization
-                    return None;
-                }
-
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let point_count = read_segment.available_point_count();

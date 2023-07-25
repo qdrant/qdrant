@@ -29,6 +29,7 @@ pub trait ShardOperation {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         order_by: Option<&OrderBy>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;

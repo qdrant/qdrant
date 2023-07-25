@@ -14,7 +14,6 @@ use super::types::AggregatorError::{self, *};
 use super::types::Group;
 
 type Hits = HashMap<PointIdType, ScoredPoint>;
-
 pub(super) struct GroupsAggregator {
     groups: HashMap<GroupId, Hits>,
     max_group_size: usize,
@@ -22,6 +21,7 @@ pub(super) struct GroupsAggregator {
     max_groups: usize,
     full_groups: HashSet<GroupId>,
     group_best_scores: HashMap<GroupId, ScoreType>,
+    all_ids: HashSet<ExtendedPointId>,
     order: Order,
 }
 
@@ -34,6 +34,7 @@ impl GroupsAggregator {
             max_groups: groups,
             full_groups: HashSet::with_capacity(groups),
             group_best_scores: HashMap::with_capacity(groups),
+            all_ids: HashSet::with_capacity(groups * group_size),
             order,
         }
     }
@@ -81,6 +82,7 @@ impl GroupsAggregator {
                 }
                 Entry::Vacant(v) => {
                     v.insert(point.clone());
+                    self.all_ids.insert(point.id);
                 }
             }
 
@@ -150,12 +152,8 @@ impl GroupsAggregator {
     }
 
     /// Gets the ids of the already present points across all the groups
-    pub(super) fn ids(&self) -> HashSet<ExtendedPointId> {
-        self.groups
-            .iter()
-            .flat_map(|(_, hits)| hits.iter())
-            .map(|(pid, _)| *pid)
-            .collect()
+    pub(super) fn ids(&self) -> &HashSet<ExtendedPointId> {
+        &self.all_ids
     }
 
     /// Returns the best groups sorted by their best hit. The hits are sorted too.

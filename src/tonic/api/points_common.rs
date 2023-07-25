@@ -457,6 +457,7 @@ pub async fn create_field_index(
             FieldType::Float => Some(PayloadSchemaType::Float.into()),
             FieldType::Geo => Some(PayloadSchemaType::Geo.into()),
             FieldType::Text => Some(PayloadSchemaType::Text.into()),
+            FieldType::Bool => Some(PayloadSchemaType::Bool.into()),
         },
         (None, Some(_)) => return Err(Status::invalid_argument("field type is missing")),
         (None, None) => None,

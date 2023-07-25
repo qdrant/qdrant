@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use futures::future::try_join_all;
@@ -148,6 +149,7 @@ impl SegmentsSearcher {
         batch_request: Arc<SearchRequestBatch>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
+        is_stopped: Arc<AtomicBool>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
@@ -177,17 +179,21 @@ impl SegmentsSearcher {
             segments
                 .iter()
                 .map(|(_id, segment)| {
-                    (
-                        segment.clone(),
-                        search_in_segment(
-                            segment.clone(),
-                            batch_request.clone(),
-                            available_points_segments,
-                            use_sampling,
-                        ),
-                    )
+                    let search = runtime_handle.spawn_blocking({
+                        let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                        let is_stopped_clone = is_stopped.clone();
+                        move || {
+                            search_in_segment(
+                                segment,
+                                batch_request,
+                                available_points_segments,
+                                use_sampling,
+                                &is_stopped_clone,
+                            )
+                        }
+                    });
+                    (segment.clone(), search)
                 })
-                .map(|(segment, f)| (segment, runtime_handle.spawn(f)))
                 .unzip()
         };
         // perform search on all segments concurrently
@@ -223,9 +229,16 @@ impl SegmentsSearcher {
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
                             .collect(),
                     });
-
-                    let search = search_in_segment(segment, partial_batch_request, 0, false);
-                    res.push(runtime_handle.spawn(search))
+                    let is_stopped_clone = is_stopped.clone();
+                    res.push(runtime_handle.spawn_blocking(move || {
+                        search_in_segment(
+                            segment,
+                            partial_batch_request,
+                            0,
+                            false,
+                            &is_stopped_clone,
+                        )
+                    }))
                 }
                 res
             };
@@ -252,7 +265,7 @@ impl SegmentsSearcher {
         Ok(top_scores)
     }
 
-    pub async fn retrieve(
+    pub fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
         with_payload: &WithPayload,
@@ -353,11 +366,12 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 /// Collection Result of:
 /// * Vector of ScoredPoints for each request in the batch
 /// * Vector of boolean indicating if the segment have further points to search
-async fn search_in_segment(
+fn search_in_segment(
     segment: LockedSegment,
     request: Arc<SearchRequestBatch>,
     total_points: usize,
     use_sampling: bool,
+    is_stopped: &AtomicBool,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
 
@@ -408,6 +422,7 @@ async fn search_in_segment(
                     prev_params.filter,
                     top,
                     prev_params.params,
+                    is_stopped,
                 )?;
                 for batch_result in &res {
                     further_results.push(batch_result.len() == top);
@@ -444,6 +459,7 @@ async fn search_in_segment(
             prev_params.filter,
             top,
             prev_params.params,
+            is_stopped,
         )?;
         for batch_result in &res {
             further_results.push(batch_result.len() == top);
@@ -505,6 +521,7 @@ mod tests {
             Arc::new(batch_request),
             &Handle::current(),
             true,
+            Arc::new(AtomicBool::new(false)),
         )
         .await
         .unwrap()
@@ -567,6 +584,7 @@ mod tests {
                 Arc::new(batch_request.clone()),
                 &Handle::current(),
                 false,
+                Arc::new(false.into()),
             )
             .await
             .unwrap();
@@ -578,6 +596,7 @@ mod tests {
                 Arc::new(batch_request),
                 &Handle::current(),
                 true,
+                Arc::new(false.into()),
             )
             .await
             .unwrap();
@@ -595,8 +614,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_retrieve() {
+    #[test]
+    fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
 
@@ -606,7 +625,6 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
         )
-        .await
         .unwrap();
         assert_eq!(records.len(), 3);
     }
@@ -628,7 +646,7 @@ mod tests {
 
     /// Tests whether calculating the effective ef limit value is correct.
     ///
-    /// Because there was confustion about what the effective value should be for some imput
+    /// Because there was confustion about what the effective value should be for some input
     /// combinations, we decided to write this tests to ensure correctness.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/1694>

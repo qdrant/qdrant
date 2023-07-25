@@ -59,7 +59,7 @@ async fn test_optimization_process() {
 
     for res in join_res {
         assert!(res.is_ok());
-        assert!(res.unwrap());
+        assert_eq!(res.unwrap(), Some(true));
     }
 
     assert_eq!(segments.read().len(), 4);
@@ -95,7 +95,7 @@ async fn test_cancel_optimization() {
 
     sleep(Duration::from_millis(100)).await;
 
-    let join_handles = handles.into_iter().map(|h| h.stop()).collect_vec();
+    let join_handles = handles.into_iter().filter_map(|h| h.stop()).collect_vec();
 
     let optimization_res = join_all(join_handles).await;
 
@@ -104,7 +104,7 @@ async fn test_cancel_optimization() {
 
     for res in optimization_res {
         let was_finished = res.expect("Should be no errors during optimization");
-        assert!(!was_finished);
+        assert_ne!(was_finished, Some(true));
     }
 
     for (_idx, segment) in segments.read().iter() {

@@ -26,7 +26,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorageEnum};
+use crate::vector_storage::{new_stoppable_raw_scorer, ScoredPointOffset, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -87,14 +87,17 @@ impl PayloadIndex for PlainPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<()> {
-        if self
+        if let Some(prev_schema) = self
             .config
             .indexed_fields
-            .insert(field.to_owned(), payload_schema)
-            .is_none()
+            .insert(field.to_owned(), payload_schema.clone())
         {
-            return self.save_config();
+            // the field is already present with the same schema, no need to save the config
+            if prev_schema == payload_schema {
+                return Ok(());
+            }
         }
+        self.save_config()?;
 
         Ok(())
     }
@@ -227,6 +230,7 @@ impl VectorIndex for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         match filter {
             Some(filter) => {
@@ -238,10 +242,11 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        new_raw_scorer(
+                        new_stoppable_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
+                            is_stopped,
                         )
                         .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
@@ -254,10 +259,11 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        new_raw_scorer(
+                        new_stoppable_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
+                            is_stopped,
                         )
                         .peek_top_all(top)
                     })

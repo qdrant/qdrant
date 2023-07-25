@@ -237,7 +237,7 @@ impl<T: Numericable> Histogram<T> {
         let estimation = left_border
             .into_iter()
             .chain(self.borders.range((from_, to_)))
-            .chain(right_border.into_iter())
+            .chain(right_border)
             .tuple_windows()
             .map(
                 |((a, a_count), (b, _b_count)): ((&Point<T>, &Counts), (&Point<T>, _))| {

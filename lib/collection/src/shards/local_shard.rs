@@ -53,7 +53,7 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
 pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
-    pub(super) shred_storage_config: Arc<SharedStorageConfig>,
+    pub(super) shared_storage_config: Arc<SharedStorageConfig>,
     pub(super) wal: LockedWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
@@ -131,7 +131,7 @@ impl LocalShard {
         Self {
             segments: segment_holder,
             collection_config,
-            shred_storage_config: shared_storage_config,
+            shared_storage_config,
             wal: locked_wal,
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
@@ -178,15 +178,6 @@ impl LocalShard {
 
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
-            if segments_path.ends_with("deleted") {
-                remove_dir_all(&segments_path).await.map_err(|_| {
-                    CollectionError::service_error(format!(
-                        "Can't remove marked-for-remove segment {}",
-                        segments_path.to_str().unwrap()
-                    ))
-                })?;
-                continue;
-            }
             load_handlers.push(
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
@@ -194,6 +185,14 @@ impl LocalShard {
                         let mut res = load_segment(&segments_path)?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
+                        } else {
+                            std::fs::remove_dir_all(&segments_path).map_err(|err| {
+                                CollectionError::service_error(format!(
+                                    "Can't remove leftover segment {}, due to {}",
+                                    segments_path.to_str().unwrap(),
+                                    err
+                                ))
+                            })?;
                         }
                         Ok::<_, CollectionError>(res)
                     })?,
@@ -246,7 +245,7 @@ impl LocalShard {
         // Simple heuristic to exclude mmap prefaulting for colletions that won't benefit from it.
         //
         // We assume that mmap prefaulting is beneficial if we can put significant part of data
-        // into RAM in advance. However, if we can see tha the data is too big to fit into RAM,
+        // into RAM in advance. However, if we can see that the data is too big to fit into RAM,
         // it is better to avoid prefaulting, because it will only cause extra disk IO.
         //
         // This heuristic is not perfect, but it exclude cases when we don't have enough RAM
@@ -427,7 +426,7 @@ impl LocalShard {
         // `SerdeWal::read_all` starts reading WAL from the first "un-truncated" index,
         // so no additional handling required to "skip" any potentially applied entries.
         //
-        // Note, that it's not guaranted that some operation won't be re-applied to the storage.
+        // Note, that it's not guaranteed that some operation won't be re-applied to the storage.
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
@@ -472,7 +471,7 @@ impl LocalShard {
         let mut update_handler = self.update_handler.lock().await;
 
         let (update_sender, update_receiver) =
-            mpsc::channel(self.shred_storage_config.update_queue_size);
+            mpsc::channel(self.shared_storage_config.update_queue_size);
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
         old_sender.send(UpdateSignal::Stop).await?;

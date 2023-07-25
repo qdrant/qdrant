@@ -428,6 +428,7 @@ impl ShardOperation for RemoteShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         order_by: Option<&OrderBy>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),

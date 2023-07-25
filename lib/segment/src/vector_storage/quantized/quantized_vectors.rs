@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::quantized_raw_scorer::QuantizedRawScorer;
 use crate::common::file_operations::{atomic_save_json, read_json};
+use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{
@@ -48,6 +49,7 @@ impl QuantizedVectors {
         query: &[VectorElementType],
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
+        is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
             .distance
@@ -61,6 +63,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
             QuantizedVectorStorage::ScalarMmap(storage) => {
@@ -70,6 +73,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
             QuantizedVectorStorage::PQRam(storage) => {
@@ -79,6 +83,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
             QuantizedVectorStorage::PQMmap(storage) => {
@@ -88,6 +93,7 @@ impl QuantizedVectors {
                     point_deleted,
                     vec_deleted,
                     quantized_data: storage,
+                    is_stopped,
                 })
             }
         }
@@ -240,7 +246,7 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_reserve_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
@@ -285,7 +291,7 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_reserve_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,

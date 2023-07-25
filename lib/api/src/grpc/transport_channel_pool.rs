@@ -165,7 +165,7 @@ impl TransportChannelPool {
 
     /// Checks if the channel is still alive.
     ///
-    /// It uses duplicate "fast" chanel, equivalent ot the original, but with smaller timeout.
+    /// It uses duplicate "fast" channel, equivalent to the original, but with smaller timeout.
     /// If it can't get healthcheck response in the timeout, it assumes the channel is dead.
     /// And we need to drop the pool for the uri and try again.
     /// For performance reasons, we start the check only after `SMART_CONNECT_TIMEOUT`.

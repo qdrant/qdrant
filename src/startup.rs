@@ -2,12 +2,19 @@
 
 use std::backtrace::Backtrace;
 use std::panic;
+use std::path::PathBuf;
 
 use log::LevelFilter;
 
 use crate::common::error_reporting::ErrorReporter;
 
-const INITIALIZED_FILE: &str = ".qdrant-initialized";
+const DEFAULT_INITIALIZED_FILE: &str = ".qdrant-initialized";
+
+fn get_init_file_path() -> PathBuf {
+    std::env::var("QDRANT_INIT_FILE_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| DEFAULT_INITIALIZED_FILE.into())
+}
 
 pub fn setup_logger(log_level: &str) {
     let is_info = log_level.to_ascii_uppercase() == "INFO";
@@ -61,7 +68,7 @@ pub fn setup_panic_hook(reporting_enabled: bool, reporting_id: String) {
 /// Creates a file that indicates that the server has been started.
 /// This file is used to check if the server has been been successfully started before potential kill.
 pub fn touch_started_file_indicator() {
-    if let Err(err) = std::fs::write(INITIALIZED_FILE, "") {
+    if let Err(err) = std::fs::write(get_init_file_path(), "") {
         log::warn!("Failed to create init file indicator: {}", err);
     }
 }
@@ -69,8 +76,9 @@ pub fn touch_started_file_indicator() {
 /// Removes a file that indicates that the server has been started.
 /// Use before server initialization to avoid false positives.
 pub fn remove_started_file_indicator() {
-    if std::path::Path::new(INITIALIZED_FILE).exists() {
-        if let Err(err) = std::fs::remove_file(INITIALIZED_FILE) {
+    let path = get_init_file_path();
+    if path.exists() {
+        if let Err(err) = std::fs::remove_file(path) {
             log::warn!("Failed to remove init file indicator: {}", err);
         }
     }

@@ -308,11 +308,11 @@ pub struct UpdateCollection {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// New configuration parameters for the collection
+    /// New configuration parameters for the collection. This operation is blocking, it will only proceed once all current optimizations are complete
     #[prost(message, optional, tag = "2")]
     #[validate]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "3")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
@@ -320,6 +320,10 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "4")]
     #[validate]
     pub params: ::core::option::Option<CollectionParamsDiff>,
+    /// New HNSW parameters for the collection index
+    #[prost(message, optional, tag = "5")]
+    #[validate]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -766,6 +770,7 @@ pub enum PayloadSchemaType {
     Float = 3,
     Geo = 4,
     Text = 5,
+    Bool = 6,
 }
 impl PayloadSchemaType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -780,6 +785,7 @@ impl PayloadSchemaType {
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
+            PayloadSchemaType::Bool => "Bool",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -791,6 +797,7 @@ impl PayloadSchemaType {
             "Float" => Some(Self::Float),
             "Geo" => Some(Self::Geo),
             "Text" => Some(Self::Text),
+            "Bool" => Some(Self::Bool),
             _ => None,
         }
     }
@@ -863,6 +870,7 @@ pub enum TokenizerType {
     Prefix = 1,
     Whitespace = 2,
     Word = 3,
+    Multilingual = 4,
 }
 impl TokenizerType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -875,6 +883,7 @@ impl TokenizerType {
             TokenizerType::Prefix => "Prefix",
             TokenizerType::Whitespace => "Whitespace",
             TokenizerType::Word => "Word",
+            TokenizerType::Multilingual => "Multilingual",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -884,6 +893,7 @@ impl TokenizerType {
             "Prefix" => Some(Self::Prefix),
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
+            "Multilingual" => Some(Self::Multilingual),
             _ => None,
         }
     }
@@ -2489,7 +2499,6 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
-#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
@@ -2739,7 +2748,6 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
-#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {
@@ -3406,6 +3414,9 @@ pub struct FieldCondition {
     /// Check number of values for a specific field
     #[prost(message, optional, tag = "6")]
     pub values_count: ::core::option::Option<ValuesCount>,
+    /// Check if geo point is within a given polygon
+    #[prost(message, optional, tag = "7")]
+    pub geo_polygon: ::core::option::Option<GeoPolygon>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3488,6 +3499,17 @@ pub struct GeoRadius {
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoPolygon {
+    /// Ordered list of coordinates representing the vertices of a polygon.
+    /// The minimum size is 4, and the first coordinate and the last coordinate
+    /// should be the same to form a closed polygon.
+    #[prost(message, repeated, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_geo_polygon")]
+    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
+}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ValuesCount {
@@ -3535,6 +3557,7 @@ pub struct PointStruct {
     #[prost(message, optional, tag = "4")]
     pub vectors: ::core::option::Option<Vectors>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPoint {
@@ -3615,6 +3638,7 @@ pub enum FieldType {
     Float = 2,
     Geo = 3,
     Text = 4,
+    Bool = 5,
 }
 impl FieldType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -3628,6 +3652,7 @@ impl FieldType {
             FieldType::Float => "FieldTypeFloat",
             FieldType::Geo => "FieldTypeGeo",
             FieldType::Text => "FieldTypeText",
+            FieldType::Bool => "FieldTypeBool",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -3638,6 +3663,7 @@ impl FieldType {
             "FieldTypeFloat" => Some(Self::Float),
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
+            "FieldTypeBool" => Some(Self::Bool),
             _ => None,
         }
     }

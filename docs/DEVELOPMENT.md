@@ -71,7 +71,7 @@ To run Qdrant on local development environment you need to install below:
     # remove source file if not needed
     rm protoc-$PROTOC_VERSION-linux-x86_64.zip
     
-    # check insalled `protoc` version
+    # check installed `protoc` version
     protoc --version
     ```
 - Build and run the app

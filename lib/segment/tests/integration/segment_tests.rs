@@ -1,11 +1,14 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
+use itertools::Itertools;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use segment::data_types::vectors::{only_default_vector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::{OperationError, SegmentEntry};
+use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::load_segment;
-use segment::types::{Condition, Filter, WithPayload};
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::types::{Condition, Distance, Filter, SearchParams, WithPayload};
 use tempfile::Builder;
 
 use crate::fixtures::segment::{build_segment_1, build_segment_3};
@@ -29,6 +32,7 @@ fn test_point_exclusion() {
             None,
             1,
             None,
+            &false.into(),
         )
         .unwrap();
 
@@ -52,6 +56,7 @@ fn test_point_exclusion() {
             Some(&frt),
             1,
             None,
+            &false.into(),
         )
         .unwrap();
 
@@ -86,6 +91,7 @@ fn test_named_vector_search() {
             None,
             1,
             None,
+            &false.into(),
         )
         .unwrap();
 
@@ -109,6 +115,7 @@ fn test_named_vector_search() {
             Some(&frt),
             1,
             None,
+            &false.into(),
         )
         .unwrap();
 
@@ -133,7 +140,7 @@ fn test_missed_vector_name() {
         .upsert_point(
             7,
             1.into(),
-            &NamedVectors::from([
+            NamedVectors::from([
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
@@ -145,7 +152,7 @@ fn test_missed_vector_name() {
         .upsert_point(
             8,
             6.into(),
-            &NamedVectors::from([
+            NamedVectors::from([
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
@@ -162,7 +169,7 @@ fn test_vector_name_not_exists() {
     let result = segment.upsert_point(
         6,
         6.into(),
-        &NamedVectors::from([
+        NamedVectors::from([
             ("vector1".to_owned(), vec![5., 6., 7., 8.]),
             ("vector2".to_owned(), vec![10.]),
             ("vector3".to_owned(), vec![5., 6., 7., 8.]),
@@ -200,8 +207,122 @@ fn ordered_deletion_test() {
             None,
             1,
             None,
+            &false.into(),
         )
         .unwrap();
     let best_match = res.get(0).expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
+}
+
+#[test]
+fn skip_deleted_segment() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let path = {
+        let mut segment = build_segment_1(dir.path());
+        segment.delete_point(6, 5.into()).unwrap();
+        segment.delete_point(6, 4.into()).unwrap();
+        segment.flush(true).unwrap();
+        segment.current_path.clone()
+    };
+
+    let new_path = path.with_extension("deleted");
+    std::fs::rename(&path, new_path).unwrap();
+
+    let segment = load_segment(&path).unwrap();
+
+    assert!(segment.is_none());
+}
+
+#[test]
+fn test_update_named_vector() {
+    let num_points = 25;
+    let dim = 4;
+    let mut rng = rand::thread_rng();
+    let distance = Distance::Cosine;
+    let vectors = (0..num_points)
+        .map(|_| random_vector(&mut rng, dim))
+        .collect_vec();
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+
+    for (i, vec) in vectors.iter().enumerate() {
+        let i = i as u64;
+        segment
+            .upsert_point(i, i.into(), only_default_vector(vec))
+            .unwrap();
+    }
+
+    let query_vector = random_vector(&mut rng, dim);
+
+    // do exact search
+    let search_params = SearchParams {
+        hnsw_ef: None,
+        exact: true,
+        quantization: None,
+    };
+    let nearest_upsert = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &false.into(),
+            &true.into(),
+            None,
+            1,
+            Some(&search_params),
+            &false.into(),
+        )
+        .unwrap();
+    let nearest_upsert = nearest_upsert.get(0).unwrap();
+
+    let sqrt_distance = |v: &[f32]| -> f32 { v.iter().map(|x| x * x).sum::<f32>().sqrt() };
+
+    // check if nearest_upsert is normalized
+    match &nearest_upsert.vector {
+        Some(VectorStruct::Single(v)) => {
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
+        }
+        Some(VectorStruct::Multi(v)) => {
+            assert!((sqrt_distance(&v[DEFAULT_VECTOR_NAME]) - 1.).abs() < 1e-5);
+        }
+        _ => panic!("unexpected vector type"),
+    }
+
+    // update vector using the same values
+    for (i, vec) in vectors.iter().enumerate() {
+        let i = i as u64;
+        segment
+            .update_vectors(i + num_points as u64, i.into(), only_default_vector(vec))
+            .unwrap();
+    }
+
+    // do search after update
+    let nearest_update = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &false.into(),
+            &true.into(),
+            None,
+            1,
+            Some(&search_params),
+            &false.into(),
+        )
+        .unwrap();
+    let nearest_update = nearest_update.get(0).unwrap();
+
+    // check that nearest_upsert is normalized
+    match &nearest_update.vector {
+        Some(VectorStruct::Single(v)) => {
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
+        }
+        Some(VectorStruct::Multi(v)) => {
+            assert!((sqrt_distance(&v[DEFAULT_VECTOR_NAME]) - 1.).abs() < 1e-5);
+        }
+        _ => panic!("unexpected vector type"),
+    }
+
+    // check that nearests are the same
+    assert_eq!(nearest_upsert.id, nearest_update.id);
 }

@@ -63,7 +63,7 @@ fn hnsw_quantized_search_test(
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
         segment
-            .upsert_point(n as SeqNumberType, idx, &only_default_vector(&vector))
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
     }
     segment.vector_data.values_mut().for_each(|vector_storage| {
@@ -110,11 +110,12 @@ fn hnsw_quantized_search_test(
                 hnsw_ef: Some(ef),
                 ..Default::default()
             }),
+            &false.into(),
         );
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None);
+            .search(&[&query], None, top, None, &false.into());
         sames += sames_count(&index_result, &plain_result);
     }
     let acc = 100.0 * sames as f64 / (attempts * top) as f64;

@@ -86,9 +86,14 @@ fn describe_error(
             Some(value) => format!("value {value} invalid, must not be empty"),
             None => err.to_string(),
         },
-        "no_bracket_syntax" => match params.get("value") {
-            Some(value) => format!("key {value} is invalid, bracket syntax is not supported here"),
-            None => err.to_string(),
+        "closed_polygon" => {
+            "the first and the last points should be same to form a closed polygon".to_string()
+        }
+        "min_polygon_length" => match (params.get("min_length"), params.get("length")) {
+            (Some(min_length), Some(length)) => {
+                format! {"size must be at least {}, got {}", min_length, length}
+            }
+            _ => err.to_string(),
         },
         // Undescribed error codes
         _ => err.to_string(),
@@ -97,6 +102,7 @@ fn describe_error(
 
 #[cfg(test)]
 mod tests {
+    use api::grpc::qdrant::{GeoPoint, GeoPolygon};
     use validator::Validate;
 
     use super::*;
@@ -143,6 +149,44 @@ mod tests {
             vec![(
                 "things[0].idx".into(),
                 "value 0 invalid, must be 1.0 or larger".into()
+            )]
+        );
+
+        let bad_polygon = GeoPolygon {
+            points: vec![
+                GeoPoint { lat: 1., lon: 1. },
+                GeoPoint { lat: 2., lon: 2. },
+                GeoPoint { lat: 1., lon: 1. },
+            ],
+        };
+
+        let errors = bad_polygon
+            .validate()
+            .expect_err("validation of bad polygon should fail");
+
+        assert_eq!(
+            describe_errors(&errors),
+            vec![("points".into(), "size must be at least 4, got 3".into())]
+        );
+
+        let bad_polygon = GeoPolygon {
+            points: vec![
+                GeoPoint { lat: 1., lon: 1. },
+                GeoPoint { lat: 2., lon: 2. },
+                GeoPoint { lat: 3., lon: 3. },
+                GeoPoint { lat: 4., lon: 4. },
+            ],
+        };
+
+        let errors = bad_polygon
+            .validate()
+            .expect_err("validation of bad polygon should fail");
+
+        assert_eq!(
+            describe_errors(&errors),
+            vec![(
+                "points".into(),
+                "the first and the last points should be same to form a closed polygon".into()
             )]
         );
     }

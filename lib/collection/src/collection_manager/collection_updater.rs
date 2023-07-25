@@ -3,7 +3,7 @@ use segment::types::SeqNumberType;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::segments_updater::*;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
 
 /// Implementation of the update operation
@@ -30,16 +30,15 @@ impl CollectionUpdater {
                     }
                 }
             }
-            Err(collection_error) => match collection_error {
-                CollectionError::ServiceError { error, .. } => {
+            Err(collection_error) => {
+                if collection_error.is_transient() {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
-                    log::error!("Update operation failed: {}", error)
-                }
-                _ => {
+                    log::error!("Update operation failed: {}", collection_error)
+                } else {
                     log::warn!("Update operation declined: {}", collection_error)
                 }
-            },
+            }
         }
     }
 
@@ -132,8 +131,8 @@ mod tests {
                                     // points 11 and 12 are not updated as they are same as before
     }
 
-    #[tokio::test]
-    async fn test_point_ops() {
+    #[test]
+    fn test_point_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let segments = build_test_holder(dir.path());
@@ -159,7 +158,6 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
         )
-        .await
         .unwrap();
 
         assert_eq!(records.len(), 3);
@@ -190,7 +188,6 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
         )
-        .await
         .unwrap();
 
         for record in records {
@@ -199,8 +196,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_payload_ops() {
+    #[test]
+    fn test_payload_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segments = build_test_holder(dir.path());
 
@@ -221,7 +218,6 @@ mod tests {
 
         let res =
             SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), &false.into())
-                .await
                 .unwrap();
 
         assert_eq!(res.len(), 3);
@@ -254,7 +250,6 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
         )
-        .await
         .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
@@ -267,7 +262,6 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
         )
-        .await
         .unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
@@ -286,7 +280,6 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
         )
-        .await
         .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));

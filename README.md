@@ -7,11 +7,12 @@
 </p>
 
 <p align=center>
-    <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg" alt="Tests status"></a>
-    <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success" alt="OpenAPI Docs"></a>
-    <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-success" alt="Apache 2.0 License"></a>
-    <a href="https://qdrant.to/discord"><img src="https://img.shields.io/badge/Discord-Qdrant-5865F2.svg?logo=discord" alt="Discord"></a>
-    <a href="https://qdrant.to/roadmap"><img src="https://img.shields.io/badge/Roadmap-2023-bc1439.svg" alt="Roadmap 2023"></a>
+    <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/qdrant/qdrant/rust.yml?style=flat-square" alt="Tests status"></a>
+    <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success?style=flat-square" alt="OpenAPI Docs"></a>
+    <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/github/license/qdrant/qdrant?style=flat-square" alt="Apache 2.0 License"></a>
+    <a href="https://qdrant.to/discord"><img src="https://img.shields.io/discord/907569970500743200?logo=Discord&style=flat-square&color=7289da" alt="Discord"></a>
+    <a href="https://qdrant.to/roadmap"><img src="https://img.shields.io/badge/Roadmap-2023-bc1439.svg?style=flat-square" alt="Roadmap 2023"></a>
+    <a href="https://cloud.qdrant.io/"><img src="https://img.shields.io/badge/Qdrant-Cloud-24386C.svg?logo=cloud&style=flat-square" alt="Qdrant Cloud"></a>
 </p>
 
 **Qdrant** (read: _quadrant_) is a vector similarity search engine and vector database.
@@ -21,6 +22,8 @@ Qdrant is tailored to extended filtering support. It makes it useful for all sor
 Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load. See [benchmarks](https://qdrant.tech/benchmarks/).
 
 With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
+
+Qdrant is also available as a fully managed **[Qdrant Cloud](https://cloud.qdrant.io/)** ⛅ including a **free tier**.
 
 <p align="center">
 <strong><a href="./QUICK_START.md">Quick Start</a> • <a href="#clients">Client Libraries</a> • <a href="#demo-projects">Demo Projects</a> • <a href="#integrations">Integrations</a> • <a href="#contacts">Contact</a>
@@ -198,7 +201,7 @@ Examples and/or documentation of Qdrant integrations:
 - [Cohere](https://docs.cohere.com/docs/integrations#qdrant) ([blogpost on building a QA app with Cohere and Qdrant](https://qdrant.tech/articles/qa-with-cohere-and-qdrant/)) - Use Cohere embeddings with Qdrant
 - [DocArray](https://docarray.jina.ai/advanced/document-store/qdrant/) - Use Qdrant as a document store in DocArray
 - [LangChain](https://python.langchain.com/en/latest/modules/indexes/vectorstores/examples/qdrant.html) ([blogpost](https://qdrant.tech/articles/langchain-integration/)) - Use Qdrant as a memory backend for LangChain.
-- [LlamaIndex](https://gpt-index.readthedocs.io/en/latest/how_to/integrations/vector_stores.html) - Use Qdrant as a Vector Store with LlamaIndex.
+- [LlamaIndex](https://gpt-index.readthedocs.io/en/latest/examples/vector_stores/QdrantIndexDemo.html) - Use Qdrant as a Vector Store with LlamaIndex.
 - [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
 - [Microsoft Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/the-power-of-persistent-memory-with-semantic-kernel-and-qdrant-vector-database/) - Use Qdrant as persistent memory with Semantic Kernel
 

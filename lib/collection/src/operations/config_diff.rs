@@ -32,7 +32,18 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
 }
 
 #[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq, Merge, Hash,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Merge,
+    Hash,
 )]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {

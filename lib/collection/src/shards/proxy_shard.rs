@@ -176,6 +176,7 @@ impl ShardOperation for ProxyShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         order_by: Option<&OrderBy>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -186,6 +187,7 @@ impl ShardOperation for ProxyShard {
                 with_vector,
                 filter,
                 order_by,
+                search_runtime_handle,
             )
             .await
     }

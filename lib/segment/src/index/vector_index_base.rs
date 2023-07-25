@@ -19,6 +19,7 @@ pub trait VectorIndex {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>>;
 
     /// Force internal index rebuild.
@@ -58,11 +59,16 @@ impl VectorIndex for VectorIndexEnum {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         match self {
-            VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params),
-            VectorIndexEnum::HnswRam(index) => index.search(vectors, filter, top, params),
-            VectorIndexEnum::HnswMmap(index) => index.search(vectors, filter, top, params),
+            VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params, is_stopped),
+            VectorIndexEnum::HnswRam(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
+            VectorIndexEnum::HnswMmap(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
         }
     }
 

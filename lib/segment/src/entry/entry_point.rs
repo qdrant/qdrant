@@ -50,6 +50,8 @@ pub enum OperationError {
         description: String,
         backtrace: Option<String>,
     },
+    #[error("Inconsistent storage: {description}")]
+    InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
@@ -205,6 +207,7 @@ pub trait SegmentEntry {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
     #[allow(clippy::too_many_arguments)]
@@ -217,13 +220,14 @@ pub trait SegmentEntry {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &NamedVectors,
+        vectors: NamedVectors,
     ) -> OperationResult<bool>;
 
     fn delete_point(
@@ -283,6 +287,7 @@ pub trait SegmentEntry {
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
+    /// Iterator over all points in segment in ascending order.
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.

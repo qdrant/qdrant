@@ -189,6 +189,7 @@ impl ShardHolder {
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
+        search_runtime: Handle,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
         // ToDo: remove after version 0.11.0
@@ -206,6 +207,7 @@ impl ShardHolder {
                     on_peer_failure.clone(),
                     this_peer_id,
                     update_runtime.clone(),
+                    search_runtime.clone(),
                 )
                 .await;
 

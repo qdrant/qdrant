@@ -37,7 +37,7 @@ use collection::telemetry::CollectionTelemetry;
 use segment::common::cpu::get_num_cpus;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
-use tokio::sync::{RwLock, RwLockReadGuard, Semaphore};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use uuid::Uuid;
 
 use super::collection_meta_ops::{
@@ -87,6 +87,9 @@ pub struct TableOfContent {
     ///
     /// If not defined - no rate limiting is applied.
     update_rate_limiter: Option<Semaphore>,
+    /// A lock to prevent concurrent collection creation.
+    /// Effectively, this lock ensures that `create_collection` is called sequentially.
+    collection_create_lock: Mutex<()>,
 }
 
 impl TableOfContent {
@@ -194,6 +197,7 @@ impl TableOfContent {
             is_write_locked: AtomicBool::new(false),
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
+            collection_create_lock: Default::default(),
         }
     }
 
@@ -214,6 +218,14 @@ impl TableOfContent {
 
     pub fn snapshots_path(&self) -> &str {
         &self.storage_config.snapshots_path
+    }
+
+    /// Get path for temporary snapshot files.
+    ///
+    /// Defaults to `snapshot_path()`.
+    /// A user may specify `storage.temp_path` to override this.
+    pub fn temp_snapshots_path(&self) -> &Path {
+        Path::new(self.temp_path().unwrap_or_else(|| self.snapshots_path()))
     }
 
     pub fn temp_path(&self) -> Option<&str> {
@@ -258,6 +270,27 @@ impl TableOfContent {
     async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
 
+        if path.exists() {
+            if CollectionConfig::check(&path) {
+                return Err(StorageError::bad_input(&format!(
+                    "Can't create collection with name {collection_name}. Collection data already exists at {path}",
+                    collection_name = collection_name,
+                    path = path.display(),
+                )));
+            } else {
+                // Collection doesn't have a valid config, remove it
+                log::debug!(
+                    "Removing invalid collection path {path} from storage",
+                    path = path.display(),
+                );
+                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
+                    StorageError::service_error(format!(
+                        "Can't clear directory for collection {collection_name}. Error: {err}"
+                    ))
+                })?;
+            }
+        }
+
         tokio::fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(format!(
                 "Can't create directory for collection {collection_name}. Error: {err}"
@@ -272,22 +305,26 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - Name of the collection or alias to resolve
+    /// * `collections` - A reference to the collections map
+    /// * `aliases` - A reference to the aliases storage
     ///
     /// # Result
     ///
     /// If the collection exists - return its name
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
-    async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
-        let alias_collection_name = self.alias_persistence.read().await.get(collection_name);
+    async fn resolve_name(
+        collection_name: &str,
+        collections: &Collections,
+        aliases: &AliasPersistence,
+    ) -> Result<String, StorageError> {
+        let alias_collection_name = aliases.get(collection_name);
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
             Some(resolved_alias) => resolved_alias,
         };
-        self.collections
-            .read()
-            .await
+        collections
             .validate_collection_exists(&resolved_name)
             .await?;
         Ok(resolved_name)
@@ -299,6 +336,11 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
+        // Collection operations require multiple file operations,
+        // before collection can actually be registered in the service.
+        // To prevent parallel writing of the files, we use this lock.
+        let collection_create_guard = self.collection_create_lock.lock().await;
+
         let CreateCollection {
             vectors,
             shard_number,
@@ -428,6 +470,8 @@ impl TableOfContent {
                 .await?;
             write_collections.insert(collection_name.to_string(), collection);
         }
+
+        drop(collection_create_guard);
 
         // Notify the collection is created and ready to use
         for shard_id in local_shards {
@@ -731,16 +775,30 @@ impl TableOfContent {
         let UpdateCollection {
             optimizers_config,
             params,
+            hnsw_config,
         } = operation.update_collection;
         let collection = self.get_collection(&operation.collection_name).await?;
+        let mut recreate_optimizers = false;
+
         if let Some(diff) = optimizers_config {
-            collection.update_optimizer_params_from_diff(diff).await?
+            collection.update_optimizer_params_from_diff(diff).await?;
+            recreate_optimizers = true;
         }
         if let Some(diff) = params {
             collection.update_params_from_diff(diff).await?;
+            recreate_optimizers = true;
+        }
+        if let Some(diff) = hnsw_config {
+            collection.update_hnsw_config_from_diff(diff).await?;
+            recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;
+        }
+
+        // Recreate optimizers
+        if recreate_optimizers {
+            collection.recreate_optimizers_blocking().await?;
         }
         Ok(true)
     }
@@ -1018,7 +1076,11 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
-        let real_collection_name = self.resolve_name(collection_name).await?;
+
+        let real_collection_name = {
+            let alias_persistence = self.alias_persistence.read().await;
+            Self::resolve_name(collection_name, &read_collection, &alias_persistence).await?
+        };
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(RwLockReadGuard::map(read_collection, |collection| {
             collection.get(&real_collection_name).unwrap()

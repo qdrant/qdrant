@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::qdrant::NamedVectors;
+use super::qdrant::{GeoPoint, NamedVectors};
 
 pub trait ValidateExt {
     fn validate(&self) -> Result<(), ValidationErrors>;
@@ -209,12 +209,32 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
     }
 }
 
+/// Validate a polygon has at least 4 points and is closed.
+pub fn validate_geo_polygon(points: &Vec<GeoPoint>) -> Result<(), ValidationError> {
+    let min_length = 4;
+    if points.len() < min_length {
+        let mut err = ValidationError::new("min_polygon_length");
+        err.add_param(Cow::from("length"), &points.len());
+        err.add_param(Cow::from("min_length"), &min_length);
+        return Err(err);
+    }
+
+    let first_point = &points[0];
+    let last_point = &points[points.len() - 1];
+    if first_point != last_point {
+        return Err(ValidationError::new("closed_polygon"));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, SearchPoints, UpdateCollection,
+        CreateCollection, CreateFieldIndexCollection, GeoPoint, GeoPolygon, SearchPoints,
+        UpdateCollection,
     };
 
     #[test]
@@ -325,6 +345,54 @@ mod tests {
         assert!(
             bad_request.validate().is_err(),
             "bad search request should error on validation"
+        );
+    }
+
+    #[test]
+    fn test_geo_polygon() {
+        let bad_polygon = GeoPolygon { points: vec![] };
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            points: vec![
+                GeoPoint { lat: 1., lon: 1. },
+                GeoPoint { lat: 2., lon: 2. },
+                GeoPoint { lat: 3., lon: 3. },
+            ],
+        };
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            points: vec![
+                GeoPoint { lat: 1., lon: 1. },
+                GeoPoint { lat: 2., lon: 2. },
+                GeoPoint { lat: 3., lon: 3. },
+                GeoPoint { lat: 4., lon: 4. },
+            ],
+        };
+
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let good_polygon = GeoPolygon {
+            points: vec![
+                GeoPoint { lat: 1., lon: 1. },
+                GeoPoint { lat: 2., lon: 2. },
+                GeoPoint { lat: 3., lon: 3. },
+                GeoPoint { lat: 1., lon: 1. },
+            ],
+        };
+        assert!(
+            good_polygon.validate().is_ok(),
+            "good polygon should not error on validation"
         );
     }
 }

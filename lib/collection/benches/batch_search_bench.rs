@@ -25,14 +25,14 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
     let mut rng = thread_rng();
     let num_points = 2000;
     let dim = 100;
-    let mut points = Vec::new();
+    let mut points = Vec::with_capacity(num_points);
     for i in 0..num_points {
         let mut payload_map = Map::new();
         payload_map.insert("a".to_string(), (i % 5).into());
         let vector = random_vector(&mut rng, dim);
         let vectors = only_default_vector(&vector);
         let point = PointStruct {
-            id: i.into(),
+            id: (i as u64).into(),
             vector: vectors.into(),
             payload: Some(Payload(payload_map)),
         };
@@ -163,7 +163,7 @@ fn batch_search_bench(c: &mut Criterion) {
             b.iter(|| {
                 runtime.block_on(async {
                     let mut rng = thread_rng();
-                    let mut searches = Vec::new();
+                    let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {

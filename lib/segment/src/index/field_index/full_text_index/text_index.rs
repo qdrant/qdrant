@@ -175,7 +175,7 @@ impl ValueIndexer<String> for FullTextIndex {
 }
 
 impl PayloadFieldIndex for FullTextIndex {
-    fn indexed_points(&self) -> usize {
+    fn count_indexed_points(&self) -> usize {
         self.inverted_index.points_count
     }
 
@@ -229,10 +229,6 @@ impl PayloadFieldIndex for FullTextIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.inverted_index.payload_blocks(threshold, key)
     }
-
-    fn count_indexed_points(&self) -> usize {
-        self.inverted_index.points_count
-    }
 }
 
 #[cfg(test)]
@@ -255,6 +251,7 @@ mod tests {
             geo_bounding_box: None,
             geo_radius: None,
             values_count: None,
+            geo_polygon: None,
         }
     }
 

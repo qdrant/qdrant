@@ -39,14 +39,14 @@ if [ $EXIT_CODE != 137 ]; then
     exit $EXIT_CODE
 fi
 
-IS_INITIALIZED_FILE='.qdrant-initialized'
+QDRANT_INIT_FILE_PATH=${QDRANT_INIT_FILE_PATH:-'.qdrant-initialized'}
 RECOVERY_MESSAGE="Qdrant was killed during initialization. Most likely it's Out-of-Memory.
 Please check memory consumption, increase memory limit or remove some collections and restart"
 
 # Check that qdrant was initialized
-# Qdrant creates IS_INITIALIZED_FILE file after initialization
+# Qdrant creates QDRANT_INIT_FILE_PATH file after initialization
 # So if it doesn't exist, qdrant was killed during initialization
-if [ ! -f "$IS_INITIALIZED_FILE" ]; then
+if [ ! -f "$QDRANT_INIT_FILE_PATH" ]; then
     # Run qdrant in recovery mode.
     # No collection operations are allowed in recovery mode except for removing collections
     QDRANT__STORAGE__RECOVERY_MODE="$RECOVERY_MESSAGE" ./qdrant $@ &
