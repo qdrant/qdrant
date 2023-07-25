@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::GpuDevice;
+use crate::*;
 
 pub struct DescriptorSetLayoutBuilder {
     pub uniform_buffer_bindings: Vec<usize>,
@@ -11,7 +11,7 @@ pub struct DescriptorSetLayoutBuilder {
 
 #[derive(Clone)]
 pub struct DescriptorSetLayout {
-    pub device: Arc<GpuDevice>,
+    pub device: Arc<Device>,
     pub uniform_buffer_bindings: Vec<usize>,
     pub storage_buffer_bindings: Vec<usize>,
     pub vk_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -28,7 +28,7 @@ impl DescriptorSetLayoutBuilder {
         self
     }
 
-    pub fn build(&self, device: Arc<GpuDevice>) -> Arc<DescriptorSetLayout> {
+    pub fn build(&self, device: Arc<Device>) -> Arc<DescriptorSetLayout> {
         let mut descriptor_set_layout_bindings = Vec::new();
         for binding in &self.uniform_buffer_bindings {
             descriptor_set_layout_bindings.push(

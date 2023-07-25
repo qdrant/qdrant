@@ -6,31 +6,31 @@ use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
 use gpu_allocator::MemoryLocation;
 
-use crate::{GpuDevice, GpuResource};
+use crate::*;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum GpuBufferType {
+pub enum BufferType {
     Uniform,
     Storage,
     CpuToGpu,
     GpuToCpu,
 }
 
-pub struct GpuBuffer {
-    pub device: Arc<GpuDevice>,
+pub struct Buffer {
+    pub device: Arc<Device>,
     pub vk_buffer: vk::Buffer,
-    pub buffer_type: GpuBufferType,
+    pub buffer_type: BufferType,
     pub size: usize,
     pub allocation: Allocation,
     pub upload_mapped_ptr: Option<Mutex<NonNull<c_void>>>,
 }
 
-unsafe impl Send for GpuBuffer {}
-unsafe impl Sync for GpuBuffer {}
+unsafe impl Send for Buffer {}
+unsafe impl Sync for Buffer {}
 
-impl GpuResource for GpuBuffer {}
+impl Resource for Buffer {}
 
-impl Drop for GpuBuffer {
+impl Drop for Buffer {
     fn drop(&mut self) {
         self.upload_mapped_ptr = None;
         let mut allocation = Allocation::default();
@@ -46,27 +46,23 @@ impl Drop for GpuBuffer {
     }
 }
 
-impl GpuBuffer {
-    pub fn new(device: Arc<GpuDevice>, buffer_type: GpuBufferType, size: usize) -> Self {
+impl Buffer {
+    pub fn new(device: Arc<Device>, buffer_type: BufferType, size: usize) -> Self {
         let (usage_flags, location) = match buffer_type {
-            GpuBufferType::Uniform => (
+            BufferType::Uniform => (
                 vk::BufferUsageFlags::UNIFORM_BUFFER
                     | vk::BufferUsageFlags::TRANSFER_DST
                     | vk::BufferUsageFlags::TRANSFER_SRC,
                 MemoryLocation::GpuOnly,
             ),
-            GpuBufferType::Storage => (
+            BufferType::Storage => (
                 vk::BufferUsageFlags::STORAGE_BUFFER
                     | vk::BufferUsageFlags::TRANSFER_DST
                     | vk::BufferUsageFlags::TRANSFER_SRC,
                 MemoryLocation::GpuOnly,
             ),
-            GpuBufferType::CpuToGpu => {
-                (vk::BufferUsageFlags::TRANSFER_SRC, MemoryLocation::CpuToGpu)
-            }
-            GpuBufferType::GpuToCpu => {
-                (vk::BufferUsageFlags::TRANSFER_DST, MemoryLocation::GpuToCpu)
-            }
+            BufferType::CpuToGpu => (vk::BufferUsageFlags::TRANSFER_SRC, MemoryLocation::CpuToGpu),
+            BufferType::GpuToCpu => (vk::BufferUsageFlags::TRANSFER_DST, MemoryLocation::GpuToCpu),
         };
         let vk_info = vk::BufferCreateInfo::builder()
             .size(size as vk::DeviceSize)
@@ -95,7 +91,7 @@ impl GpuBuffer {
             };
         }
 
-        let upload_mapped_ptr = if buffer_type == GpuBufferType::CpuToGpu {
+        let upload_mapped_ptr = if buffer_type == BufferType::CpuToGpu {
             Some(Mutex::new(allocation.mapped_ptr().unwrap()))
         } else {
             None
@@ -112,7 +108,7 @@ impl GpuBuffer {
     }
 
     pub fn download<T: Sized>(&self, data: &mut T, offset: usize) {
-        if self.buffer_type != GpuBufferType::GpuToCpu {
+        if self.buffer_type != BufferType::GpuToCpu {
             panic!("Download works only for buffers with GpuToCpu type");
         }
         unsafe {
@@ -125,7 +121,7 @@ impl GpuBuffer {
     }
 
     pub fn download_slice<T: Sized>(&self, data: &mut [T], offset: usize) {
-        if self.buffer_type != GpuBufferType::GpuToCpu {
+        if self.buffer_type != BufferType::GpuToCpu {
             panic!("Download works only for buffers with GpuToCpu type");
         }
         unsafe {
@@ -138,7 +134,7 @@ impl GpuBuffer {
     }
 
     pub fn download_bytes(&self, data: &mut [u8], offset: usize) {
-        if self.buffer_type != GpuBufferType::GpuToCpu {
+        if self.buffer_type != BufferType::GpuToCpu {
             panic!("Download works only for buffers with GpuToCpu type");
         }
         unsafe {

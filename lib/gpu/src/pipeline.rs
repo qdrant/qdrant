@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{DescriptorSetLayout, GpuDevice, GpuResource, PipelineBuilder, Shader};
+use crate::*;
 
 #[allow(dead_code)]
 pub struct Pipeline {
-    pub(crate) device: Arc<GpuDevice>,
+    pub(crate) device: Arc<Device>,
     pub(crate) shader: Arc<Shader>,
     pub(crate) descriptor_set_layouts: Vec<Arc<DescriptorSetLayout>>,
     pub(crate) vk_pipeline_layout: vk::PipelineLayout,
@@ -16,7 +16,7 @@ pub struct Pipeline {
 unsafe impl Send for Pipeline {}
 unsafe impl Sync for Pipeline {}
 
-impl GpuResource for Pipeline {}
+impl Resource for Pipeline {}
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
@@ -41,7 +41,11 @@ impl Drop for Pipeline {
 }
 
 impl Pipeline {
-    pub(crate) fn new(device: Arc<GpuDevice>, builder: &PipelineBuilder) -> Self {
+    pub fn builder() -> PipelineBuilder {
+        Default::default()
+    }
+
+    pub(crate) fn new(device: Arc<Device>, builder: &PipelineBuilder) -> Self {
         let descriptor_set_layouts: Vec<_> =
             builder.descriptor_set_layouts.values().cloned().collect();
         let vk_descriptor_set_layouts: Vec<_> = descriptor_set_layouts

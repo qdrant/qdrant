@@ -6,7 +6,7 @@ use ash::vk;
 
 use crate::DebugMessenger;
 
-pub struct GpuInstance {
+pub struct Instance {
     _entry: ash::Entry,
     pub vk_instance: ash::Instance,
     pub vk_physical_devices: Vec<vk::PhysicalDevice>,
@@ -17,18 +17,18 @@ pub struct GpuInstance {
     vk_debug_messenger: vk::DebugUtilsMessengerEXT,
 }
 
-unsafe impl Send for GpuInstance {}
-unsafe impl Sync for GpuInstance {}
+unsafe impl Send for Instance {}
+unsafe impl Sync for Instance {}
 
 #[derive(Debug)]
-pub enum GpuDeviceError {}
+pub enum DeviceError {}
 
-impl GpuInstance {
+impl Instance {
     pub fn new(
         name: &str,
         debug_messenger: Option<&dyn DebugMessenger>,
         dump_api: bool,
-    ) -> Result<Self, GpuDeviceError> {
+    ) -> Result<Self, DeviceError> {
         unsafe {
             let entry = ash::Entry::load().unwrap();
             let app_name = CString::new(name).unwrap();
@@ -176,7 +176,7 @@ impl GpuInstance {
     }
 }
 
-impl Drop for GpuInstance {
+impl Drop for Instance {
     fn drop(&mut self) {
         unsafe {
             if let Some(loader) = &self.vk_debug_utils_loader {

@@ -59,12 +59,12 @@ lazy_static = "1.4.0"
 sysinfo = "0.29"
 futures = "0.3.28"
 
+gpu = {path = "../gpu"}
+
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.15", default-features = false }
 io-uring = "0.6.0"
-
-gpu = {path = "../gpu"}
 
 [[bench]]
 name = "vector_search"

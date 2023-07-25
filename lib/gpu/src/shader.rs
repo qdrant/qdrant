@@ -3,17 +3,17 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{GpuDevice, GpuResource};
+use crate::*;
 
 pub struct Shader {
-    pub device: Arc<GpuDevice>,
+    pub device: Arc<Device>,
     pub vk_shader_module: vk::ShaderModule,
 }
 
 unsafe impl Send for Shader {}
 unsafe impl Sync for Shader {}
 
-impl GpuResource for Shader {}
+impl Resource for Shader {}
 
 impl Drop for Shader {
     fn drop(&mut self) {
@@ -29,7 +29,7 @@ impl Drop for Shader {
 }
 
 impl Shader {
-    pub fn new(device: Arc<GpuDevice>, shader_code: &[u8]) -> Self {
+    pub fn new(device: Arc<Device>, shader_code: &[u8]) -> Self {
         let mut spv_file = std::io::Cursor::new(shader_code);
         let shader_code = ash::util::read_spv(&mut spv_file).unwrap();
 

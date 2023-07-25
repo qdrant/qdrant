@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{DescriptorSet, GpuBuffer, GpuDevice, GpuResource, Pipeline};
+use crate::*;
 
 pub struct Context {
-    pub device: Arc<GpuDevice>,
+    pub device: Arc<Device>,
     pub vk_queue: vk::Queue,
     pub vk_queue_family_index: usize,
     pub vk_command_pool: vk::CommandPool,
     pub vk_command_buffer: vk::CommandBuffer,
     pub vk_fence: vk::Fence,
-    pub gpu_resources: Vec<Arc<dyn GpuResource>>,
+    pub resources: Vec<Arc<dyn Resource>>,
 }
 
 impl Drop for Context {
@@ -37,7 +37,7 @@ impl Drop for Context {
 }
 
 impl Context {
-    pub fn new(device: Arc<GpuDevice>) -> Self {
+    pub fn new(device: Arc<Device>) -> Self {
         let queue;
         let vk_command_pool;
         let vk_fence;
@@ -71,7 +71,7 @@ impl Context {
             vk_command_pool,
             vk_command_buffer: vk::CommandBuffer::null(),
             vk_fence,
-            gpu_resources: Vec::new(),
+            resources: Vec::new(),
         };
         context.init_command_buffer();
         context
@@ -126,18 +126,18 @@ impl Context {
             }
         }
 
-        self.gpu_resources.extend(
+        self.resources.extend(
             descriptor_sets
                 .iter()
-                .map(|r| r.clone() as Arc<dyn GpuResource>),
+                .map(|r| r.clone() as Arc<dyn Resource>),
         );
-        self.gpu_resources.push(pipeline)
+        self.resources.push(pipeline)
     }
 
     pub fn copy_gpu_buffer(
         &mut self,
-        src: Arc<GpuBuffer>,
-        dst: Arc<GpuBuffer>,
+        src: Arc<Buffer>,
+        dst: Arc<Buffer>,
         src_offset: usize,
         dst_offset: usize,
         size: usize,
@@ -160,8 +160,8 @@ impl Context {
             );
         }
 
-        self.gpu_resources.push(src);
-        self.gpu_resources.push(dst);
+        self.resources.push(src);
+        self.resources.push(dst);
     }
 
     pub fn run(&mut self) {
@@ -241,6 +241,6 @@ impl Context {
             }
             self.vk_command_buffer = vk::CommandBuffer::null();
         }
-        self.gpu_resources.clear();
+        self.resources.clear();
     }
 }

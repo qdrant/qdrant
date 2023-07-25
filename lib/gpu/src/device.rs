@@ -5,29 +5,26 @@ use std::sync::{Arc, Mutex};
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator, AllocatorCreateDesc};
 
-use crate::GpuInstance;
+use crate::*;
 
 #[derive(Clone)]
-pub struct GpuQueue {
+pub struct Queue {
     pub vk_queue: vk::Queue,
     pub vk_queue_family_index: usize,
     pub vk_queue_index: usize,
 }
 
-pub struct GpuDevice {
-    pub instance: Arc<GpuInstance>,
+pub struct Device {
+    pub instance: Arc<Instance>,
     pub vk_device: ash::Device,
     pub vk_physical_device: vk::PhysicalDevice,
     pub gpu_allocator: Option<Mutex<Allocator>>,
-    pub compute_queues: Vec<GpuQueue>,
-    pub transfer_queues: Vec<GpuQueue>,
+    pub compute_queues: Vec<Queue>,
+    pub transfer_queues: Vec<Queue>,
 }
 
-impl GpuDevice {
-    pub fn new(
-        instance: Arc<GpuInstance>,
-        vk_physical_device: vk::PhysicalDevice,
-    ) -> Option<GpuDevice> {
+impl Device {
+    pub fn new(instance: Arc<Instance>, vk_physical_device: vk::PhysicalDevice) -> Option<Device> {
         #[allow(unused_mut)]
         let mut extensions_cstr: Vec<CString> =
             vec![CString::from(ash::vk::KhrMaintenance1Fn::name())];
@@ -112,7 +109,7 @@ impl GpuDevice {
                         vk_device
                             .get_device_queue(vk_queue_family_index as u32, vk_queue_index as u32)
                     };
-                    let queue = GpuQueue {
+                    let queue = Queue {
                         vk_queue,
                         vk_queue_index,
                         vk_queue_family_index,
@@ -140,7 +137,7 @@ impl GpuDevice {
                 })
                 .ok()?,
             ));
-            Some(GpuDevice {
+            Some(Device {
                 instance: instance.clone(),
                 vk_device,
                 vk_physical_device,
@@ -168,7 +165,7 @@ impl GpuDevice {
     }
 }
 
-impl Drop for GpuDevice {
+impl Drop for Device {
     fn drop(&mut self) {
         self.gpu_allocator = None;
         unsafe {

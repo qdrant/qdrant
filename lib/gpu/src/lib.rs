@@ -10,14 +10,14 @@ pub use descriptor_set::*;
 pub mod descriptor_set_layout;
 pub use descriptor_set_layout::*;
 
-pub mod gpu_buffer;
-pub use gpu_buffer::*;
+pub mod buffer;
+pub use buffer::*;
 
-pub mod gpu_device;
-pub use gpu_device::*;
+pub mod device;
+pub use device::*;
 
-pub mod gpu_instance;
-pub use gpu_instance::*;
+pub mod instance;
+pub use instance::*;
 
 pub mod pipeline;
 pub use pipeline::*;
@@ -28,4 +28,4 @@ pub use pipeline_builder::*;
 pub mod shader;
 pub use shader::*;
 
-pub trait GpuResource: Send + Sync {}
+pub trait Resource: Send + Sync {}

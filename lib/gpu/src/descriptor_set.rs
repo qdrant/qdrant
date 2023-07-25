@@ -2,33 +2,33 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{DescriptorSetLayout, GpuBuffer, GpuDevice, GpuResource};
+use crate::*;
 
 pub struct DescriptorBuilder {
     pub descriptor_set_layout: Arc<DescriptorSetLayout>,
-    pub uniform_buffers: Vec<(usize, Arc<GpuBuffer>)>,
-    pub storage_buffers: Vec<(usize, Arc<GpuBuffer>)>,
+    pub uniform_buffers: Vec<(usize, Arc<Buffer>)>,
+    pub storage_buffers: Vec<(usize, Arc<Buffer>)>,
 }
 
 #[derive(Clone)]
 pub struct DescriptorSet {
-    pub device: Arc<GpuDevice>,
+    pub device: Arc<Device>,
     pub layout: Arc<DescriptorSetLayout>,
-    pub uniform_buffers: Vec<(usize, Arc<GpuBuffer>)>,
-    pub storage_buffers: Vec<(usize, Arc<GpuBuffer>)>,
+    pub uniform_buffers: Vec<(usize, Arc<Buffer>)>,
+    pub storage_buffers: Vec<(usize, Arc<Buffer>)>,
     pub vk_descriptor_pool: vk::DescriptorPool,
     pub vk_descriptor_set: vk::DescriptorSet,
 }
 
-impl GpuResource for DescriptorSet {}
+impl Resource for DescriptorSet {}
 
 impl DescriptorBuilder {
-    pub fn add_uniform_buffer(mut self, binding: usize, uniform_buffer: Arc<GpuBuffer>) -> Self {
+    pub fn add_uniform_buffer(mut self, binding: usize, uniform_buffer: Arc<Buffer>) -> Self {
         self.uniform_buffers.push((binding, uniform_buffer));
         self
     }
 
-    pub fn add_storage_buffer(mut self, binding: usize, storage_buffer: Arc<GpuBuffer>) -> Self {
+    pub fn add_storage_buffer(mut self, binding: usize, storage_buffer: Arc<Buffer>) -> Self {
         self.storage_buffers.push((binding, storage_buffer));
         self
     }
@@ -68,10 +68,10 @@ impl DescriptorSet {
     }
 
     pub fn new(
-        device: Arc<GpuDevice>,
+        device: Arc<Device>,
         layout: Arc<DescriptorSetLayout>,
-        uniform_buffers: Vec<(usize, Arc<GpuBuffer>)>,
-        storage_buffers: Vec<(usize, Arc<GpuBuffer>)>,
+        uniform_buffers: Vec<(usize, Arc<Buffer>)>,
+        storage_buffers: Vec<(usize, Arc<Buffer>)>,
     ) -> Self {
         let vk_descriptor_pool =
             Self::create_vk_descriptor_pool(&device, &uniform_buffers, &storage_buffers);
@@ -93,9 +93,9 @@ impl DescriptorSet {
     }
 
     fn create_vk_descriptor_pool(
-        device: &Arc<GpuDevice>,
-        uniform_buffers: &Vec<(usize, Arc<GpuBuffer>)>,
-        storage_buffers: &Vec<(usize, Arc<GpuBuffer>)>,
+        device: &Arc<Device>,
+        uniform_buffers: &Vec<(usize, Arc<Buffer>)>,
+        storage_buffers: &Vec<(usize, Arc<Buffer>)>,
     ) -> vk::DescriptorPool {
         let mut vk_descriptor_pool_sizes = Vec::new();
         if !uniform_buffers.is_empty() {
@@ -132,7 +132,7 @@ impl DescriptorSet {
     }
 
     fn create_vk_descriptor_set(
-        device: &Arc<GpuDevice>,
+        device: &Arc<Device>,
         vk_descriptor_set_layout: vk::DescriptorSetLayout,
         vk_descriptor_pool: vk::DescriptorPool,
     ) -> vk::DescriptorSet {
