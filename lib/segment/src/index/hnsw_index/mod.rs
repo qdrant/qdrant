@@ -2,6 +2,7 @@ mod build_cache;
 pub mod build_condition_checker;
 mod config;
 mod entry_points;
+pub mod gpu;
 pub mod graph_layers;
 pub mod graph_layers_builder;
 pub mod graph_levels_builder;
@@ -11,7 +12,6 @@ pub mod hnsw;
 pub mod point_scorer;
 pub mod recorder;
 mod search_context;
-pub mod gpu;
 
 #[cfg(test)]
 mod tests;

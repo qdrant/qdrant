@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::entry::entry_point::OperationResult;
 use crate::types::PointOffsetType;
-use crate::vector_storage::{VectorStorageEnum, VectorStorage};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[repr(C)]
 struct GpuVectorParamsBuffer {
@@ -101,11 +101,7 @@ impl GpuVectorStorage {
         })
     }
 
-    pub fn download_all(
-        &self,
-        dim: usize,
-        count: usize,
-    ) -> OperationResult<Vec<f32>> {
+    pub fn download_all(&self, dim: usize, count: usize) -> OperationResult<Vec<f32>> {
         let mut result = Vec::with_capacity(self.vectors_buffer.size);
 
         let mut download_context = gpu::Context::new(self.vectors_buffer.device.clone());
@@ -183,10 +179,12 @@ mod tests {
         let gpu_vector_storage = GpuVectorStorage::new(device, &storage2.borrow()).unwrap();
         println!("Upload time = {:?}", timer.elapsed());
 
-        let downloaded = gpu_vector_storage.download_all(
-            storage2.borrow().vector_dim(),
-            storage2.borrow().total_vector_count(),
-        ).unwrap();
+        let downloaded = gpu_vector_storage
+            .download_all(
+                storage2.borrow().vector_dim(),
+                storage2.borrow().total_vector_count(),
+            )
+            .unwrap();
         assert_eq!(downloaded.len(), num_vectors * dim);
         for i in 0..num_vectors {
             let vec = &points[i];
@@ -222,7 +220,7 @@ mod tests {
             Arc::new(gpu::Instance::new("qdrant", Some(&debug_messenger), false).unwrap());
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
-        
+
         let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage2.borrow()).unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(

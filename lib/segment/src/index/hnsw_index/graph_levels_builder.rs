@@ -1,15 +1,7 @@
 use std::collections::BinaryHeap;
-use std::path::Path;
 
-use itertools::Itertools;
 use num_traits::float::FloatCore;
-use rand::distributions::Uniform;
-use rand::Rng;
 
-use super::entry_points::EntryPoints;
-use super::graph_layers::GraphLayers;
-use super::graph_links::{GraphLinks, GraphLinksConverter};
-use crate::entry::entry_point::OperationResult;
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
