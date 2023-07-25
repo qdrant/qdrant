@@ -9,14 +9,29 @@ message VectorParams {
   optional bool on_disk = 5; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
 }
 
+message VectorParamsDiff {
+  optional HnswConfigDiff hnsw_config = 1; // Update params for HNSW index. If empty object - it will be unset
+}
+
 message VectorParamsMap {
   map<string, VectorParams> map = 1;
+}
+
+message VectorParamsDiffMap {
+  map<string, VectorParamsDiff> map = 1;
 }
 
 message VectorsConfig {
   oneof config {
     VectorParams params = 1;
     VectorParamsMap params_map = 2;
+  }
+}
+
+message VectorsConfigDiff {
+  oneof config {
+    VectorParamsDiff params = 1;
+    VectorParamsDiffMap params_map = 2;
   }
 }
 
@@ -221,6 +236,7 @@ message UpdateCollection {
   optional uint64 timeout = 3; // Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
   optional CollectionParamsDiff params = 4; // New configuration parameters for the collection
   optional HnswConfigDiff hnsw_config = 5; // New HNSW parameters for the collection index
+  optional VectorsConfigDiff vectors_config = 6; // New vector parameters
 }
 
 message DeleteCollection {

@@ -14,6 +14,7 @@ use tonic::Status;
 
 use super::types::{
     BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
+    VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -334,6 +335,46 @@ impl From<api::grpc::qdrant::WalConfigDiff> for WalConfig {
     }
 }
 
+impl TryFrom<api::grpc::qdrant::vectors_config::Config> for VectorsConfig {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::vectors_config::Config) -> Result<Self, Self::Error> {
+        Ok(match value {
+            api::grpc::qdrant::vectors_config::Config::Params(vector_params) => {
+                VectorsConfig::Single(vector_params.try_into()?)
+            }
+            api::grpc::qdrant::vectors_config::Config::ParamsMap(vectors_params) => {
+                let mut params_map = BTreeMap::new();
+                for (name, params) in vectors_params.map {
+                    params_map.insert(name, params.try_into()?);
+                }
+                VectorsConfig::Multi(params_map)
+            }
+        })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::vectors_config_diff::Config> for VectorsConfigDiff {
+    type Error = Status;
+
+    fn try_from(
+        value: api::grpc::qdrant::vectors_config_diff::Config,
+    ) -> Result<Self, Self::Error> {
+        Ok(match value {
+            api::grpc::qdrant::vectors_config_diff::Config::Params(vector_params) => {
+                VectorsConfigDiff::Single(vector_params.try_into()?)
+            }
+            api::grpc::qdrant::vectors_config_diff::Config::ParamsMap(vectors_params) => {
+                let mut params_map = BTreeMap::new();
+                for (name, params) in vectors_params.map {
+                    params_map.insert(name, params.try_into()?);
+                }
+                VectorsConfigDiff::Multi(params_map)
+            }
+        })
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
     type Error = Status;
 
@@ -352,6 +393,16 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 None => None,
             },
             on_disk: vector_params.on_disk,
+        })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
+    type Error = Status;
+
+    fn try_from(vector_params: api::grpc::qdrant::VectorParamsDiff) -> Result<Self, Self::Error> {
+        Ok(Self {
+            hnsw_config: vector_params.hnsw_config.map(Into::into),
         })
     }
 }

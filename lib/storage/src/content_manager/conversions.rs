@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-
-use collection::operations::types::VectorsConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -30,24 +27,8 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
         Ok(Self::CreateCollection(CreateCollectionOperation::new(
             value.collection_name,
             CreateCollection {
-                vectors: match value.vectors_config {
-                    Some(vectors) => match vectors.config {
-                        None => return Err(Status::invalid_argument("vectors config is required")),
-                        Some(params) => match params {
-                            api::grpc::qdrant::vectors_config::Config::Params(vector_params) => {
-                                VectorsConfig::Single(vector_params.try_into()?)
-                            }
-                            api::grpc::qdrant::vectors_config::Config::ParamsMap(
-                                vectors_params,
-                            ) => {
-                                let mut params_map = BTreeMap::new();
-                                for (name, params) in vectors_params.map {
-                                    params_map.insert(name, params.try_into()?);
-                                }
-                                VectorsConfig::Multi(params_map)
-                            }
-                        },
-                    },
+                vectors: match value.vectors_config.and_then(|config| config.config) {
+                    Some(vector_config) => vector_config.try_into()?,
                     None => return Err(Status::invalid_argument("vectors config is required")),
                 },
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
@@ -60,13 +41,10 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 init_from: value
                     .init_from_collection
                     .map(|v| InitFrom { collection: v }),
-                quantization_config: {
-                    if let Some(config) = value.quantization_config {
-                        Some(config.try_into()?)
-                    } else {
-                        None
-                    }
-                },
+                quantization_config: value
+                    .quantization_config
+                    .map(TryInto::try_into)
+                    .transpose()?,
             },
         )))
     }
@@ -79,9 +57,14 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
         Ok(Self::UpdateCollection(UpdateCollectionOperation::new(
             value.collection_name,
             UpdateCollection {
-                optimizers_config: value.optimizers_config.map(Into::into),
-                params: value.params.map(TryInto::try_into).transpose()?,
+                vectors: value
+                    .vectors_config
+                    .and_then(|config| config.config)
+                    .map(TryInto::try_into)
+                    .transpose()?,
                 hnsw_config: value.hnsw_config.map(Into::into),
+                params: value.params.map(TryInto::try_into).transpose()?,
+                optimizers_config: value.optimizers_config.map(Into::into),
             },
         )))
     }
