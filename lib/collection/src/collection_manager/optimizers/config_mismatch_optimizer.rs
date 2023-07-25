@@ -149,11 +149,8 @@ impl ConfigMismatchOptimizer {
                                     vector_data.quantization_config.is_some()
                                         && target_quantization.is_none()
                                 });
-                            if quantization_mismatch {
-                                return true;
-                            }
 
-                            false
+                            quantization_mismatch
                         });
 
                 has_mismatch.then_some((*idx, vector_size))
