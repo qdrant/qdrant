@@ -94,12 +94,10 @@ impl ShardOperation for LocalShard {
                 .read()
                 .iter()
                 .flat_map(|(_, segment)| {
-                    segment.get().read().read_filtered(
-                        offset,
-                        Some(limit),
-                        Some(&combined_filter),
-                        order_by,
-                    )
+                    segment
+                        .get()
+                        .read()
+                        .read_filtered(offset, Some(limit), Some(&combined_filter))
                 })
                 .sorted()
                 .dedup()
@@ -134,7 +132,7 @@ impl ShardOperation for LocalShard {
                 segment
                     .get()
                     .read()
-                    .read_filtered(offset, Some(limit), filter, order_by)
+                    .read_filtered(offset, Some(limit), filter)
             })
             .sorted()
             .dedup()

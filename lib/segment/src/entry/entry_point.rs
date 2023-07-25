@@ -291,7 +291,6 @@ pub trait SegmentEntry {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-        order_by: Option<&OrderBy>,
     ) -> Vec<PointIdType>;
 
     /// Read points in [from; to) range
