@@ -5,6 +5,7 @@ mod chunked_mmap_vectors;
 mod chunked_utils;
 pub mod chunked_vectors;
 mod dynamic_mmap_flags;
+pub mod gpu_vector_storage;
 pub mod memmap_vector_storage;
 mod mmap_vectors;
 pub mod quantized;
