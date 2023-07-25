@@ -423,7 +423,7 @@ impl ScalarQuantizationConfig {
     ///
     /// Returns true only if both conditions are met:
     /// - this configuration does not match `other`
-    /// - to effectively change the configuration, an quantization rebuild is required
+    /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self.r#type != other.r#type || self.quantile != other.quantile
     }
@@ -457,7 +457,7 @@ impl ProductQuantizationConfig {
     ///
     /// Returns true only if both conditions are met:
     /// - this configuration does not match `other`
-    /// - to effectively change the configuration, an quantization rebuild is required
+    /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self.compression != other.compression
     }
@@ -491,7 +491,7 @@ impl QuantizationConfig {
     ///
     /// Returns true only if both conditions are met:
     /// - this configuration does not match `other`
-    /// - to effectively change the configuration, an quantization rebuild is required
+    /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Scalar(a), Self::Scalar(b)) => a.scalar.mismatch_requires_rebuild(&b.scalar),
