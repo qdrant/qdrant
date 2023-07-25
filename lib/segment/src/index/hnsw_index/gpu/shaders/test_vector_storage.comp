@@ -1,9 +1,9 @@
 #version 450
 
-#define VECTOR_STORAGE_LAYOUT_SET 0
+#define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
 
-layout(set = 1, binding = 0) buffer ScoresData {
+layout(set = 0, binding = 0) buffer ScoresData {
     float data[];
 } scores;
 

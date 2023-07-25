@@ -243,15 +243,15 @@ mod tests {
         ));
 
         let pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, descriptor_set_layout.clone())
+            .add_descriptor_set_layout(0, descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
             .add_shader(shader.clone())
             .build(device.clone());
 
         let mut context = gpu::Context::new(device.clone());
         context.bind_pipeline(
             pipeline,
-            &[gpu_vector_storage.descriptor_set.clone(), descriptor_set],
+            &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
         );
         context.dispatch(num_vectors, 0, 0);
         context.run();
@@ -272,8 +272,23 @@ mod tests {
         context.run();
         context.wait_finish();
 
+        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
+        staging_buffer.download(&mut vector_storage_params, 0);
+        assert_eq!(vector_storage_params.dim, dim as u32);
+        assert_eq!(vector_storage_params.count, num_vectors as u32);
+
         let mut scores = vec![0.0f32; num_vectors];
         staging_buffer.download_slice(&mut scores, 0);
+
+        context.copy_gpu_buffer(
+            gpu_vector_storage.params_buffer.clone(),
+            staging_buffer.clone(),
+            0,
+            0,
+            std::mem::size_of::<GpuVectorParamsBuffer>(),
+        );
+        context.run();
+        context.wait_finish();
 
         for i in 0..num_vectors {
             let score = DotProductMetric::similarity(&points[0], &points[i]);
