@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use validator::Validate;
 
+use super::types::{VectorParams, VectorParamsDiff};
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
@@ -16,6 +17,12 @@ use crate::optimizers_builder::OptimizersConfig;
 // TODO: make auto-generated somehow...
 
 pub trait DiffConfig<T: DeserializeOwned + Serialize> {
+    /// Update the given `config` with fields in this diff
+    ///
+    /// This clones, modifies and returns `config`.
+    ///
+    /// This diff has higher priority, meaning that fields specified in this diff will always be in
+    /// the returned object.
     fn update(self, config: &T) -> CollectionResult<T>
     where
         Self: Sized + Serialize + DeserializeOwned + Merge,
@@ -175,11 +182,17 @@ impl Eq for OptimizersConfigDiff {}
 
 impl DiffConfig<HnswConfig> for HnswConfigDiff {}
 
+impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {}
+
 impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
 
 impl DiffConfig<WalConfig> for WalConfigDiff {}
 
 impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
+
+impl DiffConfig<VectorParams> for VectorParamsDiff {}
+
+impl DiffConfig<VectorParamsDiff> for VectorParamsDiff {}
 
 impl From<HnswConfig> for HnswConfigDiff {
     fn from(config: HnswConfig) -> Self {
@@ -250,6 +263,26 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
     merge_level_0(&mut config_values, diff_values);
     let res = serde_json::from_value(config_values)?;
     Ok(res)
+}
+
+/// Hacky way to figure out if the given configuration is considered empty
+///
+/// The following types are considered empty:
+/// - Null
+/// - Empty string
+/// - Array or object with zero items
+///
+/// Intended to only be used in non critical for speed places.
+pub fn is_empty<T: Serialize>(config: &T) -> CollectionResult<bool> {
+    let config_values = serde_json::to_value(config)?;
+
+    Ok(match config_values {
+        Value::Null => true,
+        Value::String(value) => value.is_empty(),
+        Value::Array(values) => values.is_empty(),
+        Value::Object(values) => values.is_empty(),
+        Value::Bool(_) | Value::Number(_) => false,
+    })
 }
 
 #[cfg(test)]

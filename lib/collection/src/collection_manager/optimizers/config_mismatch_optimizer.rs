@@ -350,6 +350,7 @@ mod tests {
         let hnsw_config_vector1 = HnswConfigDiff {
             m: Some(10),
             ef_construct: Some(40),
+            on_disk: Some(true),
             ..Default::default()
         };
         let collection_params = CollectionParams {

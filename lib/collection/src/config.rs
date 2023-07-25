@@ -16,7 +16,10 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
+use crate::operations::config_diff::DiffConfig;
+use crate::operations::types::{
+    CollectionError, CollectionResult, VectorParams, VectorsConfig, VectorsConfigDiff,
+};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
@@ -161,6 +164,32 @@ impl CollectionParams {
                     format!("Vector params for {vector_name} are not specified in config")
                 },
             })
+    }
+
+    fn get_vector_params_mut(&mut self, vector_name: &str) -> CollectionResult<&mut VectorParams> {
+        self.vectors
+            .get_params_mut(vector_name)
+            .ok_or_else(|| CollectionError::BadInput {
+                description: if vector_name == DEFAULT_VECTOR_NAME {
+                    "Default vector params are not specified in config".into()
+                } else {
+                    format!("Vector params for {vector_name} are not specified in config")
+                },
+            })
+    }
+
+    /// Update collection vectors from the given update vectors config
+    pub fn update_vectors_from_diff(
+        &mut self,
+        update_vectors_diff: &VectorsConfigDiff,
+    ) -> CollectionResult<()> {
+        for (vector_name, update_params) in update_vectors_diff.params_iter() {
+            let vector_params = self.get_vector_params_mut(vector_name)?;
+
+            // Update and replace vector params from vector specific diff
+            *vector_params = update_params.clone().update(vector_params)?;
+        }
+        Ok(())
     }
 
     /// Convert into unoptimized named vector data configs

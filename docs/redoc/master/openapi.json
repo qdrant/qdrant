@@ -5869,6 +5869,17 @@
         "description": "Operation for updating parameters of the existing collection",
         "type": "object",
         "properties": {
+          "vectors": {
+            "description": "Vector data parameters to update. It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorsConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "optimizers_config": {
             "description": "Custom params for Optimizers.  If none - it is left unchanged. This operation is blocking, it will only proceed once all current optimizations are complete",
             "anyOf": [
@@ -5893,6 +5904,36 @@
           },
           "hnsw_config": {
             "description": "HNSW parameters to update for the collection index. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "VectorsConfigDiff": {
+        "description": "Vector update params separator for single and multiple vector modes\n\nSingle mode:\n\n{ \"hnsw_config\": { \"m\": 8 } }\n\nor multiple mode:\n\n{ \"default\": { \"hnsw_config\": { \"m\": 8 } } }",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/VectorParamsDiff"
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/VectorParamsDiff"
+            }
+          }
+        ]
+      },
+      "VectorParamsDiff": {
+        "type": "object",
+        "properties": {
+          "hnsw_config": {
+            "description": "Update params for HNSW index. If empty object - it will be unset.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/HnswConfigDiff"
