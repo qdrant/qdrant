@@ -35,7 +35,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::optimizers_builder::build_optimizers;
+use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
@@ -216,6 +216,7 @@ impl LocalShard {
             log::debug!("Deduplicated {} points", res);
         }
 
+        clear_temp_segments(shard_path);
         let optimizers = build_optimizers(
             shard_path,
             &collection_config_read.params,
