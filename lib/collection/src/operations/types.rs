@@ -1009,52 +1009,38 @@ pub struct VectorParamsDiff {
 ///     }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case", untagged)]
-pub enum VectorsConfigDiff {
-    Single(VectorParamsDiff),
-    Multi(BTreeMap<String, VectorParamsDiff>),
-}
+pub struct VectorsConfigDiff(pub BTreeMap<String, VectorParamsDiff>);
 
 impl VectorsConfigDiff {
     pub fn get_params(&self, name: &str) -> Option<&VectorParamsDiff> {
-        match self {
-            VectorsConfigDiff::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
-            VectorsConfigDiff::Multi(params) => params.get(name),
-        }
+        self.0.get(name)
     }
 
     /// Iterate over the named vector parameters.
     ///
     /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
     pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParamsDiff)> + 'a> {
-        match self {
-            VectorsConfigDiff::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
-            VectorsConfigDiff::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
-        }
+        Box::new(self.0.iter().map(|(n, p)| (n.as_str(), p)))
     }
 }
 
 impl Validate for VectorsConfigDiff {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            VectorsConfigDiff::Single(single) => single.validate(),
-            VectorsConfigDiff::Multi(multi) => {
-                let errors = multi
-                    .values()
-                    .filter_map(|v| v.validate().err())
-                    .fold(Err(ValidationErrors::new()), |bag, err| {
-                        ValidationErrors::merge(bag, "?", Err(err))
-                    })
-                    .unwrap_err();
-                errors.errors().is_empty().then_some(()).ok_or(errors)
-            }
-        }
+        let errors = self
+            .0
+            .values()
+            .filter_map(|v| v.validate().err())
+            .fold(Err(ValidationErrors::new()), |bag, err| {
+                ValidationErrors::merge(bag, "?", Err(err))
+            })
+            .unwrap_err();
+        errors.errors().is_empty().then_some(()).ok_or(errors)
     }
 }
 
 impl From<VectorParamsDiff> for VectorsConfigDiff {
     fn from(params: VectorParamsDiff) -> Self {
-        VectorsConfigDiff::Single(params)
+        VectorsConfigDiff(BTreeMap::from([("".into(), params)]))
     }
 }
 
