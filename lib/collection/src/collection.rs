@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
@@ -1032,21 +1033,21 @@ impl Collection {
         };
         let mut points: Vec<_> = if let Some(OrderBy { key, direction, .. }) = order_by {
             let order = match direction.as_ref().unwrap_or(&Default::default()) {
-                Direction::ASC => -1,
-                Direction::DESC => 1,
+                Direction::ASC => -1f64,
+                Direction::DESC => 1f64,
             };
             retrieved_points
                 .into_iter()
                 .flatten()
                 .sorted_by_key(|point| {
-                    let val = point.payload.as_ref().map_or(0i64, |p| {
+                    let val = point.payload.as_ref().map_or(f64::NAN, |p| {
                         p.0.get(&**key)
                             .unwrap_or(&Default::default())
-                            .as_i64()
-                            .unwrap_or(0)
+                            .as_f64()
+                            .unwrap_or(f64::NAN)
                             * order
                     });
-                    (val, point.id)
+                    (OrderedFloat(val), point.id)
                 })
                 .take(limit)
                 .collect()

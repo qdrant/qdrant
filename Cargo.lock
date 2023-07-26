@@ -3588,6 +3588,7 @@ dependencies = [
  "log",
  "num-traits",
  "num_cpus",
+ "ordered-float 3.7.0",
  "parking_lot",
  "prometheus",
  "prost",

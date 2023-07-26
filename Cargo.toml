@@ -96,6 +96,7 @@ tracing = { version = "0.1", features = ["async-await"], optional = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"], optional = true }
 console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
 tracing-tracy = { version = "0.10.2", features = ["ondemand"], optional = true }
+ordered-float = "3.7.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5"
