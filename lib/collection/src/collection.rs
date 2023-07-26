@@ -12,7 +12,8 @@ use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
-    ExtendedPointId, Order, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Direction, ExtendedPointId, Order, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
@@ -1029,12 +1030,34 @@ impl Collection {
 
             try_join_all(scroll_futures).await?
         };
-        let mut points: Vec<_> = retrieved_points
-            .into_iter()
-            .flatten()
-            .sorted_by_key(|point| point.id)
-            .take(limit)
-            .collect();
+        let mut points: Vec<_> = if let Some(OrderBy { key, direction, .. }) = order_by {
+            let order = match direction.as_ref().unwrap_or(&Default::default()) {
+                Direction::ASC => -1,
+                Direction::DESC => 1,
+            };
+            retrieved_points
+                .into_iter()
+                .flatten()
+                .sorted_by_key(|point| {
+                    let val = point.payload.as_ref().map_or(0i64, |p| {
+                        p.0.get(&**key)
+                            .unwrap_or(&Default::default())
+                            .as_i64()
+                            .unwrap_or(0)
+                            * order
+                    });
+                    (val, point.id)
+                })
+                .take(limit)
+                .collect()
+        } else {
+            retrieved_points
+                .into_iter()
+                .flatten()
+                .sorted_by_key(|point| point.id)
+                .take(limit)
+                .collect()
+        };
 
         let next_page_offset = if points.len() < limit {
             // This was the last page
