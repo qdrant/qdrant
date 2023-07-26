@@ -42,27 +42,16 @@ def sepical_collection_setup(
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-    #             {
-    #   "id": { "num": 1 },
-    #   "vectors": {"vector": {"data": [0.05, 0.61, 0.76, 0.74] }},
-    #   "payload": {
-    #     "city": { "string_value": "Berlin" },
-    #     "country":  { "string_value": "Germany" },
-    #     "population": { "integer_value":  1000000 },
-    #     "square": { "double_value": 12.5 },
-    #     "coords": { "struct_value": { "fields": { "lat": { "double_value": 1.0 }, "lon": { "double_value": 2.0 } } } }
-    #   }
-    # },
             "points": [
                 {
                     "id": 1,
                     "vector": [0.05, 0.61, 0.76, 0.74],
-                    "payload": {"city": "Berlin", "population": 1000000, "square": 12.5, "coords": {"lat": 1.0, "lon": 2.0}}
+                    "payload": {"city": "Kyiv", "population": 3000000, "square": 12.5, "coords": {"lat": 1.0, "lon": 2.0}}
                 },
                 {
                     "id": 2,
                     "vector": [0.19, 0.81, 0.75, 0.11],
-                    "payload": {"city": ["Berlin", "London"]}
+                    "payload": {"city": "Madrid", "population": 3.305408}
                 },
                 {
                     "id": 3,
@@ -78,6 +67,11 @@ def sepical_collection_setup(
                     "id": 5,
                     "vector": [0.24, 0.18, 0.22, 0.44],
                     "payload": {"city": "Moscow", "population": "unknown"}
+                },
+                {
+                    "id": 6,
+                    "vector": [0.25, 0.10, 0.54, 0.90],
+                    "payload": {"city": "Rome", "population": 3000000}
                 }
             ]
         }
@@ -92,27 +86,44 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
-def test_scroll():
-    def scroll_with_vector(keyword, key: str = "", direction: str =None,    offset: int = None):
-        response = request_with_validation(
-            api='/collections/{collection_name}/points/scroll',
-            method='POST',
-            path_params={'collection_name': collection_name},
-            body={
-                keyword: True, # <--- should make no difference
-                "order_by": {
-                    "key": "city",
-                }
+def test_order():
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method='POST',
+        path_params={'collection_name': collection_name},
+        body={ # <--- should make no difference
+            "order_by": {
+                "key": "population",
+                "direction": "DESC"
             }
-        )
+        }
+    )
 
-        print(response.content)
-        assert False
-        assert response.ok
-        body = response.json()
+    assert response.ok
+    json = response.json()
+    ids = [x['id'] for x in json['result']['points']]
+    assert ids == [2, 1, 6, 4, 3, 5]
 
-        assert body["result"]["points"][0]["vector"] == vector
+def test_offset():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method='POST',
+        path_params={'collection_name': collection_name},
+        body={ # <--- should make no difference
+            "order_by": {
+                "key": "population",
+                "direction": "DESC",
+                "offset": 3
+            },
+            "offset": 6
+        }
+    ) 
 
-    scroll_with_vector("with_vector")
-    scroll_with_vector("with_vectors")
+    assert response.ok
+
+    json = response.json()
+    print(json)
+    assert False
+
         
