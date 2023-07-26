@@ -1,4 +1,5 @@
-use std::cmp::max;
+use std::cmp::{max, Reverse};
+use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
@@ -211,11 +212,10 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
 
     pub fn dissimilarity_search(
         &self,
-        _amount: usize,
-        _ef: usize,
-        _points_scorer: FilteredScorer,
+        amount: usize,
+        ef: usize,
+        mut points_scorer: FilteredScorer,
     ) -> Vec<ScoredPointOffset> {
-        /*
         let entry_point = match self
             .entry_points
             .get_entry_point(|point_id| points_scorer.check_vector(point_id))
@@ -224,18 +224,54 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
             Some(ep) => ep,
         };
 
+        let ef = max(amount, ef);
+        let mut entries = vec![ScoredPointOffset {
+            idx: entry_point.point_id,
+            score: points_scorer.score_point(entry_point.point_id),
+        }];
         for level in (0..=entry_point.level).rev() {
+            let m = self.get_m(level);
             let mut visited_list = self.get_visited_list_from_pool();
-            visited_list.check_and_update_visited(level_entry.idx);
-            let mut search_context = SearchContext::new(level_entry, ef);
 
-            self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
+            let mut queue = FixedLengthPriorityQueue::<Reverse<ScoredPointOffset>>::new(ef);
+            let mut candidates = BinaryHeap::new();
+            let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(m);
+
+            for &entry in &entries {
+                visited_list.check_and_update_visited(entry.idx);
+                queue.push(Reverse(entry));
+                candidates.push(Reverse(entry));
+            }
+
+            while !candidates.is_empty() {
+                let candidate = candidates.pop().unwrap().0;
+
+                points_ids.clear();
+                self.links_map(candidate.idx, level, |link| {
+                    if !visited_list.check_and_update_visited(link) {
+                        points_ids.push(link);
+                    }
+                });
+
+                let scores = points_scorer.score_points(&mut points_ids, m);
+                scores.iter().copied().for_each(|score_point| {
+                    let was_added = match queue.push(Reverse(score_point)) {
+                        None => true,
+                        Some(removed) => removed.0.idx != score_point.idx,
+                    };
+                    if was_added {
+                        candidates.push(Reverse(score_point));
+                    }
+                });
+            }
 
             self.return_visited_list_to_pool(visited_list);
+            entries = queue.into_vec().iter().map(|x| x.0).collect_vec();
         }
-        */
 
-        todo!()
+        entries.sort_unstable();
+        entries.reverse();
+        entries.into_iter().take(amount).collect_vec()
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
@@ -480,6 +516,38 @@ mod tests {
         let graph_search = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
         assert_eq!(reference_top.into_vec(), graph_search);
+    }
+
+    #[test]
+    fn test_dissimilarity_search() {
+        let num_vectors = 1000;
+        let dim = 8;
+
+        let mut rng = StdRng::seed_from_u64(42);
+
+        type M = CosineMetric;
+
+        let (vector_holder, graph_layers) =
+            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng, None);
+
+        let amount = 5;
+        let query = random_vector(&mut rng, dim);
+        let processed_query = M::preprocess(&query).unwrap_or_else(|| query.clone());
+        let fake_filter_context = FakeFilterContext {};
+        let raw_scorer = vector_holder.get_raw_scorer(processed_query.to_owned());
+        let check_far_points = raw_scorer
+            .peek_worse_all(num_vectors / 20)
+            .iter()
+            .cloned()
+            .map(|x| x.idx)
+            .collect_vec(); // take 5% worse points
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        let ef = 16;
+        let far_points = graph_layers.dissimilarity_search(amount, ef, scorer);
+
+        for far_point in far_points {
+            assert!(check_far_points.contains(&far_point.idx));
+        }
     }
 
     #[test]
