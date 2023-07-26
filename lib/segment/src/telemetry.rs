@@ -61,6 +61,27 @@ pub struct VectorIndexSearchesTelemetry {
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub unfiltered_exact: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub dissimilarity_unfiltered_plain: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub dissimilarity_unfiltered_hnsw: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub dissimilarity_filtered_plain: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub dissimilarity_filtered_small_cardinality: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub dissimilarity_filtered_large_cardinality: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub dissimilarity_filtered_exact: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub dissimilarity_unfiltered_exact: OperationDurationStatistics,
 }
 
 impl Anonymize for SegmentTelemetry {
@@ -135,6 +156,17 @@ impl Anonymize for VectorIndexSearchesTelemetry {
             filtered_large_cardinality: self.filtered_large_cardinality.anonymize(),
             filtered_exact: self.filtered_exact.anonymize(),
             unfiltered_exact: self.filtered_exact.anonymize(),
+            dissimilarity_unfiltered_plain: self.dissimilarity_unfiltered_plain.anonymize(),
+            dissimilarity_unfiltered_hnsw: self.dissimilarity_unfiltered_hnsw.anonymize(),
+            dissimilarity_filtered_plain: self.dissimilarity_filtered_plain.anonymize(),
+            dissimilarity_filtered_small_cardinality: self
+                .dissimilarity_filtered_small_cardinality
+                .anonymize(),
+            dissimilarity_filtered_large_cardinality: self
+                .dissimilarity_filtered_large_cardinality
+                .anonymize(),
+            dissimilarity_filtered_exact: self.dissimilarity_filtered_exact.anonymize(),
+            dissimilarity_unfiltered_exact: self.dissimilarity_filtered_exact.anonymize(),
         }
     }
 }

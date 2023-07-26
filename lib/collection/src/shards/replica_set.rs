@@ -31,8 +31,8 @@ use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult,
+    DissimilaritySearchRequestBatch, PointRequest, Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
@@ -1515,6 +1515,23 @@ impl ShardReplicaSet {
 
         self.execute_and_resolve_read_operation(
             |shard| shard.search(request.clone(), &self.search_runtime),
+            &local,
+            &remotes,
+            read_consistency.unwrap_or_default(),
+        )
+        .await
+    }
+
+    pub async fn dissimilarity_search(
+        &self,
+        request: Arc<DissimilaritySearchRequestBatch>,
+        read_consistency: Option<ReadConsistency>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let local = self.local.read().await;
+        let remotes = self.remotes.read().await;
+
+        self.execute_and_resolve_read_operation(
+            |shard| shard.dissimilarity_search(request.clone(), &self.search_runtime),
             &local,
             &remotes,
             read_consistency.unwrap_or_default(),

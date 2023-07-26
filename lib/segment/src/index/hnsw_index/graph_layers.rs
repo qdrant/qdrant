@@ -209,6 +209,35 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
         nearest.into_iter().take(top).collect_vec()
     }
 
+    pub fn dissimilarity_search(
+        &self,
+        _amount: usize,
+        _ef: usize,
+        _points_scorer: FilteredScorer,
+    ) -> Vec<ScoredPointOffset> {
+        /*
+        let entry_point = match self
+            .entry_points
+            .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+        {
+            None => return vec![],
+            Some(ep) => ep,
+        };
+
+        for level in (0..=entry_point.level).rev() {
+            let mut visited_list = self.get_visited_list_from_pool();
+            visited_list.check_and_update_visited(level_entry.idx);
+            let mut search_context = SearchContext::new(level_entry, ef);
+
+            self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
+
+            self.return_visited_list_to_pool(visited_list);
+        }
+        */
+
+        todo!()
+    }
+
     pub fn get_path(path: &Path) -> PathBuf {
         path.join(HNSW_GRAPH_FILE)
     }

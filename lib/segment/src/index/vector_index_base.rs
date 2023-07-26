@@ -22,6 +22,15 @@ pub trait VectorIndex {
         is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>>;
 
+    fn dissimilarity_search(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<Vec<ScoredPointOffset>>;
+
     /// Force internal index rebuild.
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
 
@@ -68,6 +77,27 @@ impl VectorIndex for VectorIndexEnum {
             }
             VectorIndexEnum::HnswMmap(index) => {
                 index.search(vectors, filter, top, params, is_stopped)
+            }
+        }
+    }
+
+    fn dissimilarity_search(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        match self {
+            VectorIndexEnum::Plain(index) => {
+                index.dissimilarity_search(vectors, filter, amount, params, is_stopped)
+            }
+            VectorIndexEnum::HnswRam(index) => {
+                index.dissimilarity_search(vectors, filter, amount, params, is_stopped)
+            }
+            VectorIndexEnum::HnswMmap(index) => {
+                index.dissimilarity_search(vectors, filter, amount, params, is_stopped)
             }
         }
     }

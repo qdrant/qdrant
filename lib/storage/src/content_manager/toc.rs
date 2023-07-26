@@ -19,9 +19,10 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    AliasDescription, CollectionResult, CountRequest, CountResult, GroupsResult, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
-    SearchRequestBatch, UpdateResult, VectorsConfig,
+    AliasDescription, CollectionResult, CountRequest, CountResult, DissimilaritySearchRequest,
+    DissimilaritySearchRequestBatch, GroupsResult, PointRequest, RecommendRequest,
+    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
+    UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -1210,6 +1211,34 @@ impl TableOfContent {
         let collection = self.get_collection(collection_name).await?;
         collection
             .search_batch(request, read_consistency, shard_selection)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn dissimilarity_search(
+        &self,
+        collection_name: &str,
+        request: DissimilaritySearchRequest,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> Result<Vec<ScoredPoint>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        collection
+            .dissimilarity_search(request, read_consistency, shard_selection)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn dissimilarity_search_batch(
+        &self,
+        collection_name: &str,
+        request: DissimilaritySearchRequestBatch,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        collection
+            .dissimilarity_search_batch(request, read_consistency, shard_selection)
             .await
             .map_err(|err| err.into())
     }

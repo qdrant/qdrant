@@ -241,6 +241,24 @@ message SearchBatchPoints {
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
 }
 
+message DissimilaritySearchPoints {
+  string collection_name = 1; // name of the collection
+  repeated float vector = 2; // vector
+  Filter filter = 3; // Filter conditions - return only those points that satisfy the specified conditions
+  uint64 amount = 4; // Max number of result
+  WithPayloadSelector with_payload = 5; // Options for specifying which payload to include or not
+  SearchParams params = 6; // Search config
+  optional string vector_name = 7; // Which vector to use for search, if not specified - use default vector
+  optional WithVectorsSelector with_vectors = 8; // Options for specifying which vectors to include into response
+  optional ReadConsistency read_consistency = 9; // Options for specifying read consistency guarantees
+}
+
+message DissimilaritySearchBatchPoints {
+  string collection_name = 1; // Name of the collection
+  repeated DissimilaritySearchPoints dissimilarity_search_points = 2;
+  optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+}
+
 message WithLookup {
   string collection = 1; // Name of the collection to use for points lookup
   optional WithPayloadSelector with_payload = 2; // Options for specifying which payload to include (or not)

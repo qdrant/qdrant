@@ -788,6 +788,61 @@ impl SegmentEntry for Segment {
         res
     }
 
+    fn dissimilarity_search(
+        &self,
+        vector_name: &str,
+        vector: &[VectorElementType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        check_vector(vector_name, vector, &self.segment_config)?;
+        let vector_data = &self.vector_data[vector_name];
+        let internal_result = &vector_data.vector_index.borrow().dissimilarity_search(
+            &[vector],
+            filter,
+            amount,
+            params,
+            is_stopped,
+        )[0];
+
+        check_stopped(is_stopped)?;
+        self.process_search_result(internal_result, with_payload, with_vector)
+    }
+
+    fn dissimilarity_search_batch(
+        &self,
+        vector_name: &str,
+        vectors: &[&[VectorElementType]],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        check_vectors(vector_name, vectors, &self.segment_config)?;
+        let vector_data = &self.vector_data[vector_name];
+        let internal_results = vector_data
+            .vector_index
+            .borrow()
+            .dissimilarity_search(vectors, filter, amount, params, is_stopped);
+
+        check_stopped(is_stopped)?;
+
+        let res = internal_results
+            .iter()
+            .map(|internal_result| {
+                self.process_search_result(internal_result, with_payload, with_vector)
+            })
+            .collect();
+
+        res
+    }
+
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,

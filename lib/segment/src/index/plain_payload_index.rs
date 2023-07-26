@@ -205,6 +205,8 @@ pub struct PlainIndex {
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
+    filtered_dissimilarity_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
+    unfiltered_dissimilarity_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl PlainIndex {
@@ -219,6 +221,8 @@ impl PlainIndex {
             payload_index,
             filtered_searches_telemetry: OperationDurationsAggregator::new(),
             unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
+            filtered_dissimilarity_searches_telemetry: OperationDurationsAggregator::new(),
+            unfiltered_dissimilarity_searches_telemetry: OperationDurationsAggregator::new(),
         }
     }
 }
@@ -272,6 +276,56 @@ impl VectorIndex for PlainIndex {
         }
     }
 
+    fn dissimilarity_search(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: Option<&Filter>,
+        amount: usize,
+        _params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        match filter {
+            Some(filter) => {
+                let _timer =
+                    ScopeDurationMeasurer::new(&self.filtered_dissimilarity_searches_telemetry);
+                let id_tracker = self.id_tracker.borrow();
+                let payload_index = self.payload_index.borrow();
+                let vector_storage = self.vector_storage.borrow();
+                let filtered_ids_vec = payload_index.query_points(filter);
+                vectors
+                    .iter()
+                    .map(|vector| {
+                        new_stoppable_raw_scorer(
+                            vector.to_vec(),
+                            &vector_storage,
+                            id_tracker.deleted_point_bitslice(),
+                            is_stopped,
+                        )
+                        .peek_worse_iter(&mut filtered_ids_vec.iter().copied(), amount)
+                    })
+                    .collect()
+            }
+            None => {
+                let _timer =
+                    ScopeDurationMeasurer::new(&self.unfiltered_dissimilarity_searches_telemetry);
+                let vector_storage = self.vector_storage.borrow();
+                let id_tracker = self.id_tracker.borrow();
+                vectors
+                    .iter()
+                    .map(|vector| {
+                        new_stoppable_raw_scorer(
+                            vector.to_vec(),
+                            &vector_storage,
+                            id_tracker.deleted_point_bitslice(),
+                            is_stopped,
+                        )
+                        .peek_worse_all(amount)
+                    })
+                    .collect()
+            }
+        }
+    }
+
     fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
         Ok(())
     }
@@ -286,6 +340,19 @@ impl VectorIndex for PlainIndex {
             filtered_large_cardinality: OperationDurationStatistics::default(),
             filtered_exact: OperationDurationStatistics::default(),
             unfiltered_exact: OperationDurationStatistics::default(),
+            dissimilarity_unfiltered_plain: self
+                .unfiltered_dissimilarity_searches_telemetry
+                .lock()
+                .get_statistics(),
+            dissimilarity_filtered_plain: self
+                .filtered_dissimilarity_searches_telemetry
+                .lock()
+                .get_statistics(),
+            dissimilarity_unfiltered_hnsw: OperationDurationStatistics::default(),
+            dissimilarity_filtered_small_cardinality: OperationDurationStatistics::default(),
+            dissimilarity_filtered_large_cardinality: OperationDurationStatistics::default(),
+            dissimilarity_filtered_exact: OperationDurationStatistics::default(),
+            dissimilarity_unfiltered_exact: OperationDurationStatistics::default(),
         }
     }
 

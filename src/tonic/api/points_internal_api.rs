@@ -4,7 +4,8 @@ use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
-    DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
+    DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal,
+    DissimilaritySearchBatchPointsInternal, DissimilaritySearchPointsInternal, GetPointsInternal,
     GetResponse, PointsOperationResponse, RecommendPointsInternal, RecommendResponse,
     ScrollPointsInternal, ScrollResponse, SearchBatchPointsInternal, SearchBatchResponse,
     SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
@@ -16,8 +17,8 @@ use tonic::{Request, Response, Status};
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload,
-    delete_vectors, get, overwrite_payload, recommend, scroll, search, search_batch, set_payload,
-    sync, update_vectors, upsert,
+    delete_vectors, dissimilarity_search, dissimilarity_search_batch, get, overwrite_payload,
+    recommend, scroll, search, search_batch, set_payload, sync, update_vectors, upsert,
 };
 
 /// This API is intended for P2P communication within a distributed deployment.
@@ -214,6 +215,51 @@ impl PointsInternal for PointsInternalService {
             self.toc.as_ref(),
             collection_name,
             search_points,
+            None, // *Have* to be `None`!
+            shard_id,
+        )
+        .await
+    }
+
+    async fn dissimilarity_search(
+        &self,
+        request: Request<DissimilaritySearchPointsInternal>,
+    ) -> Result<Response<SearchResponse>, Status> {
+        validate_and_log(request.get_ref());
+        let DissimilaritySearchPointsInternal {
+            dissimilarity_search_points,
+            shard_id,
+        } = request.into_inner();
+
+        let mut dissimilarity_search_points = dissimilarity_search_points
+            .ok_or_else(|| Status::invalid_argument("SearchPoints is missing"))?;
+
+        dissimilarity_search_points.read_consistency = None; // *Have* to be `None`!
+
+        dissimilarity_search(self.toc.as_ref(), dissimilarity_search_points, shard_id).await
+    }
+
+    async fn dissimilarity_search_batch(
+        &self,
+        request: Request<DissimilaritySearchBatchPointsInternal>,
+    ) -> Result<Response<SearchBatchResponse>, Status> {
+        validate_and_log(request.get_ref());
+        let DissimilaritySearchBatchPointsInternal {
+            collection_name,
+            dissimilarity_search_points,
+            shard_id,
+        } = request.into_inner();
+
+        // Individual `read_consistency` values are ignored by `search_batch`...
+        //
+        // search_points
+        //     .iter_mut()
+        //     .for_each(|search_points| search_points.read_consistency = None);
+
+        dissimilarity_search_batch(
+            self.toc.as_ref(),
+            collection_name,
+            dissimilarity_search_points,
             None, // *Have* to be `None`!
             shard_id,
         )

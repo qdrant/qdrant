@@ -12,8 +12,9 @@ use tokio::sync::oneshot;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult,
+    DissimilaritySearchRequestBatch, PointRequest, Record, SearchRequestBatch, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -168,6 +169,57 @@ impl ShardOperation for LocalShard {
                 } else {
                     processed_res.collect()
                 }
+            })
+            .collect();
+        Ok(top_results)
+    }
+
+    async fn dissimilarity_search(
+        &self,
+        request: Arc<DissimilaritySearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let collection_params = self.collection_config.read().await.params.clone();
+        // check vector names existing
+        for req in &request.searches {
+            collection_params.get_vector_params(req.vector.get_name())?;
+        }
+
+        let is_stopped = StoppingGuard::new();
+
+        let search_request = SegmentsSearcher::dissimilarity_search(
+            self.segments(),
+            request.clone(),
+            search_runtime_handle,
+            true,
+            is_stopped.get_is_stopped(),
+        );
+        let timeout = self.shared_storage_config.search_timeout;
+        let res: Vec<Vec<ScoredPoint>> = tokio::select! {
+            res = search_request => res,
+            _ = tokio::time::sleep(timeout) => {
+                is_stopped.stop();
+                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
+                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
+            }
+        }?;
+
+        let top_results = res
+            .into_iter()
+            .zip(request.searches.iter())
+            .map(|(vector_res, req)| {
+                let vector_name = req.vector.get_name();
+                let distance = collection_params
+                    .get_vector_params(vector_name)
+                    .unwrap()
+                    .distance;
+                vector_res
+                    .into_iter()
+                    .map(|mut scored_point| {
+                        scored_point.score = distance.postprocess_score(scored_point.score);
+                        scored_point
+                    })
+                    .collect()
             })
             .collect();
         Ok(top_results)

@@ -13,8 +13,8 @@ use segment::types::{
 use tonic::Status;
 
 use super::types::{
-    BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
-    VectorParamsDiff, VectorsConfigDiff,
+    BaseGroupRequest, DissimilaritySearchRequest, GroupsResult, PointGroup, RecommendGroupsRequest,
+    SearchGroupsRequest, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -39,7 +39,7 @@ use crate::operations::types::{
     SearchRequest, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shards::remote_shard::CollectionSearchRequest;
+use crate::shards::remote_shard::{CollectionDissimilaritySearchRequest, CollectionSearchRequest};
 
 pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
     api::grpc::qdrant::WriteOrdering {
@@ -746,6 +746,29 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     }
 }
 
+impl<'a> From<CollectionDissimilaritySearchRequest<'a>>
+    for api::grpc::qdrant::DissimilaritySearchPoints
+{
+    fn from(value: CollectionDissimilaritySearchRequest<'a>) -> Self {
+        let (collection_id, request) = value.0;
+
+        api::grpc::qdrant::DissimilaritySearchPoints {
+            collection_name: collection_id,
+            vector: request.vector.get_vector().clone(),
+            filter: request.filter.clone().map(|f| f.into()),
+            amount: request.amount as u64,
+            with_vectors: request.with_vector.clone().map(|wv| wv.into()),
+            with_payload: request.with_payload.clone().map(|wp| wp.into()),
+            params: request.params.map(|sp| sp.into()),
+            vector_name: match request.vector.get_name() {
+                DEFAULT_VECTOR_NAME => None,
+                vector_name => Some(vector_name.to_string()),
+            },
+            read_consistency: None,
+        }
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
     type Error = Status;
 
@@ -797,6 +820,33 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
                     .unwrap_or_default(),
             ),
             score_threshold: value.score_threshold,
+        })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::DissimilaritySearchPoints> for DissimilaritySearchRequest {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::DissimilaritySearchPoints) -> Result<Self, Self::Error> {
+        Ok(DissimilaritySearchRequest {
+            vector: match value.vector_name {
+                Some(vector_name) => NamedVector {
+                    name: vector_name,
+                    vector: value.vector,
+                }
+                .into(),
+                None => value.vector.into(),
+            },
+            filter: value.filter.map(|f| f.try_into()).transpose()?,
+            params: value.params.map(|p| p.into()),
+            amount: value.amount as usize,
+            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector: Some(
+                value
+                    .with_vectors
+                    .map(|with_vectors| with_vectors.into())
+                    .unwrap_or_default(),
+            ),
         })
     }
 }

@@ -223,6 +223,32 @@ pub trait SegmentEntry {
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
+    #[allow(clippy::too_many_arguments)]
+    fn dissimilarity_search(
+        &self,
+        vector_name: &str,
+        vector: &[VectorElementType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPoint>>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn dissimilarity_search_batch(
+        &self,
+        vector_name: &str,
+        vectors: &[&[VectorElementType]],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,

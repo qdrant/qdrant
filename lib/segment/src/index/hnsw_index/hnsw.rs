@@ -61,6 +61,12 @@ struct SearchesTelemetry {
     large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     exact_filtered: Arc<Mutex<OperationDurationsAggregator>>,
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
+    dissimilarity_unfiltered_plain: Arc<Mutex<OperationDurationsAggregator>>,
+    dissimilarity_unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,
+    dissimilarity_small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
+    dissimilarity_large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
+    dissimilarity_exact_filtered: Arc<Mutex<OperationDurationsAggregator>>,
+    dissimilarity_exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
@@ -114,6 +120,12 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 large_cardinality: OperationDurationsAggregator::new(),
                 exact_filtered: OperationDurationsAggregator::new(),
                 exact_unfiltered: OperationDurationsAggregator::new(),
+                dissimilarity_unfiltered_hnsw: OperationDurationsAggregator::new(),
+                dissimilarity_unfiltered_plain: OperationDurationsAggregator::new(),
+                dissimilarity_small_cardinality: OperationDurationsAggregator::new(),
+                dissimilarity_large_cardinality: OperationDurationsAggregator::new(),
+                dissimilarity_exact_filtered: OperationDurationsAggregator::new(),
+                dissimilarity_exact_unfiltered: OperationDurationsAggregator::new(),
             },
         })
     }
@@ -368,6 +380,164 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 .collect()
         }
     }
+
+    pub fn dissimilarity_search_with_graph(
+        &self,
+        vector: &[VectorElementType],
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        let ef = params
+            .and_then(|params| params.hnsw_ef)
+            .unwrap_or(self.config.ef);
+
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let quantized_storage = vector_storage.quantized_storage();
+
+        // Check that:
+        // - `params` is `Some`
+        // - `params.quantization` is `Some`
+        // - and `params.quantization.ignore` is `false`
+        let quantization_params = params.and_then(|p| p.quantization).unwrap_or_default();
+
+        let (raw_scorer, quantized) = match quantized_storage {
+            // If `quantization_params` is `Some`, then quantization is *not* ignored
+            Some(quantized_storage) if !quantization_params.ignore => {
+                let scorer = quantized_storage.raw_scorer(
+                    vector,
+                    id_tracker.deleted_point_bitslice(),
+                    vector_storage.deleted_vector_bitslice(),
+                    is_stopped,
+                );
+
+                (scorer, true)
+            }
+
+            _ => {
+                let scorer = new_stoppable_raw_scorer(
+                    vector.to_owned(),
+                    &vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    is_stopped,
+                );
+
+                (scorer, false)
+            }
+        };
+
+        let payload_index = self.payload_index.borrow();
+        let filter_context = filter.map(|f| payload_index.filter_context(f));
+        let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
+
+        let Some(graph) = &self.graph else {
+            return Vec::new();
+        };
+
+        if quantized && quantization_params.rescore {
+            let oversampling = quantization_params.oversampling.unwrap_or(1.0);
+
+            let oversampled_amount = if oversampling > 1.0 {
+                (oversampling * amount as f64) as usize
+            } else {
+                // Very unlikely this is reached because validation enforces oversampling >= 1.0
+                amount
+            };
+
+            let search_result = graph.dissimilarity_search(oversampled_amount, ef, points_scorer);
+
+            let raw_scorer = new_stoppable_raw_scorer(
+                vector.to_owned(),
+                &vector_storage,
+                id_tracker.deleted_point_bitslice(),
+                is_stopped,
+            );
+
+            let mut ids_iterator = search_result.iter().map(|x| x.idx);
+            let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
+
+            re_scored.sort_unstable();
+            re_scored.reverse();
+            re_scored.truncate(amount);
+            re_scored
+        } else {
+            graph.dissimilarity_search(amount, ef, points_scorer)
+        }
+    }
+
+    fn dissimilarity_search_vectors_with_graph(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        vectors
+            .iter()
+            .map(|vector| {
+                self.dissimilarity_search_with_graph(vector, filter, amount, params, is_stopped)
+            })
+            .collect()
+    }
+
+    fn dissimilarity_search_vectors_plain(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: &Filter,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        let id_tracker = self.id_tracker.borrow();
+        let payload_index = self.payload_index.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let filtered_points = payload_index.query_points(filter);
+        let ignore_quantization = params
+            .and_then(|p| p.quantization)
+            .map(|q| q.ignore)
+            .unwrap_or(default_quantization_ignore_value());
+        if ignore_quantization {
+            vectors
+                .iter()
+                .map(|vector| {
+                    new_stoppable_raw_scorer(
+                        vector.to_vec(),
+                        &vector_storage,
+                        id_tracker.deleted_point_bitslice(),
+                        is_stopped,
+                    )
+                    .peek_worse_iter(&mut filtered_points.iter().copied(), amount)
+                })
+                .collect()
+        } else {
+            vectors
+                .iter()
+                .map(|vector| {
+                    if let Some(quantized_storage) = vector_storage.quantized_storage() {
+                        quantized_storage
+                            .raw_scorer(
+                                vector,
+                                id_tracker.deleted_point_bitslice(),
+                                vector_storage.deleted_vector_bitslice(),
+                                is_stopped,
+                            )
+                            .peek_worse_iter(&mut filtered_points.iter().copied(), amount)
+                    } else {
+                        new_stoppable_raw_scorer(
+                            vector.to_vec(),
+                            &vector_storage,
+                            id_tracker.deleted_point_bitslice(),
+                            is_stopped,
+                        )
+                        .peek_worse_iter(&mut filtered_points.iter().copied(), amount)
+                    }
+                })
+                .collect()
+        }
+    }
 }
 
 impl HNSWIndex<GraphLinksMmap> {
@@ -501,6 +671,151 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
                     self.search_vectors_plain(vectors, query_filter, top, params, is_stopped)
+                }
+            }
+        }
+    }
+
+    fn dissimilarity_search(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        let exact = params.map(|params| params.exact).unwrap_or(false);
+        match filter {
+            None => {
+                let id_tracker = self.id_tracker.borrow();
+                let vector_storage = self.vector_storage.borrow();
+
+                // Determine whether to do a plain or graph search, and pick search timer aggregator
+                // Because an HNSW graph is built, we'd normally always assume to search the graph.
+                // But because a lot of points may be deleted in this graph, it may just be faster
+                // to do a plain search instead.
+                let plain_search = exact
+                    || vector_storage.available_vector_count() < self.config.full_scan_threshold;
+
+                // Do plain or graph search
+                if plain_search {
+                    let _timer = ScopeDurationMeasurer::new(if exact {
+                        &self.searches_telemetry.dissimilarity_exact_unfiltered
+                    } else {
+                        &self.searches_telemetry.dissimilarity_unfiltered_plain
+                    });
+                    vectors
+                        .iter()
+                        .map(|vector| {
+                            new_stoppable_raw_scorer(
+                                vector.to_vec(),
+                                &vector_storage,
+                                id_tracker.deleted_point_bitslice(),
+                                is_stopped,
+                            )
+                            .peek_worse_all(amount)
+                        })
+                        .collect()
+                } else {
+                    let _timer = ScopeDurationMeasurer::new(
+                        &self.searches_telemetry.dissimilarity_unfiltered_hnsw,
+                    );
+                    self.dissimilarity_search_vectors_with_graph(
+                        vectors, None, amount, params, is_stopped,
+                    )
+                }
+            }
+            Some(query_filter) => {
+                // depending on the amount of filtered-out points the optimal strategy could be
+                // - to retrieve possible points and score them after
+                // - to use HNSW index with filtering condition
+
+                // if exact search is requested, we should not use HNSW index
+                if exact {
+                    let exact_params = params.map(|params| {
+                        let mut params = *params;
+                        params.quantization = Some(QuantizationSearchParams {
+                            ignore: true,
+                            rescore: false,
+                            oversampling: None,
+                        }); // disable quantization for exact search
+                        params
+                    });
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.exact_filtered);
+                    return self.dissimilarity_search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        amount,
+                        exact_params.as_ref(),
+                        is_stopped,
+                    );
+                }
+
+                let payload_index = self.payload_index.borrow();
+                let vector_storage = self.vector_storage.borrow();
+                let id_tracker = self.id_tracker.borrow();
+                let available_vector_count = vector_storage.available_vector_count();
+                let query_point_cardinality = payload_index.estimate_cardinality(query_filter);
+                let query_cardinality = adjust_to_available_vectors(
+                    query_point_cardinality,
+                    available_vector_count,
+                    id_tracker.available_point_count(),
+                );
+
+                if query_cardinality.max < self.config.full_scan_threshold {
+                    // if cardinality is small - use plain index
+                    let _timer = ScopeDurationMeasurer::new(
+                        &self.searches_telemetry.dissimilarity_small_cardinality,
+                    );
+                    return self.dissimilarity_search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        amount,
+                        params,
+                        is_stopped,
+                    );
+                }
+
+                if query_cardinality.min > self.config.full_scan_threshold {
+                    // if cardinality is high enough - use HNSW index
+                    let _timer = ScopeDurationMeasurer::new(
+                        &self.searches_telemetry.dissimilarity_large_cardinality,
+                    );
+                    return self.dissimilarity_search_vectors_with_graph(
+                        vectors, filter, amount, params, is_stopped,
+                    );
+                }
+
+                let filter_context = payload_index.filter_context(query_filter);
+
+                // Fast cardinality estimation is not enough, do sample estimation of cardinality
+                let id_tracker = self.id_tracker.borrow();
+                if sample_check_cardinality(
+                    id_tracker.sample_ids(Some(vector_storage.deleted_vector_bitslice())),
+                    |idx| filter_context.check(idx),
+                    self.config.full_scan_threshold,
+                    available_vector_count, // Check cardinality among available vectors
+                ) {
+                    // if cardinality is high enough - use HNSW index
+                    let _timer = ScopeDurationMeasurer::new(
+                        &self.searches_telemetry.dissimilarity_large_cardinality,
+                    );
+                    self.dissimilarity_search_vectors_with_graph(
+                        vectors, filter, amount, params, is_stopped,
+                    )
+                } else {
+                    // if cardinality is small - use plain index
+                    let _timer = ScopeDurationMeasurer::new(
+                        &self.searches_telemetry.dissimilarity_small_cardinality,
+                    );
+                    self.dissimilarity_search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        amount,
+                        params,
+                        is_stopped,
+                    )
                 }
             }
         }
@@ -667,6 +982,25 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
             filtered_exact: tm.exact_filtered.lock().get_statistics(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
+            dissimilarity_unfiltered_plain: tm
+                .dissimilarity_unfiltered_plain
+                .lock()
+                .get_statistics(),
+            dissimilarity_filtered_plain: Default::default(),
+            dissimilarity_unfiltered_hnsw: tm.dissimilarity_unfiltered_hnsw.lock().get_statistics(),
+            dissimilarity_filtered_small_cardinality: tm
+                .dissimilarity_small_cardinality
+                .lock()
+                .get_statistics(),
+            dissimilarity_filtered_large_cardinality: tm
+                .dissimilarity_large_cardinality
+                .lock()
+                .get_statistics(),
+            dissimilarity_filtered_exact: tm.dissimilarity_exact_filtered.lock().get_statistics(),
+            dissimilarity_unfiltered_exact: tm
+                .dissimilarity_exact_unfiltered
+                .lock()
+                .get_statistics(),
         }
     }
 

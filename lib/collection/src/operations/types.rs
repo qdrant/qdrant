@@ -257,6 +257,33 @@ pub struct SearchRequestBatch {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct DissimilaritySearchRequest {
+    /// Look for vectors closest to this
+    pub vector: NamedVectorStruct,
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+    /// Additional search params
+    #[validate]
+    pub params: Option<SearchParams>,
+    /// Max number of result to return
+    #[validate(range(min = 1))]
+    pub amount: usize,
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    #[serde(default, alias = "with_vectors")]
+    pub with_vector: Option<WithVector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct DissimilaritySearchRequestBatch {
+    #[validate]
+    pub searches: Vec<DissimilaritySearchRequest>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SearchGroupsRequest {
     /// Look for vectors closest to this
     pub vector: NamedVectorStruct,

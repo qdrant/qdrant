@@ -3,12 +3,12 @@ use std::sync::Arc;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, GetPoints,
-    GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
-    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdatePointVectors,
-    UpsertPoints,
+    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
+    DissimilaritySearchBatchPoints, DissimilaritySearchPoints, GetPoints, GetResponse,
+    PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints,
+    SearchResponse, SetPayloadPoints, UpdatePointVectors, UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
@@ -16,9 +16,9 @@ use tonic::{Request, Response, Status};
 use super::points_common::{delete_vectors, recommend_groups, search_groups, update_vectors};
 use super::validate;
 use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    overwrite_payload, recommend, recommend_batch, scroll, search, search_batch, set_payload,
-    upsert,
+    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload,
+    dissimilarity_search, dissimilarity_search_batch, get, overwrite_payload, recommend,
+    recommend_batch, scroll, search, search_batch, set_payload, upsert,
 };
 
 pub struct PointsService {
@@ -140,6 +140,34 @@ impl Points for PointsService {
             self.toc.as_ref(),
             collection_name,
             search_points,
+            read_consistency,
+            None,
+        )
+        .await
+    }
+
+    async fn dissimilarity_search(
+        &self,
+        request: Request<DissimilaritySearchPoints>,
+    ) -> Result<Response<SearchResponse>, Status> {
+        validate(request.get_ref())?;
+        dissimilarity_search(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn dissimilarity_search_batch(
+        &self,
+        request: Request<DissimilaritySearchBatchPoints>,
+    ) -> Result<Response<SearchBatchResponse>, Status> {
+        validate(request.get_ref())?;
+        let DissimilaritySearchBatchPoints {
+            collection_name,
+            dissimilarity_search_points,
+            read_consistency,
+        } = request.into_inner();
+        dissimilarity_search_batch(
+            self.toc.as_ref(),
+            collection_name,
+            dissimilarity_search_points,
             read_consistency,
             None,
         )

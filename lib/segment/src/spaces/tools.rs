@@ -40,6 +40,25 @@ pub fn peek_top_scores<E: Ord + Clone>(scores: &[E], top: usize) -> Vec<E> {
     peek_top_largest_iterable(scores.iter().cloned(), top)
 }
 
+pub fn peek_worse_iterable<I, E: Ord + Clone>(elements: I, top: usize) -> Vec<E>
+where
+    I: IntoIterator<Item = E>,
+{
+    if top == 0 {
+        return vec![];
+    }
+
+    let mut pq = FixedLengthPriorityQueue::new(top);
+    for element in elements {
+        pq.push(Reverse(element));
+    }
+    pq.into_vec().iter().cloned().map(|Reverse(x)| x).collect()
+}
+
+pub fn peek_worse_scores<E: Ord + Clone>(scores: &[E], top: usize) -> Vec<E> {
+    peek_worse_iterable(scores.iter().cloned(), top)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

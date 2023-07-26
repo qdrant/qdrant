@@ -4,9 +4,9 @@ use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointsSelector, WriteOrdering,
 };
 use collection::operations::types::{
-    CountRequest, CountResult, GroupsResult, PointRequest, RecommendGroupsRequest, Record,
-    ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    CountRequest, CountResult, DissimilaritySearchRequest, DissimilaritySearchRequestBatch,
+    GroupsResult, PointRequest, RecommendGroupsRequest, Record, ScrollRequest, ScrollResult,
+    SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors, VectorOperations};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
@@ -290,6 +290,28 @@ pub async fn do_search_batch_points(
     shard_selection: Option<ShardId>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.search_batch(collection_name, request, read_consistency, shard_selection)
+        .await
+}
+
+pub async fn do_dissimilarity_search_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: DissimilaritySearchRequest,
+    read_consistency: Option<ReadConsistency>,
+    shard_selection: Option<ShardId>,
+) -> Result<Vec<ScoredPoint>, StorageError> {
+    toc.dissimilarity_search(collection_name, request, read_consistency, shard_selection)
+        .await
+}
+
+pub async fn do_dissimilarity_search_batch_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: DissimilaritySearchRequestBatch,
+    read_consistency: Option<ReadConsistency>,
+    shard_selection: Option<ShardId>,
+) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    toc.dissimilarity_search_batch(collection_name, request, read_consistency, shard_selection)
         .await
 }
 

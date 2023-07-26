@@ -18,7 +18,9 @@ use tokio::task::JoinHandle;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
-use crate::operations::types::{CollectionResult, Record, SearchRequestBatch};
+use crate::operations::types::{
+    CollectionResult, DissimilaritySearchRequestBatch, Record, SearchRequestBatch,
+};
 
 type BatchOffset = usize;
 type SegmentOffset = usize;
@@ -265,6 +267,127 @@ impl SegmentsSearcher {
         Ok(top_scores)
     }
 
+    pub async fn dissimilarity_search(
+        segments: &RwLock<SegmentHolder>,
+        batch_request: Arc<DissimilaritySearchRequestBatch>,
+        runtime_handle: &Handle,
+        sampling_enabled: bool,
+        is_stopped: Arc<AtomicBool>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // Using { } block to ensure segments variable is dropped in the end of it
+        // and is not transferred across the all_searches.await? boundary as it
+        // does not impl Send trait
+        let (locked_segments, searches): (Vec<_>, Vec<_>) = {
+            let segments = segments.read();
+
+            let some_segment = segments.iter().next();
+            if some_segment.is_none() {
+                return Ok(vec![]);
+            }
+
+            // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
+            // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
+            // With probabilistic sampling we determine a smaller sampling limit for each segment.
+            // Use probabilistic sampling if:
+            // - sampling is enabled
+            // - more than 1 segment
+            // - segments are not empty
+            let available_points_segments = segments
+                .iter()
+                .map(|(_, segment)| segment.get().read().available_point_count())
+                .sum();
+            let use_sampling =
+                sampling_enabled && segments.len() > 1 && available_points_segments > 0;
+
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    let search = runtime_handle.spawn_blocking({
+                        let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                        let is_stopped_clone = is_stopped.clone();
+                        move || {
+                            dissimilarity_search_in_segment(
+                                segment,
+                                batch_request,
+                                available_points_segments,
+                                use_sampling,
+                                &is_stopped_clone,
+                            )
+                        }
+                    });
+                    (segment.clone(), search)
+                })
+                .unzip()
+        };
+        // perform search on all segments concurrently
+        // the resulting Vec is in the same order as the segment searches were provided.
+        let (all_search_results_per_segment, further_results) =
+            Self::execute_searches(searches).await?;
+        debug_assert!(all_search_results_per_segment.len() == locked_segments.len());
+
+        let (mut result_aggregator, searches_to_rerun) = Self::process_search_result_step1(
+            all_search_results_per_segment,
+            batch_request
+                .searches
+                .iter()
+                .map(|request| request.amount)
+                .collect(),
+            further_results,
+        );
+        // The second step of the search is to re-run the search without sampling on some segments
+        // Expected that this stage will be executed rarely
+        if !searches_to_rerun.is_empty() {
+            // TODO notify telemetry of failing sampling
+            // Ensure consistent order of segment ids
+            let searches_to_rerun: Vec<(SegmentOffset, Vec<BatchOffset>)> =
+                searches_to_rerun.into_iter().collect();
+
+            let secondary_searches: Vec<_> = {
+                let mut res = vec![];
+                for (segment_id, batch_ids) in searches_to_rerun.iter() {
+                    let segment = locked_segments[*segment_id].clone();
+                    let partial_batch_request = Arc::new(DissimilaritySearchRequestBatch {
+                        searches: batch_ids
+                            .iter()
+                            .map(|batch_id| batch_request.searches[*batch_id].clone())
+                            .collect(),
+                    });
+                    let is_stopped_clone = is_stopped.clone();
+                    res.push(runtime_handle.spawn_blocking(move || {
+                        dissimilarity_search_in_segment(
+                            segment,
+                            partial_batch_request,
+                            0,
+                            false,
+                            &is_stopped_clone,
+                        )
+                    }))
+                }
+                res
+            };
+
+            let (secondary_search_results_per_segment, _) =
+                Self::execute_searches(secondary_searches).await?;
+
+            result_aggregator.update_point_versions(&secondary_search_results_per_segment);
+
+            for ((_segment_id, batch_ids), segments_result) in searches_to_rerun
+                .into_iter()
+                .zip(secondary_search_results_per_segment.into_iter())
+            {
+                for (batch_id, secondary_batch_result) in
+                    batch_ids.into_iter().zip(segments_result.into_iter())
+                {
+                    result_aggregator
+                        .update_batch_results(batch_id, secondary_batch_result.into_iter());
+                }
+            }
+        }
+
+        let top_scores: Vec<_> = result_aggregator.into_topk();
+        Ok(top_scores)
+    }
+
     pub fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
@@ -463,6 +586,110 @@ fn search_in_segment(
         )?;
         for batch_result in &res {
             further_results.push(batch_result.len() == top);
+        }
+        result.append(&mut res);
+    }
+
+    Ok((result, further_results))
+}
+
+fn dissimilarity_search_in_segment(
+    segment: LockedSegment,
+    request: Arc<DissimilaritySearchRequestBatch>,
+    total_points: usize,
+    use_sampling: bool,
+    is_stopped: &AtomicBool,
+) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
+    let batch_size = request.searches.len();
+
+    let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
+    let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // if segment have more points to return
+    let mut vectors_batch: Vec<&[VectorElementType]> = vec![];
+    let mut prev_params = BatchSearchParams::default();
+
+    for search_query in &request.searches {
+        let with_payload_interface = search_query
+            .with_payload
+            .as_ref()
+            .unwrap_or(&WithPayloadInterface::Bool(false));
+
+        let params = BatchSearchParams {
+            vector_name: search_query.vector.get_name(),
+            filter: search_query.filter.as_ref(),
+            with_payload: WithPayload::from(with_payload_interface),
+            with_vector: search_query.with_vector.clone().unwrap_or_default(),
+            top: search_query.amount,
+            params: search_query.params.as_ref(),
+        };
+
+        // same params enables batching
+        if params == prev_params {
+            vectors_batch.push(search_query.vector.get_vector().as_slice());
+        } else {
+            // different params means different batches
+            // execute what has been batched so far
+            if !vectors_batch.is_empty() {
+                let locked_segment = segment.get();
+                let read_segment = locked_segment.read();
+                let segment_points = read_segment.available_point_count();
+                let amount = if use_sampling {
+                    let ef_limit = prev_params.params.and_then(|p| p.hnsw_ef).or_else(|| {
+                        get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name)
+                    });
+                    sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
+                } else {
+                    prev_params.top
+                };
+
+                let mut res = read_segment.dissimilarity_search_batch(
+                    prev_params.vector_name,
+                    &vectors_batch,
+                    &prev_params.with_payload,
+                    &prev_params.with_vector,
+                    prev_params.filter,
+                    amount,
+                    prev_params.params,
+                    is_stopped,
+                )?;
+                for batch_result in &res {
+                    further_results.push(batch_result.len() == amount);
+                }
+                result.append(&mut res);
+                // clear current batch
+                vectors_batch.clear();
+            }
+            // start new batch for current search query
+            vectors_batch.push(search_query.vector.get_vector().as_slice());
+            prev_params = params;
+        }
+    }
+
+    // run last batch if any
+    if !vectors_batch.is_empty() {
+        let locked_segment = segment.get();
+        let read_segment = locked_segment.read();
+        let segment_points = read_segment.available_point_count();
+        let amount = if use_sampling {
+            let ef_limit = prev_params
+                .params
+                .and_then(|p| p.hnsw_ef)
+                .or_else(|| get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name));
+            sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
+        } else {
+            prev_params.top
+        };
+        let mut res = read_segment.dissimilarity_search_batch(
+            prev_params.vector_name,
+            &vectors_batch,
+            &prev_params.with_payload,
+            &prev_params.with_vector,
+            prev_params.filter,
+            amount,
+            prev_params.params,
+            is_stopped,
+        )?;
+        for batch_result in &res {
+            further_results.push(batch_result.len() == amount);
         }
         result.append(&mut res);
     }

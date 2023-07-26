@@ -59,6 +59,8 @@ service Points {
    Retrieve closest points based on vector similarity and given filtering conditions
     */
   rpc SearchBatch (SearchBatchPoints) returns (SearchBatchResponse) {}
+  rpc DissimilaritySearch (DissimilaritySearchPoints) returns (SearchResponse) {}
+  rpc DissimilaritySearchBatch (DissimilaritySearchBatchPoints) returns (SearchBatchResponse) {}
   /*
   Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
    */

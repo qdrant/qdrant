@@ -11,8 +11,8 @@ use tokio::sync::Mutex;
 
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult,
+    DissimilaritySearchRequestBatch, PointRequest, Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
@@ -197,6 +197,17 @@ impl ShardOperation for ForwardProxyShard {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard.search(request, search_runtime_handle).await
+    }
+
+    async fn dissimilarity_search(
+        &self,
+        request: Arc<DissimilaritySearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .dissimilarity_search(request, search_runtime_handle)
+            .await
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {

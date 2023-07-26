@@ -36,8 +36,9 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
-    CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
-    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, VectorsConfigDiff,
+    CountResult, DissimilaritySearchRequest, DissimilaritySearchRequestBatch, LocalShardInfo,
+    NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest,
+    SearchRequestBatch, UpdateResult, VectorsConfigDiff,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
@@ -982,6 +983,151 @@ impl Collection {
             ._search_batch(request_batch, read_consistency, shard_selection)
             .await?;
         Ok(results.into_iter().next().unwrap())
+    }
+
+    pub async fn dissimilarity_search(
+        &self,
+        request: DissimilaritySearchRequest,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        if request.amount == 0 {
+            return Ok(vec![]);
+        }
+        // dissimilarity_search is a special case of dissimilarity_search_batch with a single batch
+        let request_batch = DissimilaritySearchRequestBatch {
+            searches: vec![request],
+        };
+        let results = self
+            ._dissimilarity_search_batch(request_batch, read_consistency, shard_selection)
+            .await?;
+        Ok(results.into_iter().next().unwrap())
+    }
+
+    pub async fn dissimilarity_search_batch(
+        &self,
+        request: DissimilaritySearchRequestBatch,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // shortcuts batch if all requests with amount=0
+        if request.searches.iter().all(|s| s.amount == 0) {
+            return Ok(vec![]);
+        }
+        // A factor which determines if we need to use the 2-step search or not
+        // Should be adjusted based on usage statistics.
+        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
+
+        let is_payload_required = request.searches.iter().all(|s| {
+            s.with_payload
+                .clone()
+                .map(|p| p.is_required())
+                .unwrap_or_default()
+        });
+        let with_vectors = request.searches.iter().all(|s| {
+            s.with_vector
+                .as_ref()
+                .map(|wv| wv.is_some())
+                .unwrap_or(false)
+        });
+
+        let metadata_required = is_payload_required || with_vectors;
+
+        let sum_limits: usize = request.searches.iter().map(|s| s.amount).sum();
+
+        // Number of records we need to retrieve to fill the search result.
+        let require_transfers = self.shards_holder.read().await.len() * sum_limits;
+        // Actually used number of records.
+        let used_transfers = sum_limits;
+
+        let is_required_transfer_large_enough =
+            require_transfers > used_transfers * PAYLOAD_TRANSFERS_FACTOR_THRESHOLD;
+
+        if metadata_required && is_required_transfer_large_enough {
+            // If there is a significant offset, we need to retrieve the whole result
+            // set without payload first and then retrieve the payload.
+            // It is required to do this because the payload might be too large to send over the
+            // network.
+            let mut without_payload_requests = Vec::with_capacity(request.searches.len());
+            for search in &request.searches {
+                let mut without_payload_request = search.clone();
+                without_payload_request.with_payload = None;
+                without_payload_request.with_vector = None;
+                without_payload_requests.push(without_payload_request);
+            }
+            let without_payload_batch = DissimilaritySearchRequestBatch {
+                searches: without_payload_requests,
+            };
+            let without_payload_results = self
+                ._dissimilarity_search_batch(
+                    without_payload_batch,
+                    read_consistency,
+                    shard_selection,
+                )
+                .await?;
+            let filled_results = without_payload_results
+                .into_iter()
+                .zip(request.clone().searches.into_iter())
+                .map(|(without_payload_result, req)| {
+                    self.fill_search_result_with_payload(
+                        without_payload_result,
+                        req.with_payload.clone(),
+                        req.with_vector.unwrap_or_default(),
+                        read_consistency,
+                        shard_selection,
+                    )
+                });
+            try_join_all(filled_results).await
+        } else {
+            let result = self
+                ._dissimilarity_search_batch(request, read_consistency, shard_selection)
+                .await?;
+            Ok(result)
+        }
+    }
+
+    pub async fn _dissimilarity_search_batch(
+        &self,
+        request: DissimilaritySearchRequestBatch,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let batch_size = request.searches.len();
+        let request = Arc::new(request);
+
+        // query all shards concurrently
+        let mut all_searches_res = {
+            let shard_holder = self.shards_holder.read().await;
+            let target_shards = shard_holder.target_shard(shard_selection)?;
+            let all_searches = target_shards
+                .iter()
+                .map(|shard| shard.dissimilarity_search(request.clone(), read_consistency));
+            try_join_all(all_searches).await?
+        };
+
+        // merge results from shards in order
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
+        for shard_searches_results in all_searches_res.iter_mut() {
+            for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
+                merged_results[index].append(shard_searches_result)
+            }
+        }
+        let collection_params = self.collection_config.read().await.params.clone();
+        let top_results: Vec<_> = merged_results
+            .into_iter()
+            .zip(request.searches.iter())
+            .map(|(res, request)| {
+                let distance = collection_params
+                    .get_vector_params(request.vector.get_name())?
+                    .distance;
+                Ok(match distance.distance_order() {
+                    Order::SmallBetter => peek_top_largest_iterable(res, request.amount),
+                    Order::LargeBetter => peek_top_smallest_iterable(res, request.amount),
+                })
+            })
+            .collect::<CollectionResult<Vec<_>>>()?;
+
+        Ok(top_results)
     }
 
     pub async fn scroll_by(

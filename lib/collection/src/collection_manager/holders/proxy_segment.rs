@@ -292,6 +292,138 @@ impl SegmentEntry for ProxySegment {
         Ok(wrapped_results)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn dissimilarity_search(
+        &self,
+        vector_name: &str,
+        vector: &[VectorElementType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let deleted_points = self.deleted_points.read();
+
+        // Some point might be deleted after temporary segment creation
+        // We need to prevent them from being found by search request
+        // That is why we need to pass additional filter for deleted points
+        let do_update_filter = !deleted_points.is_empty();
+        let mut wrapped_result = if do_update_filter {
+            // ToDo: Come up with better way to pass deleted points into Filter
+            // e.g. implement AtomicRefCell for Serializer.
+            // This copy might slow process down if there will be a lot of deleted points
+            let wrapped_filter =
+                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+
+            self.wrapped_segment.get().read().dissimilarity_search(
+                vector_name,
+                vector,
+                with_payload,
+                with_vector,
+                Some(&wrapped_filter),
+                amount,
+                params,
+                is_stopped,
+            )?
+        } else {
+            self.wrapped_segment.get().read().dissimilarity_search(
+                vector_name,
+                vector,
+                with_payload,
+                with_vector,
+                filter,
+                amount,
+                params,
+                is_stopped,
+            )?
+        };
+
+        let mut write_result = self.write_segment.get().read().dissimilarity_search(
+            vector_name,
+            vector,
+            with_payload,
+            with_vector,
+            filter,
+            amount,
+            params,
+            is_stopped,
+        )?;
+
+        wrapped_result.append(&mut write_result);
+        Ok(wrapped_result)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn dissimilarity_search_batch(
+        &self,
+        vector_name: &str,
+        vectors: &[&[VectorElementType]],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        amount: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let deleted_points = self.deleted_points.read();
+
+        // Some point might be deleted after temporary segment creation
+        // We need to prevent them from being found by search request
+        // That is why we need to pass additional filter for deleted points
+        let do_update_filter = !deleted_points.is_empty();
+        let mut wrapped_results = if do_update_filter {
+            // ToDo: Come up with better way to pass deleted points into Filter
+            // e.g. implement AtomicRefCell for Serializer.
+            // This copy might slow process down if there will be a lot of deleted points
+            let wrapped_filter =
+                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+
+            self.wrapped_segment
+                .get()
+                .read()
+                .dissimilarity_search_batch(
+                    vector_name,
+                    vectors,
+                    with_payload,
+                    with_vector,
+                    Some(&wrapped_filter),
+                    amount,
+                    params,
+                    is_stopped,
+                )?
+        } else {
+            self.wrapped_segment
+                .get()
+                .read()
+                .dissimilarity_search_batch(
+                    vector_name,
+                    vectors,
+                    with_payload,
+                    with_vector,
+                    filter,
+                    amount,
+                    params,
+                    is_stopped,
+                )?
+        };
+        let mut write_results = self.write_segment.get().read().dissimilarity_search_batch(
+            vector_name,
+            vectors,
+            with_payload,
+            with_vector,
+            filter,
+            amount,
+            params,
+            is_stopped,
+        )?;
+        for (index, write_result) in write_results.iter_mut().enumerate() {
+            wrapped_results[index].append(write_result)
+        }
+        Ok(wrapped_results)
+    }
+
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,

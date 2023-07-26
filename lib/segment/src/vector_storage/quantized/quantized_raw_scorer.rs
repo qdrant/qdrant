@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
-use crate::spaces::tools::peek_top_largest_iterable;
+use crate::spaces::tools::{peek_top_largest_iterable, peek_worse_iterable};
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
@@ -115,5 +115,31 @@ where
                 ScoredPointOffset { idx, score }
             });
         peek_top_largest_iterable(scores, top)
+    }
+
+    fn peek_worse_iter(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        let scores = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|idx| self.check_vector(*idx))
+            .map(|idx| {
+                let score = self.score_point(idx);
+                ScoredPointOffset { idx, score }
+            });
+        peek_worse_iterable(scores, top)
+    }
+
+    fn peek_worse_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+        let scores = (0..self.point_deleted.len() as PointOffsetType)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|idx| self.check_vector(*idx))
+            .map(|idx| {
+                let score = self.score_point(idx);
+                ScoredPointOffset { idx, score }
+            });
+        peek_worse_iterable(scores, top)
     }
 }

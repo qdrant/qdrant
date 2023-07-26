@@ -4,12 +4,12 @@ use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
     BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, FieldType,
-    GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponse,
-    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
-    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
-    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, SyncPoints, UpdatePointVectors, UpsertPoints,
+    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
+    DissimilaritySearchPoints, FieldType, GetPoints, GetResponse, PayloadIndexParams,
+    PointsOperationResponse, ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse,
+    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
+    ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups,
+    SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -18,8 +18,8 @@ use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
 };
 use collection::operations::types::{
-    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
-    SearchRequestBatch,
+    default_exact_count, DissimilaritySearchRequest, DissimilaritySearchRequestBatch, PointRequest,
+    RecommendRequestBatch, ScrollRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -32,7 +32,8 @@ use tonic::{Response, Status};
 
 use crate::common::points::{
     do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
+    do_delete_points, do_delete_vectors, do_dissimilarity_search_batch_points,
+    do_dissimilarity_search_points, do_get_points, do_overwrite_payload, do_scroll_points,
     do_search_batch_points, do_search_points, do_set_payload, do_update_vectors, do_upsert_points,
     CreateFieldIndex,
 };
@@ -596,6 +597,105 @@ pub async fn search_batch(
         toc,
         &collection_name,
         search_requests,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = SearchBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn dissimilarity_search(
+    toc: &TableOfContent,
+    search_points: DissimilaritySearchPoints,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchResponse>, Status> {
+    let DissimilaritySearchPoints {
+        collection_name,
+        vector,
+        filter,
+        amount,
+        with_payload,
+        params,
+        vector_name,
+        with_vectors,
+        read_consistency,
+    } = search_points;
+
+    let dissimilarity_search_request = DissimilaritySearchRequest {
+        vector: match vector_name {
+            None => vector.into(),
+            Some(name) => NamedVector { name, vector }.into(),
+        },
+        filter: filter.map(|f| f.try_into()).transpose()?,
+        params: params.map(|p| p.into()),
+        amount: amount as usize,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: Some(
+            with_vectors
+                .map(|selector| selector.into())
+                .unwrap_or_default(),
+        ),
+    };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let scored_points = do_dissimilarity_search_points(
+        toc,
+        &collection_name,
+        dissimilarity_search_request,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = SearchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn dissimilarity_search_batch(
+    toc: &TableOfContent,
+    collection_name: String,
+    dissimilarity_search_points: Vec<DissimilaritySearchPoints>,
+    read_consistency: Option<ReadConsistencyGrpc>,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchBatchResponse>, Status> {
+    let dissimilarity_searches: Result<Vec<_>, Status> = dissimilarity_search_points
+        .into_iter()
+        .map(|search_point| search_point.try_into())
+        .collect();
+
+    let dissimilarity_search_requests = DissimilaritySearchRequestBatch {
+        searches: dissimilarity_searches?,
+    };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let scored_points = do_dissimilarity_search_batch_points(
+        toc,
+        &collection_name,
+        dissimilarity_search_requests,
         read_consistency,
         shard_selection,
     )

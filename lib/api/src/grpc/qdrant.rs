@@ -2940,6 +2940,56 @@ pub struct SearchBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DissimilaritySearchPoints {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// vector
+    #[prost(float, repeated, tag = "2")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
+    #[prost(uint64, tag = "4")]
+    pub amount: u64,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "5")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "6")]
+    #[validate]
+    pub params: ::core::option::Option<SearchParams>,
+    /// Which vector to use for search, if not specified - use default vector
+    #[prost(string, optional, tag = "7")]
+    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "8")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "9")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DissimilaritySearchBatchPoints {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    #[validate]
+    pub dissimilarity_search_points: ::prost::alloc::vec::Vec<DissimilaritySearchPoints>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "3")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithLookup {
@@ -4141,6 +4191,53 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "SearchBatch"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn dissimilarity_search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DissimilaritySearchPoints>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/DissimilaritySearch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "DissimilaritySearch"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn dissimilarity_search_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DissimilaritySearchBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/DissimilaritySearchBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "DissimilaritySearchBatch"));
+            self.inner.unary(req, path, codec).await
+        }
         ///
         /// Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
         pub async fn search_groups(
@@ -4404,6 +4501,17 @@ pub mod points_server {
         async fn search_batch(
             &self,
             request: tonic::Request<super::SearchBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        >;
+        async fn dissimilarity_search(
+            &self,
+            request: tonic::Request<super::DissimilaritySearchPoints>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        async fn dissimilarity_search_batch(
+            &self,
+            request: tonic::Request<super::DissimilaritySearchBatchPoints>,
         ) -> std::result::Result<
             tonic::Response<super::SearchBatchResponse>,
             tonic::Status,
@@ -5110,6 +5218,100 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/DissimilaritySearch" => {
+                    #[allow(non_camel_case_types)]
+                    struct DissimilaritySearchSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::DissimilaritySearchPoints>
+                    for DissimilaritySearchSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DissimilaritySearchPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).dissimilarity_search(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DissimilaritySearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/DissimilaritySearchBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct DissimilaritySearchBatchSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::DissimilaritySearchBatchPoints>
+                    for DissimilaritySearchBatchSvc<T> {
+                        type Response = super::SearchBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::DissimilaritySearchBatchPoints,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).dissimilarity_search_batch(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DissimilaritySearchBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/qdrant.Points/SearchGroups" => {
                     #[allow(non_camel_case_types)]
                     struct SearchGroupsSvc<T: Points>(pub Arc<T>);
@@ -5565,6 +5767,29 @@ pub struct SearchBatchPointsInternal {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DissimilaritySearchPointsInternal {
+    #[prost(message, optional, tag = "1")]
+    #[validate]
+    pub dissimilarity_search_points: ::core::option::Option<DissimilaritySearchPoints>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DissimilaritySearchBatchPointsInternal {
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    #[validate]
+    pub dissimilarity_search_points: ::prost::alloc::vec::Vec<DissimilaritySearchPoints>,
+    #[prost(uint32, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<u32>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPointsInternal {
     #[prost(message, optional, tag = "1")]
     #[validate]
@@ -6009,6 +6234,57 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "SearchBatch"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn dissimilarity_search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DissimilaritySearchPointsInternal>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/DissimilaritySearch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "DissimilaritySearch"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn dissimilarity_search_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::DissimilaritySearchBatchPointsInternal,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/DissimilaritySearchBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.PointsInternal", "DissimilaritySearchBatch"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPointsInternal>,
@@ -6192,6 +6468,17 @@ pub mod points_internal_server {
         async fn search_batch(
             &self,
             request: tonic::Request<super::SearchBatchPointsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        >;
+        async fn dissimilarity_search(
+            &self,
+            request: tonic::Request<super::DissimilaritySearchPointsInternal>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        async fn dissimilarity_search_batch(
+            &self,
+            request: tonic::Request<super::DissimilaritySearchBatchPointsInternal>,
         ) -> std::result::Result<
             tonic::Response<super::SearchBatchResponse>,
             tonic::Status,
@@ -6874,6 +7161,104 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SearchBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/DissimilaritySearch" => {
+                    #[allow(non_camel_case_types)]
+                    struct DissimilaritySearchSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<
+                        super::DissimilaritySearchPointsInternal,
+                    > for DissimilaritySearchSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::DissimilaritySearchPointsInternal,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).dissimilarity_search(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DissimilaritySearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/DissimilaritySearchBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct DissimilaritySearchBatchSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<
+                        super::DissimilaritySearchBatchPointsInternal,
+                    > for DissimilaritySearchBatchSvc<T> {
+                        type Response = super::SearchBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::DissimilaritySearchBatchPointsInternal,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).dissimilarity_search_batch(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DissimilaritySearchBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
