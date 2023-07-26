@@ -3,6 +3,7 @@ import pytest
 from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 
+default_name = ""
 collection_name = 'test_collection_uuid'
 
 
@@ -20,9 +21,11 @@ def test_collection_update():
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                "hnsw_config": {
-                    "m": 32,
-                    "ef_construct": 123,
+                default_name: {
+                    "hnsw_config": {
+                        "m": 32,
+                        "ef_construct": 123,
+                    },
                 },
             },
             "optimizers_config": {
@@ -77,8 +80,10 @@ def test_hnsw_update():
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                "hnsw_config": {
-                    "m": 32,
+                default_name: {
+                    "hnsw_config": {
+                        "m": 32,
+                    },
                 },
             },
             "hnsw_config": {
@@ -106,9 +111,11 @@ def test_hnsw_update():
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                "hnsw_config": {
-                    "m": 10,
-                    "ef_construct": 100,
+                default_name: {
+                    "hnsw_config": {
+                        "m": 10,
+                        "ef_construct": 100,
+                    },
                 },
             },
         }
