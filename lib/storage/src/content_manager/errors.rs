@@ -193,6 +193,15 @@ impl From<serde_cbor::Error> for StorageError {
     }
 }
 
+impl From<serde_json::Error> for StorageError {
+    fn from(err: serde_json::Error) -> Self {
+        StorageError::ServiceError {
+            description: format!("json (de)serialization error: {err}"),
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
 impl From<prost::EncodeError> for StorageError {
     fn from(err: prost::EncodeError) -> Self {
         StorageError::ServiceError {

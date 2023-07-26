@@ -18,6 +18,7 @@ use crate::types::PeerAddressById;
 use crate::StorageError;
 
 const STATE_FILE_NAME: &str = "raft_state";
+const STATE_FILE_NAME_JSON: &str = "raft_state.json";
 
 /// State of the Raft consensus, which should be saved between restarts.
 /// State of the collections, aliases and transfers are stored as regular storage.
@@ -74,13 +75,22 @@ impl Persistent {
     ) -> Result<Self, StorageError> {
         create_dir_all(storage_path.as_ref())?;
         let path = storage_path.as_ref().join(STATE_FILE_NAME);
-        let state = if path.exists() {
+        let path_json = storage_path.as_ref().join(STATE_FILE_NAME_JSON);
+        let state = if path_json.exists() {
+            log::info!("Loading raft state from {}", path_json.display());
+            Self::load_json(path_json)?
+        } else if path.exists() {
             log::info!("Loading raft state from {}", path.display());
-            Self::load(path)?
+            let mut state = Self::load(path)?;
+            // migrate to json
+            state.path = path_json;
+            state.save()?;
+            state
         } else {
-            log::info!("Initializing new raft state at {}", path.display());
-            Self::init(path, first_peer)?
+            log::info!("Initializing new raft state at {}", path_json.display());
+            Self::init(path_json, first_peer)?
         };
+
         log::debug!("State: {:?}", state);
         Ok(state)
     }
@@ -192,10 +202,17 @@ impl Persistent {
         Ok(state)
     }
 
+    fn load_json(path: PathBuf) -> Result<Self, StorageError> {
+        let file = File::open(&path)?;
+        let mut state: Self = serde_json::from_reader(&file)?;
+        state.path = path;
+        Ok(state)
+    }
+
     pub fn save(&self) -> Result<(), StorageError> {
         let result = AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
             let writer = BufWriter::new(file);
-            serde_cbor::to_writer(writer, self)
+            serde_json::to_writer(writer, self)
         });
         log::trace!("Saved state: {:?}", self);
         self.dirty.store(result.is_err(), Ordering::Relaxed);
