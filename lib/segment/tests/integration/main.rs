@@ -7,6 +7,8 @@ pub mod exact_search_test;
 #[cfg(test)]
 pub mod fail_recovery_test;
 #[cfg(test)]
+pub mod filterable_dissimilarity_search;
+#[cfg(test)]
 pub mod filtering_context_check;
 #[cfg(test)]
 pub mod filtrable_hnsw_test;
