@@ -995,34 +995,15 @@ pub struct VectorParamsDiff {
     pub hnsw_config: Option<HnswConfigDiff>,
 }
 
-/// Vector update params separator for single and multiple vector modes
-///
-/// Single mode:
-///
-/// { "hnsw_config": { "m": 8 } }
-///
-/// or multiple mode:
+/// Vector update params for multiple vectors
 ///
 /// {
-///     "default": {
+///     "vector_name": {
 ///         "hnsw_config": { "m": 8 }
 ///     }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 pub struct VectorsConfigDiff(pub BTreeMap<String, VectorParamsDiff>);
-
-impl VectorsConfigDiff {
-    pub fn get_params(&self, name: &str) -> Option<&VectorParamsDiff> {
-        self.0.get(name)
-    }
-
-    /// Iterate over the named vector parameters.
-    ///
-    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
-    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParamsDiff)> + 'a> {
-        Box::new(self.0.iter().map(|(n, p)| (n.as_str(), p)))
-    }
-}
 
 impl Validate for VectorsConfigDiff {
     fn validate(&self) -> Result<(), ValidationErrors> {
