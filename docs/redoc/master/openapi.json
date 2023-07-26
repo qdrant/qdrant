@@ -5645,8 +5645,53 @@
           },
           "with_vector": {
             "$ref": "#/components/schemas/WithVector"
+          },
+          "order_by": {
+            "description": "Order by some other key other than PointID. If specified, `offset` is going to be ignored.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderBy"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "OrderBy": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Direction"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "Direction": {
+        "type": "string",
+        "enum": [
+          "ASC",
+          "DESC"
+        ]
       },
       "ScrollResult": {
         "description": "Result of the points read request",
