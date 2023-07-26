@@ -26,12 +26,12 @@ def test_collection_update():
                         "m": 32,
                         "ef_construct": 123,
                     },
-                },
-                "quantization_config": {
-                    "scalar": {
-                        "type": "int8",
-                        "quantile": 0.8
-                    }
+                    "quantization_config": {
+                        "scalar": {
+                            "type": "int8",
+                            "quantile": 0.8
+                        }
+                    },
                 },
             },
             "optimizers_config": {
@@ -92,12 +92,12 @@ def test_hnsw_update():
                     "hnsw_config": {
                         "m": 32,
                     },
-                },
-                "quantization_config": {
-                    "scalar": {
-                        "type": "int8",
-                        "quantile": 0.8
-                    }
+                    "quantization_config": {
+                        "scalar": {
+                            "type": "int8",
+                            "quantile": 0.8
+                        }
+                    },
                 },
             },
             "hnsw_config": {
@@ -143,12 +143,12 @@ def test_hnsw_update():
                         "m": 10,
                         "ef_construct": 100,
                     },
-                },
-                "quantization_config": {
-                    "product": {
-                        "compression": "x32",
-                        "always_ram": True
-                    }
+                    "quantization_config": {
+                        "product": {
+                            "compression": "x32",
+                            "always_ram": True
+                        }
+                    },
                 },
             },
         }
