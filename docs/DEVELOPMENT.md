@@ -81,6 +81,43 @@ To run Qdrant on local development environment you need to install below:
     ./target/release/qdrant
     ```
 
+#### Docker / Codespaces
+
+If you don't use Linux, or just want to contribute to Qdrant without installing dependencies on your machine, you can use Docker or Codespaces with a `devcontainer` configuration.
+
+Simply add a `.devcontainer/devcontainer.json` file to the project and open it in VSCode or GH Codespaces. It should be already excluded from version control, so you don't need to worry about committing it.
+
+This is a working config that should be able to build and run tests:
+
+```json
+// .devcontainer/devcontainer.json
+
+{
+  "name": "Debian",
+  "image": "mcr.microsoft.com/devcontainers/base:bullseye",
+
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:latest": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:latest": {},
+    "ghcr.io/devcontainers/features/rust:latest": {
+      "profile": "default"
+    },
+    "ghcr.io/devcontainers-contrib/features/protoc:latest": {}
+  },
+  "postCreateCommand": {
+    "apt-get": "sudo apt-get update -y && sudo apt-get upgrade -y && sudo apt-get install -y clang lld cmake protobuf-compiler jq gcc g++ git-lfs",
+    // mostly for running cargo +nightly fmt
+    "nightly": "rustup toolchain install nightly",
+    "pytest": "pip install jsonschema pytest requests schemathesis"
+  },
+
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  "forwardPorts": [6333, 6334]
+}
+```
+
+If you are on Windows, please make sure to [use Unix syle endings](https://docs.github.com/en/get-started/getting-started-with-git/configuring-git-to-handle-line-endings?platform=windows#global-settings-for-line-endings) when committing.
+
 ## Profiling
 
 There are several benchmarks implemented in Qdrant. Benchmarks are not included in CI/CD and might take some time to execute.
