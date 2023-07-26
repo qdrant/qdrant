@@ -272,11 +272,6 @@ mod tests {
         context.run();
         context.wait_finish();
 
-        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
-        staging_buffer.download(&mut vector_storage_params, 0);
-        assert_eq!(vector_storage_params.dim, dim as u32);
-        assert_eq!(vector_storage_params.count, num_vectors as u32);
-
         let mut scores = vec![0.0f32; num_vectors];
         staging_buffer.download_slice(&mut scores, 0);
 
@@ -289,6 +284,11 @@ mod tests {
         );
         context.run();
         context.wait_finish();
+
+        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
+        staging_buffer.download(&mut vector_storage_params, 0);
+        assert_eq!(vector_storage_params.dim, dim as u32);
+        assert_eq!(vector_storage_params.count, num_vectors as u32);
 
         for i in 0..num_vectors {
             let score = DotProductMetric::similarity(&points[0], &points[i]);
