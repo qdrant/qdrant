@@ -116,7 +116,7 @@ This is a working config that should be able to build and run tests:
 }
 ```
 
-If you are on Windows, please make sure to [use Unix syle endings](https://docs.github.com/en/get-started/getting-started-with-git/configuring-git-to-handle-line-endings?platform=windows#global-settings-for-line-endings) when committing.
+If you are on Windows, please make sure to [use Unix style endings](https://docs.github.com/en/get-started/getting-started-with-git/configuring-git-to-handle-line-endings?platform=windows#global-settings-for-line-endings) when committing.
 
 ## Profiling
 
