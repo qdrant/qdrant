@@ -32,7 +32,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use super::config_diff;
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
@@ -995,66 +995,51 @@ pub struct VectorParamsDiff {
     pub hnsw_config: Option<HnswConfigDiff>,
 }
 
-/// Vector update params separator for single and multiple vector modes
-///
-/// Single mode:
-///
-/// { "hnsw_config": { "m": 8 } }
-///
-/// or multiple mode:
+/// Vector update params for multiple vectors
 ///
 /// {
-///     "default": {
+///     "vector_name": {
 ///         "hnsw_config": { "m": 8 }
 ///     }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case", untagged)]
-pub enum VectorsConfigDiff {
-    Single(VectorParamsDiff),
-    Multi(BTreeMap<String, VectorParamsDiff>),
-}
+pub struct VectorsConfigDiff(pub BTreeMap<String, VectorParamsDiff>);
 
 impl VectorsConfigDiff {
-    pub fn get_params(&self, name: &str) -> Option<&VectorParamsDiff> {
-        match self {
-            VectorsConfigDiff::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
-            VectorsConfigDiff::Multi(params) => params.get(name),
-        }
-    }
-
-    /// Iterate over the named vector parameters.
+    /// Check that the vector names in this config are part of the given collection.
     ///
-    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
-    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParamsDiff)> + 'a> {
-        match self {
-            VectorsConfigDiff::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
-            VectorsConfigDiff::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+    /// Returns an error if incompatible.
+    pub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {
+        for vector_name in self.0.keys() {
+            collection
+                .vectors
+                .get_params(vector_name)
+                .map(|_| ())
+                .ok_or_else(|| OperationError::VectorNameNotExists {
+                    received_name: vector_name.into(),
+                })?;
         }
+        Ok(())
     }
 }
 
 impl Validate for VectorsConfigDiff {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            VectorsConfigDiff::Single(single) => single.validate(),
-            VectorsConfigDiff::Multi(multi) => {
-                let errors = multi
-                    .values()
-                    .filter_map(|v| v.validate().err())
-                    .fold(Err(ValidationErrors::new()), |bag, err| {
-                        ValidationErrors::merge(bag, "?", Err(err))
-                    })
-                    .unwrap_err();
-                errors.errors().is_empty().then_some(()).ok_or(errors)
-            }
-        }
+        let errors = self
+            .0
+            .values()
+            .filter_map(|v| v.validate().err())
+            .fold(Err(ValidationErrors::new()), |bag, err| {
+                ValidationErrors::merge(bag, "?", Err(err))
+            })
+            .unwrap_err();
+        errors.errors().is_empty().then_some(()).ok_or(errors)
     }
 }
 
 impl From<VectorParamsDiff> for VectorsConfigDiff {
     fn from(params: VectorParamsDiff) -> Self {
-        VectorsConfigDiff::Single(params)
+        VectorsConfigDiff(BTreeMap::from([("".into(), params)]))
     }
 }
 
