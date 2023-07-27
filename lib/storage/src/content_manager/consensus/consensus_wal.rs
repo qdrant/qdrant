@@ -89,7 +89,7 @@ impl ConsensusOpWal {
                     // It might also be reasonable to add a hard limit on the total size of returned entries here.
                     //
                     // For the same reason, that if `raft::RawNode` request some ginormous range without reasonable
-                    // `max_size` the current `entries` impelmentation will block consensus thread until the whole
+                    // `max_size` the current `entries` implementation will block consensus thread until the whole
                     // range is collected.
                     _ => return true,
                 };
