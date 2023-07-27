@@ -29,7 +29,7 @@ pub struct VectorParamsDiff {
     #[prost(message, optional, tag = "1")]
     #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
-    /// Update quantization params. If none - it is left unchanged.Quantization configuration of vector
+    /// Update quantization params. If none - it is left unchanged.
     #[prost(message, optional, tag = "2")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
