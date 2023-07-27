@@ -5916,18 +5916,11 @@
         }
       },
       "VectorsConfigDiff": {
-        "description": "Vector update params separator for single and multiple vector modes\n\nSingle mode:\n\n{ \"hnsw_config\": { \"m\": 8 } }\n\nor multiple mode:\n\n{ \"default\": { \"hnsw_config\": { \"m\": 8 } } }",
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/VectorParamsDiff"
-          },
-          {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/VectorParamsDiff"
-            }
-          }
-        ]
+        "description": "Vector update params for multiple vectors\n\n{ \"vector_name\": { \"hnsw_config\": { \"m\": 8 } } }",
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/VectorParamsDiff"
+        }
       },
       "VectorParamsDiff": {
         "type": "object",

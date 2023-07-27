@@ -183,7 +183,7 @@ impl CollectionParams {
         &mut self,
         update_vectors_diff: &VectorsConfigDiff,
     ) -> CollectionResult<()> {
-        for (vector_name, update_params) in update_vectors_diff.params_iter() {
+        for (vector_name, update_params) in update_vectors_diff.0.iter() {
             let vector_params = self.get_vector_params_mut(vector_name)?;
 
             // Update and replace vector params from vector specific diff
