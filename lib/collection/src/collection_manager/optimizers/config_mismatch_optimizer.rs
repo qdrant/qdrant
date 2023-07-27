@@ -142,12 +142,13 @@ impl ConfigMismatchOptimizer {
                                 .quantization_config
                                 .as_ref()
                                 .zip(target_quantization)
-                                // Rebuild if current parameters differ from new parameters
-                                .map(|(a, b)| a.mismatch_requires_rebuild(b))
-                                // Or rebuild if we currently have quantization but now disabled it
+                                // Rebuild if current parameters differ from target parameters
+                                .map(|(current, target)| current.mismatch_requires_rebuild(target))
+                                // Or rebuild if we now change the enabled state on an indexed segment
                                 .unwrap_or_else(|| {
-                                    vector_data.quantization_config.is_some()
-                                        && target_quantization.is_none()
+                                    vector_data.index.is_indexed()
+                                        && (vector_data.quantization_config.is_some()
+                                            != target_quantization.is_some())
                                 });
 
                             quantization_mismatch
