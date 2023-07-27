@@ -32,7 +32,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use super::config_diff;
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
@@ -1004,6 +1004,24 @@ pub struct VectorParamsDiff {
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 pub struct VectorsConfigDiff(pub BTreeMap<String, VectorParamsDiff>);
+
+impl VectorsConfigDiff {
+    /// Check that the vector names in this config are part of the given collection.
+    ///
+    /// Returns an error if incompatible.
+    pub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {
+        for vector_name in self.0.keys() {
+            collection
+                .vectors
+                .get_params(vector_name)
+                .map(|_| ())
+                .ok_or_else(|| OperationError::VectorNameNotExists {
+                    received_name: vector_name.into(),
+                })?;
+        }
+        Ok(())
+    }
+}
 
 impl Validate for VectorsConfigDiff {
     fn validate(&self) -> Result<(), ValidationErrors> {

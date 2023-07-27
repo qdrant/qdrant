@@ -133,3 +133,24 @@ def test_hnsw_update():
     config = result["config"]
     assert config["params"]["vectors"]["text"]["hnsw_config"]["m"] == 10
     assert config["params"]["vectors"]["text"]["hnsw_config"]["ef_construct"] == 100
+
+
+def test_invalid_vector_name():
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "i_do_no_exist": {
+                    "hnsw_config": {
+                        "m": 32,
+                    }
+                }
+            },
+        }
+    )
+    assert not response.ok
+    assert response.status_code == 400
+    error = response.json()["status"]["error"]
+    assert error == "Wrong input: Not existing vector name error: i_do_no_exist"

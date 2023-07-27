@@ -1140,6 +1140,7 @@ impl Collection {
         update_vectors_diff: &VectorsConfigDiff,
     ) -> CollectionResult<()> {
         let mut config = self.collection_config.write().await;
+        update_vectors_diff.check_vector_names(&config.params)?;
         config
             .params
             .update_vectors_from_diff(update_vectors_diff)?;
