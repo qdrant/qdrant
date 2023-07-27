@@ -76,14 +76,14 @@ impl Persistent {
         first_peer: bool,
     ) -> Result<Self, StorageError> {
         create_dir_all(storage_path.as_ref())?;
-        let path = storage_path.as_ref().join(STATE_FILE_NAME_CBOR);
+        let path_legacy = storage_path.as_ref().join(STATE_FILE_NAME_CBOR);
         let path_json = storage_path.as_ref().join(STATE_FILE_NAME);
         let state = if path_json.exists() {
             log::info!("Loading raft state from {}", path_json.display());
             Self::load_json(path_json)?
-        } else if path.exists() {
-            log::info!("Loading raft state from {}", path.display());
-            let mut state = Self::load(path)?;
+        } else if path_legacy.exists() {
+            log::info!("Loading raft state from {}", path_legacy.display());
+            let mut state = Self::load(path_legacy)?;
             // migrate to json
             state.path = path_json;
             state.save()?;
