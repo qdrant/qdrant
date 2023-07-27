@@ -3,8 +3,8 @@ use std::path::Path;
 
 use itertools::Itertools;
 use prost::Message;
+use protobuf::Message as _;
 use raft::eraftpb::Entry as RaftEntry;
-use raft::util::limit_size;
 use wal::Wal;
 
 use crate::content_manager::consensus_manager;
@@ -56,8 +56,51 @@ impl ConsensusOpWal {
         high: u64,
         max_size: Option<u64>,
     ) -> raft::Result<Vec<RaftEntry>> {
-        let mut entries = (low..high).map(|id| self.entry(id)).try_collect()?;
-        limit_size(&mut entries, max_size);
+        let mut size = 0;
+
+        let entries = (low..high)
+            .map(|id| self.entry(id))
+            .take_while(|entry| {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => return true,
+                };
+
+                // It's somewhat unclear how `max_size == Some(0)` should be treated.
+                //
+                // `raft::storage::Storage::entries` documentation and `raft::util::limit_size` implementation
+                // suggest that it means "return only a single entry", but why not request a single entry
+                // using `low`/`high` arguments in that case? 🤔
+                //
+                // Another reasonable interpretation might be "unlimited" (e.g., same as `None` and `u64::MAX`).
+                //
+                // `raft::RawNode` would request ridiculous range (e.g., 1 mil entries) with `max_size == Some(0)`,
+                // which, IMO, does not make much sense. 😕
+                //
+                // The current implementation follows `raft::storage::Storage::entries` spec,
+                // but further research/experimentation might be needed.
+                //
+                // See:
+                // - https://docs.rs/raft/latest/raft/storage/trait.Storage.html#tymethod.entries
+                // - https://github.com/tikv/raft-rs/blob/v0.7.0/src/util.rs#L56-L71
+                let max_size = match max_size {
+                    Some(max_size) if max_size < u64::MAX => max_size,
+
+                    // It might also be reasonable to add a hard limit on the total size of returned entries here.
+                    //
+                    // For the same reason, that if `raft::RawNode` request some ginormous range without reasonable
+                    // `max_size` the current `entries` implementation will block consensus thread until the whole
+                    // range is collected.
+                    _ => return true,
+                };
+
+                let first_entry = size == 0;
+                size += u64::from(entry.compute_size());
+
+                size <= max_size || first_entry
+            })
+            .try_collect()?;
+
         Ok(entries)
     }
 
