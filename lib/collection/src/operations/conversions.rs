@@ -362,14 +362,15 @@ impl TryFrom<api::grpc::qdrant::vectors_config_diff::Config> for VectorsConfigDi
     ) -> Result<Self, Self::Error> {
         Ok(match value {
             api::grpc::qdrant::vectors_config_diff::Config::Params(vector_params) => {
-                VectorsConfigDiff::Single(vector_params.try_into()?)
+                let diff: VectorParamsDiff = vector_params.try_into()?;
+                VectorsConfigDiff::from(diff)
             }
             api::grpc::qdrant::vectors_config_diff::Config::ParamsMap(vectors_params) => {
                 let mut params_map = BTreeMap::new();
                 for (name, params) in vectors_params.map {
                     params_map.insert(name, params.try_into()?);
                 }
-                VectorsConfigDiff::Multi(params_map)
+                VectorsConfigDiff(params_map)
             }
         })
     }

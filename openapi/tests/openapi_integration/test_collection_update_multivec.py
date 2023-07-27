@@ -1,32 +1,31 @@
 import pytest
 
 from .helpers.helpers import request_with_validation
-from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.collection_setup import drop_collection, multivec_collection_setup
 
-default_name = ""
-collection_name = 'test_collection_uuid'
+collection_name = 'test_collection_update_multivec'
 
 
 @pytest.fixture(autouse=True)
 def setup():
-    basic_collection_setup(collection_name=collection_name)
+    multivec_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_collection_update():
+def test_collection_update_multivec():
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="PATCH",
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                default_name: {
+                "image": {
                     "hnsw_config": {
                         "m": 32,
                         "ef_construct": 123,
-                    },
-                },
+                    }
+                }
             },
             "optimizers_config": {
                 "default_segment_number": 6,
@@ -45,7 +44,9 @@ def test_collection_update():
             "points": [
                 {
                     "id": 7,
-                    "vector": [0.15, 0.31, 0.76, 0.74],
+                    "vector": {
+                        "image": [0.15, 0.31, 0.76, 0.74]
+                    },
                     "payload": {"city": "Rome"}
                 }
             ]
@@ -80,11 +81,11 @@ def test_hnsw_update():
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                default_name: {
+                "text": {
                     "hnsw_config": {
                         "m": 32,
-                    },
-                },
+                    }
+                }
             },
             "hnsw_config": {
                 "ef_construct": 123,
@@ -101,7 +102,7 @@ def test_hnsw_update():
     assert response.ok
     result = response.json()["result"]
     config = result["config"]
-    assert config["params"]["vectors"]["hnsw_config"]["m"] == 32
+    assert config["params"]["vectors"]["text"]["hnsw_config"]["m"] == 32
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 123
 
@@ -111,12 +112,12 @@ def test_hnsw_update():
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                default_name: {
+                "text": {
                     "hnsw_config": {
                         "m": 10,
                         "ef_construct": 100,
-                    },
-                },
+                    }
+                }
             },
         }
     )
@@ -130,5 +131,26 @@ def test_hnsw_update():
     assert response.ok
     result = response.json()["result"]
     config = result["config"]
-    assert config["params"]["vectors"]["hnsw_config"]["m"] == 10
-    assert config["params"]["vectors"]["hnsw_config"]["ef_construct"] == 100
+    assert config["params"]["vectors"]["text"]["hnsw_config"]["m"] == 10
+    assert config["params"]["vectors"]["text"]["hnsw_config"]["ef_construct"] == 100
+
+
+def test_invalid_vector_name():
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "i_do_no_exist": {
+                    "hnsw_config": {
+                        "m": 32,
+                    }
+                }
+            },
+        }
+    )
+    assert not response.ok
+    assert response.status_code == 400
+    error = response.json()["status"]["error"]
+    assert error == "Wrong input: Not existing vector name error: i_do_no_exist"
