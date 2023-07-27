@@ -17,8 +17,10 @@ use crate::content_manager::consensus::entry_queue::{EntryApplyProgressQueue, En
 use crate::types::PeerAddressById;
 use crate::StorageError;
 
-const STATE_FILE_NAME: &str = "raft_state";
-const STATE_FILE_NAME_JSON: &str = "raft_state.json";
+// Deprecated, use `STATE_FILE_NAME` instead
+const STATE_FILE_NAME_CBOR: &str = "raft_state";
+
+const STATE_FILE_NAME: &str = "raft_state.json";
 
 /// State of the Raft consensus, which should be saved between restarts.
 /// State of the collections, aliases and transfers are stored as regular storage.
@@ -74,8 +76,8 @@ impl Persistent {
         first_peer: bool,
     ) -> Result<Self, StorageError> {
         create_dir_all(storage_path.as_ref())?;
-        let path = storage_path.as_ref().join(STATE_FILE_NAME);
-        let path_json = storage_path.as_ref().join(STATE_FILE_NAME_JSON);
+        let path = storage_path.as_ref().join(STATE_FILE_NAME_CBOR);
+        let path_json = storage_path.as_ref().join(STATE_FILE_NAME);
         let state = if path_json.exists() {
             log::info!("Loading raft state from {}", path_json.display());
             Self::load_json(path_json)?
