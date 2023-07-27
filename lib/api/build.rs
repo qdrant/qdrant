@@ -151,7 +151,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
             ("DissimilaritySearchPoints.collection_name", "length(min = 1, max = 255)"),
-            ("DissimilaritySearchPoints.amout", "range(min = 1)"),
+            ("DissimilaritySearchPoints.amount", "range(min = 1)"),
             ("DissimilaritySearchPoints.params", ""),
             ("DissimilaritySearchPoints.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
             ("DissimilaritySearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
