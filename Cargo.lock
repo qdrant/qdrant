@@ -4597,6 +4597,7 @@ dependencies = [
  "parking_lot",
  "proptest",
  "prost",
+ "protobuf",
  "raft",
  "rand 0.8.5",
  "reqwest",
