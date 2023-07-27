@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -201,6 +202,64 @@ where
         // and notify the user that they better use the default IO implementation.
 
         pq.into_vec()
+    }
+
+    fn peek_worse_iter(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        if top == 0 {
+            return vec![];
+        }
+
+        let mut pq = FixedLengthPriorityQueue::new(top);
+        let points_stream = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
+
+        self.storage
+            .read_vectors_async(points_stream, |_, point_id, other_vector| {
+                let scored_point_offset = ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                };
+                pq.push(Reverse(scored_point_offset));
+            })
+            .unwrap();
+
+        // ToDo: io_uring is experimental, it can fail if it is not supported.
+        // Instead of silently falling back to the sync implementation, we prefer to panic
+        // and notify the user that they better use the default IO implementation.
+
+        pq.into_vec().iter().map(|x| x.0).collect()
+    }
+
+    fn peek_worse_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+        if top == 0 {
+            return vec![];
+        }
+
+        let points_stream = (0..self.points_count)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
+
+        let mut pq = FixedLengthPriorityQueue::new(top);
+        self.storage
+            .read_vectors_async(points_stream, |_, point_id, other_vector| {
+                let scored_point_offset = ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                };
+                pq.push(Reverse(scored_point_offset));
+            })
+            .unwrap();
+
+        // ToDo: io_uring is experimental, it can fail if it is not supported.
+        // Instead of silently falling back to the sync implementation, we prefer to panic
+        // and notify the user that they better use the default IO implementation.
+
+        pq.into_vec().iter().map(|x| x.0).collect()
     }
 }
 
