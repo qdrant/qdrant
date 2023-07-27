@@ -104,8 +104,8 @@ def test_edit_collection_params():
                             "quantile": 0.8
                         }
                     },
+                    "on_disk": True,
                 },
-                "on_disk": True,
             },
             "hnsw_config": {
                 "ef_construct": 123,
@@ -161,8 +161,8 @@ def test_edit_collection_params():
                             "always_ram": True
                         }
                     },
+                    "on_disk": False,
                 },
-                "on_disk": False,
             },
             "params": {
                 "on_disk_payload": False,
