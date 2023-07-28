@@ -1325,6 +1325,7 @@ impl FieldCondition {
             geo_radius: Some(geo_radius),
             geo_polygon: None,
             values_count: None,
+            like: None,
         }
     }
 
