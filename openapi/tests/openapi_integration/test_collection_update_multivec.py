@@ -172,6 +172,30 @@ def test_hnsw_update():
     assert config["quantization_config"]["scalar"]["quantile"] == 0.99
     assert config["quantization_config"]["scalar"]["always_ram"]
 
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "text": {
+                    "quantization_config": "Disabled"
+                },
+            },
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    config = result["config"]
+    assert config["params"]["vectors"]["text"].get("quantization_config") is None
+
 
 def test_invalid_vector_name():
     response = request_with_validation(
