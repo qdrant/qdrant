@@ -8,5 +8,5 @@ layout(set = 0, binding = 0) buffer ScoresData {
 } scores;
 
 void main() {
-    scores.data[gl_GlobalInvocationID.x] = 42.0;// similarity(0, gl_GlobalInvocationID.x);
+    scores.data[gl_GlobalInvocationID.x] = similarity(0, gl_GlobalInvocationID.x);
 }
