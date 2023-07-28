@@ -1,5 +1,8 @@
 use collection::config::CollectionConfig;
-use collection::operations::config_diff::{CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff, WalConfigDiff};
+use collection::operations::config_diff::{
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+    WalConfigDiff,
+};
 use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};

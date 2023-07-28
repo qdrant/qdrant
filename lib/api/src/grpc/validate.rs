@@ -112,7 +112,6 @@ impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
     }
 }
 
-
 /// Validate that `value` is a non-empty string or `None`.
 pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError> {
     match value {
