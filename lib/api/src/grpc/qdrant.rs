@@ -32,7 +32,7 @@ pub struct VectorParamsDiff {
     /// Update quantization params. If none - it is left unchanged.
     #[prost(message, optional, tag = "2")]
     #[validate]
-    pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -296,6 +296,31 @@ pub mod quantization_config {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Disabled {}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationConfigDiff {
+    #[prost(oneof = "quantization_config_diff::Quantization", tags = "1, 2, 3")]
+    #[validate]
+    pub quantization: ::core::option::Option<quantization_config_diff::Quantization>,
+}
+/// Nested message and enum types in `QuantizationConfigDiff`.
+pub mod quantization_config_diff {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Quantization {
+        #[prost(message, tag = "1")]
+        Scalar(super::ScalarQuantization),
+        #[prost(message, tag = "2")]
+        Product(super::ProductQuantization),
+        #[prost(message, tag = "3")]
+        Disabled(super::Disabled),
+    }
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
@@ -374,7 +399,7 @@ pub struct UpdateCollection {
     /// Quantization configuration of vector
     #[prost(message, optional, tag = "7")]
     #[validate]
-    pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

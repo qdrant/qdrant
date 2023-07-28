@@ -101,6 +101,18 @@ impl Validate for crate::grpc::qdrant::quantization_config::Quantization {
     }
 }
 
+impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::quantization_config_diff::Quantization;
+        match self {
+            Quantization::Scalar(scalar) => scalar.validate(),
+            Quantization::Product(product) => product.validate(),
+            Quantization::Disabled(_) => Ok(()),
+        }
+    }
+}
+
+
 /// Validate that `value` is a non-empty string or `None`.
 pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError> {
     match value {

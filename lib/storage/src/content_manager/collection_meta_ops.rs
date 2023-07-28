@@ -1,7 +1,5 @@
 use collection::config::CollectionConfig;
-use collection::operations::config_diff::{
-    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
-};
+use collection::operations::config_diff::{CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff, WalConfigDiff};
 use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
@@ -195,7 +193,7 @@ pub struct UpdateCollection {
     /// Quantization parameters to update. If none - it is left unchanged.
     #[serde(default, alias = "quantization")]
     #[validate]
-    pub quantization_config: Option<QuantizationConfig>,
+    pub quantization_config: Option<QuantizationConfigDiff>,
 }
 
 /// Operation for updating parameters of the existing collection

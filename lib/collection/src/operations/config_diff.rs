@@ -2,13 +2,12 @@ use std::num::NonZeroU32;
 
 use merge::Merge;
 use schemars::JsonSchema;
-use segment::types::HnswConfig;
+use segment::types::{HnswConfig, ProductQuantization, ScalarQuantization};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
 
-use super::types::{VectorParams, VectorParamsDiff};
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
@@ -190,10 +189,6 @@ impl DiffConfig<WalConfig> for WalConfigDiff {}
 
 impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
 
-impl DiffConfig<VectorParams> for VectorParamsDiff {}
-
-impl DiffConfig<VectorParamsDiff> for VectorParamsDiff {}
-
 impl From<HnswConfig> for HnswConfigDiff {
     fn from(config: HnswConfig) -> Self {
         HnswConfigDiff::from_full(&config).unwrap()
@@ -283,6 +278,36 @@ pub fn is_empty<T: Serialize>(config: &T) -> CollectionResult<bool> {
         Value::Object(values) => values.is_empty(),
         Value::Bool(_) | Value::Number(_) => false,
     })
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+pub enum Disabled {
+    Disabled,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum QuantizationConfigDiff {
+    Scalar(ScalarQuantization),
+    Product(ProductQuantization),
+    Disabled(Disabled),
+}
+
+impl QuantizationConfigDiff {
+    pub fn new_disabled() -> Self {
+        QuantizationConfigDiff::Disabled(Disabled::Disabled)
+    }
+}
+
+impl Validate for QuantizationConfigDiff {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            QuantizationConfigDiff::Scalar(scalar) => scalar.validate(),
+            QuantizationConfigDiff::Product(product) => product.validate(),
+            QuantizationConfigDiff::Disabled(_) => Ok(()),
+        }
+    }
 }
 
 #[cfg(test)]

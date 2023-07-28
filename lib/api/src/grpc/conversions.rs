@@ -23,9 +23,10 @@ use crate::grpc::qdrant::{
     HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
     ListValue, Match, NamedVectors, NestedCondition, PayloadExcludeSelector,
     PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value,
-    ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    ProductQuantization, QuantizationConfig, QuantizationSearchParams,
+    QuantizationType, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint,
+    SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors,
+    VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -523,38 +524,91 @@ impl TryFrom<PointId> for segment::types::PointIdType {
     }
 }
 
+impl From<segment::types::ScalarQuantization> for ScalarQuantization {
+    fn from(value: segment::types::ScalarQuantization) -> Self {
+        let config = value.scalar;
+        ScalarQuantization {
+            r#type: match config.r#type {
+                segment::types::ScalarType::Int8 => {
+                    crate::grpc::qdrant::QuantizationType::Int8 as i32
+                }
+            },
+            quantile: config.quantile,
+            always_ram: config.always_ram,
+        }
+    }
+}
+
+impl TryFrom<ScalarQuantization> for segment::types::ScalarQuantization {
+    type Error = Status;
+
+    fn try_from(value: ScalarQuantization) -> Result<Self, Self::Error> {
+        Ok(segment::types::ScalarQuantization {
+            scalar: segment::types::ScalarQuantizationConfig {
+                r#type: match QuantizationType::from_i32(value.r#type) {
+                    Some(QuantizationType::Int8) => segment::types::ScalarType::Int8,
+                    Some(QuantizationType::UnknownQuantization) | None => {
+                        return Err(Status::invalid_argument("Unknown quantization type"))
+                    }
+                },
+                quantile: value.quantile,
+                always_ram: value.always_ram,
+            },
+        })
+    }
+}
+
+impl From<segment::types::ProductQuantization> for ProductQuantization {
+    fn from(value: segment::types::ProductQuantization) -> Self {
+        let config = value.product;
+        ProductQuantization {
+            compression: match config.compression {
+                segment::types::CompressionRatio::X4 => CompressionRatio::X4 as i32,
+                segment::types::CompressionRatio::X8 => CompressionRatio::X8 as i32,
+                segment::types::CompressionRatio::X16 => CompressionRatio::X16 as i32,
+                segment::types::CompressionRatio::X32 => CompressionRatio::X32 as i32,
+                segment::types::CompressionRatio::X64 => CompressionRatio::X64 as i32,
+            },
+            always_ram: config.always_ram,
+        }
+    }
+}
+
+impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
+    type Error = Status;
+
+    fn try_from(value: ProductQuantization) -> Result<Self, Self::Error> {
+        Ok(segment::types::ProductQuantization {
+            product: segment::types::ProductQuantizationConfig {
+                compression: match CompressionRatio::from_i32(value.compression) {
+                    None => {
+                        return Err(Status::invalid_argument(
+                            "Unknown compression ratio".to_string(),
+                        ))
+                    }
+                    Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
+                    Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
+                    Some(CompressionRatio::X16) => segment::types::CompressionRatio::X16,
+                    Some(CompressionRatio::X32) => segment::types::CompressionRatio::X32,
+                    Some(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
+                },
+                always_ram: value.always_ram,
+            },
+        })
+    }
+}
+
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
-            segment::types::QuantizationConfig::Scalar(segment::types::ScalarQuantization {
-                scalar: config,
-            }) => Self {
+            segment::types::QuantizationConfig::Scalar(scalar) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Scalar(
-                    ScalarQuantization {
-                        r#type: match config.r#type {
-                            segment::types::ScalarType::Int8 => {
-                                crate::grpc::qdrant::QuantizationType::Int8 as i32
-                            }
-                        },
-                        quantile: config.quantile,
-                        always_ram: config.always_ram,
-                    },
+                    scalar.into(),
                 )),
             },
-            segment::types::QuantizationConfig::Product(segment::types::ProductQuantization {
-                product: config,
-            }) => Self {
+            segment::types::QuantizationConfig::Product(product) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Product(
-                    super::qdrant::ProductQuantization {
-                        compression: match config.compression {
-                            segment::types::CompressionRatio::X4 => CompressionRatio::X4 as i32,
-                            segment::types::CompressionRatio::X8 => CompressionRatio::X8 as i32,
-                            segment::types::CompressionRatio::X16 => CompressionRatio::X16 as i32,
-                            segment::types::CompressionRatio::X32 => CompressionRatio::X32 as i32,
-                            segment::types::CompressionRatio::X64 => CompressionRatio::X64 as i32,
-                        },
-                        always_ram: config.always_ram,
-                    },
+                    product.into(),
                 )),
             },
         }
@@ -569,46 +623,11 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             .quantization
             .ok_or_else(|| Status::invalid_argument("Unable to convert quantization config"))?;
         match value {
-            super::qdrant::quantization_config::Quantization::Scalar(config) => {
-                Ok(segment::types::ScalarQuantizationConfig {
-                    r#type: match crate::grpc::qdrant::QuantizationType::from_i32(config.r#type) {
-                        None => {
-                            return Err(Status::invalid_argument(
-                                "Error converting quantization type: None",
-                            ));
-                        }
-                        Some(crate::grpc::qdrant::QuantizationType::UnknownQuantization) => {
-                            return Err(Status::invalid_argument(
-                                "Error converting quantization type: UnknownQuantization",
-                            ));
-                        }
-                        Some(crate::grpc::qdrant::QuantizationType::Int8) => {
-                            segment::types::ScalarType::Int8
-                        }
-                    },
-                    quantile: config.quantile,
-                    always_ram: config.always_ram,
-                }
-                .into())
-            }
+            super::qdrant::quantization_config::Quantization::Scalar(config) => Ok(
+                segment::types::QuantizationConfig::Scalar(config.try_into()?),
+            ),
             super::qdrant::quantization_config::Quantization::Product(config) => Ok(
-                segment::types::QuantizationConfig::Product(segment::types::ProductQuantization {
-                    product: segment::types::ProductQuantizationConfig {
-                        compression: match CompressionRatio::from_i32(config.compression) {
-                            None => {
-                                return Err(Status::invalid_argument(
-                                    "Error converting compression ratio: None",
-                                ));
-                            }
-                            Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
-                            Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
-                            Some(CompressionRatio::X16) => segment::types::CompressionRatio::X16,
-                            Some(CompressionRatio::X32) => segment::types::CompressionRatio::X32,
-                            Some(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
-                        },
-                        always_ram: config.always_ram,
-                    },
-                }),
+                segment::types::QuantizationConfig::Product(config.try_into()?),
             ),
         }
     }

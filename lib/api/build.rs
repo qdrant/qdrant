@@ -116,6 +116,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("VectorParamsDiff.quantization_config", ""),
             ("VectorParamsDiffMap.map", ""),
             ("QuantizationConfig.quantization", ""),
+            ("QuantizationConfigDiff.quantization", ""),
             ("ScalarQuantization.quantile", "custom = \"crate::grpc::validate::validate_f32_range_min_0_5_max_1\""),
         ], &[
             "ListCollectionsRequest",
@@ -124,6 +125,9 @@ fn configure_validation(builder: Builder) -> Builder {
             "CollectionClusterInfoRequest",
             "UpdateCollectionClusterSetupRequest",
             "ProductQuantization",
+            "Disabled",
+            "QuantizationConfigDiff",
+            "quantization_config_diff::Quantization"
         ])
         // Service: collections_internal.proto
         .validates(&[

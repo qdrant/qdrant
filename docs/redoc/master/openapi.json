@@ -5918,7 +5918,7 @@
             "default": null,
             "anyOf": [
               {
-                "$ref": "#/components/schemas/QuantizationConfig"
+                "$ref": "#/components/schemas/QuantizationConfigDiff"
               },
               {
                 "nullable": true
@@ -5952,7 +5952,7 @@
             "description": "Update params for quantization. If none - it is left unchanged.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/QuantizationConfig"
+                "$ref": "#/components/schemas/QuantizationConfigDiff"
               },
               {
                 "nullable": true
@@ -5960,6 +5960,25 @@
             ]
           }
         }
+      },
+      "QuantizationConfigDiff": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ScalarQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/ProductQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/Disabled"
+          }
+        ]
+      },
+      "Disabled": {
+        "type": "string",
+        "enum": [
+          "Disabled"
+        ]
       },
       "CollectionParamsDiff": {
         "type": "object",

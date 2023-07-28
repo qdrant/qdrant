@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::config_diff::DiffConfig;
+use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
 use crate::operations::types::{
     CollectionError, CollectionResult, VectorParams, VectorsConfig, VectorsConfigDiff,
 };
@@ -186,8 +186,25 @@ impl CollectionParams {
         for (vector_name, update_params) in update_vectors_diff.0.iter() {
             let vector_params = self.get_vector_params_mut(vector_name)?;
 
-            // Update and replace vector params from vector specific diff
-            *vector_params = update_params.clone().update(vector_params)?;
+            if let Some(hnsw_diff) = &update_params.hnsw_config {
+                if let Some(existing_hnsw) = &vector_params.hnsw_config {
+                    vector_params.hnsw_config = Some(hnsw_diff.clone().update(existing_hnsw)?);
+                } else {
+                    vector_params.hnsw_config = Some(hnsw_diff.clone());
+                }
+            }
+
+            if let Some(quan_diff) = &update_params.quantization_config {
+                vector_params.quantization_config = match quan_diff.clone() {
+                    QuantizationConfigDiff::Scalar(scalar) => {
+                        Some(QuantizationConfig::Scalar(scalar))
+                    }
+                    QuantizationConfigDiff::Product(product) => {
+                        Some(QuantizationConfig::Product(product))
+                    }
+                    QuantizationConfigDiff::Disabled(_) => None,
+                }
+            }
         }
         Ok(())
     }

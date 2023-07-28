@@ -2,14 +2,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
+use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
-use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{
-    CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
-    ScalarQuantization, ScalarQuantizationConfig, ScalarType,
-};
+use segment::types::{Distance, QuantizationConfig};
 use tonic::Status;
 
 use super::types::{
@@ -27,7 +24,8 @@ use crate::operations::cluster_ops::{
     Replica, ReplicateShardOperation,
 };
 use crate::operations::config_diff::{
-    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+    WalConfigDiff,
 };
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
@@ -174,6 +172,23 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
             indexing_threshold: value.indexing_threshold.map(|v| v as usize),
             flush_interval_sec: value.flush_interval_sec,
             max_optimization_threads: value.max_optimization_threads.map(|v| v as usize),
+        }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::QuantizationConfigDiff> for QuantizationConfigDiff {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::QuantizationConfigDiff) -> Result<Self, Self::Error> {
+        match value.quantization {
+            None => Err(Status::invalid_argument(
+                "Quantization type is not specified",
+            )),
+            Some(quantization) => match quantization {
+                Quantization::Scalar(scalar) => Ok(Self::Scalar(scalar.try_into()?)),
+                Quantization::Product(product) => Ok(Self::Product(product.try_into()?)),
+                Quantization::Disabled(_) => Ok(Self::new_disabled()),
+            },
         }
     }
 }
@@ -389,8 +404,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             quantization_config: vector_params
                 .quantization_config
                 .map(grpc_to_segment_quantization_config)
-                .transpose()
-                .map_err(Status::invalid_argument)?,
+                .transpose()?,
             on_disk: vector_params.on_disk,
         })
     }
@@ -404,55 +418,24 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
             hnsw_config: vector_params.hnsw_config.map(Into::into),
             quantization_config: vector_params
                 .quantization_config
-                .map(grpc_to_segment_quantization_config)
-                .transpose()
-                .map_err(Status::invalid_argument)?,
+                .map(TryInto::try_into)
+                .transpose()?,
         })
     }
 }
 
 fn grpc_to_segment_quantization_config(
     value: api::grpc::qdrant::QuantizationConfig,
-) -> Result<QuantizationConfig, String> {
+) -> Result<QuantizationConfig, Status> {
     let quantization = value
         .quantization
-        .ok_or_else(|| "QuantizationConfig should always have a value".to_string())?;
+        .ok_or_else(|| Status::invalid_argument("QuantizationConfig must contain quantization"))?;
     match quantization {
         api::grpc::qdrant::quantization_config::Quantization::Scalar(config) => {
-            Ok(QuantizationConfig::Scalar(ScalarQuantization {
-                scalar: ScalarQuantizationConfig {
-                    r#type: match QuantizationType::from_i32(config.r#type) {
-                        Some(QuantizationType::Int8) => ScalarType::Int8,
-                        Some(QuantizationType::UnknownQuantization) | None => {
-                            return Err(format!("Cannot convert ordering: {}", config.r#type));
-                        }
-                    },
-                    quantile: config.quantile,
-                    always_ram: config.always_ram,
-                },
-            }))
+            Ok(QuantizationConfig::Scalar(config.try_into()?))
         }
         api::grpc::qdrant::quantization_config::Quantization::Product(config) => {
-            Ok(QuantizationConfig::Product(ProductQuantization {
-                product: ProductQuantizationConfig {
-                    compression: match api::grpc::qdrant::CompressionRatio::from_i32(
-                        config.compression,
-                    ) {
-                        None => {
-                            return Err(format!(
-                                "Cannot convert compression ratio: {}",
-                                config.compression
-                            ));
-                        }
-                        Some(api::grpc::qdrant::CompressionRatio::X4) => CompressionRatio::X4,
-                        Some(api::grpc::qdrant::CompressionRatio::X8) => CompressionRatio::X8,
-                        Some(api::grpc::qdrant::CompressionRatio::X16) => CompressionRatio::X16,
-                        Some(api::grpc::qdrant::CompressionRatio::X32) => CompressionRatio::X32,
-                        Some(api::grpc::qdrant::CompressionRatio::X64) => CompressionRatio::X64,
-                    },
-                    always_ram: config.always_ram,
-                },
-            }))
+            Ok(QuantizationConfig::Product(config.try_into()?))
         }
     }
 }
