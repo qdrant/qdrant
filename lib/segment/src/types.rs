@@ -403,7 +403,7 @@ pub enum ScalarType {
     Int8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
@@ -425,7 +425,7 @@ impl ScalarQuantizationConfig {
     /// - this configuration does not match `other`
     /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
-        self.r#type != other.r#type || self.quantile != other.quantile
+        self != other
     }
 }
 
@@ -433,14 +433,6 @@ impl ScalarQuantizationConfig {
 pub struct ScalarQuantization {
     #[validate]
     pub scalar: ScalarQuantizationConfig,
-}
-
-impl PartialEq for ScalarQuantizationConfig {
-    fn eq(&self, other: &Self) -> bool {
-        self.quantile == other.quantile
-            && self.always_ram == other.always_ram
-            && self.r#type == other.r#type
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -459,7 +451,7 @@ impl ProductQuantizationConfig {
     /// - this configuration does not match `other`
     /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
-        self.compression != other.compression
+        self != other
     }
 }
 
@@ -493,12 +485,7 @@ impl QuantizationConfig {
     /// - this configuration does not match `other`
     /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Scalar(a), Self::Scalar(b)) => a.scalar.mismatch_requires_rebuild(&b.scalar),
-            (Self::Scalar(_), _) => true,
-            (Self::Product(a), Self::Product(b)) => a.product.mismatch_requires_rebuild(&b.product),
-            (Self::Product(_), _) => true,
-        }
+        self != other
     }
 }
 
