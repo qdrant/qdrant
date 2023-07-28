@@ -1,6 +1,7 @@
 use collection::config::CollectionConfig;
 use collection::operations::config_diff::{
-    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+    WalConfigDiff,
 };
 use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
@@ -192,6 +193,10 @@ pub struct UpdateCollection {
     /// HNSW parameters to update for the collection index. If none - it is left unchanged.
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
+    /// Quantization parameters to update. If none - it is left unchanged.
+    #[serde(default, alias = "quantization")]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfigDiff>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -212,6 +217,7 @@ impl UpdateCollectionOperation {
                 hnsw_config: None,
                 params: None,
                 optimizers_config: None,
+                quantization_config: None,
             },
             shard_replica_changes: None,
         }

@@ -403,7 +403,7 @@ pub enum ScalarType {
     Int8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
@@ -418,18 +418,21 @@ pub struct ScalarQuantizationConfig {
     pub always_ram: Option<bool>,
 }
 
+impl ScalarQuantizationConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a quantization rebuild is required
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct ScalarQuantization {
     #[validate]
     pub scalar: ScalarQuantizationConfig,
-}
-
-impl PartialEq for ScalarQuantizationConfig {
-    fn eq(&self, other: &Self) -> bool {
-        self.quantile == other.quantile
-            && self.always_ram == other.always_ram
-            && self.r#type == other.r#type
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -439,6 +442,17 @@ pub struct ProductQuantizationConfig {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
+}
+
+impl ProductQuantizationConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a quantization rebuild is required
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -462,6 +476,17 @@ impl Eq for ScalarQuantizationConfig {}
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
+}
+
+impl QuantizationConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a quantization rebuild is required
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
 }
 
 impl Validate for QuantizationConfig {

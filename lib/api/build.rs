@@ -92,6 +92,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("UpdateCollection.hnsw_config", ""),
             ("UpdateCollection.vectors_config", ""),
+            ("UpdateCollection.quantization_config", ""),
             ("DeleteCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("CollectionConfig.params", ""),
@@ -112,8 +113,10 @@ fn configure_validation(builder: Builder) -> Builder {
             ("VectorParams.quantization_config", ""),
             ("VectorParamsMap.map", ""),
             ("VectorParamsDiff.hnsw_config", ""),
+            ("VectorParamsDiff.quantization_config", ""),
             ("VectorParamsDiffMap.map", ""),
             ("QuantizationConfig.quantization", ""),
+            ("QuantizationConfigDiff.quantization", ""),
             ("ScalarQuantization.quantile", "custom = \"crate::grpc::validate::validate_f32_range_min_0_5_max_1\""),
         ], &[
             "ListCollectionsRequest",
@@ -122,6 +125,9 @@ fn configure_validation(builder: Builder) -> Builder {
             "CollectionClusterInfoRequest",
             "UpdateCollectionClusterSetupRequest",
             "ProductQuantization",
+            "Disabled",
+            "QuantizationConfigDiff",
+            "quantization_config_diff::Quantization"
         ])
         // Service: collections_internal.proto
         .validates(&[
