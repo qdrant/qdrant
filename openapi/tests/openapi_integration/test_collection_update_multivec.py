@@ -24,7 +24,13 @@ def test_collection_update_multivec():
                     "hnsw_config": {
                         "m": 32,
                         "ef_construct": 123,
-                    }
+                    },
+                    "quantization_config": {
+                        "scalar": {
+                            "type": "int8",
+                            "quantile": 0.8
+                        }
+                    },
                 }
             },
             "optimizers_config": {
@@ -72,8 +78,10 @@ def test_hnsw_update():
     result = response.json()["result"]
     config = result["config"]
     assert "hnsw_config" not in config["params"]["vectors"]
+    assert "quantization_config" not in config["params"]["vectors"]
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 100
+    assert config["quantization_config"] is None
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -84,11 +92,24 @@ def test_hnsw_update():
                 "text": {
                     "hnsw_config": {
                         "m": 32,
-                    }
+                    },
+                    "quantization_config": {
+                        "scalar": {
+                            "type": "int8",
+                            "quantile": 0.8
+                        }
+                    },
                 }
             },
             "hnsw_config": {
                 "ef_construct": 123,
+            },
+            "quantization_config": {
+                "scalar": {
+                    "type": "int8",
+                    "quantile": 0.99,
+                    "always_ram": True
+                }
             },
         }
     )
@@ -103,8 +124,14 @@ def test_hnsw_update():
     result = response.json()["result"]
     config = result["config"]
     assert config["params"]["vectors"]["text"]["hnsw_config"]["m"] == 32
+    assert config["params"]["vectors"]["text"]["quantization_config"]["scalar"]["type"] == "int8"
+    assert config["params"]["vectors"]["text"]["quantization_config"]["scalar"]["quantile"] == 0.8
+    assert "always_ram" not in config["params"]["vectors"]["text"]["quantization_config"]["scalar"]
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 123
+    assert config["quantization_config"]["scalar"]["type"] == "int8"
+    assert config["quantization_config"]["scalar"]["quantile"] == 0.99
+    assert config["quantization_config"]["scalar"]["always_ram"]
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -116,8 +143,14 @@ def test_hnsw_update():
                     "hnsw_config": {
                         "m": 10,
                         "ef_construct": 100,
-                    }
-                }
+                    },
+                    "quantization_config": {
+                        "product": {
+                            "compression": "x32",
+                            "always_ram": True
+                        }
+                    },
+                },
             },
         }
     )
@@ -133,6 +166,35 @@ def test_hnsw_update():
     config = result["config"]
     assert config["params"]["vectors"]["text"]["hnsw_config"]["m"] == 10
     assert config["params"]["vectors"]["text"]["hnsw_config"]["ef_construct"] == 100
+    assert config["params"]["vectors"]["text"]["quantization_config"]["product"]["compression"] == "x32"
+    assert config["params"]["vectors"]["text"]["quantization_config"]["product"]["always_ram"]
+    assert config["quantization_config"]["scalar"]["type"] == "int8"
+    assert config["quantization_config"]["scalar"]["quantile"] == 0.99
+    assert config["quantization_config"]["scalar"]["always_ram"]
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "text": {
+                    "quantization_config": "Disabled"
+                },
+            },
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    config = result["config"]
+    assert config["params"]["vectors"]["text"].get("quantization_config") is None
 
 
 def test_invalid_vector_name():

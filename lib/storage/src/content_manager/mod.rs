@@ -107,6 +107,7 @@ pub mod consensus_ops {
                     optimizers_config: None,
                     params: None,
                     hnsw_config: None,
+                    quantization_config: None,
                 },
             );
             operation

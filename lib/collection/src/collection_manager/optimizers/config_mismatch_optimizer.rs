@@ -116,13 +116,42 @@ impl ConfigMismatchOptimizer {
                         .any(|(vector_name, vector_data)| {
                             // Check HNSW mismatch
                             match &vector_data.index {
-                                Indexes::Plain {} => false,
+                                Indexes::Plain {} => {}
                                 Indexes::Hnsw(effective_hnsw) => {
                                     // Select segment if we have an HNSW mismatch that requires rebuild
                                     let target_hnsw = self.get_required_hnsw_config(vector_name);
-                                    effective_hnsw.mismatch_requires_rebuild(&target_hnsw)
+                                    if effective_hnsw.mismatch_requires_rebuild(&target_hnsw) {
+                                        return true;
+                                    }
                                 }
                             }
+
+                            // Check quantization mismatch
+                            let target_quantization_collection = self.quantization_config.as_ref();
+                            let target_quantization_vector = self
+                                .collection_params
+                                .vectors
+                                .get_params(vector_name)
+                                .and_then(|vector_params| {
+                                    vector_params.quantization_config.clone()
+                                });
+                            let target_quantization = target_quantization_vector
+                                .as_ref()
+                                .or(target_quantization_collection);
+                            let quantization_mismatch = vector_data
+                                .quantization_config
+                                .as_ref()
+                                .zip(target_quantization)
+                                // Rebuild if current parameters differ from target parameters
+                                .map(|(current, target)| current.mismatch_requires_rebuild(target))
+                                // Or rebuild if we now change the enabled state on an indexed segment
+                                .unwrap_or_else(|| {
+                                    vector_data.index.is_indexed()
+                                        && (vector_data.quantization_config.is_some()
+                                            != target_quantization.is_some())
+                                });
+
+                            quantization_mismatch
                         });
 
                 has_mismatch.then_some((*idx, vector_size))
@@ -188,7 +217,10 @@ mod tests {
 
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::types::Distance;
+    use segment::types::{
+        CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig,
+        ScalarQuantizationConfig, ScalarType,
+    };
     use tempfile::Builder;
 
     use super::*;
@@ -483,6 +515,177 @@ mod tests {
                     segment.config().vector_data["vector2"].index,
                     Indexes::Hnsw(hnsw_config_vector2.update(&hnsw_config_collection).unwrap()),
                     "HNSW config of vector2 is not what we expect",
+                );
+            });
+    }
+
+    /// This test the config mismatch optimizer for a changed vector specific HNSW config
+    ///
+    /// Similar to `test_hnsw_config_mismatch` but for multi vector segment with a vector specific
+    /// change.
+    ///
+    /// It tests whether:
+    /// - the condition check for HNSW mismatches works for a vector specific change
+    /// - optimized segments (and vector storages) use the updated configuration
+    ///
+    /// In short, this is what happens in this test:
+    /// - create randomized multi segment as base
+    /// - use indexing optimizer to build index for our segment
+    /// - test config mismatch condition: should not trigger yet
+    /// - change HNSW config for vector2
+    /// - test config mismatch condition: should trigger due to HNSW change
+    /// - optimize segment with config mismatch optimizer
+    /// - assert segment uses changed configuration
+    #[test]
+    fn test_quantization_config_mismatch_vector_specific() {
+        // Collection configuration
+        let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
+        let thresholds_config = OptimizerThresholds {
+            max_segment_size: std::usize::MAX,
+            memmap_threshold: std::usize::MAX,
+            indexing_threshold: 10,
+        };
+        let quantization_config_vector1 =
+            QuantizationConfig::Scalar(segment::types::ScalarQuantization {
+                scalar: ScalarQuantizationConfig {
+                    r#type: ScalarType::Int8,
+                    quantile: Some(0.99),
+                    always_ram: Some(true),
+                },
+            });
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Multi(BTreeMap::from([
+                (
+                    "vector1".into(),
+                    VectorParams {
+                        size: vector1_dim.try_into().unwrap(),
+                        distance: Distance::Dot,
+                        hnsw_config: None,
+                        quantization_config: Some(quantization_config_vector1.clone()),
+                        on_disk: None,
+                    },
+                ),
+                (
+                    "vector2".into(),
+                    VectorParams {
+                        size: vector2_dim.try_into().unwrap(),
+                        distance: Distance::Dot,
+                        hnsw_config: None,
+                        quantization_config: None,
+                        on_disk: None,
+                    },
+                ),
+            ])),
+            shard_number: 1.try_into().unwrap(),
+            on_disk_payload: false,
+            replication_factor: 1.try_into().unwrap(),
+            write_consistency_factor: 1.try_into().unwrap(),
+        };
+
+        // Base segment
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+
+        let segment = random_multi_vec_segment(
+            dir.path(),
+            100,
+            point_count,
+            vector1_dim as usize,
+            vector2_dim as usize,
+        );
+
+        let segment_id = holder.add(segment);
+        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+
+        let quantization_config_collection =
+            QuantizationConfig::Scalar(segment::types::ScalarQuantization {
+                scalar: ScalarQuantizationConfig {
+                    r#type: ScalarType::Int8,
+                    quantile: Some(0.91),
+                    always_ram: None,
+                },
+            });
+
+        // Optimizers used in test
+        let index_optimizer = IndexingOptimizer::new(
+            thresholds_config.clone(),
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params.clone(),
+            Default::default(),
+            Some(quantization_config_collection.clone()),
+        );
+        let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
+            thresholds_config,
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params,
+            Default::default(),
+            Some(quantization_config_collection),
+        );
+
+        // Use indexing optimizer to build index for quantization mismatch test
+        let changed = index_optimizer
+            .optimize(locked_holder.clone(), vec![segment_id], &false.into())
+            .unwrap();
+        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(
+            locked_holder.read().get(segment_id).is_none(),
+            "optimized segment should be gone",
+        );
+        assert_eq!(locked_holder.read().len(), 2, "index must be built");
+
+        // Mismatch optimizer should not optimize yet, quantization config is not changed yet
+        let suggested_to_optimize =
+            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        assert_eq!(suggested_to_optimize.len(), 0);
+
+        // Create changed quantization config for vector2, update it in the optimizer
+        let quantization_config_vector2 = QuantizationConfig::Product(ProductQuantization {
+            product: ProductQuantizationConfig {
+                compression: CompressionRatio::X32,
+                always_ram: Some(true),
+            },
+        });
+        match config_mismatch_optimizer.collection_params.vectors {
+            VectorsConfig::Single(_) => unreachable!(),
+            VectorsConfig::Multi(ref mut map) => {
+                map.get_mut("vector2")
+                    .unwrap()
+                    .quantization_config
+                    .replace(quantization_config_vector2.clone());
+            }
+        }
+
+        // Run mismatch optimizer again, make sure it optimizes now
+        let suggested_to_optimize =
+            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        assert_eq!(suggested_to_optimize.len(), 1);
+        let changed = config_mismatch_optimizer
+            .optimize(locked_holder.clone(), suggested_to_optimize, &false.into())
+            .unwrap();
+        assert!(changed, "optimizer should have rebuilt this segment");
+
+        // Ensure new segment has changed quantization config
+        locked_holder
+            .read()
+            .iter()
+            .map(|(_, segment)| match segment {
+                LockedSegment::Original(s) => s.read(),
+                LockedSegment::Proxy(_) => unreachable!(),
+            })
+            .filter(|segment| segment.total_point_count() > 0)
+            .for_each(|segment| {
+                assert_eq!(
+                    segment.config().vector_data["vector1"].quantization_config,
+                    Some(quantization_config_vector1.clone()),
+                    "Quantization config of vector1 is not what we expect",
+                );
+                assert_eq!(
+                    segment.config().vector_data["vector2"].quantization_config,
+                    Some(quantization_config_vector2.clone()),
+                    "Quantization config of vector2 is not what we expect",
                 );
             });
     }

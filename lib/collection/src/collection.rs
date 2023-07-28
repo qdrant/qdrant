@@ -12,7 +12,8 @@ use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
-    ExtendedPointId, Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Order, QuantizationConfig, ScoredPoint, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
@@ -26,7 +27,7 @@ use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{
-    CollectionParamsDiff, DiffConfig, HnswConfigDiff, OptimizersConfigDiff,
+    CollectionParamsDiff, DiffConfig, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
@@ -1125,6 +1126,37 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
             config.hnsw_config = hnsw_config_diff.update(&config.hnsw_config)?;
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
+    /// Updates quantization config:
+    /// Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
+    pub async fn update_quantization_config_from_diff(
+        &self,
+        quantization_config_diff: QuantizationConfigDiff,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            match quantization_config_diff {
+                QuantizationConfigDiff::Scalar(scalar) => {
+                    config
+                        .quantization_config
+                        .replace(QuantizationConfig::Scalar(scalar));
+                }
+                QuantizationConfigDiff::Product(product) => {
+                    config
+                        .quantization_config
+                        .replace(QuantizationConfig::Product(product));
+                }
+                QuantizationConfigDiff::Disabled(_) => {
+                    config.quantization_config = None;
+                }
+            }
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
