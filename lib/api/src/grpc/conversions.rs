@@ -19,13 +19,13 @@ use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
-    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
-    HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
-    ListValue, Match, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value,
-    ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon GeoRadius, HasIdCondition, HealthCheckReply,
+    HnswConfigDiff, IsEmptyCondition, IsNullCondition, Like, ListCollectionsResponse, ListValue, Match,
+    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
+    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig,
+    QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization,
+    ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
+    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -803,6 +803,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_radius,
             values_count,
             geo_polygon,
+            like,
         } = value;
 
         let geo_bounding_box =
@@ -817,6 +818,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_radius,
             geo_polygon,
             values_count: values_count.map(Into::into),
+            like: like.map(|l| l.into()),
         })
     }
 }
@@ -831,6 +833,7 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             geo_radius,
             geo_polygon,
             values_count,
+            like,
         } = value;
 
         let geo_bounding_box = geo_bounding_box.map(Into::into);
@@ -844,6 +847,7 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             geo_radius,
             geo_polygon,
             values_count: values_count.map(Into::into),
+            like: like.map(Into::into),
         }
     }
 }
@@ -1077,5 +1081,17 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
             "Malformed distance parameter, unexpected value: {dist}"
         ))),
         Some(grpc_distance) => Ok(grpc_distance.try_into()?),
+    }
+}
+
+impl From<Like> for segment::types::Like {
+    fn from(value: Like) -> Self {
+        segment::types::Like { like: value.like }
+    }
+}
+
+impl From<segment::types::Like> for Like {
+    fn from(value: segment::types::Like) -> Self {
+        Like { like: value.like }
     }
 }

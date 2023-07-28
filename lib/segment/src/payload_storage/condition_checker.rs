@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, FieldCondition, GeoBoundingBox, GeoRadius, Match, MatchAny, MatchExcept,
+    AnyVariants, FieldCondition, GeoBoundingBox, GeoRadius, Like, Match, MatchAny, MatchExcept,
     MatchText, MatchValue, Range, ValueVariants, ValuesCount,
 };
 
@@ -50,6 +50,12 @@ impl ValueChecker for FieldCondition {
         res = res
             || self
                 .values_count
+                .as_ref()
+                .map_or(false, |condition| condition.check_match(payload));
+
+        res = res
+            || self
+                .like
                 .as_ref()
                 .map_or(false, |condition| condition.check_match(payload));
         res
@@ -157,6 +163,15 @@ impl ValueChecker for ValuesCount {
 
     fn check(&self, payload: &Value) -> bool {
         self.check_count(payload)
+    }
+}
+
+impl ValueChecker for Like {
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::String(stored) => stored == &self.like, // TODO: Levenshtein distance
+            _ => false,
+        }
     }
 }
 

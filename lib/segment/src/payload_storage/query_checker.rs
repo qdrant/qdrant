@@ -140,6 +140,7 @@ pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &impl Payload
     payload.get_value(&is_null.is_null.key).check_is_null()
 }
 
+// TODO: Update this
 pub fn check_field_condition<R>(
     field_condition: &FieldCondition,
     payload: &impl PayloadContainer,

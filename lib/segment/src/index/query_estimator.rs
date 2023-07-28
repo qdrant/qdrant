@@ -275,6 +275,7 @@ mod tests {
             geo_radius: None,
             values_count: None,
             geo_polygon: None,
+            like: None,
         })
     }
 

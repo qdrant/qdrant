@@ -1245,6 +1245,12 @@ impl GeoPolygon {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct Like {
+    pub like: String,
+}
+
 /// All possible payload filtering conditions
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -1263,6 +1269,8 @@ pub struct FieldCondition {
     pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
     pub values_count: Option<ValuesCount>,
+    /// Check if point has field with a similiar text value
+    pub like: Option<Like>,
 }
 
 impl FieldCondition {
@@ -1275,6 +1283,7 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            like: None,
         }
     }
 
@@ -1287,6 +1296,7 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            like: None,
         }
     }
 
@@ -1302,6 +1312,7 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            like: None,
         }
     }
 
@@ -1326,6 +1337,7 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: Some(geo_polygon),
             values_count: None,
+            like: None,
         }
     }
 
@@ -1338,6 +1350,7 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: Some(values_count),
+            like: None,
         }
     }
 }

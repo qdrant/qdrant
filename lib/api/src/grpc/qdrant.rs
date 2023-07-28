@@ -3445,6 +3445,9 @@ pub struct FieldCondition {
     /// Check if geo point is within a given polygon
     #[prost(message, optional, tag = "7")]
     pub geo_polygon: ::core::option::Option<GeoPolygon>,
+    /// Check if point has field with a similiar text value
+    #[prost(message, optional, tag = "8")]
+    pub like: ::core::option::Option<Like>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3549,6 +3552,13 @@ pub struct ValuesCount {
     pub gte: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "4")]
     pub lte: ::core::option::Option<u64>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Like {
+    /// Match similiar keyword
+    #[prost(string, tag = "1")]
+    pub like: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

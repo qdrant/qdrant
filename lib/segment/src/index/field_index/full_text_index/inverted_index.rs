@@ -247,6 +247,7 @@ impl InvertedIndex {
                         geo_radius: None,
                         geo_polygon: None,
                         values_count: None,
+                        like: None,
                     },
                     cardinality: posting.len(),
                 }),

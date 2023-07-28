@@ -484,6 +484,7 @@ message FieldCondition {
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
   ValuesCount values_count = 6; // Check number of values for a specific field
   GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
+  Like like = 8;  // Check if point has field with a similiar text value
 }
 
 message Match {
@@ -536,6 +537,10 @@ message ValuesCount {
   optional uint64 gt = 2;
   optional uint64 gte = 3;
   optional uint64 lte = 4;
+}
+
+message Like {
+  string like = 1; // Match similiar keyword
 }
 
 // ---------------------------------------------
