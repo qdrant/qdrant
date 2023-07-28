@@ -18,7 +18,8 @@ use wal::WalOptions;
 
 use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
 use crate::operations::types::{
-    CollectionError, CollectionResult, VectorParams, VectorsConfig, VectorsConfigDiff,
+    CollectionError, CollectionResult, VectorParams, VectorParamsDiff, VectorsConfig,
+    VectorsConfigDiff,
 };
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -186,16 +187,21 @@ impl CollectionParams {
         for (vector_name, update_params) in update_vectors_diff.0.iter() {
             let vector_params = self.get_vector_params_mut(vector_name)?;
 
-            if let Some(hnsw_diff) = &update_params.hnsw_config {
+            let VectorParamsDiff {
+                hnsw_config,
+                quantization_config,
+            } = update_params.clone();
+
+            if let Some(hnsw_diff) = hnsw_config {
                 if let Some(existing_hnsw) = &vector_params.hnsw_config {
-                    vector_params.hnsw_config = Some((*hnsw_diff).update(existing_hnsw)?);
+                    vector_params.hnsw_config = Some(hnsw_diff.update(existing_hnsw)?);
                 } else {
-                    vector_params.hnsw_config = Some(*hnsw_diff);
+                    vector_params.hnsw_config = Some(hnsw_diff);
                 }
             }
 
-            if let Some(quan_diff) = &update_params.quantization_config {
-                vector_params.quantization_config = match quan_diff.clone() {
+            if let Some(quantization_diff) = quantization_config {
+                vector_params.quantization_config = match quantization_diff.clone() {
                     QuantizationConfigDiff::Scalar(scalar) => {
                         Some(QuantizationConfig::Scalar(scalar))
                     }
