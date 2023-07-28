@@ -169,7 +169,7 @@ impl ValueChecker for ValuesCount {
 impl ValueChecker for Like {
     fn check_match(&self, payload: &Value) -> bool {
         match payload {
-            Value::String(stored) => stored == &self.like, // TODO: Levenshtein distance
+            Value::String(stored) => stored.eq_ignore_ascii_case(&self.like), // TODO: Levenshtein distance
             _ => false,
         }
     }
