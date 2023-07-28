@@ -34,7 +34,7 @@ use validator::{Validate, ValidationErrors};
 use super::config_diff;
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
-use crate::operations::config_diff::HnswConfigDiff;
+use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -993,6 +993,14 @@ pub struct VectorParamsDiff {
     #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
+    /// Update params for quantization. If none - it is left unchanged.
+    #[serde(
+        default,
+        alias = "quantization",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfigDiff>,
 }
 
 /// Vector update params for multiple vectors

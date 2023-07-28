@@ -20,6 +20,7 @@
     - [CreateCollection](#qdrant-CreateCollection)
     - [DeleteAlias](#qdrant-DeleteAlias)
     - [DeleteCollection](#qdrant-DeleteCollection)
+    - [Disabled](#qdrant-Disabled)
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
@@ -36,6 +37,7 @@
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
     - [ProductQuantization](#qdrant-ProductQuantization)
     - [QuantizationConfig](#qdrant-QuantizationConfig)
+    - [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff)
     - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
     - [Replica](#qdrant-Replica)
@@ -470,6 +472,16 @@
 
 
 
+<a name="qdrant-Disabled"></a>
+
+### Disabled
+
+
+
+
+
+
+
 <a name="qdrant-GetCollectionInfoRequest"></a>
 
 ### GetCollectionInfoRequest
@@ -742,6 +754,23 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-QuantizationConfigDiff"></a>
+
+### QuantizationConfigDiff
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| scalar | [ScalarQuantization](#qdrant-ScalarQuantization) |  |  |
+| product | [ProductQuantization](#qdrant-ProductQuantization) |  |  |
+| disabled | [Disabled](#qdrant-Disabled) |  |  |
+
+
+
+
+
+
 <a name="qdrant-RemoteShardInfo"></a>
 
 ### RemoteShardInfo
@@ -858,6 +887,7 @@ Note: 1kB = 1 vector of size 256. |
 | params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | New HNSW parameters for the collection index |
 | vectors_config | [VectorsConfigDiff](#qdrant-VectorsConfigDiff) | optional | New vector parameters |
+| quantization_config | [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff) | optional | Quantization configuration of vector |
 
 
 
@@ -927,6 +957,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Update params for HNSW index. If empty object - it will be unset |
+| quantization_config | [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff) | optional | Update quantization params. If none - it is left unchanged. |
 
 
 
