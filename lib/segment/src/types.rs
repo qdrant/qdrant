@@ -1285,6 +1285,7 @@ pub struct FieldCondition {
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
     /// Check if geo point is within a given polygon
+    #[serde(skip)] // TODO: uncomment when geo_polygon is implemented
     pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
     pub values_count: Option<ValuesCount>,

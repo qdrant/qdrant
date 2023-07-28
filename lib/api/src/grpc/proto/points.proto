@@ -483,7 +483,7 @@ message FieldCondition {
   GeoBoundingBox geo_bounding_box = 4; // Check if points geolocation lies in a given area
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
   ValuesCount values_count = 6; // Check number of values for a specific field
-  GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
+  //  GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
 }
 
 message Match {
