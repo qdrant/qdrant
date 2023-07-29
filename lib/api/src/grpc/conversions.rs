@@ -821,13 +821,13 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_bounding_box,
             geo_radius,
             values_count,
-            geo_polygon,
+            // geo_polygon,
         } = value;
 
         let geo_bounding_box =
             geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
-        let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
+        let geo_polygon = None; // geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         Ok(Self {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
@@ -848,20 +848,19 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             range,
             geo_bounding_box,
             geo_radius,
-            geo_polygon,
+            geo_polygon: _geo_polygon,
             values_count,
         } = value;
 
         let geo_bounding_box = geo_bounding_box.map(Into::into);
         let geo_radius = geo_radius.map(Into::into);
-        let geo_polygon = geo_polygon.map(Into::into);
         Self {
             key,
             r#match: r#match.map(Into::into),
             range: range.map(Into::into),
             geo_bounding_box,
             geo_radius,
-            geo_polygon,
+            // geo_polygon: geo_polygon.map(Into::into),
             values_count: values_count.map(Into::into),
         }
     }

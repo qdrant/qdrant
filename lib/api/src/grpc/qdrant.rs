@@ -3475,9 +3475,6 @@ pub struct FieldCondition {
     /// Check number of values for a specific field
     #[prost(message, optional, tag = "6")]
     pub values_count: ::core::option::Option<ValuesCount>,
-    /// Check if geo point is within a given polygon
-    #[prost(message, optional, tag = "7")]
-    pub geo_polygon: ::core::option::Option<GeoPolygon>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
