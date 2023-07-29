@@ -321,7 +321,17 @@ mod tests {
 
         let visited_pool = VisitedPool::new();
         for (i, search_result) in search_results.iter().enumerate() {
-            let s = gpu_links.search(search_requests[i].0, search_requests[i].1, &visited_pool, |a, b| DotProductMetric::similarity(&points[a as usize], &points[b as usize])).into_vec().iter().map(|r| r.idx).collect::<Vec<_>>();
+            let s = gpu_links
+                .search(
+                    search_requests[i].0,
+                    search_requests[i].1,
+                    &visited_pool,
+                    |a, b| DotProductMetric::similarity(&points[a as usize], &points[b as usize]),
+                )
+                .into_vec()
+                .iter()
+                .map(|r| r.idx)
+                .collect::<Vec<_>>();
             println!("GPU_LINKS CPU {:?}", s);
             let mut gpu_result = gpu_results[i * ef..(i + 1) * ef].to_vec();
             gpu_result.reverse();
