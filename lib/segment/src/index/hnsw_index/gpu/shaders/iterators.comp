@@ -1,0 +1,27 @@
+#ifndef ITERATORS_HEADER
+#define ITERATORS_HEADER
+
+struct Iterator {
+    uint begin;
+    uint end;
+};
+
+#define NEW_ITERATOR(BEGIN, END) \
+    { \
+        (BEGIN), \
+        (END) \
+    }
+
+#define FOREACH_ITERATOR_VARIABLE_NAME _foreach_iterator
+
+#define FOREACH(ITERATOR) \
+    for ( \
+        Iterator FOREACH_ITERATOR_VARIABLE_NAME = ITERATOR; \
+        FOREACH_ITERATOR_VARIABLE_NAME.begin < FOREACH_ITERATOR_VARIABLE_NAME.end; \
+        FOREACH_ITERATOR_VARIABLE_NAME.begin += 1 \
+    )
+
+#define FOREACH_VALUE(CONTAINER) \
+    CONTAINER[FOREACH_ITERATOR_VARIABLE_NAME.begin]
+
+#endif

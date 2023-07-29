@@ -25,7 +25,7 @@ BHEAP(BHEAP_NAME, push)(1.0); // push value
 
 ******/
 
-#include "base.comp"
+#include "common.comp"
 
 #define BHEAP(NAME, a) CONCAT(NAME, a)
 
