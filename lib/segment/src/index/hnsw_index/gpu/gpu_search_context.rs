@@ -125,9 +125,7 @@ mod tests {
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::types::{Distance, PointOffsetType};
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-    use crate::vector_storage::{
-        new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum,
-    };
+    use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage};
 
     #[test]
     fn test_gpu_hnsw_seach_context() {
@@ -148,7 +146,7 @@ mod tests {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot).unwrap();
         {
-            let mut borrowed_storage = storage.borrow_mut();
+            let mut borrowed_storage = storage.as_ref().borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
                 borrowed_storage
                     .insert_vector(i as PointOffsetType, vec.as_slice())
@@ -191,7 +189,7 @@ mod tests {
             let entry_point = match graph_layers
                 .get_entry_points()
                 .borrow_mut()
-                .get_entry_point(|point_id| scorer.check_vector(idx as PointOffsetType))
+                .get_entry_point(|_| scorer.check_vector(idx as PointOffsetType))
             {
                 None => continue,
                 Some(ep) => ep,
@@ -267,5 +265,60 @@ mod tests {
             .add_descriptor_set_layout(3, descriptor_set_layout.clone())
             .add_shader(shader.clone())
             .build(device.clone());
+
+        let staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::CpuToGpu,
+            search_requests.len() * 2 * std::mem::size_of::<PointOffsetType>(),
+        ));
+        staging_buffer.upload_slice(&search_requests, 0);
+
+        let mut context = gpu::Context::new(device.clone());
+        context.copy_gpu_buffer(
+            staging_buffer.clone(),
+            requests_buffer.clone(),
+            0,
+            0,
+            search_requests.len() * 2 * std::mem::size_of::<PointOffsetType>(),
+        );
+        context.run();
+        context.wait_finish();
+
+        context.bind_pipeline(
+            pipeline.clone(),
+            &[
+                gpu_vector_storage.descriptor_set.clone(),
+                gpu_links.descriptor_set.clone(),
+                gpu_search_context.descriptor_set.clone(),
+                descriptor_set.clone(),
+            ],
+        );
+        context.dispatch(search_requests.len(), 1, 1);
+        context.run();
+        context.wait_finish();
+
+        let staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::GpuToCpu,
+            search_requests.len() * ef * std::mem::size_of::<PointOffsetType>(),
+        ));
+        context.copy_gpu_buffer(
+            responses_buffer.clone(),
+            staging_buffer.clone(),
+            0,
+            0,
+            search_requests.len() * ef * std::mem::size_of::<PointOffsetType>(),
+        );
+        context.run();
+        context.wait_finish();
+
+        let mut gpu_results: Vec<PointOffsetType> = vec![0; search_requests.len() * ef];
+        staging_buffer.download_slice(&mut gpu_results, 0);
+
+        for (i, search_result) in search_results.iter().enumerate() {
+            let gpu_result = gpu_results[i * ef..(i + 1) * ef].to_vec();
+            let cpu_result = search_result.iter().map(|r| r.idx).collect::<Vec<_>>();
+            assert_eq!(gpu_result, cpu_result);
+        }
     }
 }
