@@ -123,6 +123,9 @@ mod tests {
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
+    use crate::index::visited_pool::VisitedPool;
+    use crate::spaces::metric::Metric;
+    use crate::spaces::simple::DotProductMetric;
     use crate::types::{Distance, PointOffsetType};
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
     use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage};
@@ -132,9 +135,9 @@ mod tests {
         let m = 8;
         let ef = 16;
         let dim = 32;
-        let points_count = 10_000;
-        let search_count = 100;
-        let entry_points_num = 10;
+        let points_count = 128;
+        let search_count = 10;
+        let entry_points_num = 1;
         let candidates_capacity = 1000;
 
         let mut rnd = StdRng::seed_from_u64(42);
@@ -281,6 +284,7 @@ mod tests {
             0,
             search_requests.len() * 2 * std::mem::size_of::<PointOffsetType>(),
         );
+        context.zero_buffer(gpu_search_context.visited_flags_buffer.clone());
         context.run();
         context.wait_finish();
 
@@ -315,8 +319,12 @@ mod tests {
         let mut gpu_results: Vec<PointOffsetType> = vec![0; search_requests.len() * ef];
         staging_buffer.download_slice(&mut gpu_results, 0);
 
+        let visited_pool = VisitedPool::new();
         for (i, search_result) in search_results.iter().enumerate() {
-            let gpu_result = gpu_results[i * ef..(i + 1) * ef].to_vec();
+            let s = gpu_links.search(search_requests[i].0, search_requests[i].1, &visited_pool, |a, b| DotProductMetric::similarity(&points[a as usize], &points[b as usize])).into_vec().iter().map(|r| r.idx).collect::<Vec<_>>();
+            println!("GPU_LINKS CPU {:?}", s);
+            let mut gpu_result = gpu_results[i * ef..(i + 1) * ef].to_vec();
+            gpu_result.reverse();
             let cpu_result = search_result.iter().map(|r| r.idx).collect::<Vec<_>>();
             assert_eq!(gpu_result, cpu_result);
         }

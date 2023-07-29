@@ -45,7 +45,7 @@ buffer VisitedFlagsBuffer {
 #include "bheap.comp"
 
 bool check_and_process_visited(POINT_ID point_id) {
-    uint flag_index = gl_GlobalInvocationID.x * visited_flags_capacity + point_id / 32;
+    uint flag_index = gl_GlobalInvocationID.x * searcher_params.visited_flags_capacity + point_id / 32;
     uint flag_bit = point_id % 32;
     uint flag = visited_flags.data[flag_index];
     uint flag_mask = 1 << flag_bit;

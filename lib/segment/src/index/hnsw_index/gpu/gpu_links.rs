@@ -1,7 +1,12 @@
+use std::collections::BinaryHeap;
 use std::sync::Arc;
+use num_traits::float::FloatCore;
 
 use crate::entry::entry_point::OperationResult;
-use crate::types::PointOffsetType;
+use crate::index::visited_pool::VisitedPool;
+use crate::spaces::tools::FixedLengthPriorityQueue;
+use crate::types::{PointOffsetType, ScoreType};
+use crate::vector_storage::ScoredPointOffset;
 
 #[repr(C)]
 struct GpuLinksParamsBuffer {
@@ -12,6 +17,7 @@ struct GpuLinksParamsBuffer {
 pub struct GpuLinks {
     pub m: usize,
     pub ef: usize,
+    pub points_count: usize,
     pub links: Vec<PointOffsetType>,
     pub device: Arc<gpu::Device>,
     pub links_buffer: Arc<gpu::Buffer>,
@@ -74,6 +80,7 @@ impl GpuLinks {
         Ok(Self {
             m,
             ef,
+            points_count,
             links: vec![0; points_count * (m + 1)],
             device,
             links_buffer,
@@ -152,6 +159,77 @@ impl GpuLinks {
         let start_index = point_id as usize * (self.m + 1);
         self.links[start_index] = links.len() as PointOffsetType;
         self.links[start_index + 1..start_index + 1 + links.len()].copy_from_slice(links);
+    }
+
+    pub fn search(
+        &self,
+        id: PointOffsetType,
+        entry: PointOffsetType,
+        visited_pool: &VisitedPool,
+        scorer: impl Fn(PointOffsetType, PointOffsetType) -> ScoreType,
+    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+        let level_entry = ScoredPointOffset {
+            idx: entry,
+            score: scorer(entry, id),
+        };
+        let mut visited_list = visited_pool.get(self.points_count);
+        visited_list.check_and_update_visited(level_entry.idx);
+
+        let mut nearest = FixedLengthPriorityQueue::<ScoredPointOffset>::new(self.ef);
+        nearest.push(level_entry);
+        let mut candidates = BinaryHeap::<ScoredPointOffset>::from_iter([level_entry]);
+
+        while let Some(candidate) = candidates.pop() {
+            let lower_bound = match nearest.top() {
+                None => ScoreType::min_value(),
+                Some(worst_of_the_best) => worst_of_the_best.score,
+            };
+            if candidate.score < lower_bound {
+                break;
+            }
+
+            let links = self.get_links(candidate.idx);
+            for &link in links.iter() {
+                if !visited_list.check_and_update_visited(link) {
+                    let score = scorer(link, id);
+                    Self::process_candidate(
+                        &mut nearest,
+                        &mut candidates,
+                        ScoredPointOffset { idx: link, score },
+                    )
+                }
+            }
+        }
+
+        for &existing_link in self.get_links(id) {
+            if !visited_list.check(existing_link) {
+                Self::process_candidate(
+                    &mut nearest,
+                    &mut candidates,
+                    ScoredPointOffset {
+                        idx: existing_link,
+                        score: scorer(id, existing_link),
+                    },
+                );
+            }
+        }
+
+        visited_pool.return_back(visited_list);
+        nearest
+    }
+
+    fn process_candidate(
+        nearest: &mut FixedLengthPriorityQueue<ScoredPointOffset>,
+        candidates: &mut BinaryHeap<ScoredPointOffset>,
+        score_point: ScoredPointOffset,
+    ) {
+        let was_added = match nearest.push(score_point) {
+            None => true,
+            Some(removed) => removed.idx != score_point.idx,
+        };
+        if was_added {
+            candidates.push(score_point);
+        }
     }
 }
 
