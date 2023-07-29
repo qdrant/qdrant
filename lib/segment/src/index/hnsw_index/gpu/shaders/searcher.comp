@@ -121,7 +121,7 @@ void searcher_init() {
     BHEAP(candidates, init)(
         ScoredPoint(0, positive_infinity),
         searcher_params.candidates_capacity,
-        gl_GlobalInvocationID.x * candidates_capacity);
+        gl_GlobalInvocationID.x * searcher_params.candidates_capacity);
 }
 
 #endif

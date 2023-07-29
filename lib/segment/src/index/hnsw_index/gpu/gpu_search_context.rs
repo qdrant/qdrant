@@ -135,8 +135,8 @@ mod tests {
         let m = 8;
         let ef = 16;
         let dim = 32;
-        let points_count = 128;
-        let search_count = 10;
+        let points_count = 12400;
+        let search_count = 100;
         let entry_points_num = 1;
         let candidates_capacity = 1000;
 
