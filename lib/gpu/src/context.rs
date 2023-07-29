@@ -164,6 +164,28 @@ impl Context {
         self.resources.push(dst);
     }
 
+    pub fn zero_buffer(&mut self, buffer: Arc<Buffer>) {
+        if buffer.size % 4 != 0 {
+            panic!("buffer size must be a multiple of 4");
+        }
+
+        if self.vk_command_buffer == vk::CommandBuffer::null() {
+            self.init_command_buffer();
+        }
+
+        unsafe {
+            self.device.vk_device.cmd_fill_buffer(
+                self.vk_command_buffer,
+                buffer.vk_buffer,
+                0,
+                buffer.size as vk::DeviceSize,
+                0,
+            );
+        }
+
+        self.resources.push(buffer);
+    }
+
     pub fn run(&mut self) {
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             return;

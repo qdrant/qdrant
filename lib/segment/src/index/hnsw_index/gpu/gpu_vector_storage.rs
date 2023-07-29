@@ -125,13 +125,13 @@ mod tests {
             .map(|_| random_vector(&mut rnd, dim))
             .collect::<Vec<_>>();
 
-        let dir2 = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot).unwrap();
+        let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot).unwrap();
         {
-            let mut borrowed_storage2 = storage2.borrow_mut();
+            let mut borrowed_storage = storage.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
-                borrowed_storage2
+                borrowed_storage
                     .insert_vector(i as PointOffsetType, vec)
                     .unwrap();
             });
@@ -143,7 +143,7 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage2.borrow()).unwrap();
+        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),

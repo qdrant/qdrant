@@ -16,17 +16,13 @@ readonly buffer Vectors {
     vec4 data[];
 } vectors;
 
-uint count() {
-    return vector_storage_params.count;
-}
+#define COUNT vector_storage_params.count
 
-uint dim() {
-    return vector_storage_params.dim;
-}
+#define DIM vector_storage_params.dim
 
 float similarity(uint a, uint b) {
     float result = 0.0;
-    uint d = dim() / 4;
+    uint d = DIM / 4;
     uint aId = a * d;
     uint bId = b * d;
     for (uint i = 0; i < d; i++, aId++, bId++) {
