@@ -113,6 +113,52 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
     return result;
 }
 
+ScoredPoint get_nearest(uint i) {
+    return nearest.data[gl_GlobalInvocationID.x * searcher_params.nearest_capacity + i];
+}
+
+void set_nearest(uint i, ScoredPoint scored_point) {
+    nearest.data[gl_GlobalInvocationID.x * searcher_params.nearest_capacity + i] = scored_point;
+}
+
+ScoredPoint get_candidate(uint i) {
+    return candidates.data[gl_GlobalInvocationID.x * searcher_params.candidates_capacity + i];
+}
+
+void set_candidate(uint i, ScoredPoint scored_point) {
+    candidates.data[gl_GlobalInvocationID.x * searcher_params.candidates_capacity + i] = scored_point;
+}
+
+uint run_heuristic() {
+    uint nearest_count = BHEAP(nearest, into_array)();
+    uint result_count = 0;
+
+    for (uint i = 0; i < nearest_count; i++) {
+        if (result_count >= LEVEL_M) {
+            break;
+        }
+
+        ScoredPoint current_closest = get_nearest(i);
+        bool is_good = true;
+
+        for (uint j = 0; j < result_count; j++) {
+            ScoredPoint selected_point = get_nearest(j);
+            float dist_to_already_selected = similarity(current_closest.id, selected_point.id);
+            if (dist_to_already_selected > current_closest.score) {
+                is_good = false;
+                break;
+            }
+        }
+
+        if (is_good) {
+            set_nearest(result_count, current_closest);
+            result_count += 1;
+        }
+    }
+
+    return result_count;
+}
+
 void searcher_init() {
     BHEAP(nearest, init)(
         ScoredPoint(0, negative_infinity),

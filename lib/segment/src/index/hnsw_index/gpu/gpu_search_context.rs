@@ -67,7 +67,9 @@ impl GpuSearchContext {
         let nearest_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            threads_count * nearest_capacity * (std::mem::size_of::<f32>() + std::mem::size_of::<u32>()),
+            threads_count
+                * nearest_capacity
+                * (std::mem::size_of::<f32>() + std::mem::size_of::<u32>()),
         ));
 
         let candidates_buffer = Arc::new(gpu::Buffer::new(
@@ -119,7 +121,7 @@ mod tests {
     use atomic_refcell::AtomicRefCell;
     use bitvec::vec::BitVec;
     use rand::rngs::StdRng;
-    use rand::{SeedableRng, Rng};
+    use rand::{Rng, SeedableRng};
     use tempfile::TempDir;
 
     use super::*;
@@ -130,9 +132,13 @@ mod tests {
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
+    use crate::spaces::metric::Metric;
+    use crate::spaces::simple::CosineMetric;
     use crate::types::{Distance, PointOffsetType};
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-    use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
+    use crate::vector_storage::{
+        new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum,
+    };
 
     struct TestData {
         _points: Vec<Vec<f32>>,
@@ -158,12 +164,12 @@ mod tests {
         candidates_capacity: usize,
     ) -> TestData {
         let points = (0..points_count)
-            .map(|_| random_vector(rnd, dim))
+            .map(|_| CosineMetric::preprocess(&random_vector(rnd, dim)).unwrap())
             .collect::<Vec<_>>();
 
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Cosine).unwrap();
         {
             let mut borrowed_storage = storage.as_ref().borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
@@ -546,4 +552,162 @@ mod tests {
         }
     }
     */
+
+    #[test]
+    fn test_gpu_hnsw_heuristic() {
+        let m = 8;
+        let ef = 16;
+        let dim = 32;
+        let points_count = 1024;
+        let search_count = 64;
+        let entry_points_num = 1;
+        let candidates_capacity = 500;
+        let mut rnd = StdRng::seed_from_u64(42);
+
+        let TestData {
+            _points,
+            _dir,
+            storage,
+            deleted_vec,
+            graph_layers,
+            _instance,
+            device,
+            gpu_links,
+            gpu_search_context,
+            gpu_vector_storage,
+        } = new_test_data(
+            &mut rnd,
+            m,
+            ef,
+            dim,
+            points_count,
+            search_count,
+            entry_points_num,
+            candidates_capacity,
+        );
+
+        let mut search_requests: Vec<(PointOffsetType, PointOffsetType)> = vec![];
+        let mut heuristic_results: Vec<Vec<PointOffsetType>> = vec![];
+        for idx in points_count - search_count..points_count {
+            let borrowed_storage = storage.borrow();
+            let vector = borrowed_storage.get_vector(idx as PointOffsetType).to_vec();
+            let raw_scorer = new_raw_scorer(vector, &borrowed_storage, &deleted_vec);
+            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+
+            let entry_point = match graph_layers
+                .get_entry_points()
+                .borrow_mut()
+                .get_entry_point(|_| scorer.check_vector(idx as PointOffsetType))
+            {
+                None => continue,
+                Some(ep) => ep,
+            };
+
+            search_requests.push((idx as PointOffsetType, entry_point.point_id));
+            let scored_entry = ScoredPointOffset {
+                idx: entry_point.point_id,
+                score: scorer.score_point(entry_point.point_id),
+            };
+            let search_result = graph_layers.search_on_level(scored_entry, 0, ef, &mut scorer);
+            let selected_result =
+                GraphLayersBuilder::select_candidates_with_heuristic(search_result, m, |i, j| {
+                    scorer.score_internal(i, j)
+                });
+            heuristic_results.push(selected_result);
+        }
+
+        let shader = Arc::new(gpu::Shader::new(
+            device.clone(),
+            include_bytes!("./shaders/test_heuristic.spv"),
+        ));
+
+        let requests_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            2 * search_count * std::mem::size_of::<u32>(),
+        ));
+
+        let responses_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            search_count * (m + 1) * std::mem::size_of::<u32>(),
+        ));
+
+        let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
+            .add_storage_buffer(0)
+            .add_storage_buffer(1)
+            .build(device.clone());
+
+        let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
+            .add_storage_buffer(0, requests_buffer.clone())
+            .add_storage_buffer(1, responses_buffer.clone())
+            .build();
+
+        let pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, descriptor_set_layout.clone())
+            .add_shader(shader.clone())
+            .build(device.clone());
+
+        let staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::CpuToGpu,
+            search_requests.len() * 2 * std::mem::size_of::<PointOffsetType>(),
+        ));
+        staging_buffer.upload_slice(&search_requests, 0);
+
+        let mut context = gpu::Context::new(device.clone());
+        context.copy_gpu_buffer(
+            staging_buffer.clone(),
+            requests_buffer.clone(),
+            0,
+            0,
+            search_requests.len() * 2 * std::mem::size_of::<PointOffsetType>(),
+        );
+        context.run();
+        context.wait_finish();
+
+        context.clear_buffer(gpu_search_context.visited_flags_buffer.clone());
+        context.run();
+        context.wait_finish();
+
+        context.bind_pipeline(
+            pipeline.clone(),
+            &[
+                gpu_vector_storage.descriptor_set.clone(),
+                gpu_links.descriptor_set.clone(),
+                gpu_search_context.descriptor_set.clone(),
+                descriptor_set.clone(),
+            ],
+        );
+        context.dispatch(search_requests.len(), 1, 1);
+        context.run();
+        context.wait_finish();
+
+        let staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::GpuToCpu,
+            search_count * (m + 1) * std::mem::size_of::<u32>(),
+        ));
+        context.copy_gpu_buffer(
+            responses_buffer.clone(),
+            staging_buffer.clone(),
+            0,
+            0,
+            search_count * (m + 1) * std::mem::size_of::<u32>(),
+        );
+        context.run();
+        context.wait_finish();
+
+        let mut gpu_results: Vec<PointOffsetType> = vec![0; search_count * (m + 1)];
+        staging_buffer.download_slice(&mut gpu_results, 0);
+
+        for (i, search_result) in heuristic_results.iter().enumerate() {
+            let gpu_full_result = &gpu_results[i * (m + 1)..(i + 1) * (m + 1)];
+            let gpu_result = &gpu_full_result[1..1 + gpu_full_result[0] as usize];
+            assert_eq!(gpu_result, search_result);
+        }
+    }
 }

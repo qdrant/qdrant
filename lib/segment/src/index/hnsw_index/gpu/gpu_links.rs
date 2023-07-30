@@ -59,6 +59,7 @@ impl GpuLinks {
             0,
             std::mem::size_of::<GpuLinksParamsBuffer>(),
         );
+        upload_context.clear_buffer(links_buffer.clone());
         upload_context.run();
         upload_context.wait_finish();
 

@@ -30,15 +30,15 @@ buffer ProcessPointsBuffer {
     POINT_ID data[];
 } process_points;
 
-void run_update_request() {
+void update_entry() {
 
 }
 
-void run_request() {
+void request() {
 
 }
 
-void run_apply_response() {
+void apply_response() {
     
 }
 

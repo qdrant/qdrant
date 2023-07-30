@@ -96,6 +96,17 @@ void BHEAP(BHEAP_NAME, change_top)(BHEAP_TYPE new_value) {
     BHEAP(BHEAP_NAME, sift_down)(0);
 }
 
+// into_array
+uint BHEAP(BHEAP_NAME, into_array)() {
+    uint array_size = BHEAP(BHEAP_NAME, size);
+    while (BHEAP(BHEAP_NAME, size) > 0) {
+        uint i = BHEAP(BHEAP_NAME, size) - 1;
+        BHEAP_TYPE value = BHEAP(BHEAP_NAME, pop)();
+        BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i] = value;
+    }
+    return array_size;
+}
+
 // init
 void BHEAP(BHEAP_NAME, init)(BHEAP_TYPE none_value, uint capacity, uint offset) {
     BHEAP(BHEAP_NAME, offset) = offset;
