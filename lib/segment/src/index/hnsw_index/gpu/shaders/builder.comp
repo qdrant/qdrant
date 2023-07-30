@@ -10,6 +10,14 @@
 #include "links.comp"
 #include "searcher.comp"
 
+struct Request {
+    POINT_ID entry_id;
+}
+
+struct Response {
+
+}
+
 //layout(set = BUILDER_LAYOUT_SET, binding = 0)
 //readonly uniform BuilderParams {
 //    uint level;
@@ -22,7 +30,7 @@ buffer RequestsBuffer {
 
 layout(set = BUILDER_LAYOUT_SET, binding = 1)
 buffer ResponsesBuffer {
-    Responses data[];
+    Response data[];
 } responses;
 
 layout(set = BUILDER_LAYOUT_SET, binding = 1)
@@ -31,11 +39,67 @@ buffer ProcessPointsBuffer {
 } process_points;
 
 void update_entry() {
-
+    POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
+    ScoredPoint entry_point = {
+        point_id,
+        similarity(point_id, requests[point_id].entry_id)
+    };
+    requests[point_id].entry_id = greedy_search(point_id, entry_point).id;
 }
 
-void request() {
+void run_request() {
+    POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
+    ScoredPoint entry = {
+        point_id,
+        similarity(point_id, requests[point_id].entry_id)
+    };
 
+    search(point_id, entry);
+
+    // todo update entry
+    requests[point_id].entry_id
+
+    uint point_links_count = run_heuristic();
+
+    uint i = 0;
+    LINKS_SET_SIZE(point_id, point_links_count);
+    LINKS_FOREACH(point_id) {
+        LINKS_FOREACH_VALUE = get_nearest(i).id;
+        i += 1;
+    }
+
+    for (i = 0; i < point_links_count; i += 1) {
+        POINT_ID other_point = GET_LINK(point_id, i);
+
+        uint selected_candidates_count = 0;
+        if LINKS_COUNT(other_point) < LEVEL_M {
+            LINKS_FOREACH(other_point_id) {
+                set_nearest(selected_candidates_count, {LINKS_FOREACH_VALUE, 0.0});
+                selected_candidates_count += 1;
+            }
+            set_nearest(selected_candidates_count, {point_id, 0.0});
+            selected_candidates_count += 1;
+        } else {
+            ScoredPoint other_scored_point = {other_point, similarity(other_point, point_id)};
+            BHEAP(nearest, push)(other_scored_point);
+            LINKS_FOREACH(other_point_id) {
+                float candidate_score = similarity(other_point, LINKS_FOREACH_VALUE);
+                ScoredPoint candidate = {LINKS_FOREACH_VALUE, candidate_score};
+                BHEAP(nearest, push)(candidate);
+            }
+            selected_candidates_count = run_heuristic();
+        }
+
+        // todo copy from get_nearest to response
+        for (uint j = 0; j < selected_candidates_count; j += 1) {
+            POINT_ID link = get_nearest(j).id;
+        }
+    }
+
+    // zeroing other response slots
+    for (i = point_links_count; i < LEVEL_M; i += 1) {
+
+    }
 }
 
 void apply_response() {
