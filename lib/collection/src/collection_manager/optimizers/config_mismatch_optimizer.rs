@@ -8,8 +8,7 @@ use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
 use segment::types::{
-    HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentType,
-    VECTOR_ELEMENT_SIZE,
+    HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
