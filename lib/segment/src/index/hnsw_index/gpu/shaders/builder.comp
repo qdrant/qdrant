@@ -12,52 +12,78 @@
 
 struct Request {
     POINT_ID entry_id;
-}
-
-struct Response {
-
-}
-
-//layout(set = BUILDER_LAYOUT_SET, binding = 0)
-//readonly uniform BuilderParams {
-//    uint level;
-//} builder_params;
+};
 
 layout(set = BUILDER_LAYOUT_SET, binding = 0)
+readonly uniform BuilderParams {
+    uint processed_requests_count;
+} builder_params;
+
+layout(set = BUILDER_LAYOUT_SET, binding = 1)
 buffer RequestsBuffer {
     Request data[];
 } requests;
 
-layout(set = BUILDER_LAYOUT_SET, binding = 1)
+layout(set = BUILDER_LAYOUT_SET, binding = 2)
 buffer ResponsesBuffer {
-    Response data[];
+    POINT_ID data[];
 } responses;
 
-layout(set = BUILDER_LAYOUT_SET, binding = 1)
-buffer ProcessPointsBuffer {
+layout(set = BUILDER_LAYOUT_SET, binding = 3)
+readonly buffer ProcessPointsBuffer {
     POINT_ID data[];
 } process_points;
+
+#define RESPONSE_CAPACITY \
+    (LEVEL_M + 2)
+
+#define RESPONSE_THREAD_CAPACITY \
+    (LEVEL_M * RESPONSE_CAPACITY + 1)
+
+#define RESPONSE_THREAD_OFFSET(THREAD) \
+    ((THREAD) * RESPONSE_THREAD_CAPACITY)
+
+#define RESPONSE_THREAD_SIZE(THREAD) \
+    responses.data[RESPONSE_THREAD_OFFSET(THREAD)]
+
+#define RESPONSE_OFFSET(THREAD, I) \
+    (RESPONSE_THREAD_OFFSET(THREAD) + (I) * RESPONSE_CAPACITY + 1)
+
+#define RESPONSE_ID(THREAD, I) \
+    responses.data[RESPONSE_OFFSET(THREAD, I)]
+
+#define RESPONSE_SIZE(THREAD, I) \
+    responses.data[RESPONSE_OFFSET(THREAD, I) + 1]
+
+#define RESPONSE_LINK(THREAD, I, J) \
+    responses.data[RESPONSE_OFFSET(THREAD, I) + 2 + J]
 
 void update_entry() {
     POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
     ScoredPoint entry_point = {
         point_id,
-        similarity(point_id, requests[point_id].entry_id)
+        similarity(point_id, requests.data[point_id].entry_id)
     };
-    requests[point_id].entry_id = greedy_search(point_id, entry_point).id;
+    requests.data[point_id].entry_id = greedy_search(point_id, entry_point).id;
 }
 
 void run_request() {
     POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
     ScoredPoint entry = {
         point_id,
-        similarity(point_id, requests[point_id].entry_id)
+        similarity(point_id, requests.data[point_id].entry_id)
     };
 
     search(point_id, entry);
 
-    // todo update entry
-    requests[point_id].entry_id
+    ScoredPoint new_entry = get_nearest(0);
+    for (uint i = 1; i < BHEAP(nearest, size); i += 1) {
+        ScoredPoint candidate = get_nearest(i);
+        if (candidate.score > new_entry.score) {
+            new_entry = candidate;
+        }
+    }
+    requests.data[point_id].entry_id = new_entry.id;
 
     uint point_links_count = run_heuristic();
 
@@ -68,42 +94,52 @@ void run_request() {
         i += 1;
     }
 
+    RESPONSE_THREAD_SIZE(gl_GlobalInvocationID.x) = point_links_count;
     for (i = 0; i < point_links_count; i += 1) {
-        POINT_ID other_point = GET_LINK(point_id, i);
+        POINT_ID other_point_id = GET_LINK(point_id, i);
 
         uint selected_candidates_count = 0;
-        if LINKS_COUNT(other_point) < LEVEL_M {
+        if (LINKS_COUNT(other_point_id) < LEVEL_M) {
             LINKS_FOREACH(other_point_id) {
-                set_nearest(selected_candidates_count, {LINKS_FOREACH_VALUE, 0.0});
+                set_nearest(selected_candidates_count, ScoredPoint(LINKS_FOREACH_VALUE, 0.0));
                 selected_candidates_count += 1;
             }
-            set_nearest(selected_candidates_count, {point_id, 0.0});
+            set_nearest(selected_candidates_count, ScoredPoint(point_id, 0.0));
             selected_candidates_count += 1;
         } else {
-            ScoredPoint other_scored_point = {other_point, similarity(other_point, point_id)};
+            ScoredPoint other_scored_point = {other_point_id, similarity(other_point_id, point_id)};
             BHEAP(nearest, push)(other_scored_point);
             LINKS_FOREACH(other_point_id) {
-                float candidate_score = similarity(other_point, LINKS_FOREACH_VALUE);
+                float candidate_score = similarity(other_point_id, LINKS_FOREACH_VALUE);
                 ScoredPoint candidate = {LINKS_FOREACH_VALUE, candidate_score};
                 BHEAP(nearest, push)(candidate);
             }
             selected_candidates_count = run_heuristic();
         }
 
-        // todo copy from get_nearest to response
+        RESPONSE_ID(gl_GlobalInvocationID.x, i) = other_point_id;
+        RESPONSE_SIZE(gl_GlobalInvocationID.x, i) = selected_candidates_count;
         for (uint j = 0; j < selected_candidates_count; j += 1) {
             POINT_ID link = get_nearest(j).id;
+            RESPONSE_LINK(gl_GlobalInvocationID.x, i, j) = link;
         }
-    }
-
-    // zeroing other response slots
-    for (i = point_links_count; i < LEVEL_M; i += 1) {
-
     }
 }
 
 void apply_response() {
-    
+    for (uint i = 0; i < builder_params.processed_requests_count; i += 1) {
+        uint thread_size = RESPONSE_THREAD_SIZE(i);
+        for (uint j = 0; j < thread_size; j += 1) {
+            uint size = RESPONSE_SIZE(i, j);
+            uint point_id = RESPONSE_ID(i, j);
+            LINKS_SET_SIZE(point_id, size);
+            uint k = 0;
+            LINKS_FOREACH(point_id) {
+                LINKS_FOREACH_VALUE = RESPONSE_LINK(i, j, k);
+                k += 1;
+            }
+        }
+    }
 }
 
 #endif
