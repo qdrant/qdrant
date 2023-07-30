@@ -22,6 +22,7 @@ BHEAP(BHEAP_NAME, top)(); // get top value
 BHEAP(BHEAP_NAME, pop)(); // pop value
 BHEAP(BHEAP_NAME, change_top)(1.0); // pop and push
 BHEAP(BHEAP_NAME, push)(1.0); // push value
+BHEAP(BHEAP_NAME, into_array)(); // convert to sorted array and return array size
 
 ******/
 
