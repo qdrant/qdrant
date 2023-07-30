@@ -11,6 +11,7 @@
 
 layout(set = SEARCHER_LAYOUT_SET, binding = 0)
 readonly uniform SearcherParams {
+    uint nearest_capacity;
     uint candidates_capacity;
     uint visited_flags_capacity;
 } searcher_params;
@@ -115,8 +116,8 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
 void searcher_init() {
     BHEAP(nearest, init)(
         ScoredPoint(0, negative_infinity),
-        EF,
-        gl_GlobalInvocationID.x * EF);
+        searcher_params.nearest_capacity,
+        gl_GlobalInvocationID.x * searcher_params.nearest_capacity);
 
     BHEAP(candidates, init)(
         ScoredPoint(0, positive_infinity),

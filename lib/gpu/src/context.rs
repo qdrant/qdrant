@@ -164,7 +164,7 @@ impl Context {
         self.resources.push(dst);
     }
 
-    pub fn zero_buffer(&mut self, buffer: Arc<Buffer>) {
+    pub fn clear_buffer(&mut self, buffer: Arc<Buffer>) {
         if buffer.size % 4 != 0 {
             panic!("buffer size must be a multiple of 4");
         }

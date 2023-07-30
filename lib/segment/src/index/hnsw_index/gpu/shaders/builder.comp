@@ -1,0 +1,45 @@
+#ifndef BUILDER_HEADER
+#define BUILDER_HEADER
+
+#ifndef BUILDER_LAYOUT_SET
+#error "BUILDER_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+#include "vector_storage.comp"
+#include "links.comp"
+#include "searcher.comp"
+
+//layout(set = BUILDER_LAYOUT_SET, binding = 0)
+//readonly uniform BuilderParams {
+//    uint level;
+//} builder_params;
+
+layout(set = BUILDER_LAYOUT_SET, binding = 0)
+buffer RequestsBuffer {
+    Request data[];
+} requests;
+
+layout(set = BUILDER_LAYOUT_SET, binding = 1)
+buffer ResponsesBuffer {
+    Responses data[];
+} responses;
+
+layout(set = BUILDER_LAYOUT_SET, binding = 1)
+buffer ProcessPointsBuffer {
+    POINT_ID data[];
+} process_points;
+
+void run_update_request() {
+
+}
+
+void run_request() {
+
+}
+
+void run_apply_response() {
+    
+}
+
+#endif
