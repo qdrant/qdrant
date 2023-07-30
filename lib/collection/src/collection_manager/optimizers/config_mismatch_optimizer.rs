@@ -7,7 +7,10 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
-use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
+use segment::types::{
+    HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentType,
+    VECTOR_ELEMENT_SIZE,
+};
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
@@ -49,6 +52,15 @@ impl ConfigMismatchOptimizer {
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
+    }
+
+    /// Check if current configuration requires vectors to be stored on disk
+    fn get_if_vectors_on_disk(&self, vector_name: &str) -> bool {
+        self.collection_params
+            .vectors
+            .get_params(vector_name)
+            .and_then(|vector_params| vector_params.on_disk)
+            .unwrap_or_default()
     }
 
     /// Calculates and HNSW config that should be used for a given vector
@@ -108,6 +120,16 @@ impl ConfigMismatchOptimizer {
                     return None; // Never optimize already optimized segment
                 }
 
+                match (
+                    self.collection_params.on_disk_payload,
+                    segment_config.payload_storage_type,
+                ) {
+                    (true, PayloadStorageType::OnDisk) => {}
+                    (false, PayloadStorageType::InMemory) => {}
+                    (true, PayloadStorageType::InMemory) => return Some((*idx, vector_size)),
+                    (false, PayloadStorageType::OnDisk) => return Some((*idx, vector_size)),
+                }
+
                 // Determine whether segment has mismatch
                 let has_mismatch =
                     segment_config
@@ -124,6 +146,12 @@ impl ConfigMismatchOptimizer {
                                         return true;
                                     }
                                 }
+                            }
+
+                            let is_required_on_disk = self.get_if_vectors_on_disk(vector_name);
+
+                            if is_required_on_disk != vector_data.storage_type.is_on_disk() {
+                                return true;
                             }
 
                             // Check quantization mismatch
