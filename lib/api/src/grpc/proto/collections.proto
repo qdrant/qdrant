@@ -12,6 +12,7 @@ message VectorParams {
 message VectorParamsDiff {
   optional HnswConfigDiff hnsw_config = 1; // Update params for HNSW index. If empty object - it will be unset
   optional QuantizationConfigDiff quantization_config = 2; // Update quantization params. If none - it is left unchanged.
+  optional bool on_disk = 3; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
 }
 
 message VectorParamsMap {
@@ -276,6 +277,7 @@ message CollectionParams {
 message CollectionParamsDiff {
   optional uint32 replication_factor = 1; // Number of replicas of each shard that network tries to maintain
   optional uint32 write_consistency_factor = 2; // How many replicas should apply the operation for us to consider it successful
+  optional bool on_disk_payload = 3; // If true - point's payload will not be stored in memory
 }
 
 message CollectionConfig {

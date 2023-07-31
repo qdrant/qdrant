@@ -5931,6 +5931,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -5968,6 +5973,12 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 1,
+            "nullable": true
+          },
+          "on_disk_payload": {
+            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
+            "default": null,
+            "type": "boolean",
             "nullable": true
           }
         }

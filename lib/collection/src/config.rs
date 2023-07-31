@@ -190,6 +190,7 @@ impl CollectionParams {
             let VectorParamsDiff {
                 hnsw_config,
                 quantization_config,
+                on_disk,
             } = update_params.clone();
 
             if let Some(hnsw_diff) = hnsw_config {
@@ -210,6 +211,10 @@ impl CollectionParams {
                     }
                     QuantizationConfigDiff::Disabled(_) => None,
                 }
+            }
+
+            if let Some(on_disk) = on_disk {
+                vector_params.on_disk = Some(on_disk);
             }
         }
         Ok(())
