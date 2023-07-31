@@ -561,6 +561,12 @@ pub enum PayloadStorageType {
     OnDisk,
 }
 
+impl PayloadStorageType {
+    pub fn is_on_disk(&self) -> bool {
+        matches!(self, PayloadStorageType::OnDisk)
+    }
+}
+
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
@@ -593,14 +599,11 @@ impl SegmentConfig {
             .all(|config| config.index.is_indexed())
     }
 
-    /// Check if any vector storage is mmap'ed
-    ///
-    /// This assumes that when the storage for a named vector requests to be stored on disk; it is
-    /// mmap'ed.
-    pub fn is_any_mmap(&self) -> bool {
+    /// Check if any vector storage is on-disk
+    pub fn is_any_on_disk(&self) -> bool {
         self.vector_data
             .values()
-            .any(|config| config.storage_type.is_mmap())
+            .any(|config| config.storage_type.is_on_disk())
     }
 }
 
@@ -624,7 +627,7 @@ pub enum VectorStorageType {
 
 impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
-    fn is_mmap(&self) -> bool {
+    pub fn is_on_disk(&self) -> bool {
         match self {
             Self::Memory => false,
             Self::Mmap | Self::ChunkedMmap => true,

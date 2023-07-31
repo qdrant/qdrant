@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from .helpers.helpers import request_with_validation
@@ -68,7 +69,10 @@ def test_collection_update_multivec():
     assert response.ok
 
 
-def test_hnsw_update():
+def test_edit_collection_params():
+    # If Qdrant is tested with vectors on disk mode
+    on_disk_vectors = bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
+
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -79,6 +83,8 @@ def test_hnsw_update():
     config = result["config"]
     assert "hnsw_config" not in config["params"]["vectors"]
     assert "quantization_config" not in config["params"]["vectors"]
+    assert config["params"]["vectors"]["text"]["on_disk"] == on_disk_vectors
+    assert not config["params"]["on_disk_payload"]
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 100
     assert config["quantization_config"] is None
@@ -99,6 +105,7 @@ def test_hnsw_update():
                             "quantile": 0.8
                         }
                     },
+                    "on_disk": True,
                 }
             },
             "hnsw_config": {
@@ -110,6 +117,9 @@ def test_hnsw_update():
                     "quantile": 0.99,
                     "always_ram": True
                 }
+            },
+            "params": {
+                "on_disk_payload": True,
             },
         }
     )
@@ -127,6 +137,8 @@ def test_hnsw_update():
     assert config["params"]["vectors"]["text"]["quantization_config"]["scalar"]["type"] == "int8"
     assert config["params"]["vectors"]["text"]["quantization_config"]["scalar"]["quantile"] == 0.8
     assert "always_ram" not in config["params"]["vectors"]["text"]["quantization_config"]["scalar"]
+    assert config["params"]["vectors"]["text"]["on_disk"]
+    assert config["params"]["on_disk_payload"]
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 123
     assert config["quantization_config"]["scalar"]["type"] == "int8"
@@ -150,7 +162,11 @@ def test_hnsw_update():
                             "always_ram": True
                         }
                     },
+                    "on_disk": False,
                 },
+            },
+            "params": {
+                "on_disk_payload": False,
             },
         }
     )
@@ -168,6 +184,8 @@ def test_hnsw_update():
     assert config["params"]["vectors"]["text"]["hnsw_config"]["ef_construct"] == 100
     assert config["params"]["vectors"]["text"]["quantization_config"]["product"]["compression"] == "x32"
     assert config["params"]["vectors"]["text"]["quantization_config"]["product"]["always_ram"]
+    assert not config["params"]["vectors"]["text"]["on_disk"]
+    assert not config["params"]["on_disk_payload"]
     assert config["quantization_config"]["scalar"]["type"] == "int8"
     assert config["quantization_config"]["scalar"]["quantile"] == 0.99
     assert config["quantization_config"]["scalar"]["always_ram"]

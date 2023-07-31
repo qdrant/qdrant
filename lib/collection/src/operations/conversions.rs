@@ -157,6 +157,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                     })
                 })
                 .transpose()?,
+            on_disk_payload: value.on_disk_payload,
         })
     }
 }
@@ -420,6 +421,7 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
                 .quantization_config
                 .map(TryInto::try_into)
                 .transpose()?,
+            on_disk: vector_params.on_disk,
         })
     }
 }

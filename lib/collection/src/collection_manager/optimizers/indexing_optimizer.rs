@@ -80,9 +80,9 @@ impl IndexingOptimizer {
 
                 let segment_config = read_segment.config();
                 let is_any_vector_indexed = segment_config.is_any_vector_indexed();
-                let is_any_mmap = segment_config.is_any_mmap();
+                let is_any_on_disk = segment_config.is_any_on_disk();
 
-                if !(is_any_vector_indexed || is_any_mmap) {
+                if !(is_any_vector_indexed || is_any_on_disk) {
                     return None;
                 }
 
@@ -123,7 +123,7 @@ impl IndexingOptimizer {
 
                 // Apply indexing to plain segments which have grown too big
                 let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
-                let is_any_mmap = segment_config.is_any_mmap();
+                let is_any_on_disk = segment_config.is_any_on_disk();
 
                 let big_for_mmap = vector_size
                     >= self
@@ -136,8 +136,8 @@ impl IndexingOptimizer {
                         .indexing_threshold
                         .saturating_mul(BYTES_IN_KB);
 
-                let require_indexing =
-                    (big_for_mmap && !is_any_mmap) || (big_for_index && !are_all_vectors_indexed);
+                let require_indexing = (big_for_mmap && !is_any_on_disk)
+                    || (big_for_index && !are_all_vectors_indexed);
 
                 require_indexing.then_some((*idx, vector_size))
             })
@@ -520,9 +520,12 @@ mod tests {
             "Testing that 2 segments are actually indexed"
         );
 
-        let mmap_count = configs.iter().filter(|config| config.is_any_mmap()).count();
+        let on_disk_count = configs
+            .iter()
+            .filter(|config| config.is_any_on_disk())
+            .count();
         assert_eq!(
-            mmap_count, 1,
+            on_disk_count, 1,
             "Testing that only largest segment is not Mmap"
         );
 

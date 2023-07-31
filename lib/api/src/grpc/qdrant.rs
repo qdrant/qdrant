@@ -33,6 +33,9 @@ pub struct VectorParamsDiff {
     #[prost(message, optional, tag = "2")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
+    /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+    #[prost(bool, optional, tag = "3")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -455,6 +458,9 @@ pub struct CollectionParamsDiff {
     /// How many replicas should apply the operation for us to consider it successful
     #[prost(uint32, optional, tag = "2")]
     pub write_consistency_factor: ::core::option::Option<u32>,
+    /// If true - point's payload will not be stored in memory
+    #[prost(bool, optional, tag = "3")]
+    pub on_disk_payload: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
