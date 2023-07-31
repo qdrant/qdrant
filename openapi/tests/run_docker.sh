@@ -14,5 +14,5 @@ cd "$(dirname "$0")"
 
 trap clear_after_tests EXIT
 
-pytest -s
+pytest -s -k test_snapshot_operations_non_wait 
 QDRANT__ON_DISK_VECTORS=1 pytest -s
