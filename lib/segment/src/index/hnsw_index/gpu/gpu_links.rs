@@ -86,7 +86,7 @@ impl GpuLinks {
         })
     }
 
-    pub fn upload(&mut self, count: usize) {
+    pub fn upload(&self, gpu_context: &mut gpu::Context, count: usize) {
         let upload_size = count * (self.m + 1) * std::mem::size_of::<PointOffsetType>();
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
@@ -95,19 +95,18 @@ impl GpuLinks {
         ));
         staging_buffer.upload_slice(&self.links[0..count * (self.m + 1)], 0);
 
-        let mut upload_context = gpu::Context::new(self.device.clone());
-        upload_context.copy_gpu_buffer(
+        gpu_context.copy_gpu_buffer(
             staging_buffer.clone(),
             self.links_buffer.clone(),
             0,
             0,
             upload_size,
         );
-        upload_context.run();
-        upload_context.wait_finish();
+        gpu_context.run();
+        gpu_context.wait_finish();
     }
 
-    pub fn download(&mut self) {
+    pub fn download(&mut self, gpu_context: &mut gpu::Context) {
         let timer = std::time::Instant::now();
 
         let chunk_size = 10_000_000;
@@ -117,20 +116,19 @@ impl GpuLinks {
             chunk_size * std::mem::size_of::<PointOffsetType>(),
         ));
 
-        let mut context = gpu::Context::new(self.device.clone());
         let mut chunk_begin = 0;
         while chunk_begin < self.links.len() {
             let chunk_end = std::cmp::min(chunk_begin + chunk_size, self.links.len());
 
-            context.copy_gpu_buffer(
+            gpu_context.copy_gpu_buffer(
                 self.links_buffer.clone(),
                 staging_buffer.clone(),
                 chunk_begin * std::mem::size_of::<PointOffsetType>(),
                 0,
                 chunk_end - chunk_begin,
             );
-            context.run();
-            context.wait_finish();
+            gpu_context.run();
+            gpu_context.wait_finish();
 
             let slice = &mut self.links[chunk_begin..chunk_end];
             staging_buffer.download_slice(slice, 0);
@@ -193,6 +191,7 @@ mod tests {
             Arc::new(gpu::Instance::new("qdrant", Some(&debug_messenger), false).unwrap());
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
+        let mut context = gpu::Context::new(device.clone());
 
         let mut gpu_links = GpuLinks::new(device.clone(), m, ef, points_count).unwrap();
 
@@ -200,10 +199,10 @@ mod tests {
             gpu_links.set_links(i as PointOffsetType, &links);
         }
 
-        gpu_links.upload(fill_count);
+        gpu_links.upload(&mut context, fill_count);
 
         // test 1: download and check that links are same
-        gpu_links.download();
+        gpu_links.download(&mut context);
         for (i, links) in generated_links.iter().enumerate() {
             let gpu_links = gpu_links.get_links(i as PointOffsetType);
             assert_eq!(gpu_links, links);
@@ -220,13 +219,12 @@ mod tests {
             .add_shader(shader.clone())
             .build(device.clone());
 
-        let mut context = gpu::Context::new(device.clone());
         context.bind_pipeline(pipeline, &[gpu_links.descriptor_set.clone()]);
         context.dispatch(points_count, 1, 1);
         context.run();
         context.wait_finish();
 
-        gpu_links.download();
+        gpu_links.download(&mut context);
         for (i, links) in generated_links.iter().enumerate() {
             let mut links = links.to_owned();
             links.sort();

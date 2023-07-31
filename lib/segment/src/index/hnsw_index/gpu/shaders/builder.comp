@@ -10,10 +10,6 @@
 #include "links.comp"
 #include "searcher.comp"
 
-struct Request {
-    POINT_ID entry_id;
-};
-
 layout(set = BUILDER_LAYOUT_SET, binding = 0)
 readonly uniform BuilderParams {
     uint processed_requests_count;
@@ -21,7 +17,7 @@ readonly uniform BuilderParams {
 
 layout(set = BUILDER_LAYOUT_SET, binding = 1)
 buffer RequestsBuffer {
-    Request data[];
+    POINT_ID data[];
 } requests;
 
 layout(set = BUILDER_LAYOUT_SET, binding = 2)
@@ -62,16 +58,16 @@ void update_entry() {
     POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
     ScoredPoint entry_point = {
         point_id,
-        similarity(point_id, requests.data[point_id].entry_id)
+        similarity(point_id, requests.data[point_id])
     };
-    requests.data[point_id].entry_id = greedy_search(point_id, entry_point).id;
+    requests.data[point_id] = greedy_search(point_id, entry_point).id;
 }
 
 void run_request() {
     POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
     ScoredPoint entry = {
         point_id,
-        similarity(point_id, requests.data[point_id].entry_id)
+        similarity(point_id, requests.data[point_id])
     };
 
     search(point_id, entry);
@@ -83,7 +79,7 @@ void run_request() {
             new_entry = candidate;
         }
     }
-    requests.data[point_id].entry_id = new_entry.id;
+    requests.data[point_id] = new_entry.id;
 
     uint point_links_count = run_heuristic();
 

@@ -208,6 +208,7 @@ mod tests {
             Arc::new(gpu::Instance::new("qdrant", Some(&debug_messenger), false).unwrap());
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
+        let mut context = gpu::Context::new(device.clone());
 
         let mut gpu_links = GpuLinks::new(device.clone(), m, ef, points_count).unwrap();
         for idx in 0..points_count as PointOffsetType {
@@ -217,7 +218,7 @@ mod tests {
             });
             gpu_links.set_links(idx, &links);
         }
-        gpu_links.upload(points_count);
+        gpu_links.upload(&mut context, points_count);
 
         let gpu_search_context = GpuSearchContext::new(
             search_count,
