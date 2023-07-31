@@ -51,6 +51,15 @@ impl ConfigMismatchOptimizer {
         }
     }
 
+    /// Check if current configuration requires vectors to be stored on disk
+    fn check_if_vectors_on_disk(&self, vector_name: &str) -> bool {
+        self.collection_params
+            .vectors
+            .get_params(vector_name)
+            .and_then(|vector_params| vector_params.on_disk)
+            .unwrap_or_default()
+    }
+
     /// Calculates and HNSW config that should be used for a given vector
     /// with current configuration.
     ///
@@ -108,6 +117,12 @@ impl ConfigMismatchOptimizer {
                     return None; // Never optimize already optimized segment
                 }
 
+                if self.collection_params.on_disk_payload
+                    != segment_config.payload_storage_type.is_on_disk()
+                {
+                    return Some((*idx, vector_size)); // Skip segments with payload mismatch
+                }
+
                 // Determine whether segment has mismatch
                 let has_mismatch =
                     segment_config
@@ -124,6 +139,12 @@ impl ConfigMismatchOptimizer {
                                         return true;
                                     }
                                 }
+                            }
+
+                            let is_required_on_disk = self.check_if_vectors_on_disk(vector_name);
+
+                            if is_required_on_disk != vector_data.storage_type.is_on_disk() {
+                                return true;
                             }
 
                             // Check quantization mismatch

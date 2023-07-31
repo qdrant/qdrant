@@ -99,6 +99,12 @@ pub struct CollectionParamsDiff {
     pub replication_factor: Option<NonZeroU32>,
     /// Minimal number successful responses from replicas to consider operation successful
     pub write_consistency_factor: Option<NonZeroU32>,
+    /// If true - point's payload will not be stored in memory.
+    /// It will be read from the disk every time it is requested.
+    /// This setting saves RAM by (slightly) increasing the response time.
+    /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
+    #[serde(default)]
+    pub on_disk_payload: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
@@ -340,12 +346,14 @@ mod tests {
         let diff = CollectionParamsDiff {
             replication_factor: None,
             write_consistency_factor: Some(NonZeroU32::new(2).unwrap()),
+            on_disk_payload: None,
         };
 
         let new_params = diff.update(&params).unwrap();
 
         assert_eq!(new_params.replication_factor.get(), 1);
         assert_eq!(new_params.write_consistency_factor.get(), 2);
+        assert!(!new_params.on_disk_payload);
     }
 
     #[test]
