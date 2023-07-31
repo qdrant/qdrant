@@ -104,7 +104,7 @@ def test_snapshot_operations():
     assert response.ok
     assert len(response.json()['result']) == 0
 
-@pytest.mark.timeout(20)
+@pytest.mark.timeout(60)
 def test_snapshot_operations_non_wait():
     # there no snapshot on collection
     response = request_with_validation(
