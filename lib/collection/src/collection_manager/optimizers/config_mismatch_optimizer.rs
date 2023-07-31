@@ -8,7 +8,7 @@ use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
 use segment::types::{
-    HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE,
+    HnswConfig, Indexes, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
@@ -54,7 +54,7 @@ impl ConfigMismatchOptimizer {
     }
 
     /// Check if current configuration requires vectors to be stored on disk
-    fn get_if_vectors_on_disk(&self, vector_name: &str) -> bool {
+    fn check_if_vectors_on_disk(&self, vector_name: &str) -> bool {
         self.collection_params
             .vectors
             .get_params(vector_name)
@@ -119,14 +119,10 @@ impl ConfigMismatchOptimizer {
                     return None; // Never optimize already optimized segment
                 }
 
-                match (
-                    self.collection_params.on_disk_payload,
-                    segment_config.payload_storage_type,
-                ) {
-                    (true, PayloadStorageType::OnDisk) => {}
-                    (false, PayloadStorageType::InMemory) => {}
-                    (true, PayloadStorageType::InMemory) => return Some((*idx, vector_size)),
-                    (false, PayloadStorageType::OnDisk) => return Some((*idx, vector_size)),
+                if self.collection_params.on_disk_payload
+                    != segment_config.payload_storage_type.is_on_disk()
+                {
+                    return Some((*idx, vector_size)); // Skip segments with payload mismatch
                 }
 
                 // Determine whether segment has mismatch
@@ -147,7 +143,7 @@ impl ConfigMismatchOptimizer {
                                 }
                             }
 
-                            let is_required_on_disk = self.get_if_vectors_on_disk(vector_name);
+                            let is_required_on_disk = self.check_if_vectors_on_disk(vector_name);
 
                             if is_required_on_disk != vector_data.storage_type.is_on_disk() {
                                 return true;

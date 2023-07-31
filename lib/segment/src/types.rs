@@ -561,6 +561,12 @@ pub enum PayloadStorageType {
     OnDisk,
 }
 
+impl PayloadStorageType {
+    pub fn is_on_disk(&self) -> bool {
+        matches!(self, PayloadStorageType::OnDisk)
+    }
+}
+
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
