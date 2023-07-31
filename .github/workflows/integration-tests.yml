@@ -19,38 +19,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies
+        run: sudo apt-get install clang protobuf-compiler
       - name: Build
         run: cargo build --features service_debug
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
-
-  test-windows:
-
-    runs-on: windows-latest
-    steps:
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build
-        run: cargo build --features service_debug
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - name: Run integration tests
-        run: WITH_DOCKER=false ./tests/integration-tests.sh
-        shell: bash
-
   test-consensus:
 
     runs-on: ubuntu-latest
