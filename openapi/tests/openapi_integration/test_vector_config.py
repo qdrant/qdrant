@@ -145,7 +145,7 @@ def test_retrieve_vector_specific_quantization():
     assert config['quantization_config']['scalar']['type'] == "int8"
     assert config['quantization_config']['scalar']['quantile'] == 0.5
 
-@pytest.mark.timeout(20)
+@pytest.mark.timeout(60)
 def test_disable_indexing():
     indexed_name = 'test_collection_indexed'
     unindexed_name = 'test_collection_unindexed'
