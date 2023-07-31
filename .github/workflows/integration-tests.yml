@@ -2,7 +2,7 @@ name: Integration tests
 
 on:
   push:
-    #  branches: [ master, dev ]
+    branches: [ master, dev ]
   pull_request:
     branches: [ '**' ]
 
@@ -11,7 +11,6 @@ env:
 
 jobs:
   test:
-    if: false
     runs-on: ubuntu-latest
 
     steps:
@@ -52,7 +51,6 @@ jobs:
         shell: bash
 
   test-consensus:
-    if: false
 
     runs-on: ubuntu-latest
 
@@ -86,7 +84,6 @@ jobs:
 
   test-consensus-compose:
 
-    if: false
 
     runs-on: ubuntu-latest
 
@@ -116,7 +113,6 @@ jobs:
         working-directory: ./tests/consensus_tests
 
   test-tls-compose:
-    if: false
 
     runs-on: ubuntu-latest
 
@@ -141,7 +137,6 @@ jobs:
         working-directory: ./tests/tls
 
   test-consistency:
-    if: false
 
     runs-on: ubuntu-latest
 
@@ -176,7 +171,6 @@ jobs:
 
   test-low-ram:
     runs-on: ubuntu-latest
-    if: false
 
     steps:
       - name: Install dependencies
