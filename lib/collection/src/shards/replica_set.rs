@@ -1237,6 +1237,7 @@ impl ShardReplicaSet {
         locally_disabled.remove(&peer_id_to_remove);
 
         if active_peers.is_subset(&locally_disabled) {
+            log::warn!("Resolving consensus/local state inconcistency");
             locally_disabled.clear();
         }
     }
