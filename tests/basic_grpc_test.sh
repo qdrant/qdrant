@@ -15,7 +15,8 @@ if [ "$WITH_DOCKER" == "false" ]; then
 	# aria2 and 7z comes with windows-latest
 	aria2c "https://github.com/fullstorydev/grpcurl/releases/download/v${VER}/grpcurl_${VER}_windows_${ARCH}.zip"
 	7z x -y "grpcurl_${VER}_windows_${ARCH}.zip"
-	docker_grpcurl="grpcurl.exe ${OPT}"
+	install grpcurl /usr/local/bin/
+	docker_grpcurl="grpcurl ${OPT}"
 else
 	docker_grpcurl="docker run --rm --network=host -v ${PWD}/lib/api/src/grpc/proto:/proto fullstorydev/grpcurl ${OPT}"
 fi
