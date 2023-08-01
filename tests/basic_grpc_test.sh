@@ -12,6 +12,7 @@ OPT="-plaintext -import-path /proto -proto qdrant.proto"
 if [ "$WITH_DOCKER" == "false" ]; then
 	VER=1.8.7
 	ARCH=x86_64
+	# aria2 and 7z comes with windows-latest
 	aria2c "https://github.com/fullstorydev/grpcurl/releases/download/v${VER}/grpcurl_${VER}_windows_${ARCH}.zip"
 	7z x -y "grpcurl_${VER}_windows_${ARCH}.zip"
 	docker_grpcurl="grpcurl.exe ${OPT}"
