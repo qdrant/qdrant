@@ -566,6 +566,13 @@ impl ShardReplicaSet {
     }
 
     pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
+        log::debug!(
+            "Changing local shard {}:{} state from {:?} to {state:?}",
+            self.collection_id,
+            self.shard_id,
+            self.replica_state.read().get_peer_state(peer_id),
+        );
+
         self.replica_state.write(|rs| {
             if rs.this_peer_id == *peer_id {
                 rs.is_local = true;
