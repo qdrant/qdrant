@@ -1225,7 +1225,8 @@ impl ShardReplicaSet {
     fn update_locally_disabled(&self, peer_id_to_remove: PeerId) {
         // Check that we are not trying to disable the last active peer
         let peers = self.peers();
-        let active_peers: Vec<_> = peers
+
+        let active_peers: HashSet<_> = peers
             .iter()
             .filter(|(_, state)| **state == ReplicaState::Active)
             .map(|(peer, _)| *peer)
@@ -1235,9 +1236,9 @@ impl ShardReplicaSet {
 
         locally_disabled.remove(&peer_id_to_remove);
 
-        if active_peers.len() == 1 {
-            let last_peer = active_peers.first().unwrap();
-            locally_disabled.remove(last_peer);
+        if active_peers.is_subset(&locally_disabled) {
+            log::warn!("Resolving consensus/local state inconcistency");
+            locally_disabled.clear();
         }
     }
 
