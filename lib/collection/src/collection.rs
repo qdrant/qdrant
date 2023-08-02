@@ -1682,7 +1682,7 @@ impl Collection {
                         "Transfer {:?} is failed, but not reported as failed. Reporting now.",
                         transfer.key()
                     );
-                    on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+                    on_transfer_failure(transfer, self.name(), "transfer failed");
                 }
             }
         }
