@@ -9,13 +9,13 @@ use crate::common::rocksdb_wrapper;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::types::{Distance, PointOffsetType};
+use crate::vector_storage::common::set_async_scorer;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{
     async_raw_scorer, new_raw_scorer, RawScorer, ScoredPointOffset, VectorStorageEnum,
 };
-use crate::vector_storage::common::set_async_scorer;
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
