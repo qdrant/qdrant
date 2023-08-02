@@ -15,10 +15,6 @@ def setup(on_disk_vectors):
 
 
 def test_points_retrieve():
-    points_retrieve()
-
-
-def points_retrieve():
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
@@ -91,10 +87,6 @@ def points_retrieve():
 
 
 def test_exclude_payload():
-    exclude_payload()
-
-
-def exclude_payload():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -124,10 +116,6 @@ def exclude_payload():
 
 
 def test_is_empty_condition():
-    is_empty_condition()
-
-
-def is_empty_condition():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -161,10 +149,6 @@ def is_empty_condition():
 
 
 def test_is_null_condition():
-    is_null_condition()
-
-
-def is_null_condition():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -229,10 +213,6 @@ def is_null_condition():
     must_not_is_null("city[]")
 
 def test_recommendation():
-    recommendation()
-
-
-def recommendation():
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend',
         method="POST",
@@ -251,10 +231,6 @@ def recommendation():
 
 
 def test_query_nested():
-    query_nested()
-
-
-def query_nested():
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
