@@ -124,34 +124,19 @@ def create_multi_from_collection(collection_name, source_collection_name, vector
     return response
 
 
-def test_init_from_collection(on_disk_vectors):
-    default_vector(on_disk_vectors)
-    multi_vector(on_disk_vectors)
-
-
-def default_vector(on_disk_vectors):
-    # test successful init from collection
+@pytest.mark.parametrize("ok,source,size,distance", [
+    (True, source_collection_name, 4, 'Dot'), # ok
+    (False, "i-do-not-exist", 4, 'Dot'), # fail: non existing source collection
+    (False, source_collection_name, 8, 'Dot'), # fail: bad size
+    (False, source_collection_name, 4, 'Cosine'), # fail: bad distance
+])
+def test_init_from_collection(ok, source, size, distance, on_disk_vectors):
     advanced_collection_setup(source_collection_name, 4, 'Dot', on_disk_vectors, False)
-    response = create_from_collection(collection_name, source_collection_name, 4, 'Dot', on_disk_vectors, False)
-    assert response.ok
-
-    # test failed init from collection (non existing source collection)
-    advanced_collection_setup(source_collection_name, 4, 'Dot', on_disk_vectors, False)
-    response = create_from_collection(collection_name, "i-do-not-exist", 4, 'Dot', on_disk_vectors, False)
-    assert not response.ok
-
-    # test failed init from collection (bad size)
-    advanced_collection_setup(source_collection_name, 4, 'Dot', on_disk_vectors, False)
-    response = create_from_collection(collection_name, source_collection_name, 8, 'Dot', on_disk_vectors, False)
-    assert not response.ok
-
-    # test failed init from collection (bad distance)
-    advanced_collection_setup(source_collection_name, 4, 'Dot', on_disk_vectors, False)
-    response = create_from_collection(collection_name, source_collection_name, 4, 'Cosine', on_disk_vectors, False)
-    assert not response.ok
+    response = create_from_collection(collection_name, source, size, distance, on_disk_vectors, False)
+    assert response.ok == ok
 
 
-def multi_vector(on_disk_vectors):
+def test_init_from_collection_multivec(on_disk_vectors):
     config = {
         "image": {
             "size": 4,
