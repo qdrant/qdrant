@@ -717,10 +717,22 @@ impl Collection {
 
         match shard_transfer_requested.await {
             Ok(true) => Ok(()),
-            Ok(false) => Err(CollectionError::Timeout {
-                description: "TODO".into(), // TODO!
-            }),
-            Err(err) => Err(CollectionError::service_error(format!("TODO: {err}"))), // TODO!
+
+            Ok(false) => {
+                let description = "\
+                    Failed to initiate shard transfer: \
+                    Didn't receive shard transfer notification from consensus in 60 seconds";
+
+                Err(CollectionError::Timeout {
+                    description: description.into(),
+                })
+            }
+
+            Err(err) => Err(CollectionError::service_error(format!(
+                "Failed to initiate shard transfer: \
+                 Failed to execute wait-for-consensus-notification task: \
+                 {err}"
+            ))),
         }
     }
 
