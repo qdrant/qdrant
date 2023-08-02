@@ -2,6 +2,7 @@ import random
 
 import pytest
 
+from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_fts'
@@ -146,15 +147,6 @@ texts = [
     "What's in a Name?",
     "The Winnowing",
 ]
-
-
-def drop_collection(collection_name='test_collection'):
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="DELETE",
-        path_params={'collection_name': collection_name},
-    )
-    assert response.ok
 
 
 def basic_collection_setup(collection_name='test_collection', on_disk_payload=False):
