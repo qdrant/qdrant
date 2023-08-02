@@ -527,10 +527,34 @@ impl Collection {
                     "Shard {shard_id} doesn't exist"
                 )));
             };
-            // Set learning replica state on all peers
-            // This should disable queries to learning replica even if it was active
-            replica_set.set_replica_state(&shard_transfer.to, ReplicaState::Partial)?;
-            replica_set.is_local().await && replica_set.this_peer_id() == shard_transfer.from
+
+            let is_local = replica_set.is_local().await;
+            let is_receiver = replica_set.this_peer_id() == shard_transfer.to;
+            let is_sender = replica_set.this_peer_id() == shard_transfer.from;
+
+            // Create local shard if it does not exist on receiver, or simply set replica state otherwise
+            // (on all peers, regardless if shard is local or remote on that peer).
+            //
+            // This should disable queries to receiver replica even if it was active before.
+            if !is_local && is_receiver {
+                let shard = LocalShard::build(
+                    shard_id,
+                    self.name(),
+                    &replica_set.shard_path,
+                    self.collection_config.clone(),
+                    self.shared_storage_config.clone(),
+                    self.update_runtime.clone(),
+                )
+                .await?;
+
+                replica_set
+                    .set_local(shard, Some(ReplicaState::Partial))
+                    .await?;
+            } else {
+                replica_set.set_replica_state(&shard_transfer.to, ReplicaState::Partial)?;
+            }
+
+            is_local && is_sender
         };
         if do_transfer {
             self.send_shard(shard_transfer, on_finish, on_error).await;
@@ -656,45 +680,66 @@ impl Collection {
     }
 
     /// Initiate local partial shard
-    pub async fn initiate_local_partial_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
-        let shards_holder = self.shards_holder.read().await;
-        let replica_set = match shards_holder.get_shard(&shard_id) {
-            None => {
+    pub fn initiate_shard_transfer(
+        &self,
+        shard_id: ShardId,
+    ) -> impl Future<Output = CollectionResult<()>> + 'static {
+        let shards_holder = self.shards_holder.clone();
+
+        async move {
+            let shards_holder = shards_holder.read_owned().await;
+
+            let Some(replica_set) = shards_holder.get_shard(&shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {shard_id} doesn't exist, repartition is not supported yet"
-                )))
-            }
-            Some(replica_set) => replica_set,
-        };
-
-        if !replica_set.has_local_shard().await {
-            // create local shard
-            let shard = LocalShard::build(
-                shard_id,
-                self.name(),
-                &replica_set.shard_path,
-                self.collection_config.clone(),
-                self.shared_storage_config.clone(),
-                self.update_runtime.clone(),
-            )
-            .await?;
-
-            replica_set
-                .set_local(shard, Some(ReplicaState::Partial))
-                .await?;
-        } else {
-            if replica_set.is_dummy().await {
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} is a \"dummy\" shard"
                 )));
-            } else if !replica_set.is_local().await {
+            };
+
+            if !replica_set.is_local().await {
                 // We have proxy or something, we need to unwrap it
                 log::warn!("Unwrapping proxy shard {}", shard_id);
                 replica_set.un_proxify_local().await?
             }
-            replica_set.set_replica_state(&replica_set.this_peer_id(), ReplicaState::Partial)?;
+
+            if replica_set.is_dummy().await {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is a \"dummy\" shard"
+                )));
+            }
+
+            let this_peer_id = replica_set.this_peer_id();
+
+            let shard_transfer_requested = tokio::task::spawn_blocking(move || {
+                shards_holder.shard_transfers.wait_for(
+                    |shard_transfers| {
+                        shard_transfers.iter().any(|shard_transfer| {
+                            shard_transfer.shard_id == shard_id && shard_transfer.to == this_peer_id
+                        })
+                    },
+                    Duration::from_secs(60),
+                )
+            });
+
+            match shard_transfer_requested.await {
+                Ok(true) => Ok(()),
+
+                Ok(false) => {
+                    let description = "\
+                        Failed to initiate shard transfer: \
+                        Didn't receive shard transfer notification from consensus in 60 seconds";
+
+                    Err(CollectionError::Timeout {
+                        description: description.into(),
+                    })
+                }
+
+                Err(err) => Err(CollectionError::service_error(format!(
+                    "Failed to initiate shard transfer: \
+                     Failed to execute wait-for-consensus-notification task: \
+                     {err}"
+                ))),
+            }
         }
-        Ok(())
     }
 
     /// Handle collection updates from peers.
@@ -1657,7 +1702,7 @@ impl Collection {
                         "Transfer {:?} is failed, but not reported as failed. Reporting now.",
                         transfer.key()
                     );
-                    on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+                    on_transfer_failure(transfer, self.name(), "transfer failed");
                 }
             }
         }

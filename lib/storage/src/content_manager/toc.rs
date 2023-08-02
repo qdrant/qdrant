@@ -1112,8 +1112,11 @@ impl TableOfContent {
             collection_name,
             shard_id
         );
-        let collection = self.get_collection(&collection_name).await?;
-        collection.initiate_local_partial_shard(shard_id).await?;
+        let initiate_shard_transfer_future = self
+            .get_collection(&collection_name)
+            .await?
+            .initiate_shard_transfer(shard_id);
+        initiate_shard_transfer_future.await?;
         Ok(())
     }
 
