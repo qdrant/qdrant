@@ -9,7 +9,6 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
-use crate::vector_storage;
 
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
@@ -76,7 +75,7 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted, is_stopped),
 
         VectorStorageEnum::Memmap(vs) => {
-            if vector_storage::common::get_async_scorer() {
+            if vs.has_async_reader() {
                 #[cfg(target_os = "linux")]
                 match super::async_raw_scorer::new(vector.clone(), vs, point_deleted, is_stopped) {
                     Ok(raw_scorer) => return raw_scorer,

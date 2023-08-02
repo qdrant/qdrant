@@ -9,8 +9,7 @@ use crate::common::rocksdb_wrapper;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::types::{Distance, PointOffsetType};
-use crate::vector_storage::common::set_async_scorer;
-use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
+use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{
@@ -44,15 +43,13 @@ fn test_async_raw_scorer(
     delete: usize,
     score: usize,
 ) -> Result<()> {
-    set_async_scorer(true);
-
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
     let dir = tempfile::Builder::new()
         .prefix("immutable-storage")
         .tempdir()?;
 
-    let storage = open_memmap_vector_storage(dir.path(), dim, distance)?;
+    let storage = open_memmap_vector_storage_with_async_io(dir.path(), dim, distance, true)?;
     let mut storage = storage.borrow_mut();
 
     let mut id_tracker = FixtureIdTracker::new(points);
