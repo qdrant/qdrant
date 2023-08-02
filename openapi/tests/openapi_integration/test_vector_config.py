@@ -3,17 +3,16 @@ from time import sleep
 import pytest
 
 from .helpers.helpers import request_with_validation
+from .helpers.fixtures import on_disk_vectors
 from .helpers.collection_setup import drop_collection
 
 collection_name = 'test_collection'
 
 
-@pytest.fixture(autouse=True, scope="module", params=[False, True])
-def setup(request):
-    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
-    yield {
-        "on_disk_vectors": request.param,
-    }
+@pytest.fixture(autouse=True, scope="module")
+def setup(on_disk_vectors):
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+    yield
     drop_collection(collection_name=collection_name)
 
 
@@ -111,9 +110,7 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_vectors
     assert response.ok
 
 
-def test_retrieve_vector_specific_hnsw(setup):
-    on_disk_vectors = setup["on_disk_vectors"]
-
+def test_retrieve_vector_specific_hnsw(on_disk_vectors):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -135,9 +132,7 @@ def test_retrieve_vector_specific_hnsw(setup):
     assert config['hnsw_config']['ef_construct'] == 80
 
 
-def test_retrieve_vector_specific_quantization(setup):
-    on_disk_vectors = setup["on_disk_vectors"]
-
+def test_retrieve_vector_specific_quantization(on_disk_vectors):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -162,10 +157,9 @@ def test_retrieve_vector_specific_quantization(setup):
 
 
 @pytest.mark.timeout(20)
-def test_disable_indexing(setup):
+def test_disable_indexing(on_disk_vectors):
     indexed_name = 'test_collection_indexed'
     unindexed_name = 'test_collection_unindexed'
-    on_disk_vectors = setup["on_disk_vectors"]
 
     drop_collection(collection_name=indexed_name)
     drop_collection(collection_name=unindexed_name)

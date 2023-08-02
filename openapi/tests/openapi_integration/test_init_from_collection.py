@@ -1,6 +1,7 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection
+from .helpers.fixtures import on_disk_vectors
 from .helpers.helpers import request_with_validation
 
 
@@ -8,11 +9,9 @@ collection_name = 'test_collection'
 source_collection_name = 'source_collection'
 
 
-@pytest.fixture(autouse=True, scope="module", params=[False, True])
-def setup(request):
-    yield {
-        "on_disk_vectors": request.param,
-    }
+@pytest.fixture(autouse=True, scope="module")
+def setup():
+    yield
     drop_collection(collection_name=collection_name)
     drop_collection(collection_name=source_collection_name)
 
@@ -125,9 +124,7 @@ def create_multi_from_collection(collection_name, source_collection_name, vector
     return response
 
 
-def test_init_from_collection(setup):
-    on_disk_vectors = setup["on_disk_vectors"]
-
+def test_init_from_collection(on_disk_vectors):
     default_vector(on_disk_vectors)
     multi_vector(on_disk_vectors)
 

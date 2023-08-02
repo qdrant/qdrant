@@ -1,14 +1,15 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection, multivec_collection_setup
+from .helpers.fixtures import on_disk_vectors
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection'
 
 
-@pytest.fixture(autouse=True, params=[False, True])
-def setup(request):
-    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
+@pytest.fixture(autouse=True)
+def setup(on_disk_vectors):
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 

@@ -1,15 +1,16 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection
+from .helpers.fixtures import on_disk_vectors
 from .helpers.helpers import request_with_validation
 from .test_nested_payload_indexing import nested_payload_collection_setup
 
 collection_name = 'test_collection_nested_payload_query'
 
 
-@pytest.fixture(autouse=True, params=[False, True])
-def setup(request):
-    nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
+@pytest.fixture(autouse=True)
+def setup(on_disk_vectors):
+    nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 

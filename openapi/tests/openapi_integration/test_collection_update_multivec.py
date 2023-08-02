@@ -2,17 +2,16 @@ import os
 import pytest
 
 from .helpers.collection_setup import drop_collection, multivec_collection_setup
+from .helpers.fixtures import on_disk_vectors
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_update_multivec'
 
 
-@pytest.fixture(autouse=True, params=[False, True])
-def setup(request):
-    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
-    yield {
-        "on_disk_vectors": request.param,
-    }
+@pytest.fixture(autouse=True)
+def setup(on_disk_vectors):
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+    yield
     drop_collection(collection_name=collection_name)
 
 
@@ -71,9 +70,7 @@ def test_collection_update_multivec():
     assert response.ok
 
 
-def test_edit_collection_params(setup):
-    on_disk_vectors = setup["on_disk_vectors"]
-
+def test_edit_collection_params(on_disk_vectors):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
