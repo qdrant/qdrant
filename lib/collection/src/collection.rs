@@ -717,7 +717,9 @@ impl Collection {
 
         match shard_transfer_requested.await {
             Ok(true) => Ok(()),
-            Ok(false) => Err(CollectionError::Timeout { description: format!("TODO") }), // TODO!
+            Ok(false) => Err(CollectionError::Timeout {
+                description: "TODO".into(), // TODO!
+            }),
             Err(err) => Err(CollectionError::service_error(format!("TODO: {err}"))), // TODO!
         }
     }
