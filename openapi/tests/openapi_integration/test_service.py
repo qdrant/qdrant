@@ -7,6 +7,7 @@ from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_telemetry'
 
+
 @pytest.fixture(autouse=True, scope="module")
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
