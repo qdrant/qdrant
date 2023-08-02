@@ -325,6 +325,12 @@ impl Collection {
                     what: format!("Shard {shard_id}"),
                 })?;
 
+        log::debug!(
+            "Changing shard {}:{shard_id} replica state from {:?} to {state:?}",
+            self.id,
+            replica_set.peer_state(&peer_id),
+        );
+
         // Validation:
         // 0. Check that `from_state` matches current state
 
