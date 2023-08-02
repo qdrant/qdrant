@@ -1112,10 +1112,11 @@ impl TableOfContent {
             collection_name,
             shard_id
         );
-        self.get_collection(&collection_name)
+        let initiate_shard_transfer_future = self
+            .get_collection(&collection_name)
             .await?
-            .initiate_shard_transfer(shard_id)
-            .await?;
+            .initiate_shard_transfer(shard_id);
+        initiate_shard_transfer_future.await?;
         Ok(())
     }
 
