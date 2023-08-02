@@ -149,7 +149,11 @@ texts = [
 ]
 
 
-def basic_collection_setup(collection_name='test_collection', on_disk_payload=False):
+def basic_collection_setup(
+    collection_name='test_collection',
+    on_disk_vectors=False,
+    on_disk_payload=False,
+):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -164,9 +168,10 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
         body={
             "vectors": {
                 "size": 4,
-                "distance": "Dot"
+                "distance": "Dot",
+                "on_disk": on_disk_vectors,
             },
-            "on_disk_payload": on_disk_payload
+            "on_disk_payload": on_disk_payload,
         }
     )
     assert response.ok
@@ -212,9 +217,9 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
     assert response.ok
 
 
-@pytest.fixture(autouse=True, scope='module')
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+@pytest.fixture(autouse=True, scope='module', params=[False, True])
+def setup(request):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -269,4 +274,3 @@ def test_scroll_with_prefix():
 
     assert response.ok
     assert len(response.json()['result']) == 3
-

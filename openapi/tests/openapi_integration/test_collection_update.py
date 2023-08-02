@@ -8,10 +8,12 @@ default_name = ""
 collection_name = 'test_collection_uuid'
 
 
-@pytest.fixture(autouse=True)
-def setup():
-    basic_collection_setup(collection_name=collection_name)
-    yield
+@pytest.fixture(autouse=True, params=[False, True])
+def setup(request):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
+    yield {
+        "on_disk_vectors": request.param,
+    }
     drop_collection(collection_name=collection_name)
 
 
@@ -68,9 +70,8 @@ def test_collection_update():
     assert response.ok
 
 
-def test_edit_collection_params():
-    # If Qdrant is tested with vectors on disk mode
-    on_disk_vectors = bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
+def test_edit_collection_params(setup):
+    on_disk_vectors = setup["on_disk_vectors"]
 
     response = request_with_validation(
         api='/collections/{collection_name}',

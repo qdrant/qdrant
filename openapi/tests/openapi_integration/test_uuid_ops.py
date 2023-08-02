@@ -6,9 +6,9 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 collection_name = 'test_collection_uuid'
 
 
-@pytest.fixture(autouse=True)
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+@pytest.fixture(autouse=True, params=[False, True])
+def setup(request):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
     yield
     drop_collection(collection_name=collection_name)
 

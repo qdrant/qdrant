@@ -83,5 +83,3 @@ def test_payload_operations():
         }
     )
     assert response.ok
-
-

@@ -7,9 +7,9 @@ from .test_nested_payload_indexing import nested_payload_collection_setup
 collection_name = 'test_collection_nested_payload_query'
 
 
-@pytest.fixture(autouse=True)
-def setup():
-    nested_payload_collection_setup(collection_name=collection_name)
+@pytest.fixture(autouse=True, params=[False, True])
+def setup(request):
+    nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
     yield
     drop_collection(collection_name=collection_name)
 

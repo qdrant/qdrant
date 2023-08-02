@@ -8,14 +8,16 @@ from .helpers.collection_setup import drop_collection
 collection_name = 'test_collection'
 
 
-@pytest.fixture(autouse=True, scope="module")
-def setup():
-    multivec_collection_setup(collection_name=collection_name)
-    yield
+@pytest.fixture(autouse=True, scope="module", params=[False, True])
+def setup(request):
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
+    yield {
+        "on_disk_vectors": request.param,
+    }
     drop_collection(collection_name=collection_name)
 
 
-def multivec_collection_setup(collection_name='test_collection', on_disk_payload=False):
+def multivec_collection_setup(collection_name='test_collection', on_disk_vectors=False, on_disk_payload=False):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -34,7 +36,8 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_payload
                     "distance": "Dot",
                     "hnsw_config": {
                         "m": 20,
-                    }
+                    },
+                    "on_disk": on_disk_vectors,
                 },
                 "audio": {
                     "size": 4,
@@ -47,7 +50,8 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_payload
                             "type": "int8",
                             "quantile": 0.6
                         }
-                    }
+                    },
+                    "on_disk": on_disk_vectors,
                 },
                 "text": {
                     "size": 8,
@@ -57,8 +61,9 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_payload
                             "type": "int8",
                             "always_ram": True
                         }
-                    }
-                }
+                    },
+                    "on_disk": on_disk_vectors,
+                },
             },
             "hnsw_config": {
                 "m": 10,
@@ -106,7 +111,9 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_payload
     assert response.ok
 
 
-def test_retrieve_vector_specific_hnsw():
+def test_retrieve_vector_specific_hnsw(setup):
+    on_disk_vectors = setup["on_disk_vectors"]
+
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -118,14 +125,19 @@ def test_retrieve_vector_specific_hnsw():
     vectors = config['params']['vectors']
     assert vectors['image']['hnsw_config']['m'] == 20
     assert 'ef_construct' not in vectors['image']['hnsw_config']
+    assert vectors['image']['on_disk'] == on_disk_vectors
     assert 'm' not in vectors['audio']['hnsw_config']
     assert vectors['audio']['hnsw_config']['ef_construct'] == 100
+    assert vectors['audio']['on_disk'] == on_disk_vectors
     assert 'hnsw_config' not in vectors['text']
+    assert vectors['text']['on_disk'] == on_disk_vectors
     assert config['hnsw_config']['m'] == 10
     assert config['hnsw_config']['ef_construct'] == 80
 
 
-def test_retrieve_vector_specific_quantization():
+def test_retrieve_vector_specific_quantization(setup):
+    on_disk_vectors = setup["on_disk_vectors"]
+
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -136,25 +148,29 @@ def test_retrieve_vector_specific_quantization():
     config = response.json()['result']['config']
     vectors = config['params']['vectors']
     assert 'quantization_config' not in vectors['image']
+    assert vectors['image']['on_disk'] == on_disk_vectors
     assert vectors['audio']['quantization_config']['scalar']['type'] == "int8"
     assert vectors['audio']['quantization_config']['scalar']['quantile'] == 0.6
     assert 'always_ram' not in vectors['audio']['quantization_config']['scalar']
+    assert vectors['audio']['on_disk'] == on_disk_vectors
     assert vectors['text']['quantization_config']['scalar']['type'] == "int8"
     assert 'quantile' not in vectors['text']['quantization_config']['scalar']
     assert vectors['text']['quantization_config']['scalar']['always_ram']
+    assert vectors['text']['on_disk'] == on_disk_vectors
     assert config['quantization_config']['scalar']['type'] == "int8"
     assert config['quantization_config']['scalar']['quantile'] == 0.5
 
 
 @pytest.mark.timeout(20)
-def test_disable_indexing():
+def test_disable_indexing(setup):
     indexed_name = 'test_collection_indexed'
     unindexed_name = 'test_collection_unindexed'
+    on_disk_vectors = setup["on_disk_vectors"]
 
     drop_collection(collection_name=indexed_name)
     drop_collection(collection_name=unindexed_name)
 
-    def create_collection(collection_name, indexing_threshold):
+    def create_collection(collection_name, indexing_threshold, on_disk_vectors):
         response = request_with_validation(
             api='/collections/{collection_name}',
             method="PUT",
@@ -163,6 +179,7 @@ def test_disable_indexing():
                 "vectors": {
                     "size": 256,
                     "distance": "Dot",
+                    "on_disk": on_disk_vectors,
                 },
                 "optimizers_config": {
                     "indexing_threshold": indexing_threshold
@@ -174,11 +191,11 @@ def test_disable_indexing():
     amount_of_vectors = 100
 
     # Collection with indexing enabled
-    create_collection(indexed_name, 10)
+    create_collection(indexed_name, 10, on_disk_vectors)
     insert_vectors(indexed_name, amount_of_vectors)
 
     # Collection with indexing disabled
-    create_collection(unindexed_name, 0)
+    create_collection(unindexed_name, 0, on_disk_vectors)
     insert_vectors(unindexed_name, amount_of_vectors)
 
     while True:

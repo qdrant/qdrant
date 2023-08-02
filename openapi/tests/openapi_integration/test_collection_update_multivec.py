@@ -1,16 +1,18 @@
 import os
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import drop_collection, multivec_collection_setup
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_update_multivec'
 
 
-@pytest.fixture(autouse=True)
-def setup():
-    multivec_collection_setup(collection_name=collection_name)
-    yield
+@pytest.fixture(autouse=True, params=[False, True])
+def setup(request):
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
+    yield {
+        "on_disk_vectors": request.param,
+    }
     drop_collection(collection_name=collection_name)
 
 
@@ -69,9 +71,8 @@ def test_collection_update_multivec():
     assert response.ok
 
 
-def test_edit_collection_params():
-    # If Qdrant is tested with vectors on disk mode
-    on_disk_vectors = bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
+def test_edit_collection_params(setup):
+    on_disk_vectors = setup["on_disk_vectors"]
 
     response = request_with_validation(
         api='/collections/{collection_name}',

@@ -118,14 +118,14 @@ def upsert_doc_points(collection_name, docs=50):
     assert response.ok
 
 
-@pytest.fixture(autouse=True, scope="module")
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+@pytest.fixture(autouse=True, scope="module", params=[False, True])
+def setup(request):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
     upsert_chunked_docs(collection_name=collection_name)
     upsert_points_with_array_fields(collection_name=collection_name)
     upsert_with_heterogenous_fields(collection_name=collection_name)
     upsert_multi_value_payload(collection_name=collection_name)
-    basic_collection_setup(collection_name=lookup_collection_name)
+    basic_collection_setup(collection_name=lookup_collection_name, on_disk_vectors=request.param)
     upsert_doc_points(collection_name=lookup_collection_name)
     yield
     drop_collection(collection_name=collection_name)

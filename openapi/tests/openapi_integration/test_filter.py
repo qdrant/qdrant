@@ -8,9 +8,9 @@ from .helpers.helpers import request_with_validation
 collection_name = 'test_collection_filter'
 
 
-@pytest.fixture(autouse=True, scope="module")
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+@pytest.fixture(autouse=True, scope="module", params=[False, True])
+def setup(request):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=request.param)
     yield
     drop_collection(collection_name=collection_name)
 

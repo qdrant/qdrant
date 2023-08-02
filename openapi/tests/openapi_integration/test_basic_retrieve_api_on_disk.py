@@ -7,9 +7,9 @@ from .test_basic_retrieve_api import points_retrieve, exclude_payload, is_empty_
 collection_name = 'test_collection'
 
 
-@pytest.fixture(autouse=True, scope="module")
-def setup():
-    basic_collection_setup(collection_name=collection_name, on_disk_payload=True)
+@pytest.fixture(autouse=True, scope="module", params=[False, True])
+def setup(request):
+    basic_collection_setup(collection_name=collection_name, on_disk_payload=True, on_disk_vectors=request.param)
     yield
     drop_collection(collection_name=collection_name)
 
