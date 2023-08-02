@@ -1,7 +1,7 @@
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_payload_indexing'
 

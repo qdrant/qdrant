@@ -1,7 +1,7 @@
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import drop_collection
+from .helpers.helpers import request_with_validation
 from .test_nested_payload_indexing import nested_payload_collection_setup
 
 collection_name = 'test_collection_nested_payload_query'
