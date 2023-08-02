@@ -66,6 +66,13 @@ impl MemmapVectorStorage {
     pub fn get_mmap_vectors(&self) -> &MmapVectors {
         self.mmap_store.as_ref().unwrap()
     }
+
+    pub fn has_async_reader(&self) -> bool {
+        self.mmap_store
+            .as_ref()
+            .map(|x| x.has_async_reader())
+            .unwrap_or(false)
+    }
 }
 
 impl VectorStorage for MemmapVectorStorage {

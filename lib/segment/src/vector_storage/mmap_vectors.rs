@@ -90,6 +90,10 @@ impl MmapVectors {
         })
     }
 
+    pub fn has_async_reader(&self) -> bool {
+        self.uring_reader.lock().is_some()
+    }
+
     pub fn flusher(&self) -> Flusher {
         self.deleted.flusher()
     }

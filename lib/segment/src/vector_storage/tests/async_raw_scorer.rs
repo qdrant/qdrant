@@ -79,6 +79,8 @@ fn test_async_raw_scorer(
         test_random_score(&mut rng, &storage, id_tracker.deleted_point_bitslice())?;
     }
 
+    set_async_scorer(false);
+
     Ok(())
 }
 
