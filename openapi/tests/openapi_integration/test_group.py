@@ -99,7 +99,7 @@ def upsert_multi_value_payload(collection_name):
     )
 
     assert response.ok
-    
+
 
 def upsert_doc_points(collection_name, docs=50):
     points = [

@@ -145,11 +145,12 @@ def test_retrieve_vector_specific_quantization():
     assert config['quantization_config']['scalar']['type'] == "int8"
     assert config['quantization_config']['scalar']['quantile'] == 0.5
 
+
 @pytest.mark.timeout(20)
 def test_disable_indexing():
     indexed_name = 'test_collection_indexed'
     unindexed_name = 'test_collection_unindexed'
-    
+
     drop_collection(collection_name=indexed_name)
     drop_collection(collection_name=unindexed_name)
 
@@ -169,13 +170,13 @@ def test_disable_indexing():
             }
         )
         assert response.ok
-    
+
     amount_of_vectors = 100
-    
+
     # Collection with indexing enabled
     create_collection(indexed_name, 10)
     insert_vectors(indexed_name, amount_of_vectors)
-    
+
     # Collection with indexing disabled
     create_collection(unindexed_name, 0)
     insert_vectors(unindexed_name, amount_of_vectors)
@@ -189,10 +190,10 @@ def test_disable_indexing():
                 path_params={'collection_name': indexed_name},
             )
             assert response.ok
-            
+
             assert response.json()['result']['vectors_count'] == amount_of_vectors
             assert response.json()['result']['indexed_vectors_count'] > 0
-            
+
             # Get info unindexed
             response = request_with_validation(
                 method='GET',
@@ -206,23 +207,22 @@ def test_disable_indexing():
         except AssertionError:
             sleep(0.1)
             continue
-        
+
     # Cleanup
     drop_collection(collection_name=indexed_name)
     drop_collection(collection_name=unindexed_name)
-    
-    
-def insert_vectors(collection_name='test_collection', count=2000, size=256):
 
+
+def insert_vectors(collection_name='test_collection', count=2000, size=256):
     ids = [x for x in range(count)]
     vectors = [[random.random() for _ in range(size)] for _ in range(count)]
-    
+
     batch_size = 1000
     start = 0
     end = 0
     while end < count:
         end = min(end + batch_size, count)
-        
+
         response = request_with_validation(
             api='/collections/{collection_name}/points',
             method='PUT',
@@ -236,10 +236,5 @@ def insert_vectors(collection_name='test_collection', count=2000, size=256):
             }
         )
         assert response.ok
-        
-        
+
         start += batch_size
-        
-    
-    
-    

@@ -190,7 +190,7 @@ def is_null_condition():
 
     ids = [x['id'] for x in json['result']]
     assert 7 in ids
-    
+
     # With must_not (as recommended in docs)
     def must_not_is_null(field: str):
         response = request_with_validation(
@@ -213,7 +213,7 @@ def is_null_condition():
             }
         )
         assert response.ok
-        
+
         json = response.json()
         assert len(json['result']) == 5
 
@@ -223,7 +223,7 @@ def is_null_condition():
         assert 7 not in ids
         assert 1 in ids
         assert 2 in ids
-    
+
     must_not_is_null("city")
     must_not_is_null("city[]")
 
@@ -303,7 +303,7 @@ def query_nested():
 def test_with_vectors_alias_of_with_vector():
     database_id = "8594ff5d-265f-adfh-a9f5-b3b4b9665506"
     vector = [0.15, 0.31, 0.76, 0.74]
-    
+
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -322,7 +322,7 @@ def test_with_vectors_alias_of_with_vector():
         }
     )
     assert response.ok
-        
+
     def scroll_with_vector(keyword):
         response = request_with_validation(
             api='/collections/{collection_name}/points/scroll',
@@ -343,11 +343,11 @@ def test_with_vectors_alias_of_with_vector():
                 "limit": 1,
             }
         )
-        
+
         assert response.ok
         body = response.json()
-        
+
         assert body["result"]["points"][0]["vector"] == vector
-        
+
     scroll_with_vector("with_vector")
     scroll_with_vector("with_vectors")

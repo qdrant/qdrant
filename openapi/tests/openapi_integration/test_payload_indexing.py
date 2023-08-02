@@ -71,8 +71,8 @@ def test_payload_indexing_operations():
     )
     assert response.ok
     assert len(response.json()['result']['payload_schema']) == 0
-    
-    
+
+
 def set_payload(payload, points):
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload',
@@ -85,8 +85,8 @@ def set_payload(payload, points):
         }
     )
     assert response.ok
-    
-    
+
+
 def test_boolean_index():
     bool_key = "boolean_payload"
     # create payload
