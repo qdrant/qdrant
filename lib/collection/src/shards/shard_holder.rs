@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use tokio::runtime::Handle;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::RwLock;
 
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
@@ -28,7 +28,7 @@ pub struct ShardHolder {
     ring: HashRing<ShardId>,
 }
 
-pub struct LockedShardHolder(pub RwLock<ShardHolder>);
+pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
     pub fn new(collection_path: &Path, hashring: HashRing<ShardId>) -> CollectionResult<Self> {
@@ -271,19 +271,5 @@ impl ShardHolder {
                 self.add_shard(shard_id, replica_set);
             }
         }
-    }
-}
-
-impl LockedShardHolder {
-    pub fn new(shard_holder: ShardHolder) -> Self {
-        Self(RwLock::new(shard_holder))
-    }
-
-    pub async fn read(&self) -> RwLockReadGuard<'_, ShardHolder> {
-        self.0.read().await
-    }
-
-    pub async fn write(&self) -> RwLockWriteGuard<'_, ShardHolder> {
-        self.0.write().await
     }
 }
