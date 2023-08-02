@@ -1,17 +1,13 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection
-from .helpers.fixtures import on_disk_vectors
+from .helpers.fixtures import on_disk_vectors, on_disk_payload
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_nested_payload_indexing'
 
 
-def nested_payload_collection_setup(
-    collection_name,
-    on_disk_vectors=False,
-    on_disk_payload=False,
-):
+def nested_payload_collection_setup(collection_name, on_disk_vectors, on_disk_payload):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -229,8 +225,8 @@ def nested_payload_collection_setup(
 
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
-    nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+def setup(on_disk_vectors, on_disk_payload):
+    nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload)
     yield
     drop_collection(collection_name=collection_name)
 

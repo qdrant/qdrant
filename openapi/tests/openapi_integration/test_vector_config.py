@@ -3,15 +3,15 @@ from time import sleep
 import pytest
 
 from .helpers.helpers import request_with_validation
-from .helpers.fixtures import on_disk_vectors
+from .helpers.fixtures import on_disk_vectors, on_disk_payload
 from .helpers.collection_setup import drop_collection
 
 collection_name = 'test_collection'
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
-    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+def setup(on_disk_vectors, on_disk_payload):
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload)
     yield
     drop_collection(collection_name=collection_name)
 

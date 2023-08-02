@@ -1,7 +1,7 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection
-from .helpers.fixtures import on_disk_vectors
+from .helpers.fixtures import on_disk_vectors, on_disk_payload
 from .helpers.helpers import request_with_validation
 
 
@@ -130,9 +130,16 @@ def create_multi_from_collection(collection_name, source_collection_name, vector
     (False, source_collection_name, 8, 'Dot'), # fail: bad size
     (False, source_collection_name, 4, 'Cosine'), # fail: bad distance
 ])
-def test_init_from_collection(ok, source, size, distance, on_disk_vectors):
-    advanced_collection_setup(source_collection_name, 4, 'Dot', on_disk_vectors, False)
-    response = create_from_collection(collection_name, source, size, distance, on_disk_vectors, False)
+def test_init_from_collection(
+    ok,
+    source,
+    size,
+    distance,
+    on_disk_vectors,
+    on_disk_payload,
+):
+    advanced_collection_setup(source_collection_name, 4, 'Dot', on_disk_vectors, on_disk_payload)
+    response = create_from_collection(collection_name, source, size, distance, on_disk_vectors, on_disk_payload)
     assert response.ok == ok
 
 
