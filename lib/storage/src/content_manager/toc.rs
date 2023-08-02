@@ -1112,8 +1112,10 @@ impl TableOfContent {
             collection_name,
             shard_id
         );
-        let collection = self.get_collection(&collection_name).await?;
-        collection.initiate_shard_transfer(shard_id).await?;
+        self.get_collection(&collection_name)
+            .await?
+            .initiate_shard_transfer(shard_id)
+            .await?;
         Ok(())
     }
 
