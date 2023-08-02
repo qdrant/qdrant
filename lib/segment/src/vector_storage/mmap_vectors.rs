@@ -20,6 +20,7 @@ use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
+use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
@@ -36,7 +37,7 @@ pub struct MmapVectors {
     mmap: Arc<Mmap>,
     /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Mutex<UringReader>,
+    uring_reader: Mutex<Option<UringReader>>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -69,10 +70,14 @@ impl MmapVectors {
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        // Keep file handle open for async IO
-        let vectors_file = File::open(vectors_path)?;
-        let raw_size = dim * size_of::<VectorElementType>();
-        let uring_reader = UringReader::new(vectors_file, raw_size, HEADER_SIZE)?;
+        let uring_reader = if get_async_scorer() {
+            // Keep file handle open for async IO
+            let vectors_file = File::open(vectors_path)?;
+            let raw_size = dim * size_of::<VectorElementType>();
+            Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
+        } else {
+            None
+        };
 
         Ok(MmapVectors {
             dim,
@@ -199,7 +204,11 @@ impl MmapVectors {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        self.uring_reader.lock().read_stream(points, callback)
+        self.uring_reader
+            .lock()
+            .as_mut()
+            .expect("io_uring reader should be initialized")
+            .read_stream(points, callback)
     }
 
     #[cfg(not(target_os = "linux"))]
