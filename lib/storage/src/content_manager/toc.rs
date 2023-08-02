@@ -1113,7 +1113,7 @@ impl TableOfContent {
             shard_id
         );
         let collection = self.get_collection(&collection_name).await?;
-        collection.initiate_local_partial_shard(shard_id).await?;
+        collection.initiate_shard_transfer(shard_id).await?;
         Ok(())
     }
 
