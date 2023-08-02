@@ -8,7 +8,19 @@ cd "$(dirname "$0")/../"
 
 QDRANT_HOST='localhost:6334'
 
-docker_grpcurl="docker run --rm --network=host -v ${PWD}/lib/api/src/grpc/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
+if [ "$WITH_DOCKER" == "false" ]; then
+	VER=1.8.7
+	ARCH=x86_64
+	# aria2 and 7z comes with windows-latest
+	aria2c "https://github.com/fullstorydev/grpcurl/releases/download/v${VER}/grpcurl_${VER}_windows_${ARCH}.zip"
+	7z x -y "grpcurl_${VER}_windows_${ARCH}.zip"
+	install grpcurl /usr/bin/
+	OPT="-plaintext -import-path ${PWD}/lib/api/src/grpc/proto -proto qdrant.proto"
+	docker_grpcurl="grpcurl ${OPT}"
+else
+	OPT="-plaintext -import-path /proto -proto qdrant.proto"
+	docker_grpcurl="docker run --rm --network=host -v ${PWD}/lib/api/src/grpc/proto:/proto fullstorydev/grpcurl ${OPT}"
+fi
 
 $docker_grpcurl -d '{
    "collection_name": "test_collection"
@@ -154,7 +166,6 @@ $docker_grpcurl -d '{
     }
   ]
 }' $QDRANT_HOST qdrant.Collections/UpdateAliases
-
 
 $docker_grpcurl -d '{
   "collection_name": "test_collection",
