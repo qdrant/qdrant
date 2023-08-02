@@ -20,7 +20,6 @@ use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
-use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
@@ -46,7 +45,12 @@ pub struct MmapVectors {
 }
 
 impl MmapVectors {
-    pub fn open(vectors_path: &Path, deleted_path: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open(
+        vectors_path: &Path,
+        deleted_path: &Path,
+        dim: usize,
+        with_async_io: bool,
+    ) -> OperationResult<Self> {
         // Allocate/open vectors mmap
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
@@ -70,7 +74,7 @@ impl MmapVectors {
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        let uring_reader = if get_async_scorer() {
+        let uring_reader = if with_async_io {
             // Keep file handle open for async IO
             let vectors_file = File::open(vectors_path)?;
             let raw_size = dim * size_of::<VectorElementType>();
@@ -88,6 +92,10 @@ impl MmapVectors {
             deleted_count,
             quantized_vectors: None,
         })
+    }
+
+    pub fn has_async_reader(&self) -> bool {
+        self.uring_reader.lock().is_some()
     }
 
     pub fn flusher(&self) -> Flusher {

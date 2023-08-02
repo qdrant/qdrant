@@ -14,6 +14,7 @@ use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::VectorStorage;
 
@@ -38,11 +39,20 @@ pub fn open_memmap_vector_storage(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    open_memmap_vector_storage_with_async_io(path, dim, distance, get_async_scorer())
+}
+
+pub fn open_memmap_vector_storage_with_async_io(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    with_async_io: bool,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
-    let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
+    let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim, with_async_io)?;
 
     Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Memmap(
         Box::new(MemmapVectorStorage {
@@ -65,6 +75,13 @@ impl MemmapVectorStorage {
 
     pub fn get_mmap_vectors(&self) -> &MmapVectors {
         self.mmap_store.as_ref().unwrap()
+    }
+
+    pub fn has_async_reader(&self) -> bool {
+        self.mmap_store
+            .as_ref()
+            .map(|x| x.has_async_reader())
+            .unwrap_or(false)
     }
 }
 
@@ -102,7 +119,12 @@ impl VectorStorage for MemmapVectorStorage {
         let dim = self.vector_dim();
         let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
-        self.mmap_store.take();
+
+        let with_async_io = self
+            .mmap_store
+            .take()
+            .map(|x| x.has_async_reader())
+            .unwrap_or(get_async_scorer());
 
         // Extend vectors file, write other vectors into it
         let mut vectors_file = open_append(&self.vectors_path)?;
@@ -127,6 +149,7 @@ impl VectorStorage for MemmapVectorStorage {
             &self.vectors_path,
             &self.deleted_path,
             dim,
+            with_async_io,
         )?);
 
         // Flush deleted flags into store
