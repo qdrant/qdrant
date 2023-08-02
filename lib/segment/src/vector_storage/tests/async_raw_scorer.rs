@@ -15,6 +15,7 @@ use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{
     async_raw_scorer, new_raw_scorer, RawScorer, ScoredPointOffset, VectorStorageEnum,
 };
+use crate::vector_storage::common::set_async_scorer;
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
@@ -43,6 +44,8 @@ fn test_async_raw_scorer(
     delete: usize,
     score: usize,
 ) -> Result<()> {
+    set_async_scorer(true);
+
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
     let dir = tempfile::Builder::new()
