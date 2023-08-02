@@ -86,6 +86,8 @@
     - [DeletePayloadPoints](#qdrant-DeletePayloadPoints)
     - [DeletePointVectors](#qdrant-DeletePointVectors)
     - [DeletePoints](#qdrant-DeletePoints)
+    - [DissimilaritySearchBatchPoints](#qdrant-DissimilaritySearchBatchPoints)
+    - [DissimilaritySearchPoints](#qdrant-DissimilaritySearchPoints)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
@@ -1502,6 +1504,46 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-DissimilaritySearchBatchPoints"></a>
+
+### DissimilaritySearchBatchPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| dissimilarity_search_points | [DissimilaritySearchPoints](#qdrant-DissimilaritySearchPoints) | repeated |  |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+
+
+
+
+
+
+<a name="qdrant-DissimilaritySearchPoints"></a>
+
+### DissimilaritySearchPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | name of the collection |
+| vector | [float](#float) | repeated | vector |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| amount | [uint64](#uint64) |  | Max number of result |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+
+
+
+
+
+
 <a name="qdrant-FieldCondition"></a>
 
 ### FieldCondition
@@ -2718,6 +2760,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | DeleteFieldIndex | [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete field index for collection |
 | Search | [SearchPoints](#qdrant-SearchPoints) | [SearchResponse](#qdrant-SearchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
 | SearchBatch | [SearchBatchPoints](#qdrant-SearchBatchPoints) | [SearchBatchResponse](#qdrant-SearchBatchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
+| DissimilaritySearch | [DissimilaritySearchPoints](#qdrant-DissimilaritySearchPoints) | [SearchResponse](#qdrant-SearchResponse) |  |
+| DissimilaritySearchBatch | [DissimilaritySearchBatchPoints](#qdrant-DissimilaritySearchBatchPoints) | [SearchBatchResponse](#qdrant-SearchBatchResponse) |  |
 | SearchGroups | [SearchPointGroups](#qdrant-SearchPointGroups) | [SearchGroupsResponse](#qdrant-SearchGroupsResponse) | Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field |
 | Scroll | [ScrollPoints](#qdrant-ScrollPoints) | [ScrollResponse](#qdrant-ScrollResponse) | Iterate over all or filtered points points |
 | Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |

@@ -7236,6 +7236,13 @@
       "VectorIndexSearchesTelemetry": {
         "type": "object",
         "required": [
+          "dissimilarity_filtered_exact",
+          "dissimilarity_filtered_large_cardinality",
+          "dissimilarity_filtered_plain",
+          "dissimilarity_filtered_small_cardinality",
+          "dissimilarity_unfiltered_exact",
+          "dissimilarity_unfiltered_hnsw",
+          "dissimilarity_unfiltered_plain",
           "filtered_exact",
           "filtered_large_cardinality",
           "filtered_plain",
@@ -7268,6 +7275,27 @@
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "unfiltered_exact": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "dissimilarity_unfiltered_plain": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "dissimilarity_unfiltered_hnsw": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "dissimilarity_filtered_plain": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "dissimilarity_filtered_small_cardinality": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "dissimilarity_filtered_large_cardinality": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "dissimilarity_filtered_exact": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "dissimilarity_unfiltered_exact": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           }
         }
