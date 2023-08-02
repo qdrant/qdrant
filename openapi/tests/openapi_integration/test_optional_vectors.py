@@ -97,7 +97,7 @@ def test_retrieve_deleted_vector():
     assert id_to_result[4]["vector"].get("text") is not None
 
 
-def upsert_partial_vectors():
+def test_upsert_partial_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -163,11 +163,7 @@ def upsert_partial_vectors():
     assert "text" not in result["vector"]
 
 
-def test_upsert_partial_vectors():
-    upsert_partial_vectors()
-
-
-def update_vectors():
+def test_update_vectors():
     POINT_ID = 1000
 
     # Put empty vector first
@@ -297,11 +293,7 @@ def update_vectors():
     assert compare_vectors(result["vector"]["text"], text_vector)
 
 
-def test_update_vectors():
-    update_vectors()
-
-
-def update_empty_vectors():
+def test_update_empty_vectors():
     """
     Remove all named vectors for a point. Then add named vectors and test
     against it.
@@ -392,11 +384,7 @@ def update_empty_vectors():
     assert compare_vectors(result["vector"]["text"], text_vector)
 
 
-def test_update_empty_vectors():
-    update_empty_vectors()
-
-
-def update_vectors_unknown_point():
+def test_update_vectors_unknown_point():
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
         method="PUT",
@@ -427,11 +415,7 @@ def update_vectors_unknown_point():
     assert error == "Not found: No point with id 424242424242424242 found"
 
 
-def test_update_vectors_unknown_point():
-    update_vectors_unknown_point()
-
-
-def no_vectors():
+def test_no_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
         method="PUT",
@@ -453,8 +437,10 @@ def no_vectors():
         "Validation error in JSON body: [points[0].vector: must specify vectors to update for point]")
 
 
-def test_no_vectors():
-    no_vectors()
+def test_delete_vectors():
+    delete_vectors()
+    # Deleting a second time should work fine
+    delete_vectors()
 
 
 def delete_vectors():
@@ -511,13 +497,7 @@ def delete_vectors():
     assert "text" not in result["vector"]
 
 
-def test_delete_vectors():
-    delete_vectors()
-    # Deleting a second time should work fine
-    delete_vectors()
-
-
-def delete_all_vectors():
+def test_delete_all_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
@@ -530,11 +510,7 @@ def delete_all_vectors():
     assert response.ok
 
 
-def test_delete_all_vectors():
-    delete_all_vectors()
-
-
-def delete_unknown_vectors():
+def test_delete_unknown_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
@@ -550,7 +526,3 @@ def delete_unknown_vectors():
     assert response.status_code == 400
     error = response.json()["status"]["error"]
     assert error.__contains__("Wrong input: Not existing vector name error: a")
-
-
-def test_delete_unknown_vectors():
-    delete_unknown_vectors()

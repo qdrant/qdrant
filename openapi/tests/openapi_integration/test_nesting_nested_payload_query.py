@@ -29,7 +29,7 @@ def nesting_nested_payload_collection_setup(
                 "distance": "Dot",
                 "on_disk": on_disk_vectors,
             },
-            "on_disk_payload": on_disk_payload
+            "on_disk_payload": on_disk_payload,
         }
     )
     assert response.ok
