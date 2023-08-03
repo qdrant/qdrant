@@ -107,8 +107,6 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing::setup()?;
-
     remove_started_file_indicator();
 
     let args = Args::parse();
@@ -118,7 +116,9 @@ fn main() -> anyhow::Result<()> {
 
     let reporting_id = TelemetryCollector::generate_id();
 
-    if !cfg!(feature = "tracing-logger") {
+    if cfg!(feature = "tracing-logger") {
+        tracing::setup(&settings.log_level)?;
+    } else {
         setup_logger(&settings.log_level);
     }
 
