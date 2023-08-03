@@ -216,62 +216,8 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
         ef: usize,
         mut points_scorer: FilteredScorer,
     ) -> Vec<ScoredPointOffset> {
-        let entry_point = match self
-            .entry_points
-            .get_entry_point(|point_id| points_scorer.check_vector(point_id))
-        {
-            None => return vec![],
-            Some(ep) => ep,
-        };
-
-        let ef = max(amount, ef);
-        let mut entries = vec![ScoredPointOffset {
-            idx: entry_point.point_id,
-            score: points_scorer.score_point(entry_point.point_id),
-        }];
-        for level in (0..=entry_point.level).rev() {
-            let m = self.get_m(level);
-            let mut visited_list = self.get_visited_list_from_pool();
-
-            let mut queue = FixedLengthPriorityQueue::<Reverse<ScoredPointOffset>>::new(ef);
-            let mut candidates = BinaryHeap::new();
-            let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(m);
-
-            for &entry in &entries {
-                visited_list.check_and_update_visited(entry.idx);
-                queue.push(Reverse(entry));
-                candidates.push(Reverse(entry));
-            }
-
-            while !candidates.is_empty() {
-                let candidate = candidates.pop().unwrap().0;
-
-                points_ids.clear();
-                self.links_map(candidate.idx, level, |link| {
-                    if !visited_list.check_and_update_visited(link) {
-                        points_ids.push(link);
-                    }
-                });
-
-                let scores = points_scorer.score_points(&mut points_ids, m);
-                scores.iter().copied().for_each(|score_point| {
-                    let was_added = match queue.push(Reverse(score_point)) {
-                        None => true,
-                        Some(removed) => removed.0.idx != score_point.idx,
-                    };
-                    if was_added {
-                        candidates.push(Reverse(score_point));
-                    }
-                });
-            }
-
-            self.return_visited_list_to_pool(visited_list);
-            entries = queue.into_vec().iter().map(|x| x.0).collect_vec();
-        }
-
-        entries.sort_unstable();
-        entries.reverse();
-        entries.into_iter().take(amount).collect_vec()
+        points_scorer.invert();
+        self.search(amount, ef, points_scorer)
     }
 
     pub fn get_path(path: &Path) -> PathBuf {

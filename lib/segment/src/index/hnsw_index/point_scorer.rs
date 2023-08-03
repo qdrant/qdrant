@@ -6,6 +6,7 @@ pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,
     pub filter_context: Option<&'a dyn FilterContext>,
     points_buffer: Vec<ScoredPointOffset>,
+    inverted: bool,
 }
 
 impl<'a> FilteredScorer<'a> {
@@ -17,6 +18,7 @@ impl<'a> FilteredScorer<'a> {
             raw_scorer,
             filter_context,
             points_buffer: Vec::new(),
+            inverted: false,
         }
     }
 
@@ -68,14 +70,32 @@ impl<'a> FilteredScorer<'a> {
         let count = self
             .raw_scorer
             .score_points(filtered_point_ids, &mut self.points_buffer);
+        if self.inverted {
+            self.points_buffer
+                .iter_mut()
+                .take(count)
+                .for_each(|scored| scored.score *= -1.0);
+        }
         &self.points_buffer[0..count]
     }
 
     pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {
-        self.raw_scorer.score_point(point_id)
+        self.apply_invert(self.raw_scorer.score_point(point_id))
     }
 
     pub fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.raw_scorer.score_internal(point_a, point_b)
+        self.apply_invert(self.raw_scorer.score_internal(point_a, point_b))
+    }
+
+    pub fn invert(&mut self) {
+        self.inverted = !self.inverted;
+    }
+
+    fn apply_invert(&self, score: ScoreType) -> ScoreType {
+        if self.inverted {
+            -score
+        } else {
+            score
+        }
     }
 }
