@@ -1,4 +1,5 @@
-pub fn setup() -> anyhow::Result<()> {
+#[cfg_attr(not(feature = "tracing-logger"), allow(unused_variables))]
+pub fn setup(log_level: &str) -> anyhow::Result<()> {
     // Use `console` and/or `tracy` features to enable both `tracing-subscriber` and the layer(s)
     #[cfg(feature = "tracing-subscriber")]
     {
@@ -39,7 +40,9 @@ pub fn setup() -> anyhow::Result<()> {
             tracing_subscriber::fmt::layer()
                 .with_ansi(true)
                 .with_span_events(tracing_subscriber::fmt::format::FmtSpan::NEW)
-                .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env()),
+                .with_filter(
+                    tracing_subscriber::filter::EnvFilter::builder().parse_lossy(log_level),
+                ),
         );
 
         #[cfg(feature = "tracing-logger")]
