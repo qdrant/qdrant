@@ -43,7 +43,7 @@ use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
-use crate::startup::{remove_started_file_indicator, setup_logger, touch_started_file_indicator};
+use crate::startup::{remove_started_file_indicator, touch_started_file_indicator};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -116,11 +116,7 @@ fn main() -> anyhow::Result<()> {
 
     let reporting_id = TelemetryCollector::generate_id();
 
-    if cfg!(feature = "tracing-logger") {
-        tracing::setup(&settings.log_level)?;
-    } else {
-        setup_logger(&settings.log_level);
-    }
+    tracing::setup(&settings.log_level)?;
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 

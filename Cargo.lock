@@ -3583,7 +3583,6 @@ dependencies = [
  "config",
  "console-subscriber",
  "constant_time_eq 0.3.0",
- "env_logger",
  "futures",
  "futures-util",
  "itertools 0.11.0",
