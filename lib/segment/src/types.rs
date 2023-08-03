@@ -644,10 +644,7 @@ pub struct GeoPoint {
 
 impl From<GeoPoint> for Point<f64> {
     fn from(point: GeoPoint) -> Self {
-        Self(Coord {
-            x: point.lon,
-            y: point.lat,
-        })
+        Self(point.into())
     }
 }
 
@@ -1245,7 +1242,7 @@ pub struct GeoRadius {
 impl GeoRadius {
     pub fn check_point(&self, point: GeoPoint) -> bool {
         let query_center = Point::new(self.center.lon, self.center.lat);
-        query_center.haversine_distance(&Point::from(point)) < self.radius
+        query_center.haversine_distance(&point.into()) < self.radius
     }
 }
 

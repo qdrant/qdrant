@@ -19,8 +19,8 @@ const COORD_EPS: f64 = 1e-12;
 impl From<GeoPoint> for Coord<f64> {
     fn from(point: GeoPoint) -> Self {
         Self {
-            x: point.lat,
-            y: point.lon,
+            x: point.lon,
+            y: point.lat,
         }
     }
 }
