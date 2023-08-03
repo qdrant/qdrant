@@ -40,6 +40,7 @@ pub struct VectorParamsDiff {
     pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsMap {
@@ -60,6 +61,7 @@ pub struct VectorParamsDiffMap {
     >,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsConfig {
@@ -90,6 +92,7 @@ pub struct VectorsConfigDiff {
 }
 /// Nested message and enum types in `VectorsConfigDiff`.
 pub mod vectors_config_diff {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Config {
@@ -100,6 +103,7 @@ pub mod vectors_config_diff {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequest {
@@ -305,6 +309,7 @@ pub mod quantization_config {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Disabled {}
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfigDiff {
@@ -314,6 +319,7 @@ pub struct QuantizationConfigDiff {
 }
 /// Nested message and enum types in `QuantizationConfigDiff`.
 pub mod quantization_config_diff {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Quantization {
@@ -326,6 +332,7 @@ pub mod quantization_config_diff {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
