@@ -655,7 +655,7 @@ fn test_struct_payload_geo_polygon_index() {
                 })
                 .collect(),
         };
-        line.points.push(line.points[0].clone()); // add last point that is identical to the first
+        line.points.push(line.points[0]); // add last point that is identical to the first
         line
     }
 

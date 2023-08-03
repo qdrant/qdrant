@@ -179,7 +179,7 @@ pub fn get_geo_polygon_checkers(
             geo_index.get_values(point_id).map_or(false, |values| {
                 values
                     .iter()
-                    .any(|geo_point| geo_polygon.check_point(geo_point.lon, geo_point.lat))
+                    .any(|geo_point| geo_polygon.check_point(*geo_point))
             })
         })),
         _ => None,
@@ -195,7 +195,7 @@ pub fn get_geo_radius_checkers(
             geo_index.get_values(point_id).map_or(false, |values| {
                 values
                     .iter()
-                    .any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
+                    .any(|geo_point| geo_radius.check_point(*geo_point))
             })
         })),
         _ => None,
@@ -212,7 +212,7 @@ pub fn get_geo_bounding_box_checkers(
                 None => false,
                 Some(values) => values
                     .iter()
-                    .any(|geo_point| geo_bounding_box.check_point(geo_point.lon, geo_point.lat)),
+                    .any(|geo_point| geo_bounding_box.check_point(*geo_point)),
             }
         })),
         _ => None,

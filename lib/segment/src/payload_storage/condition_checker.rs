@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, FieldCondition, GeoBoundingBox, GeoPolygon, GeoRadius, Match, MatchAny,
+    AnyVariants, FieldCondition, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny,
     MatchExcept, MatchText, MatchValue, Range, ValueVariants, ValuesCount,
 };
 
@@ -123,52 +123,19 @@ impl ValueChecker for Range {
 
 impl ValueChecker for GeoBoundingBox {
     fn check_match(&self, payload: &Value) -> bool {
-        match payload {
-            Value::Object(obj) => {
-                let lon_op = obj.get("lon").and_then(|x| x.as_f64());
-                let lat_op = obj.get("lat").and_then(|x| x.as_f64());
-
-                if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(lon, lat);
-                }
-                false
-            }
-            _ => false,
-        }
+        GeoPoint::from_value(payload).map_or(false, |point| self.check_point(point))
     }
 }
 
 impl ValueChecker for GeoRadius {
     fn check_match(&self, payload: &Value) -> bool {
-        match payload {
-            Value::Object(obj) => {
-                let lon_op = obj.get("lon").and_then(|x| x.as_f64());
-                let lat_op = obj.get("lat").and_then(|x| x.as_f64());
-
-                if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(lon, lat);
-                }
-                false
-            }
-            _ => false,
-        }
+        GeoPoint::from_value(payload).map_or(false, |point| self.check_point(point))
     }
 }
 
 impl ValueChecker for GeoPolygon {
     fn check_match(&self, payload: &Value) -> bool {
-        match payload {
-            Value::Object(obj) => {
-                let lon_op = obj.get("lon").and_then(|x| x.as_f64());
-                let lat_op = obj.get("lat").and_then(|x| x.as_f64());
-
-                if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(lon, lat);
-                }
-                false
-            }
-            _ => false,
-        }
+        GeoPoint::from_value(payload).map_or(false, |point| self.check_point(point))
     }
 }
 

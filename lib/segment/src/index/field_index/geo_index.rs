@@ -260,13 +260,13 @@ impl GeoMapIndex {
 
     pub fn check_radius(&self, idx: PointOffsetType, radius: &GeoRadius) -> bool {
         self.get_values(idx)
-            .map(|values| values.iter().any(|x| radius.check_point(x.lon, x.lat)))
+            .map(|values| values.iter().any(|x| radius.check_point(*x)))
             .unwrap_or(false)
     }
 
     pub fn check_box(&self, idx: PointOffsetType, bbox: &GeoBoundingBox) -> bool {
         self.get_values(idx)
-            .map(|values| values.iter().any(|x| bbox.check_point(x.lon, x.lat)))
+            .map(|values| values.iter().any(|x| bbox.check_point(*x)))
             .unwrap_or(false)
     }
 
@@ -532,7 +532,7 @@ impl PayloadFieldIndex for GeoMapIndex {
                         .get(*point as usize)
                         .unwrap()
                         .iter()
-                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                        .any(|point| geo_condition_copy.check_point(*point))
                 },
             )));
         }
@@ -546,7 +546,7 @@ impl PayloadFieldIndex for GeoMapIndex {
                         .get(*point as usize)
                         .unwrap()
                         .iter()
-                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                        .any(|point| geo_condition_copy.check_point(*point))
                 },
             )));
         }
@@ -560,7 +560,7 @@ impl PayloadFieldIndex for GeoMapIndex {
                         .get(*point as usize)
                         .unwrap()
                         .iter()
-                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                        .any(|point| geo_condition_copy.check_point(*point))
                 },
             )));
         }
@@ -715,7 +715,7 @@ mod tests {
             .filter(|(_idx, geo_points)| {
                 geo_points
                     .iter()
-                    .any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
+                    .any(|geo_point| geo_radius.check_point(*geo_point))
             })
             .map(|(idx, _geo_points)| idx as PointOffsetType)
             .collect_vec();

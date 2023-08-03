@@ -635,11 +635,20 @@ pub struct SegmentState {
 }
 
 /// Geo point payload schema
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Copy)]
 #[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
     pub lon: f64,
     pub lat: f64,
+}
+
+impl From<GeoPoint> for Point<f64> {
+    fn from(point: GeoPoint) -> Self {
+        Self(Coord {
+            x: point.lon,
+            y: point.lat,
+        })
+    }
 }
 
 /// Ordered sequence of GeoPoints representing the line
@@ -654,6 +663,7 @@ struct GeoPointShadow {
     pub lat: f64,
 }
 
+#[derive(Debug)]
 pub struct GeoPointValidationError {
     pub lon: f64,
     pub lat: f64,
@@ -682,6 +692,19 @@ impl GeoPoint {
     pub fn new(lon: f64, lat: f64) -> Result<Self, GeoPointValidationError> {
         Self::validate(lon, lat)?;
         Ok(GeoPoint { lon, lat })
+    }
+
+    pub fn from_value(value: &Value) -> Option<Self> {
+        value.as_object().and_then(|obj| {
+            let lon_opt = obj.get("lon").and_then(|x| x.as_f64());
+            let lat_opt = obj.get("lat").and_then(|x| x.as_f64());
+
+            if let (Some(lon), Some(lat)) = (lon_opt, lat_opt) {
+                GeoPoint::new(lon, lat).ok()
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -1198,7 +1221,8 @@ pub struct GeoBoundingBox {
 }
 
 impl GeoBoundingBox {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+    pub fn check_point(&self, point: GeoPoint) -> bool {
+        let GeoPoint { lon, lat } = point;
         (self.top_left.lon < lon)
             && (lon < self.bottom_right.lon)
             && (self.bottom_right.lat < lat)
@@ -1219,9 +1243,9 @@ pub struct GeoRadius {
 }
 
 impl GeoRadius {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+    pub fn check_point(&self, point: GeoPoint) -> bool {
         let query_center = Point::new(self.center.lon, self.center.lat);
-        query_center.haversine_distance(&Point::new(lon, lat)) < self.radius
+        query_center.haversine_distance(&Point::from(point)) < self.radius
     }
 }
 
@@ -1240,7 +1264,7 @@ pub struct GeoPolygon {
 }
 
 impl GeoPolygon {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+    pub fn check_point(&self, point: GeoPoint) -> bool {
         let exterior_ring: LineString = LineString(
             self.rings[0]
                 .points
@@ -1264,9 +1288,9 @@ impl GeoPolygon {
 
         let polygon = Polygon::new(exterior_ring, interior_rings);
 
-        let point = Coord { x: lon, y: lat };
+        let coord = Coord::from(point);
 
-        polygon.contains(&point)
+        polygon.contains(&coord)
     }
 }
 
@@ -1715,10 +1739,10 @@ impl Filter {
 pub(crate) mod test_utils {
     use super::{GeoLineString, GeoPoint, GeoPolygon};
 
-    pub fn build_polygon(interior: Vec<(f64, f64)>, exteriors: Vec<Vec<(f64, f64)>>) -> GeoPolygon {
-        let exterior_ring = interior.into_iter().map(|(lon, lat)| GeoPoint { lon, lat });
+    pub fn build_polygon(exterior: Vec<(f64, f64)>, interiors: Vec<Vec<(f64, f64)>>) -> GeoPolygon {
+        let exterior_ring = exterior.into_iter().map(|(lon, lat)| GeoPoint { lon, lat });
 
-        let interior_rings: Vec<GeoLineString> = exteriors
+        let interior_rings: Vec<GeoLineString> = interiors
             .into_iter()
             .map(|line| GeoLineString {
                 points: line
@@ -1775,10 +1799,10 @@ mod tests {
             radius: 80000.0,
         };
 
-        let inside_result = radius.check_point(0.5, 0.5);
+        let inside_result = radius.check_point(GeoPoint::new(0.5, 0.5).unwrap());
         assert!(inside_result);
 
-        let outside_result = radius.check_point(1.5, 1.5);
+        let outside_result = radius.check_point(GeoPoint::new(1.5, 1.5).unwrap());
         assert!(!outside_result);
     }
 
@@ -1796,11 +1820,11 @@ mod tests {
         };
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 78626.29627999048
-        let inside_result = bounding_box.check_point(-0.5, 0.5);
+        let inside_result = bounding_box.check_point(GeoPoint::new(-0.5, 0.5).unwrap());
         assert!(inside_result);
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
-        let outside_result = bounding_box.check_point(1.5, 1.5);
+        let outside_result = bounding_box.check_point(GeoPoint::new(1.5, 1.5).unwrap());
         assert!(!outside_result);
     }
 
@@ -1864,7 +1888,8 @@ mod tests {
             let polygon = build_polygon(exterior.clone(), interiors.clone());
 
             for ((lon, lat), expected_result) in points {
-                let inside_result = polygon.check_point(*lon, *lat);
+                let geo_point = GeoPoint::new(*lon, *lat).unwrap();
+                let inside_result = polygon.check_point(geo_point);
                 assert_eq!(inside_result, *expected_result);
             }
         }

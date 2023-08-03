@@ -874,7 +874,7 @@ mod tests {
             lat: 40.76517460,
             lon: -74.00101399,
         };
-        assert!(geo_box.check_point(center.lon, center.lat));
+        assert!(geo_box.check_point(center));
     }
 
     #[test]
