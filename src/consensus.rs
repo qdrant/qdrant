@@ -21,6 +21,7 @@ use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatu
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::watch;
 use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
@@ -760,7 +761,7 @@ fn handle_committed_entries(
 }
 
 struct RaftMessageBroker {
-    senders: HashMap<PeerId, Sender<RaftMessage>>,
+    senders: HashMap<PeerId, RaftMessageSenderHandle>,
     runtime: Handle,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
@@ -796,7 +797,7 @@ impl RaftMessageBroker {
         while let Some(message) = retry.take().or_else(|| messages.next()) {
             let peer_id = message.to;
 
-            let sender = match self.senders.get(&peer_id) {
+            let sender = match self.senders.get_mut(&peer_id) {
                 Some(sender) => sender,
                 None => {
                     log::debug!("Spawning message sender task for peer {peer_id}...");
@@ -808,7 +809,7 @@ impl RaftMessageBroker {
                     self.senders.insert(peer_id, handle);
 
                     self.senders
-                        .get(&peer_id)
+                        .get_mut(&peer_id)
                         .expect("message sender task spawned")
                 }
             };
@@ -818,7 +819,7 @@ impl RaftMessageBroker {
 
                 let is_debug = log::max_level() >= log::Level::Debug;
                 let space = if is_debug { " " } else { "" };
-                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" };
+                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" }; // TODO: `fmt::Debug` for `""` prints `""`... 😒
 
                 log::error!(
                     "Failed to forward message{space}{message:?} to message sender task {peer_id}: \
@@ -826,17 +827,17 @@ impl RaftMessageBroker {
                 );
             };
 
-            match sender.try_send(message) {
+            match sender.send(message) {
                 Ok(()) => (),
 
-                Err(tokio::sync::mpsc::error::TrySendError::Full(message)) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Full((_, message))) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is full. Message will be dropped.",
                     );
                 }
 
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(message)) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Closed((_, message))) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is closed. \
@@ -850,11 +851,13 @@ impl RaftMessageBroker {
         }
     }
 
-    fn message_sender(&self) -> (RaftMessageSender, Sender<RaftMessage>) {
-        let (handle, messages) = tokio::sync::mpsc::channel(128);
+    fn message_sender(&self) -> (RaftMessageSender, RaftMessageSenderHandle) {
+        let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(128);
+        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(Default::default());
 
         let task = RaftMessageSender {
-            messages,
+            messages: messages_rx,
+            heartbeat: heartbeat_rx,
             bootstrap_uri: self.bootstrap_uri.clone(),
             tls_config: self.tls_config.clone(),
             consensus_config: self.consensus_config.clone(),
@@ -862,12 +865,48 @@ impl RaftMessageBroker {
             transport_channel_pool: self.transport_channel_pool.clone(),
         };
 
+        let handle = RaftMessageSenderHandle {
+            messages: messages_tx,
+            heartbeat: heartbeat_tx,
+            index: 0,
+        };
+
         (task, handle)
     }
 }
 
+#[derive(Debug)]
+struct RaftMessageSenderHandle {
+    messages: Sender<(usize, RaftMessage)>,
+    heartbeat: watch::Sender<(usize, RaftMessage)>,
+    index: usize,
+}
+
+impl RaftMessageSenderHandle {
+    #[allow(clippy::result_large_err)]
+    pub fn send(&mut self, message: RaftMessage) -> RaftMessageSenderResult<()> {
+        if !is_heartbeat(&message) {
+            self.messages.try_send((self.index, message))?;
+        } else {
+            self.heartbeat.send((self.index, message)).map_err(
+                |tokio::sync::watch::error::SendError(message)| {
+                    tokio::sync::mpsc::error::TrySendError::Closed(message)
+                },
+            )?;
+        }
+
+        self.index += 1;
+
+        Ok(())
+    }
+}
+
+type RaftMessageSenderResult<T, E = RaftMessageSenderError> = Result<T, E>;
+type RaftMessageSenderError = tokio::sync::mpsc::error::TrySendError<(usize, RaftMessage)>;
+
 struct RaftMessageSender {
-    messages: Receiver<RaftMessage>,
+    messages: Receiver<(usize, RaftMessage)>,
+    heartbeat: watch::Receiver<(usize, RaftMessage)>,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
     consensus_config: Arc<ConsensusConfig>,
@@ -877,8 +916,75 @@ struct RaftMessageSender {
 
 impl RaftMessageSender {
     pub async fn exec(mut self) {
-        while let Some(message) = self.messages.recv().await {
-            self.send(&message).await;
+        // Imagine that `raft` crate put four messages to be sent to some other Raft node into
+        // `RaftMessageSender`'s queue:
+        //
+        // | 4: AppendLog | 3: Heartbeat | 2: Heartbeat | 1: AppendLog |
+        //
+        // Heartbeat is the most basic message type in Raft. It only carries common "metadata"
+        // without any additional "payload". And all other message types in Raft also carry
+        // the same basic metadata as the heartbeat message.
+        //
+        // This way, message `3` instantly "outdates" message `2`: they both carry the same data
+        // fields, but message `3` was produced more recently, and so it might contain newer values
+        // of these data fields.
+        //
+        // And because all messages carry the same basic data as the heartbeat message, message `4`
+        // instantly "outdates" both message `2` and `3`.
+        //
+        // This way, if there are more than one message queued for the `RaftMessageSender`,
+        // we can optimize delivery a bit and skip any heartbeat message if there's a more
+        // recent message scheduled later in the queue.
+        //
+        // `RaftMessageSender` have two separate "queues":
+        // - `messages` queue for non-heartbeat messages
+        // - and `heartbeat` "watch" channel for heartbeat messages
+        //   - "watch" is a special channel in Tokio, that only retains the *last* sent value
+        //   - so any heartbeat received from the `heartbeat` channel is always the *most recent* one
+        //
+        // We are using `tokio::select` to "simultaneously" check both queues for new messages...
+        // but we are using `tokio::select` in a "biased" mode!
+        //
+        // - in this mode select always polls `messages.recv()` future first
+        // - so even if there are new messages in both queues, it will always return a non-heartbeat
+        //   message from `messages` queue first
+        // - and it will only return a heartbeat message from `heartbeat` channel if there's no
+        //   messages left in the `messages` queue
+        //
+        // There's one special case that we should be careful about with our two queues:
+        //
+        // If we return to the diagram above, and imagine four messages were sent in the same order
+        // into our two queues, then `RaftMessageSender` might pull them from the queues in the
+        // `1`, `4`, `3` order.
+        //
+        // E.g., we pull non-heartbeat messages `1` and `4` first, heartbeat `2` was overwritten
+        // by heartbeat `3` (because of the "watch" channel), so once `messages` queue is empty
+        // we receive heartbeat `3`, which is now out-of-order.
+        //
+        // To handle this we explicitly enumerate each message and only send a message if its index
+        // is higher-or-equal than the index of a previous one. (This check can be expressed with
+        // both strict "higher" or "higher-or-equal" conditional, I just like the "or-equal" version
+        // a bit better.)
+        //
+        // If either `messages` queue or `heartbeat` channel is closed (e.g., `messages.recv()`
+        // returns `None` or `heartbeat.changed()` returns an error), we assume that
+        // `RaftMessageSenderHandle` has been dropped, and treat it as a "shutdown"/"cancellation"
+        // signal (and break from the loop).
+
+        let mut prev_index = 0;
+
+        loop {
+            let (index, message) = tokio::select! {
+                biased;
+                Some(message) = self.messages.recv() => message,
+                Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
+                else => break,
+            };
+
+            if prev_index <= index {
+                self.send(&message).await;
+                prev_index = index;
+            }
         }
     }
 
@@ -995,6 +1101,11 @@ impl RaftMessageSender {
 
         Ok(uri)
     }
+}
+
+fn is_heartbeat(message: &RaftMessage) -> bool {
+    message.msg_type == raft::eraftpb::MessageType::MsgHeartbeat as i32
+        || message.msg_type == raft::eraftpb::MessageType::MsgHeartbeatResponse as i32
 }
 
 #[cfg(test)]
