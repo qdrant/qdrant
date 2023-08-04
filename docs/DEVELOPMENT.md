@@ -140,17 +140,7 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 Qdrant have basic [`tracing`] support with [`Tracy`] profiler and [`tokio-console`] integrations
 that can be enabled with optional features.
 
-- `tracing-log` and `tracing-log-always` features enable [`tracing/log` and `tracing/log-always`][tracing-log-features]
-  features of the `tracing` crate, which cause `tracing` crate to produce logs with the `log` crate
-  - if `tracing-log` feature enabled, the logs would only be produced if no other tracing subscriber is enabled
-    (e.g., if neither `tracy`, nor `console` feature is enabled)
-  - if `tracing-log-always` feature is enabled, the logs would _always_ be produced
-  - useful for "quick and dirty" `tracing`-enabled debugging, that does not require any additional setup
-- `tracing-logger` feature replaces default logger with an alternative "tracing-compatible" logger,
-  that also prints [tracing span] information for `tracing` logs (which is _super-useful_ in times)
-  - note, that `tracing-logger` only reads "filters" from default `RUST_LOG` env-var currently
-  - note, that if both `tracing-log-always` and `tracing-logger` features are enabled it will cause some logs
-    to be printed twice
+- [`tracing`] is an _optional_ dependency that can be enabled with `tracing` feature
 - `tracy` feature enables [`Tracy`] profiler integration
 - `console` feature enables [`tokio-console`] integration
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
@@ -162,15 +152,16 @@ that can be enabled with optional features.
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
   - this is required (and enabled automatically) by the `console` feature
   - but you can enable it explicitly with the `tracy` feature, to see Tokio traces in [`Tracy`] profiler
-- `tracing` feature simply enables optional [`tracing`] crate dependency (without any integrations)
-  - this is required (and enabled automatically) by all of the above features
 
 Qdrant code is **not** instrumented by default, so you'll have to manually add `#[tracing::instrument]` attributes
 on functions and methods that you want to profile.
 
+Qdrant uses [`tracing-log`] as the [`log`] backend, so `log` and `log-always` features of the [`tracing`] crate
+[should _not_ be enabled][tracing-log-warning]!
+
 ```rust
-// `tracing` crate is an *optional* dependency, so if you want the code to compile when `tracing`
-// feature is disabled, you have to use `#[cfg_attr(...)]`...
+// `tracing` crate is an *optional* dependency in `lib/*` crates, so if you want the code to compile
+// when `tracing` feature is disabled, you have to use `#[cfg_attr(...)]`...
 //
 // See https://doc.rust-lang.org/reference/conditional-compilation.html#the-cfg_attr-attribute
 #[cfg_attr(feature = "tracing", tracing::instrument)]
@@ -187,12 +178,13 @@ fn some_other_function() {
 }
 ```
 
-[tracing-log-features]: https://docs.rs/tracing/latest/tracing/#emitting-log-records
-[tracing span]: https://docs.rs/tracing/latest/tracing/index.html#spans
 [`tracing`]: https://docs.rs/tracing/latest/tracing/
 [`Tracy`]: https://github.com/wolfpld/tracy
 [`tokio-console`]: https://docs.rs/tokio-console/latest/tokio_console/
 [tokio-tracing]: https://docs.rs/tokio/latest/tokio/#unstable-features
+[`tracing-log`]: https://docs.rs/tracing-log/latest/tracing_log/
+[`log`]: https://docs.rs/log/latest/log/
+[tracing-log-warning]: https://docs.rs/tracing-log/latest/tracing_log/#caution-mixing-both-conversions
 
 ## API changes
 
