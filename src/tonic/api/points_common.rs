@@ -516,6 +516,40 @@ pub async fn update_batch(
                 )
                 .await
             }
+            points_update_operation::Operation::UpdateVectors(
+                points_update_operation::UpdateVectors { points },
+            ) => {
+                update_vectors(
+                    toc,
+                    UpdatePointVectors {
+                        collection_name,
+                        wait,
+                        points,
+                        ordering,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::DeleteVectors(
+                points_update_operation::DeleteVectors {
+                    points_selector,
+                    vectors,
+                },
+            ) => {
+                delete_vectors(
+                    toc,
+                    DeletePointVectors {
+                        collection_name,
+                        wait,
+                        points_selector,
+                        vectors,
+                        ordering,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
         }?;
         results.push(result);
     }

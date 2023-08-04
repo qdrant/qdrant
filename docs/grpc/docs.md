@@ -118,9 +118,11 @@
     - [PointsSelector](#qdrant-PointsSelector)
     - [PointsUpdateOperation](#qdrant-PointsUpdateOperation)
     - [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload)
+    - [PointsUpdateOperation.DeleteVectors](#qdrant-PointsUpdateOperation-DeleteVectors)
     - [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList)
     - [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload)
     - [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry)
+    - [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors)
     - [QuantizationSearchParams](#qdrant-QuantizationSearchParams)
     - [Range](#qdrant-Range)
     - [ReadConsistency](#qdrant-ReadConsistency)
@@ -2012,6 +2014,8 @@ The JSON representation for `Value` is a JSON value.
 | overwrite_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
 | delete_payload | [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload) |  |  |
 | clear_payload | [PointsSelector](#qdrant-PointsSelector) |  |  |
+| update_vectors | [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors) |  |  |
+| delete_vectors | [PointsUpdateOperation.DeleteVectors](#qdrant-PointsUpdateOperation-DeleteVectors) |  |  |
 
 
 
@@ -2027,7 +2031,23 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | keys | [string](#string) | repeated |  |
-| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional |  |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-DeleteVectors"></a>
+
+### PointsUpdateOperation.DeleteVectors
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| vectors | [VectorsSelector](#qdrant-VectorsSelector) |  | List of vector names to delete |
 
 
 
@@ -2058,7 +2078,7 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | payload | [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry) | repeated |  |
-| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional |  |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 
 
 
@@ -2075,6 +2095,21 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-UpdateVectors"></a>
+
+### PointsUpdateOperation.UpdateVectors
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 
 
 

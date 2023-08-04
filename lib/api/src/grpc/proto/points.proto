@@ -328,16 +328,23 @@ message CountPoints {
 }
 
 message PointsUpdateOperation {
+  message PointStructList {
+    repeated PointStruct points = 1;
+  }
   message SetPayload {
       map<string, Value> payload = 1;
-      optional PointsSelector points_selector = 2;
+      optional PointsSelector points_selector = 2; // Affected points
   }
   message DeletePayload {
       repeated string keys = 1;
-      optional PointsSelector points_selector = 2;
+      optional PointsSelector points_selector = 2; // Affected points
   }
-  message PointStructList {
-    repeated PointStruct points = 1;
+  message UpdateVectors {
+    repeated PointVectors points = 1; // List of points and vectors to update
+  }
+  message DeleteVectors {
+    PointsSelector points_selector = 1; // Affected points
+    VectorsSelector vectors = 2; // List of vector names to delete
   }
 
   oneof operation {
@@ -347,6 +354,8 @@ message PointsUpdateOperation {
     SetPayload overwrite_payload = 4;
     DeletePayload delete_payload = 5;
     PointsSelector clear_payload = 6;
+    UpdateVectors update_vectors = 7;
+    DeleteVectors delete_vectors = 8;
   }
 }
 

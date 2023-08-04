@@ -3191,7 +3191,7 @@
         "tags": [
           "points"
         ],
-        "summary": "Apply a series of update operations for points",
+        "summary": "Apply a series of update operations for points, vectors and payloads",
         "operationId": "batch_update",
         "requestBody": {
           "description": "update operations",
@@ -8420,6 +8420,30 @@
             "properties": {
               "clear_payload": {
                 "$ref": "#/components/schemas/PointsSelector"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "update_vectors"
+            ],
+            "properties": {
+              "update_vectors": {
+                "$ref": "#/components/schemas/UpdateVectors"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "delete_vectors"
+            ],
+            "properties": {
+              "delete_vectors": {
+                "$ref": "#/components/schemas/DeleteVectors"
               }
             },
             "additionalProperties": false

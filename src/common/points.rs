@@ -34,6 +34,8 @@ pub enum UpdateOperation {
     OverwritePayload(SetPayload),
     DeletePayload(DeletePayload),
     ClearPayload(PointsSelector),
+    UpdateVectors(UpdateVectors),
+    DeleteVectors(DeleteVectors),
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
@@ -51,6 +53,8 @@ impl Validate for UpdateOperation {
             UpdateOperation::OverwritePayload(op) => op.validate(),
             UpdateOperation::DeletePayload(op) => op.validate(),
             UpdateOperation::ClearPayload(op) => op.validate(),
+            UpdateOperation::UpdateVectors(op) => op.validate(),
+            UpdateOperation::DeleteVectors(op) => op.validate(),
         }
     }
 }
@@ -324,6 +328,28 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::ClearPayload(operation) => {
                 do_clear_payload(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::UpdateVectors(operation) => {
+                do_update_vectors(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::DeleteVectors(operation) => {
+                do_delete_vectors(
                     toc,
                     collection_name,
                     operation,

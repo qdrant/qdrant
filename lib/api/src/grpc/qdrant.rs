@@ -3278,11 +3278,21 @@ pub struct CountPoints {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsUpdateOperation {
-    #[prost(oneof = "points_update_operation::Operation", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(
+        oneof = "points_update_operation::Operation",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8"
+    )]
     pub operation: ::core::option::Option<points_update_operation::Operation>,
 }
 /// Nested message and enum types in `PointsUpdateOperation`.
 pub mod points_update_operation {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct PointStructList {
+        #[prost(message, repeated, tag = "1")]
+        pub points: ::prost::alloc::vec::Vec<super::PointStruct>,
+    }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3292,6 +3302,7 @@ pub mod points_update_operation {
             ::prost::alloc::string::String,
             super::Value,
         >,
+        /// Affected points
         #[prost(message, optional, tag = "2")]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
     }
@@ -3301,15 +3312,28 @@ pub mod points_update_operation {
     pub struct DeletePayload {
         #[prost(string, repeated, tag = "1")]
         pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+        /// Affected points
         #[prost(message, optional, tag = "2")]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct PointStructList {
+    pub struct UpdateVectors {
+        /// List of points and vectors to update
         #[prost(message, repeated, tag = "1")]
-        pub points: ::prost::alloc::vec::Vec<super::PointStruct>,
+        pub points: ::prost::alloc::vec::Vec<super::PointVectors>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DeleteVectors {
+        /// Affected points
+        #[prost(message, optional, tag = "1")]
+        pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// List of vector names to delete
+        #[prost(message, optional, tag = "2")]
+        pub vectors: ::core::option::Option<super::VectorsSelector>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3327,6 +3351,10 @@ pub mod points_update_operation {
         DeletePayload(DeletePayload),
         #[prost(message, tag = "6")]
         ClearPayload(super::PointsSelector),
+        #[prost(message, tag = "7")]
+        UpdateVectors(UpdateVectors),
+        #[prost(message, tag = "8")]
+        DeleteVectors(DeleteVectors),
     }
 }
 #[derive(validator::Validate)]
