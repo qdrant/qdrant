@@ -1,3 +1,6 @@
+use std::str;
+
+use actix_web::body::MessageBody;
 use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
@@ -13,6 +16,7 @@ use crate::actix::helpers::process_response;
 use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
 use crate::common::telemetry::TelemetryCollector;
+use crate::tracing::LogLevelReloadHandle;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct TelemetryParam {
@@ -87,10 +91,42 @@ async fn get_locks(toc: web::Data<TableOfContent>) -> impl Responder {
     process_response(Ok(result), timing)
 }
 
+#[get("/log_level")]
+async fn get_log_level(handle: web::Data<LogLevelReloadHandle>) -> impl Responder {
+    handle
+        .get()
+        .map_or_else(plain_text_error, plain_text_response)
+}
+
+#[post("/log_level")]
+async fn set_log_level(
+    handle: web::Data<LogLevelReloadHandle>,
+    body: web::Bytes,
+) -> impl Responder {
+    str::from_utf8(&body)
+        .map_err(Into::into)
+        .and_then(|filter| handle.set(filter))
+        .map_or_else(plain_text_error, |_| HttpResponse::Ok().finish())
+}
+
+fn plain_text_response(response: impl MessageBody + 'static) -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .body(response)
+}
+
+fn plain_text_error(error: impl ToString) -> HttpResponse {
+    HttpResponse::InternalServerError()
+        .content_type(ContentType::plaintext())
+        .body(error.to_string())
+}
+
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
         .service(metrics)
         .service(put_locks)
-        .service(get_locks);
+        .service(get_locks)
+        .service(get_log_level)
+        .service(set_log_level);
 }

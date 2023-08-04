@@ -31,6 +31,7 @@ use crate::actix::api::update_api::config_update_api;
 use crate::actix::api_key::ApiKey;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
+use crate::tracing::LogLevelReloadHandle;
 
 const DEFAULT_STATIC_DIR: &str = "./static";
 const WEB_UI_PATH: &str = "/dashboard";
@@ -45,6 +46,7 @@ pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     settings: Settings,
+    log_level_reload_handle: LogLevelReloadHandle,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::from(dispatcher.toc().clone());
@@ -55,6 +57,7 @@ pub fn init(
             .actix_telemetry_collector
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
+        let log_level_reload_handle_data = web::Data::new(log_level_reload_handle);
         let api_key = settings.service.api_key.clone();
         let static_folder = settings
             .service
@@ -119,6 +122,7 @@ pub fn init(
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
+                .app_data(log_level_reload_handle_data.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)

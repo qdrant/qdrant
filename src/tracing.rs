@@ -1,14 +1,18 @@
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::{filter, fmt};
+#![allow(dead_code)]
 
-pub fn setup(log_level: &str) -> anyhow::Result<()> {
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{filter, fmt, reload, Registry};
+
+pub fn setup(log_level: &str) -> anyhow::Result<LogLevelReloadHandle> {
     tracing_log::LogTracer::init()?;
+
+    let (filter, handle) = reload::Layer::new(filter::EnvFilter::builder().parse_lossy(log_level));
 
     let reg = tracing_subscriber::registry().with(
         fmt::layer()
             .with_ansi(true)
             .with_span_events(fmt::format::FmtSpan::NEW)
-            .with_filter(filter::EnvFilter::builder().parse_lossy(log_level)),
+            .with_filter(filter),
     );
 
     // Use `console` or `console-subscriber` feature to enable `console-subscriber`
@@ -36,5 +40,27 @@ pub fn setup(log_level: &str) -> anyhow::Result<()> {
 
     tracing::subscriber::set_global_default(reg)?;
 
-    Ok(())
+    Ok(handle.into())
+}
+
+#[derive(Clone, Debug)]
+pub struct LogLevelReloadHandle(reload::Handle<filter::EnvFilter, Registry>);
+
+impl LogLevelReloadHandle {
+    pub fn get(&self) -> anyhow::Result<String> {
+        let filter = self.0.with_current(|filter| filter.to_string())?;
+        Ok(filter)
+    }
+
+    pub fn set(&self, filter: &str) -> anyhow::Result<()> {
+        let filter = filter::EnvFilter::builder().parse_lossy(filter);
+        self.0.reload(filter)?;
+        Ok(())
+    }
+}
+
+impl From<reload::Handle<filter::EnvFilter, Registry>> for LogLevelReloadHandle {
+    fn from(handle: reload::Handle<filter::EnvFilter, Registry>) -> Self {
+        Self(handle)
+    }
 }
