@@ -1,9 +1,16 @@
 use bitvec::prelude::BitSlice;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
+
+/// Sampling randomess seed
+///
+/// Using seeded randomness so search results don't show randomness or 'inconsistencies' which
+/// would otherwise be introduced by HNSW/ID tracker point sampling.
+const SEED: u64 = 0b1011000011011110001110010101001010001011001101001010010001111010;
 
 /// Trait for point ids tracker.
 ///
@@ -111,8 +118,10 @@ pub trait IdTracker {
         &'a self,
         deleted_vector_bitslice: Option<&'a BitSlice>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        // Use seeded randomness, prevents 'inconsistencies' in search results with sampling
+        let mut rng = StdRng::seed_from_u64(SEED);
+
         let total = self.total_point_count() as PointOffsetType;
-        let mut rng = rand::thread_rng();
         Box::new(
             (0..total)
                 .map(move |_| rng.gen_range(0..total))
