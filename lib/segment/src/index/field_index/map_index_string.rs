@@ -7,9 +7,13 @@ use crate::types::Match;
 
 pub const HEAP_CAPACITY: usize = 23;
 
-/// Small string optimization with Arc for heap case
-/// Arc is used instead of Rc for Send trait that is required for collection
-/// Read more about Arc<str> here:
+/// Optimized string for MapIndex
+/// 
+/// Implementation of small string optimization (SSO) with `Arc<str>` for heap case.
+/// SSO avoids string allocation for small strings. `Arc<str>` avoid string duplications.
+/// 
+/// `Arc` is used instead of `Rc` for `Send` trait that is required for collection
+/// Read more about `Arc<str>` here:
 /// https://github.com/rust-lang/rfcs/blob/master/text/1845-shared-from-slice.md
 #[derive(Eq, Clone)]
 pub enum MapIndexString {
