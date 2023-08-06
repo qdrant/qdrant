@@ -143,6 +143,13 @@ impl GpuLinks {
         );
     }
 
+    pub fn clear(&mut self, gpu_context: &mut gpu::Context) {
+        gpu_context.clear_buffer(self.links_buffer.clone());
+        gpu_context.run();
+        self.links = vec![0; self.links.len()];
+        gpu_context.wait_finish();
+    }
+
     pub fn get_links(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
         let start_index = point_id as usize * (self.m + 1);
         let len = self.links[start_index] as usize;

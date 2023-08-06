@@ -112,6 +112,12 @@ impl GpuSearchContext {
             descriptor_set,
         }
     }
+
+    pub fn clear(&self, gpu_context: &mut gpu::Context) {
+        gpu_context.clear_buffer(self.visited_flags_buffer.clone());
+        gpu_context.run();
+        gpu_context.wait_finish();
+    }
 }
 
 #[cfg(test)]
@@ -358,9 +364,7 @@ mod tests {
         context.run();
         context.wait_finish();
 
-        context.clear_buffer(gpu_search_context.visited_flags_buffer.clone());
-        context.run();
-        context.wait_finish();
+        gpu_search_context.clear(&mut context);
 
         context.bind_pipeline(
             pipeline.clone(),
@@ -670,9 +674,7 @@ mod tests {
         context.run();
         context.wait_finish();
 
-        context.clear_buffer(gpu_search_context.visited_flags_buffer.clone());
-        context.run();
-        context.wait_finish();
+        gpu_search_context.clear(&mut context);
 
         context.bind_pipeline(
             pipeline.clone(),
