@@ -9,6 +9,7 @@ pub mod geo_index;
 mod histogram;
 pub mod index_selector;
 pub mod map_index;
+pub mod map_index_string;
 pub mod numeric_index;
 mod stat_tools;
 
