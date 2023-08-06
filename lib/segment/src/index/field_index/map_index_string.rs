@@ -119,26 +119,24 @@ impl PartialEq<MapIndexString> for String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use super::*;
 
+    fn map_index_string_convertions(test_string: &str) {
+        let test_string = "sdaklanfdkjgnertkjgnerqkjgnjksnvklqwmrvkjrenkjnretqerbjnwekjnrw";
+        for i in 0..test_string.len() {
+            let s = &test_string[0..i];
+            let map_string: MapIndexString = s.into();
+            assert_eq!(s, map_string.as_ref());
+        }
+    }
+
     #[test]
-    pub fn string_size() {
-        println!("string size: {}", std::mem::size_of::<String>());
-        println!("string size: {}", std::mem::size_of::<Arc<str>>());
-        println!(
-            "small string size: {}",
-            std::mem::size_of::<MapIndexString>()
-        );
-        println!("small string size: {}", std::mem::size_of::<[u8; 9]>());
+    fn map_index_string_convertions_ascii() {
+        map_index_string_convertions("sdaklanfdkjgnertkjgnerqkjgnjksnvklqwmrvkjrenkjnretqerbjnwekjnrw");
+    }
 
-        //        let mut s = HashSet::<Rc<str>>::new();
-        //        s.insert("dffd".into());
-        //        s.contains("dffd");
-
-        let mut s = HashSet::<MapIndexString>::new();
-        s.insert("dffd".into());
-        s.contains("dffd");
+    #[test]
+    fn map_index_string_convertions_unicode() {
+        map_index_string_convertions("ΓειάσουΚόσμεこんにちは世界مرحبا بالعالمΓειάσουΚόσμεこんにちは世界");
     }
 }
