@@ -132,11 +132,15 @@ mod tests {
 
     #[test]
     fn map_index_string_convertions_ascii() {
-        map_index_string_convertions("sdaklanfdkjgnertkjgnerqkjgnjksnvklqwmrvkjrenkjnretqerbjnwekjnrw");
+        map_index_string_convertions(
+            "sdaklanfdkjgnertkjgnerqkjgnjksnvklqwmrvkjrenkjnretqerbjnwekjnrw",
+        );
     }
 
     #[test]
     fn map_index_string_convertions_unicode() {
-        map_index_string_convertions("ΓειάσουΚόσμεこんにちは世界مرحبا بالعالمΓειάσουΚόσμεこんにちは世界");
+        map_index_string_convertions(
+            "ΓειάσουΚόσμεこんにちは世界مرحبا بالعالمΓειάσουΚόσμεこんにちは世界",
+        );
     }
 }
