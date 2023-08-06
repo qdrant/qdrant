@@ -26,16 +26,16 @@ impl AsRef<str> for MapIndexString {
     }
 }
 
-impl Into<String> for MapIndexString {
-    fn into(self) -> String {
-        self.as_ref().to_owned()
+impl From<MapIndexString> for Match {
+    fn from(val: MapIndexString) -> Match {
+        let s: String = val.into();
+        s.into()
     }
 }
 
-impl Into<Match> for MapIndexString {
-    fn into(self) -> Match {
-        let s: String = self.into();
-        s.into()
+impl From<MapIndexString> for String {
+    fn from(val: MapIndexString) -> String {
+        val.as_ref().to_owned()
     }
 }
 
@@ -127,7 +127,7 @@ mod tests {
         for s1 in symbols {
             for s2 in symbols {
                 for i in 0..2 * HEAP_CAPACITY {
-                    let mut string = std::iter::repeat("X").take(i).collect::<String>();
+                    let mut string = "X".repeat(i);
                     string.push_str(s1);
                     string.push_str(s2);
                     let map_string: MapIndexString = string.clone().into();
