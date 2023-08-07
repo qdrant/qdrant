@@ -57,7 +57,7 @@ readonly buffer ProcessPointsBuffer {
 void update_entry() {
     POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
     ScoredPoint entry_point = {
-        point_id,
+        requests.data[point_id],
         similarity(point_id, requests.data[point_id])
     };
     requests.data[point_id] = greedy_search(point_id, entry_point).id;
