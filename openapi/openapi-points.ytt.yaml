@@ -334,3 +334,37 @@ paths:
           schema:
             $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
+  /collections/{collection_name}/points/batch:
+    post:
+      tags:
+        - points
+      summary: Apply a series of update operations for points, vectors and payloads
+      operationId: batch_update
+      requestBody:
+        description: update operations
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/UpdateOperation"
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to apply operations on
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
+      responses: #@ response(array(reference("UpdateResult")))

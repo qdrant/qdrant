@@ -7,13 +7,15 @@ use api::grpc::qdrant::{
     GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
     RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
     ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
-    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdatePointVectors,
-    UpsertPoints,
+    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
+    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
-use super::points_common::{delete_vectors, recommend_groups, search_groups, update_vectors};
+use super::points_common::{
+    delete_vectors, recommend_groups, search_groups, update_batch, update_vectors,
+};
 use super::validate;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
@@ -100,6 +102,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
         clear_payload(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn update_batch(
+        &self,
+        request: Request<UpdateBatchPoints>,
+    ) -> Result<Response<UpdateBatchResponse>, Status> {
+        validate(request.get_ref())?;
+        update_batch(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn create_field_index(
