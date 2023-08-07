@@ -459,6 +459,7 @@ dependencies = [
  "log",
  "parking_lot",
  "prost",
+ "prost-build",
  "prost-types",
  "rand 0.8.5",
  "schemars",
@@ -3515,6 +3516,8 @@ dependencies = [
  "prettyplease 0.1.22",
  "prost",
  "prost-types",
+ "pulldown-cmark",
+ "pulldown-cmark-to-cmark",
  "regex",
  "syn 1.0.107",
  "tempfile",
@@ -3560,6 +3563,26 @@ dependencies = [
  "prost-build",
  "quote",
  "syn 1.0.107",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77a1a2f1f0a7ecff9c31abbe177637be0e97a0aef46cf8738ece09327985d998"
+dependencies = [
+ "bitflags 1.3.2",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark-to-cmark"
+version = "10.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0194e6e1966c23cc5fd988714f85b18d548d773e81965413555d96569931833d"
+dependencies = [
+ "pulldown-cmark",
 ]
 
 [[package]]

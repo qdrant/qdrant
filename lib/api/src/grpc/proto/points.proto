@@ -327,6 +327,45 @@ message CountPoints {
   optional bool exact = 3; // If `true` - return exact count, if `false` - return approximate count
 }
 
+message PointsUpdateOperation {
+  message PointStructList {
+    repeated PointStruct points = 1;
+  }
+  message SetPayload {
+      map<string, Value> payload = 1;
+      optional PointsSelector points_selector = 2; // Affected points
+  }
+  message DeletePayload {
+      repeated string keys = 1;
+      optional PointsSelector points_selector = 2; // Affected points
+  }
+  message UpdateVectors {
+    repeated PointVectors points = 1; // List of points and vectors to update
+  }
+  message DeleteVectors {
+    PointsSelector points_selector = 1; // Affected points
+    VectorsSelector vectors = 2; // List of vector names to delete
+  }
+
+  oneof operation {
+    PointStructList upsert = 1;
+    PointsSelector delete = 2;
+    SetPayload set_payload = 3;
+    SetPayload overwrite_payload = 4;
+    DeletePayload delete_payload = 5;
+    PointsSelector clear_payload = 6;
+    UpdateVectors update_vectors = 7;
+    DeleteVectors delete_vectors = 8;
+  }
+}
+
+message UpdateBatchPoints {
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  repeated PointsUpdateOperation operations = 3;
+  optional WriteOrdering ordering = 4; // Write ordering guarantees
+}
+
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -435,6 +474,11 @@ message RecommendBatchResponse {
 
 message RecommendGroupsResponse {
   GroupsResult result = 1;
+  double time = 2; // Time spent to process
+}
+
+message UpdateBatchResponse {
+  repeated UpdateResult result = 1;
   double time = 2; // Time spent to process
 }
 

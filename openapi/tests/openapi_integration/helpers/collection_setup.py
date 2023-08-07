@@ -104,6 +104,7 @@ def multivec_collection_setup(
         collection_name='test_collection',
         on_disk_payload=False,
         on_disk_vectors=None,
+        distance=None,
 ):
     on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
     response = request_with_validation(
@@ -121,12 +122,12 @@ def multivec_collection_setup(
             "vectors": {
                 "image": {
                     "size": 4,
-                    "distance": "Dot",
+                    "distance": distance or "Dot",
                     "on_disk": on_disk_vectors
                 },
                 "text": {
                     "size": 8,
-                    "distance": "Cosine",
+                    "distance": distance or "Cosine",
                     "on_disk": on_disk_vectors
                 }
             },

@@ -275,4 +275,3 @@ def test_payload_operations():
     )
     assert response.ok
     assert len(response.json()['result']['points']) == 0
-
