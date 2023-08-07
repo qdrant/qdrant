@@ -24,14 +24,14 @@ pub struct GraphLinearBuilder<'a> {
     visited_pool: VisitedPool,
     points_scorer: Box<dyn RawScorer + 'a>,
     point_levels: Vec<usize>,
-    requests: Vec<Option<GraphLinkRequest>>,
+    pub requests: Vec<Option<GraphLinkRequest>>,
 }
 
 #[derive(Clone)]
 pub struct GraphLinkRequest {
-    point_id: PointOffsetType,
-    level: usize,
-    entry: ScoredPointOffset,
+    pub point_id: PointOffsetType,
+    pub level: usize,
+    pub entry: ScoredPointOffset,
 }
 
 #[derive(Clone)]
@@ -162,19 +162,28 @@ impl<'a> GraphLinearBuilder<'a> {
         }
     }
 
+    pub fn update_entry(&mut self, level: usize, point_id: PointOffsetType) {
+        let mut request = self.requests[point_id as usize].clone().unwrap();
+        request.entry = self.search_entry_on_level(point_id, request.entry, level);
+        self.requests[point_id as usize] = Some(request);
+    }
+
+    pub fn link_point(&mut self, _level: usize, point_id: PointOffsetType) {
+        let request = self.requests[point_id as usize].clone().unwrap();
+        let response = self.link(request);
+        self.apply_link_response(&response);
+        self.requests[point_id as usize] = response.next_request();
+    }
+
     fn build_level(&mut self, level: usize) {
         for idx in 0..self.num_vectors() {
-            if let Some(mut request) = self.requests[idx].clone() {
+            if let Some(request) = self.requests[idx].clone() {
                 let entry_level = self.get_point_level(request.entry.idx);
                 let point_level = self.get_point_level(idx as PointOffsetType);
                 if level > request.level && entry_level >= point_level {
-                    request.entry =
-                        self.search_entry_on_level(idx as PointOffsetType, request.entry, level);
-                    self.requests[idx] = Some(request);
+                    self.update_entry(level, idx as PointOffsetType);
                 } else if request.level == level {
-                    let response = self.link(request);
-                    self.apply_link_response(&response);
-                    self.requests[idx] = response.next_request();
+                    self.link_point(level, idx as PointOffsetType);
                 }
             }
         }
