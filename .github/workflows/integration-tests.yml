@@ -135,7 +135,7 @@ jobs:
           build-args: |
             PROFILE=ci
       - name: Install Protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: gRPC file consistency check
