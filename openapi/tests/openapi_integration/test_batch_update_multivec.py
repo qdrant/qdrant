@@ -1,6 +1,7 @@
 import pytest
 
 from .helpers.helpers import request_with_validation
+from .helpers.fixtures import on_disk_vectors
 from .helpers.collection_setup import multivec_collection_setup, drop_collection
 
 from operator import itemgetter
@@ -9,8 +10,8 @@ collection_name = 'test_collection_batch_update_multivec'
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    multivec_collection_setup(collection_name=collection_name, distance="Dot")
+def setup(on_disk_vectors):
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, distance="Dot")
     yield
     drop_collection(collection_name=collection_name)
 
