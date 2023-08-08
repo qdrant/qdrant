@@ -1032,10 +1032,8 @@ impl Collection {
             try_join_all(scroll_futures).await?
         };
         let mut points: Vec<_> = if let Some(OrderBy { key, direction, .. }) = order_by {
-            let order = match direction.as_ref().unwrap_or(&Default::default()) {
-                Direction::ASC => -1f64,
-                Direction::DESC => 1f64,
-            };
+            let order: f64 = direction.as_ref().unwrap_or(&Default::default()).into();
+
             retrieved_points
                 .into_iter()
                 .flatten()

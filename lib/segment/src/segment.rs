@@ -23,6 +23,7 @@ use crate::entry::entry_point::OperationError::TypeInferenceError;
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
+use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -626,13 +627,11 @@ impl Segment {
                     None => None,
                 }
             });
-
-        let mut page = match limit {
+        // page.sort_unstable();
+        match limit {
             Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
             None => ids_iterator.collect(),
-        };
-        page.sort_unstable();
-        page
+        }
     }
 
     pub fn filtered_read_by_id_stream(

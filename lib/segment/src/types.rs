@@ -174,6 +174,24 @@ pub enum Direction {
     DESC, //descending
 }
 
+impl From<Direction> for f64 {
+    fn from(value: Direction) -> Self {
+        match value {
+            Direction::ASC => -1f64,
+            Direction::DESC => 1f64,
+        }
+    }
+}
+
+impl From<&Direction> for f64 {
+    fn from(value: &Direction) -> Self {
+        match *value {
+            Direction::ASC => -1f64,
+            Direction::DESC => 1f64,
+        }
+    }
+}
+
 type OffsetValue = u16;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
