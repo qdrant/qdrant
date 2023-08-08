@@ -77,37 +77,6 @@ impl ShardOperation for LocalShard {
         order_by: Option<&OrderBy>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
-        if let Some(OrderBy {
-            key,
-            direction,
-            offset: max,
-        }) = order_by
-        {
-            let point_ids = self
-                .segments()
-                .read()
-                .iter()
-                .flat_map(|(_, segment)| {
-                    segment
-                        .get()
-                        .read()
-                        .read_filtered(offset, Some(limit), filter)
-                })
-                .dedup()
-                .take(limit)
-                .collect_vec();
-
-            let with_payload = WithPayload::from(with_payload_interface);
-
-            let points = SegmentsSearcher::retrieve(
-                self.segments(),
-                &point_ids,
-                &with_payload,
-                with_vector,
-            )?;
-            return Ok(points);
-        }
-
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
         let read_handles: Vec<_> = {
@@ -117,11 +86,14 @@ impl ShardOperation for LocalShard {
                 .map(|(_, segment)| {
                     let segment = segment.clone();
                     let filter = filter.cloned();
+                    let order_by = order_by.cloned();
                     search_runtime_handle.spawn_blocking(move || {
-                        segment
-                            .get()
-                            .read()
-                            .read_filtered(offset, Some(limit), filter.as_ref())
+                        segment.get().read().read_filtered(
+                            offset,
+                            Some(limit),
+                            filter.as_ref(),
+                            order_by.as_ref(),
+                        )
                     })
                 })
                 .collect()

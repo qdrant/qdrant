@@ -1003,6 +1003,7 @@ impl SegmentEntry for Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
+        _order_by: Option<&OrderBy>,
     ) -> Vec<PointIdType> {
         match filter {
             None => self
@@ -1328,7 +1329,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(None, None, Some(filter)) {
+        for point_id in self.read_filtered(None, None, Some(filter), None) {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 
