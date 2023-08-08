@@ -1,6 +1,6 @@
 use serde_json::Value;
+use smol_str::SmolStr;
 
-use super::map_index_string::MapIndexString;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
@@ -116,7 +116,7 @@ pub trait ValueIndexer<T> {
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
     IntMapIndex(MapIndex<IntPayloadType>),
-    KeywordIndex(MapIndex<MapIndexString>),
+    KeywordIndex(MapIndex<SmolStr>),
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),

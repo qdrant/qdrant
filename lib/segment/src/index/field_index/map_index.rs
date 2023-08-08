@@ -9,8 +9,8 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
+use smol_str::SmolStr;
 
-use super::map_index_string::MapIndexString;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -330,7 +330,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 }
 
-impl PayloadFieldIndex for MapIndex<MapIndexString> {
+impl PayloadFieldIndex for MapIndex<SmolStr> {
     fn count_indexed_points(&self) -> usize {
         self.indexed_points
     }
@@ -506,7 +506,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 }
 
-impl ValueIndexer<String> for MapIndex<MapIndexString> {
+impl ValueIndexer<String> for MapIndex<SmolStr> {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         self.add_many_to_map(id, values)
     }
