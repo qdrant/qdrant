@@ -124,7 +124,7 @@ def multivec_collection_setup(
                 },
                 "text": {
                     "size": 8,
-                    "distance": "Cosine",
+                    "distance": distance or "Cosine",
                     "on_disk": on_disk_vectors,
                 },
             },
