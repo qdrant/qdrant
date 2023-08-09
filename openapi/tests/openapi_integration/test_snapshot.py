@@ -1,15 +1,16 @@
 from time import sleep
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.fixtures import on_disk_vectors
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_snapshot'
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -104,6 +105,7 @@ def test_snapshot_operations():
     assert response.ok
     assert len(response.json()['result']) == 0
 
+
 @pytest.mark.timeout(20)
 def test_snapshot_operations_non_wait():
     # there no snapshot on collection
@@ -123,7 +125,7 @@ def test_snapshot_operations_non_wait():
         query_params={'wait': 'false'},
     )
     assert response.status_code == 202
-    
+
     # validate it exists
     snapshot_name = None
     while True:
@@ -141,7 +143,7 @@ def test_snapshot_operations_non_wait():
             # wait for snapshot to be created
             sleep(0.1)
             continue
-        
+
     # delete it
     response = request_with_validation(
         api='/collections/{collection_name}/snapshots/{snapshot_name}',
@@ -167,7 +169,7 @@ def test_snapshot_operations_non_wait():
             # wait for snapshot to be deleted
             sleep(0.1)
             continue
-        
+
     # no full snapshot
     response = request_with_validation(
         api='/snapshots',
@@ -186,7 +188,7 @@ def test_snapshot_operations_non_wait():
 
     # validate it exists
     while True:
-        try: 
+        try:
             response = request_with_validation(
                 api='/snapshots',
                 method="GET",
@@ -199,7 +201,7 @@ def test_snapshot_operations_non_wait():
             # wait for snapshot to be created
             sleep(0.1)
             continue
-        
+
     # delete it
     response = request_with_validation(
         api='/snapshots/{snapshot_name}',
@@ -210,7 +212,7 @@ def test_snapshot_operations_non_wait():
     assert response.status_code == 202
 
     while True:
-        try:    
+        try:
             response = request_with_validation(
                 api='/snapshots',
                 method="GET",

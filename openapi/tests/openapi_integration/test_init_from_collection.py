@@ -1,7 +1,8 @@
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import drop_collection
+from .helpers.fixtures import on_disk_vectors, on_disk_payload
+from .helpers.helpers import request_with_validation
 
 
 collection_name = 'test_collection'
@@ -16,7 +17,7 @@ def setup():
 
 
 # Delete and create collection
-def advanced_collection_setup(collection_name, size, distance, on_disk_payload):
+def advanced_collection_setup(collection_name, size, distance, on_disk_vectors, on_disk_payload):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -31,7 +32,8 @@ def advanced_collection_setup(collection_name, size, distance, on_disk_payload):
         body={
             "vectors": {
                 "size": size,
-                "distance": distance
+                "distance": distance,
+                "on_disk": on_disk_vectors,
             },
             "on_disk_payload": on_disk_payload
         }
@@ -73,7 +75,7 @@ def advanced_collection_multi_setup(collection_name, vectors_config):
     assert response.ok
 
 
-def create_from_collection(collection_name, source_collection_name, size, distance, on_disk_payload):
+def create_from_collection(collection_name, source_collection_name, size, distance, on_disk_vectors, on_disk_payload):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -88,7 +90,8 @@ def create_from_collection(collection_name, source_collection_name, size, distan
         body={
             "vectors": {
                 "size": size,
-                "distance": distance
+                "distance": distance,
+                "on_disk": on_disk_vectors,
             },
             "on_disk_payload": on_disk_payload,
             "init_from": {
@@ -121,42 +124,36 @@ def create_multi_from_collection(collection_name, source_collection_name, vector
     return response
 
 
-def test_init_from_collection():
-    default_vector()
-    multi_vector()
+@pytest.mark.parametrize("ok,source,size,distance", [
+    (True, source_collection_name, 4, 'Dot'), # ok
+    (False, "i-do-not-exist", 4, 'Dot'), # fail: non existing source collection
+    (False, source_collection_name, 8, 'Dot'), # fail: bad size
+    (False, source_collection_name, 4, 'Cosine'), # fail: bad distance
+])
+def test_init_from_collection(
+    ok,
+    source,
+    size,
+    distance,
+    on_disk_vectors,
+    on_disk_payload,
+):
+    advanced_collection_setup(source_collection_name, 4, 'Dot', on_disk_vectors, on_disk_payload)
+    response = create_from_collection(collection_name, source, size, distance, on_disk_vectors, on_disk_payload)
+    assert response.ok == ok
 
 
-def default_vector():
-    # test successful init from collection
-    advanced_collection_setup(source_collection_name, 4, 'Dot', False)
-    response = create_from_collection(collection_name, source_collection_name, 4, 'Dot', False)
-    assert response.ok
-
-    # test failed init from collection (non existing source collection)
-    advanced_collection_setup(source_collection_name, 4, 'Dot', False)
-    response = create_from_collection(collection_name, "i-do-not-exist", 4, 'Dot', False)
-    assert not response.ok
-
-    # test failed init from collection (bad size)
-    advanced_collection_setup(source_collection_name, 4, 'Dot', False)
-    response = create_from_collection(collection_name, source_collection_name, 8, 'Dot', False)
-    assert not response.ok
-
-    # test failed init from collection (bad distance)
-    advanced_collection_setup(source_collection_name, 4, 'Dot', False)
-    response = create_from_collection(collection_name, source_collection_name, 4, 'Cosine', False)
-    assert not response.ok
-
-
-def multi_vector():
+def test_init_from_collection_multivec(on_disk_vectors):
     config = {
         "image": {
             "size": 4,
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         },
         "audio": {
             "size": 8,
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         }
     }
     # test successful init from collection
@@ -168,14 +165,17 @@ def multi_vector():
         "image": {
             "size": 4,
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         },
         "audio": {
             "size": 8,
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         },
         "video": {  # new vector
             "size": 16,
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         }
     }
     # test successful init from collection (source is subset from target)
@@ -187,14 +187,17 @@ def multi_vector():
         "image": {
             "size": 4,
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         },
         "audio": {
             "size": 9,  # bad size
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         },
         "video": {
             "size": 16,
             "distance": "Dot",
+            "on_disk": on_disk_vectors,
         }
     }
     # test failed init from collection (target changes size of existing vector)

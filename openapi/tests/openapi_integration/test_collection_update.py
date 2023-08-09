@@ -1,16 +1,17 @@
 import os
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.fixtures import on_disk_vectors, on_disk_payload
+from .helpers.helpers import request_with_validation
 
 default_name = ""
 collection_name = 'test_collection_uuid'
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -68,10 +69,7 @@ def test_collection_update():
     assert response.ok
 
 
-def test_edit_collection_params():
-    # If Qdrant is tested with vectors on disk mode
-    on_disk_vectors = bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
-
+def test_edit_collection_params(on_disk_vectors, on_disk_payload):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -118,7 +116,7 @@ def test_edit_collection_params():
                 }
             },
             "params": {
-                "on_disk_payload": True,
+                "on_disk_payload": on_disk_payload,
             },
         }
     )
@@ -137,7 +135,7 @@ def test_edit_collection_params():
     assert config["params"]["vectors"]["quantization_config"]["scalar"]["quantile"] == 0.8
     assert "always_ram" not in config["params"]["vectors"]["quantization_config"]["scalar"]
     assert config["params"]["vectors"]["on_disk"]
-    assert config["params"]["on_disk_payload"]
+    assert config["params"]["on_disk_payload"] == on_disk_payload
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 123
     assert config["quantization_config"]["scalar"]["type"] == "int8"
@@ -165,7 +163,7 @@ def test_edit_collection_params():
                 },
             },
             "params": {
-                "on_disk_payload": False,
+                "on_disk_payload": on_disk_payload,
             },
         }
     )
@@ -184,7 +182,7 @@ def test_edit_collection_params():
     assert config["params"]["vectors"]["quantization_config"]["product"]["compression"] == "x32"
     assert config["params"]["vectors"]["quantization_config"]["product"]["always_ram"]
     assert not config["params"]["vectors"]["on_disk"]
-    assert not config["params"]["on_disk_payload"]
+    assert config["params"]["on_disk_payload"] == on_disk_payload
     assert config["quantization_config"]["scalar"]["type"] == "int8"
     assert config["quantization_config"]["scalar"]["quantile"] == 0.99
     assert config["quantization_config"]["scalar"]["always_ram"]
