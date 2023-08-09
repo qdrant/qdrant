@@ -115,6 +115,8 @@ impl GpuSearchContext {
 
     pub fn clear(&self, gpu_context: &mut gpu::Context) {
         gpu_context.clear_buffer(self.visited_flags_buffer.clone());
+        gpu_context.clear_buffer(self.candidates_buffer.clone());
+        gpu_context.clear_buffer(self.nearest_buffer.clone());
         gpu_context.run();
         gpu_context.wait_finish();
     }

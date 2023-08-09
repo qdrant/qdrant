@@ -103,7 +103,7 @@ void run_request() {
             set_nearest(selected_candidates_count, ScoredPoint(point_id, 0.0));
             selected_candidates_count += 1;
         } else {
-            ScoredPoint other_scored_point = {other_point_id, similarity(other_point_id, point_id)};
+            ScoredPoint other_scored_point = {point_id, similarity(other_point_id, point_id)};
             BHEAP(nearest, push)(other_scored_point);
             LINKS_FOREACH(other_point_id) {
                 float candidate_score = similarity(other_point_id, LINKS_FOREACH_VALUE);

@@ -107,40 +107,22 @@ impl GpuLinks {
     }
 
     pub fn download(&mut self, gpu_context: &mut gpu::Context) {
-        let timer = std::time::Instant::now();
-
-        let chunk_size = 10_000_000;
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::GpuToCpu,
-            chunk_size * std::mem::size_of::<PointOffsetType>(),
+            self.links.len() * std::mem::size_of::<PointOffsetType>(),
         ));
-
-        let mut chunk_begin = 0;
-        while chunk_begin < self.links.len() {
-            let chunk_end = std::cmp::min(chunk_begin + chunk_size, self.links.len());
-
-            gpu_context.copy_gpu_buffer(
-                self.links_buffer.clone(),
-                staging_buffer.clone(),
-                chunk_begin * std::mem::size_of::<PointOffsetType>(),
-                0,
-                chunk_end - chunk_begin,
-            );
-            gpu_context.run();
-            gpu_context.wait_finish();
-
-            let slice = &mut self.links[chunk_begin..chunk_end];
-            staging_buffer.download_slice(slice, 0);
-
-            chunk_begin += chunk_size;
-        }
-
-        log::debug!(
-            "Download links from GPU time = {:?}, links data size {} MB",
-            timer.elapsed(),
-            self.links.len() * std::mem::size_of::<PointOffsetType>() / 1024 / 1024
+        gpu_context.copy_gpu_buffer(
+            self.links_buffer.clone(),
+            staging_buffer.clone(),
+            0,
+            0,
+            self.links.len() * std::mem::size_of::<PointOffsetType>(),
         );
+        gpu_context.run();
+        gpu_context.wait_finish();
+
+        staging_buffer.download_slice(&mut self.links, 0);
     }
 
     pub fn clear(&mut self, gpu_context: &mut gpu::Context) {
