@@ -1,20 +1,16 @@
 import pytest
 
+from .helpers.collection_setup import drop_collection
+from .helpers.fixtures import on_disk_vectors
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_euclid'
 
 
-def drop_collection(collection_name='test_collection'):
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="DELETE",
-        path_params={'collection_name': collection_name},
-    )
-    assert response.ok
-
-
-def basic_collection_setup(collection_name='test_collection'):
+def basic_collection_setup(
+    collection_name='test_collection',
+    on_disk_vectors=False,
+):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -29,7 +25,8 @@ def basic_collection_setup(collection_name='test_collection'):
         body={
             "vectors": {
                 "size": 2,
-                "distance": "Euclid"
+                "distance": "Euclid",
+                "on_disk": on_disk_vectors,
             }
         }
     )
@@ -71,8 +68,8 @@ def basic_collection_setup(collection_name='test_collection'):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -117,4 +114,3 @@ def test_search_with_threshold():
 
     assert response.json()['result'][0]['score'] - 1.0 < 0.0001
     assert response.json()['result'][1]['score'] - 1.414214 < 0.0001
-
