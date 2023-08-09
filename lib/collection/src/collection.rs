@@ -1588,6 +1588,32 @@ impl Collection {
         get_snapshot_description(&snapshot_path).await
     }
 
+    pub async fn list_shard_snapshots(
+        &self,
+        shard: ShardId,
+    ) -> CollectionResult<Vec<SnapshotDescription>> {
+        todo!()
+    }
+
+    pub async fn get_shard_snapshot_path(
+        &self,
+        shard: ShardId,
+        snapshot: &str,
+    ) -> CollectionResult<PathBuf> {
+        todo!()
+    }
+
+    pub fn snapshots_path_for_shard(&self, shard: ShardId) -> CollectionResult<PathBuf> {
+        todo!()
+    }
+
+    pub async fn create_shard_snapshot(
+        &self,
+        shard: ShardId,
+    ) -> CollectionResult<SnapshotDescription> {
+        todo!()
+    }
+
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,

@@ -2,9 +2,10 @@ use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, post, put, web, Responder, Result};
+use actix_web::{delete, get, post, put, web, HttpResponse, Responder, Result};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use collection::shards::shard::ShardId;
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,7 @@ use crate::actix::helpers::{
     accepted_response, collection_into_actix_error, process_response, storage_into_actix_error,
 };
 use crate::common::collections::*;
+use crate::common::telemetry_ops::requests_telemetry::HttpStatusCode;
 
 #[derive(Deserialize, Validate)]
 struct SnapshotPath {
@@ -272,6 +274,83 @@ async fn delete_collection_snapshot(
     }
 }
 
+#[get("/collections/{collection}/shards/{shard}/snapshots")]
+async fn list_shard_snapshots(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId)>,
+) -> impl Responder {
+    let (collection, shard) = path.into_inner();
+    let collection = toc.get_collection(&collection).await.unwrap();
+    let snapshots = collection.list_shard_snapshots(shard).await.unwrap();
+
+    HttpResponse::Ok().json(snapshots)
+}
+
+#[post("/collections/{collection}/shards/{shard}/snapshots")]
+async fn create_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId)>,
+) -> impl Responder {
+    let (collection, shard) = path.into_inner();
+    let collection = toc.get_collection(&collection).await.unwrap();
+    let snapshot = collection.create_shard_snapshot(shard).await.unwrap();
+
+    HttpResponse::Ok().json(snapshot)
+}
+
+#[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn delete_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId, String)>,
+) -> impl Responder {
+    let (collection, shard, snapshot) = path.into_inner();
+    let collection = toc.get_collection(&collection).await.unwrap();
+    let snapshot_path = collection
+        .get_shard_snapshot_path(shard, &snapshot)
+        .await
+        .unwrap();
+    std::fs::remove_file(&snapshot_path).unwrap();
+
+    HttpResponse::Ok()
+}
+
+#[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn download_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId, String)>,
+) -> impl Responder {
+    let (collection, shard, snapshot) = path.into_inner();
+    let collection = toc.get_collection(&collection).await.unwrap();
+    let snapshot_path = collection
+        .get_shard_snapshot_path(shard, &snapshot)
+        .await
+        .unwrap();
+
+    NamedFile::open(snapshot_path).unwrap()
+}
+
+#[put("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn upload_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId, String)>,
+    MultipartForm(form): MultipartForm<SnapshottingForm>,
+) -> impl Responder {
+    let (collection, shard, snapshot) = path.into_inner();
+    let collection = toc.get_collection(&collection).await.unwrap();
+    let snapshots_path = collection.snapshots_path_for_shard(shard).unwrap();
+
+    if !snapshots_path.exists() {
+        std::fs::create_dir_all(&snapshots_path).unwrap();
+    }
+
+    form.snapshot
+        .file
+        .persist(&snapshots_path.join(snapshot))
+        .unwrap();
+
+    HttpResponse::Ok()
+}
+
 // Configure services
 pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
     cfg.service(list_snapshots)
@@ -283,5 +362,10 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(create_full_snapshot)
         .service(get_full_snapshot)
         .service(delete_full_snapshot)
-        .service(delete_collection_snapshot);
+        .service(delete_collection_snapshot)
+        .service(list_shard_snapshots)
+        .service(create_shard_snapshot)
+        .service(delete_shard_snapshot)
+        .service(download_shard_snapshot)
+        .service(upload_shard_snapshot);
 }
