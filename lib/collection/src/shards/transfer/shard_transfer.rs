@@ -27,7 +27,7 @@ pub struct ShardTransfer {
     pub shard_id: ShardId,
     pub from: PeerId,
     pub to: PeerId,
-    /// If this flag is true, the is a replication related transfer of shard from 1 peer to another
+    /// If this flag is true, this is a replication related transfer of shard from 1 peer to another
     /// Shard on original peer will not be deleted in this case
     pub sync: bool,
 }
@@ -77,8 +77,7 @@ async fn transfer_batches(
     }
 
     // Transfer contents batch by batch
-    let initial_offset = None;
-    let mut offset = initial_offset;
+    let mut offset = None;
     loop {
         if stopped.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(CollectionError::Cancelled {
@@ -219,7 +218,8 @@ pub async fn transfer_shard(
                 "Shard {shard_id} cannot be proxied because it does not exist"
             )));
         }
-    };
+    }
+
     // Transfer contents batch by batch
     transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
 }
