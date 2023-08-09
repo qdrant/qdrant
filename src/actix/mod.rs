@@ -28,7 +28,7 @@ use crate::actix::api::search_api::config_search_api;
 use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::actix::api_key::ApiKey;
+use crate::actix::api_key::{ApiKey, WhitelistItem};
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
@@ -81,8 +81,8 @@ pub fn init(
             // not enabled
             false
         };
-        let skip_api_key_prefixes = if web_ui_available {
-            vec![WEB_UI_PATH.to_string()]
+        let api_key_whitelist = if web_ui_available {
+            vec![WhitelistItem::prefix(WEB_UI_PATH)]
         } else {
             vec![]
         };
@@ -108,7 +108,7 @@ pub fn init(
                     api_key.is_some(),
                     ApiKey::new(
                         &api_key.clone().unwrap_or_default(),
-                        skip_api_key_prefixes.clone(),
+                        api_key_whitelist.clone(),
                     ),
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
