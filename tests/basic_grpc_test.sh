@@ -165,8 +165,6 @@ $docker_grpcurl -d '{
   "ids": [{ "num": 1 }]
 }' $QDRANT_HOST qdrant.Points/Get
 
-$docker_grpcurl $QDRANT_HOST qdrant.Qdrant/GetHttpPort
-
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
 #[[ "$SAVED_VECTORS_COUNT" == "6" ]] || {
 #  echo 'check failed'

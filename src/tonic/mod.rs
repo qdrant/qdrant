@@ -12,9 +12,12 @@ use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
+use ::api::grpc::qdrant::qdrant_internal_server::{QdrantInternal, QdrantInternalServer};
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
-use ::api::grpc::qdrant::{HttpPortRequest, HttpPortResponse, HealthCheckReply, HealthCheckRequest};
+use ::api::grpc::qdrant::{
+    HealthCheckReply, HealthCheckRequest, HttpPortRequest, HttpPortResponse,
+};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -33,18 +36,8 @@ use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::snapshots_api::SnapshotsService;
 
-pub struct QdrantService {
-    /// HTTP port accessible from inside the cluster
-    http_port: u16,
-}
-
-impl QdrantService {
-    fn new(internal_http_port: u16) -> Self {
-        Self {
-            http_port: internal_http_port,
-        }
-    }
-}
+#[derive(Default)]
+pub struct QdrantService {}
 
 #[tonic::async_trait]
 impl Qdrant for QdrantService {
@@ -54,12 +47,28 @@ impl Qdrant for QdrantService {
     ) -> Result<Response<HealthCheckReply>, Status> {
         Ok(Response::new(VersionInfo::default().into()))
     }
+}
 
+pub struct QdrantInternalService {
+    /// HTTP port accessible from inside the cluster
+    http_port: u16,
+}
+
+impl QdrantInternalService {
+    fn new(internal_http_port: u16) -> Self {
+        Self {
+            http_port: internal_http_port,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl QdrantInternal for QdrantInternalService {
     async fn get_http_port(
         &self,
         _request: Request<HttpPortRequest>,
     ) -> Result<Response<HttpPortResponse>, Status> {
-        Ok(Response::new(HttpPortResponse  {
+        Ok(Response::new(HttpPortResponse {
             port: self.http_port as i32,
         }))
     }
@@ -93,7 +102,7 @@ pub fn init(
         let socket =
             SocketAddr::from((settings.service.host.parse::<IpAddr>().unwrap(), grpc_port));
 
-        let qdrant_service = QdrantService::new(settings.service.http_port);
+        let qdrant_service = QdrantService::default();
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.toc().clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
@@ -184,7 +193,8 @@ pub fn init_internal(
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
-            let qdrant_service = QdrantService::new(settings.service.http_port);
+            let qdrant_service = QdrantService::default();
+            let qdrant_internal_service = QdrantInternalService::new(settings.service.http_port);
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
             let raft_service = RaftService::new(to_consensus, consensus_state);
@@ -221,6 +231,12 @@ pub fn init_internal(
                 .layer(middleware_layer)
                 .add_service(
                     QdrantServer::new(qdrant_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
+                )
+                .add_service(
+                    QdrantInternalServer::new(qdrant_internal_service)
                         .send_compressed(CompressionEncoding::Gzip)
                         .accept_compressed(CompressionEncoding::Gzip)
                         .max_decoding_message_size(usize::MAX),

@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package qdrant;
+
+service QdrantInternal {
+  /*
+  Get HTTP port for remote host.
+   */
+  rpc GetHttpPort (HttpPortRequest) returns (HttpPortResponse) {}
+}
+
+message HttpPortRequest {}
+
+message HttpPortResponse {
+  int32 port = 1;
+}

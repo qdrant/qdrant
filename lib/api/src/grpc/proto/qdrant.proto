@@ -4,6 +4,7 @@ import "collections_service.proto";
 import "collections_internal_service.proto";
 import "points_service.proto";
 import "points_internal_service.proto";
+import "qdrant_internal_service.proto";
 import "raft_service.proto";
 import "snapshots_service.proto";
 
@@ -11,10 +12,6 @@ package qdrant;
 
 service Qdrant {
   rpc HealthCheck (HealthCheckRequest) returns (HealthCheckReply) {}
-  /*
-  Get HTTP port for remote host.
-   */
-  rpc GetHttpPort (HttpPortRequest) returns (HttpPortResponse) {}
 }
 
 message HealthCheckRequest {}
@@ -22,10 +19,4 @@ message HealthCheckRequest {}
 message HealthCheckReply {
   string title = 1;
   string version = 2;
-}
-
-message HttpPortRequest {}
-
-message HttpPortResponse {
-  int32 port = 1;
 }

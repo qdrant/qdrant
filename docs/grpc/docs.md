@@ -174,10 +174,14 @@
 - [qdrant.proto](#qdrant-proto)
     - [HealthCheckReply](#qdrant-HealthCheckReply)
     - [HealthCheckRequest](#qdrant-HealthCheckRequest)
+  
+    - [Qdrant](#qdrant-Qdrant)
+  
+- [qdrant_internal_service.proto](#qdrant_internal_service-proto)
     - [HttpPortRequest](#qdrant-HttpPortRequest)
     - [HttpPortResponse](#qdrant-HttpPortResponse)
   
-    - [Qdrant](#qdrant-Qdrant)
+    - [QdrantInternal](#qdrant-QdrantInternal)
   
 - [snapshots_service.proto](#snapshots_service-proto)
     - [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest)
@@ -2955,6 +2959,32 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+ 
+
+ 
+
+ 
+
+
+<a name="qdrant-Qdrant"></a>
+
+### Qdrant
+
+
+| Method Name | Request Type | Response Type | Description |
+| ----------- | ------------ | ------------- | ------------|
+| HealthCheck | [HealthCheckRequest](#qdrant-HealthCheckRequest) | [HealthCheckReply](#qdrant-HealthCheckReply) |  |
+
+ 
+
+
+
+<a name="qdrant_internal_service-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## qdrant_internal_service.proto
+
+
 
 <a name="qdrant-HttpPortRequest"></a>
 
@@ -2987,14 +3017,13 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
  
 
 
-<a name="qdrant-Qdrant"></a>
+<a name="qdrant-QdrantInternal"></a>
 
-### Qdrant
+### QdrantInternal
 
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| HealthCheck | [HealthCheckRequest](#qdrant-HealthCheckRequest) | [HealthCheckReply](#qdrant-HealthCheckReply) |  |
 | GetHttpPort | [HttpPortRequest](#qdrant-HttpPortRequest) | [HttpPortResponse](#qdrant-HttpPortResponse) | Get HTTP port for remote host. |
 
  
