@@ -52,12 +52,11 @@ impl ConfigMismatchOptimizer {
     }
 
     /// Check if current configuration requires vectors to be stored on disk
-    fn check_if_vectors_on_disk(&self, vector_name: &str) -> bool {
+    fn check_if_vectors_on_disk(&self, vector_name: &str) -> Option<bool> {
         self.collection_params
             .vectors
             .get_params(vector_name)
             .and_then(|vector_params| vector_params.on_disk)
-            .unwrap_or_default()
     }
 
     /// Calculates and HNSW config that should be used for a given vector
@@ -141,10 +140,12 @@ impl ConfigMismatchOptimizer {
                                 }
                             }
 
-                            let is_required_on_disk = self.check_if_vectors_on_disk(vector_name);
-
-                            if is_required_on_disk != vector_data.storage_type.is_on_disk() {
-                                return true;
+                            if let Some(is_required_on_disk) =
+                                self.check_if_vectors_on_disk(vector_name)
+                            {
+                                if is_required_on_disk != vector_data.storage_type.is_on_disk() {
+                                    return true;
+                                }
                             }
 
                             // Check quantization mismatch
