@@ -159,8 +159,7 @@ mod tests {
         let candidates_capacity = num_vectors / 4;
 
         let mut rng = StdRng::seed_from_u64(42);
-        let vector_holder =
-            TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
 
         let mut graph_layers_builder = GraphLayersBuilder::new_with_params(
             num_vectors,
