@@ -82,7 +82,12 @@ pub fn init(
             false
         };
 
-        let mut api_key_whitelist = vec![WhitelistItem::exact("/")];
+        let mut api_key_whitelist = vec![
+            WhitelistItem::exact("/"),
+            WhitelistItem::exact("/healthz"),
+            WhitelistItem::prefix("/readyz"),
+            WhitelistItem::prefix("/livez"),
+        ];
         if web_ui_available {
             api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
         }

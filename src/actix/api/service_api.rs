@@ -95,11 +95,36 @@ async fn get_stacktrace() -> impl Responder {
     process_response(Ok(result), timing)
 }
 
+#[get("/healthz")]
+async fn healthz() -> impl Responder {
+    kubernetes_healthz().await
+}
+
+#[get("/livez")]
+async fn livez() -> impl Responder {
+    kubernetes_healthz().await
+}
+
+#[get("/readyz")]
+async fn readyz() -> impl Responder {
+    kubernetes_healthz().await
+}
+
+/// Basic Kubernetes healthz endpoint
+async fn kubernetes_healthz() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .body("healthz check passed")
+}
+
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
         .service(metrics)
         .service(put_locks)
         .service(get_locks)
-        .service(get_stacktrace);
+        .service(get_stacktrace)
+        .service(healthz)
+        .service(livez)
+        .service(readyz);
 }
