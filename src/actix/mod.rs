@@ -81,11 +81,11 @@ pub fn init(
             // not enabled
             false
         };
-        let api_key_whitelist = if web_ui_available {
-            vec![WhitelistItem::prefix(WEB_UI_PATH)]
-        } else {
-            vec![]
-        };
+
+        let mut api_key_whitelist = vec![WhitelistItem::exact("/")];
+        if web_ui_available {
+            api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
+        }
 
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()
