@@ -174,6 +174,8 @@
 - [qdrant.proto](#qdrant-proto)
     - [HealthCheckReply](#qdrant-HealthCheckReply)
     - [HealthCheckRequest](#qdrant-HealthCheckRequest)
+    - [HttpPortRequest](#qdrant-HttpPortRequest)
+    - [HttpPortResponse](#qdrant-HttpPortResponse)
   
     - [Qdrant](#qdrant-Qdrant)
   
@@ -2953,6 +2955,31 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+
+<a name="qdrant-HttpPortRequest"></a>
+
+### HttpPortRequest
+
+
+
+
+
+
+
+<a name="qdrant-HttpPortResponse"></a>
+
+### HttpPortResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| port | [int32](#int32) |  |  |
+
+
+
+
+
  
 
  
@@ -2968,6 +2995,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
 | HealthCheck | [HealthCheckRequest](#qdrant-HealthCheckRequest) | [HealthCheckReply](#qdrant-HealthCheckReply) |  |
+| GetHttpPort | [HttpPortRequest](#qdrant-HttpPortRequest) | [HttpPortResponse](#qdrant-HttpPortResponse) | Get HTTP port for remote host. |
 
  
 

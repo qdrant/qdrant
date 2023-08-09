@@ -72,9 +72,9 @@ impl Consensus {
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
-        let p2p_host = settings.service.host;
+        let p2p_host = settings.service.host.clone();
         let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
-        let config = settings.cluster.consensus;
+        let config = settings.cluster.consensus.clone();
 
         let (mut consensus, message_sender) = Self::new(
             logger,
@@ -119,6 +119,7 @@ impl Consensus {
         let server_tls = if settings.cluster.p2p.enable_tls {
             let tls_config = settings
                 .tls
+                .clone()
                 .ok_or_else(Settings::tls_config_is_undefined_error)?;
 
             Some(helpers::load_tls_internal_server_config(&tls_config)?)
@@ -133,6 +134,7 @@ impl Consensus {
                     toc,
                     state_ref,
                     telemetry_collector,
+                    settings,
                     p2p_host,
                     p2p_port,
                     server_tls,
