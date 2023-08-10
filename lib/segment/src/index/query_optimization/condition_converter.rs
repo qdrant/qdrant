@@ -249,9 +249,11 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         Match::Any(MatchAny { any }) => match (any, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index
-                        .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|k| list.contains(k)))
+                    index.get_values(point_id).map_or(false, |values| {
+                        values
+                            .iter()
+                            .any(|k| list.iter().any(|s| s.as_str() == k.as_ref()))
+                    })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
@@ -266,9 +268,11 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         Match::Except(MatchExcept { except }) => match (except, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index
-                        .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|k| !list.contains(k)))
+                    index.get_values(point_id).map_or(false, |values| {
+                        values
+                            .iter()
+                            .any(|k| !list.iter().any(|s| s.as_str() == k.as_ref()))
+                    })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
