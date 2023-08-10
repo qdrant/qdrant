@@ -218,7 +218,7 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
         let mut context = gpu::Context::new(device.clone());
 
-        let mut gpu_links = GpuLinks::new(device.clone(), m, ef, points_count).unwrap();
+        let mut gpu_links = GpuLinks::new(device.clone(), m, ef, m, points_count).unwrap();
         for idx in 0..points_count as PointOffsetType {
             let mut links = vec![];
             graph_layers.links_map(idx, 0, |link| {

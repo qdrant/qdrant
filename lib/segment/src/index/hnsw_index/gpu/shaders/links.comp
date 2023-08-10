@@ -12,6 +12,7 @@ layout(set = LINKS_LAYOUT_SET, binding = 0)
 readonly uniform LinksParams {
     uint m;
     uint ef;
+    uint links_capacity;
 } links_params;
 
 layout(set = LINKS_LAYOUT_SET, binding = 1)
@@ -23,10 +24,12 @@ buffer Links {
 
 #define LEVEL_M links_params.m
 
+#define LINKS_CAPACITY links_params.links_capacity
+
 #define EF links_params.ef
 
 #define LINKS_CONTAINER_OFFSET(ID) \
-    ID * (LEVEL_M + 1)
+    ID * (LINKS_CAPACITY + 1)
 
 #define LINKS_NEW_ITERATOR(ID) \
     NEW_ITERATOR((LINKS_CONTAINER_OFFSET(ID) + 1), (LINKS_CONTAINER_OFFSET(ID) + 1 + LINKS_COUNT(ID)))

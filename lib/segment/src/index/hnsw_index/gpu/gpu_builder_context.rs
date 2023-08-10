@@ -154,6 +154,7 @@ mod tests {
         let num_vectors = 1000;
         let dim = 32;
         let m = 8;
+        let m0 = 16;
         let ef_construct = 16;
         let entry_points_num = 10;
         let candidates_capacity = num_vectors / 4;
@@ -164,7 +165,7 @@ mod tests {
         let mut graph_layers_builder = GraphLayersBuilder::new_with_params(
             num_vectors,
             m,
-            m,
+            m0,
             ef_construct,
             entry_points_num,
             true,
@@ -213,7 +214,7 @@ mod tests {
         let mut gpu_context = gpu::Context::new(device.clone());
 
         let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
-        let mut gpu_links = GpuLinks::new(device.clone(), m, ef_construct, num_vectors).unwrap();
+        let mut gpu_links = GpuLinks::new(device.clone(), m, ef_construct, m0, num_vectors).unwrap();
         let gpu_search_context = GpuSearchContext::new(
             1,
             num_vectors,
@@ -269,6 +270,9 @@ mod tests {
 
         // test building each level
         for level in (0..=max_level).rev() {
+            if level == 0 {
+                gpu_links.update_params(&mut gpu_context, m0, ef_construct);
+            }
             gpu_links.clear(&mut gpu_context);
             for idx in 0..num_vectors {
                 if let Some(Some(entry)) = entries.get(idx) {

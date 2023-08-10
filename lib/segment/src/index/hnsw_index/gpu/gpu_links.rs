@@ -7,11 +7,13 @@ use crate::types::PointOffsetType;
 struct GpuLinksParamsBuffer {
     m: u32,
     ef: u32,
+    links_capacity: u32,
 }
 
 pub struct GpuLinks {
     pub m: usize,
     pub ef: usize,
+    pub links_capacity: usize,
     pub points_count: usize,
     pub links: Vec<PointOffsetType>,
     pub device: Arc<gpu::Device>,
@@ -26,12 +28,13 @@ impl GpuLinks {
         device: Arc<gpu::Device>,
         m: usize,
         ef: usize,
+        links_capacity: usize,
         points_count: usize,
     ) -> OperationResult<Self> {
         let links_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            points_count * (m + 1) * std::mem::size_of::<PointOffsetType>(),
+            points_count * (links_capacity + 1) * std::mem::size_of::<PointOffsetType>(),
         ));
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -48,6 +51,7 @@ impl GpuLinks {
         let params = GpuLinksParamsBuffer {
             m: m as u32,
             ef: ef as u32,
+            links_capacity: links_capacity as u32,
         };
         staging_buffer.upload(&params, 0);
 
@@ -76,8 +80,9 @@ impl GpuLinks {
         Ok(Self {
             m,
             ef,
+            links_capacity,
             points_count,
-            links: vec![0; points_count * (m + 1)],
+            links: vec![0; points_count * (links_capacity + 1)],
             device,
             links_buffer,
             params_buffer,
@@ -87,13 +92,13 @@ impl GpuLinks {
     }
 
     pub fn upload(&self, gpu_context: &mut gpu::Context, count: usize) {
-        let upload_size = count * (self.m + 1) * std::mem::size_of::<PointOffsetType>();
+        let upload_size = count * (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::CpuToGpu,
             upload_size,
         ));
-        staging_buffer.upload_slice(&self.links[0..count * (self.m + 1)], 0);
+        staging_buffer.upload_slice(&self.links[0..count * (self.links_capacity + 1)], 0);
 
         gpu_context.copy_gpu_buffer(
             staging_buffer.clone(),
@@ -104,6 +109,34 @@ impl GpuLinks {
         );
         gpu_context.run();
         gpu_context.wait_finish();
+    }
+
+    pub fn update_params(&mut self, context: &mut gpu::Context, m: usize, ef: usize) {
+        self.m = m;
+        self.ef = ef;
+
+        let staging_buffer = Arc::new(gpu::Buffer::new(
+            self.device.clone(),
+            gpu::BufferType::CpuToGpu,
+            std::mem::size_of::<GpuLinksParamsBuffer>(),
+        ));
+
+        let params = GpuLinksParamsBuffer {
+            m: m as u32,
+            ef: ef as u32,
+            links_capacity: self.links_capacity as u32,
+        };
+        staging_buffer.upload(&params, 0);
+
+        context.copy_gpu_buffer(
+            staging_buffer.clone(),
+            self.params_buffer.clone(),
+            0,
+            0,
+            std::mem::size_of::<GpuLinksParamsBuffer>(),
+        );
+        context.run();
+        context.wait_finish();
     }
 
     pub fn download(&mut self, gpu_context: &mut gpu::Context) {
@@ -133,13 +166,13 @@ impl GpuLinks {
     }
 
     pub fn get_links(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
-        let start_index = point_id as usize * (self.m + 1);
+        let start_index = point_id as usize * (self.links_capacity + 1);
         let len = self.links[start_index] as usize;
         &self.links[start_index + 1..start_index + 1 + len]
     }
 
     pub fn set_links(&mut self, point_id: PointOffsetType, links: &[PointOffsetType]) {
-        let start_index = point_id as usize * (self.m + 1);
+        let start_index = point_id as usize * (self.links_capacity + 1);
         self.links[start_index] = links.len() as PointOffsetType;
         self.links[start_index + 1..start_index + 1 + links.len()].copy_from_slice(links);
     }
@@ -182,7 +215,7 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
         let mut context = gpu::Context::new(device.clone());
 
-        let mut gpu_links = GpuLinks::new(device.clone(), m, ef, points_count).unwrap();
+        let mut gpu_links = GpuLinks::new(device.clone(), m, ef, m, points_count).unwrap();
 
         for (i, links) in generated_links.iter().enumerate() {
             gpu_links.set_links(i as PointOffsetType, &links);
