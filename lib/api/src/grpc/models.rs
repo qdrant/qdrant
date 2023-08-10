@@ -29,7 +29,7 @@ pub enum ApiStatus {
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub struct ApiResponse<D: Serialize + Debug> {
+pub struct ApiResponse<D> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<D>,
     pub status: ApiStatus,

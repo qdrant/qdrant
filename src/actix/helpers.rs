@@ -33,7 +33,7 @@ pub fn accepted_response(timing: Instant) -> HttpResponse {
 
 pub fn process_response<D>(response: Result<D, StorageError>, timing: Instant) -> HttpResponse
 where
-    D: Serialize + Debug,
+    D: Serialize,
 {
     match response {
         Ok(res) => HttpResponse::Ok().json(ApiResponse {
