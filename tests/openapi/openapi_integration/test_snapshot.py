@@ -424,3 +424,15 @@ def test_collection_snapshot_security():
     )
     assert not response.ok
     assert response.status_code == 404
+
+    # Path must be inside snapshots directory
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file:///etc/passwd",
+        }
+    )
+    assert response.status_code == 403
+    assert response.json()["status"]["error"] == "Forbidden: Snapshot file \"/etc/passwd\" must be inside snapshots directory"
