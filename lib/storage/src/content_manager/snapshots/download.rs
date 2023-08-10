@@ -54,13 +54,17 @@ async fn download_file(url: &Url, path: &Path) -> Result<(), StorageError> {
 pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf, StorageError> {
     match url.scheme() {
         "file" => {
-            let local_file_path = Path::new(url.path());
-            if !local_file_path.exists() {
+            let local_path = url.to_file_path().map_err(|_| {
+                StorageError::bad_request(
+                    "Invalid snapshot URI, file path must be absolute or on localhost",
+                )
+            })?;
+            if !local_path.exists() {
                 return Err(StorageError::bad_request(&format!(
-                    "Snapshot file {local_file_path:?} does not exist"
+                    "Snapshot file {local_path:?} does not exist"
                 )));
             }
-            Ok(local_file_path.to_path_buf())
+            Ok(local_path.to_path_buf())
         }
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));

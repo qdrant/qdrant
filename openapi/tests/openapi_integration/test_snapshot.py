@@ -224,3 +224,41 @@ def test_snapshot_operations_non_wait():
             # wait for snapshot to be deleted
             sleep(0.1)
             continue
+
+
+def test_snapshot_invalid_file_uri():
+    # Invalid file:// host
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file://whatever.snapshot",
+        }
+    )
+    assert response.status_code == 400
+    assert response.json()["status"]["error"] == "Bad request: Invalid snapshot URI, file path must be absolute or on localhost"
+
+    # Absolute path that does not exist
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file:///whatever.snapshot",
+        }
+    )
+    assert response.status_code == 400
+    assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
+
+    # Path that does not exist
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file://localhost/whatever.snapshot",
+        }
+    )
+    assert response.status_code == 400
+    assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
