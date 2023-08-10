@@ -1,3 +1,5 @@
+use std::io;
+
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
@@ -21,11 +23,11 @@ use uuid::Uuid;
 use validator::Validate;
 
 use super::CollectionPath;
+use crate::actix::helpers;
 use crate::actix::helpers::{
     accepted_response, collection_into_actix_error, process_response, storage_into_actix_error,
 };
 use crate::common::collections::*;
-use crate::common::telemetry_ops::requests_telemetry::HttpStatusCode;
 
 #[derive(Deserialize, Validate)]
 struct SnapshotPath {
@@ -279,11 +281,14 @@ async fn list_shard_snapshots(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
 ) -> impl Responder {
-    let (collection, shard) = path.into_inner();
-    let collection = toc.get_collection(&collection).await.unwrap();
-    let snapshots = collection.list_shard_snapshots(shard).await.unwrap();
+    let future = async move {
+        let (collection, shard) = path.into_inner();
+        let collection = toc.get_collection(&collection).await?;
+        let snapshots = collection.list_shard_snapshots(shard).await?;
+        Ok(snapshots)
+    };
 
-    HttpResponse::Ok().json(snapshots)
+    helpers::time(future).await
 }
 
 #[post("/collections/{collection}/shards/{shard}/snapshots")]
@@ -291,11 +296,14 @@ async fn create_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
 ) -> impl Responder {
-    let (collection, shard) = path.into_inner();
-    let collection = toc.get_collection(&collection).await.unwrap();
-    let snapshot = collection.create_shard_snapshot(shard).await.unwrap();
+    let future = async move {
+        let (collection, shard) = path.into_inner();
+        let collection = toc.get_collection(&collection).await?;
+        let snapshot = collection.create_shard_snapshot(shard).await?;
+        Ok(snapshot)
+    };
 
-    HttpResponse::Ok().json(snapshot)
+    helpers::time(future).await
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
@@ -303,30 +311,29 @@ async fn delete_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
 ) -> impl Responder {
-    let (collection, shard, snapshot) = path.into_inner();
-    let collection = toc.get_collection(&collection).await.unwrap();
-    let snapshot_path = collection
-        .get_shard_snapshot_path(shard, &snapshot)
-        .await
-        .unwrap();
-    std::fs::remove_file(&snapshot_path).unwrap();
+    let future = async move {
+        let (collection, shard, snapshot) = path.into_inner();
+        let collection = toc.get_collection(&collection).await?;
+        let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
-    HttpResponse::Ok()
+        std::fs::remove_file(&snapshot_path)?;
+
+        Ok(())
+    };
+
+    helpers::time(future).await
 }
 
 #[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
 async fn download_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
-) -> impl Responder {
+) -> Result<impl Responder, helpers::HttpError> {
     let (collection, shard, snapshot) = path.into_inner();
-    let collection = toc.get_collection(&collection).await.unwrap();
-    let snapshot_path = collection
-        .get_shard_snapshot_path(shard, &snapshot)
-        .await
-        .unwrap();
+    let collection = toc.get_collection(&collection).await?;
+    let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
-    NamedFile::open(snapshot_path).unwrap()
+    Ok(NamedFile::open(snapshot_path))
 }
 
 #[put("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
@@ -335,20 +342,24 @@ async fn upload_shard_snapshot(
     path: web::Path<(String, ShardId, String)>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
-    let (collection, shard, snapshot) = path.into_inner();
-    let collection = toc.get_collection(&collection).await.unwrap();
-    let snapshots_path = collection.snapshots_path_for_shard(shard).unwrap();
+    let future = async move {
+        let (collection, shard, snapshot) = path.into_inner();
+        let collection = toc.get_collection(&collection).await?;
+        let snapshots_path = collection.snapshots_path_for_shard(shard)?;
 
-    if !snapshots_path.exists() {
-        std::fs::create_dir_all(&snapshots_path).unwrap();
-    }
+        if !snapshots_path.exists() {
+            std::fs::create_dir_all(&snapshots_path)?;
+        }
 
-    form.snapshot
-        .file
-        .persist(&snapshots_path.join(snapshot))
-        .unwrap();
+        form.snapshot
+            .file
+            .persist(&snapshots_path.join(snapshot))
+            .map_err(io::Error::from)?;
 
-    HttpResponse::Ok()
+        Ok(())
+    };
+
+    helpers::time(future).await
 }
 
 // Configure services

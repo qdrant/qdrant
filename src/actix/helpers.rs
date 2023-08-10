@@ -1,9 +1,11 @@
 use std::fmt::Debug;
+use std::io;
 
 use actix_web::rt::time::Instant;
-use actix_web::{error, Error, HttpResponse};
+use actix_web::{error, http, Error, HttpResponse};
 use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
+use futures::Future;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
 
@@ -68,5 +70,101 @@ where
                 time: timing.elapsed().as_secs_f64(),
             })
         }
+    }
+}
+
+pub async fn time<T, Fut>(future: Fut) -> impl actix_web::Responder
+where
+    Fut: Future<Output = Result<T, HttpError>>,
+    T: serde::Serialize,
+{
+    let instant = Instant::now();
+    let result = future.await;
+    let time = instant.elapsed().as_secs_f64();
+
+    let (status_code, response) = match result {
+        Ok(resp) => {
+            let resp = ApiResponse {
+                result: Some(resp),
+                status: ApiStatus::Ok,
+                time,
+            };
+
+            (http::StatusCode::OK, resp)
+        }
+
+        Err(err) => {
+            let resp = ApiResponse {
+                result: None,
+                status: ApiStatus::Error(err.to_string()),
+                time,
+            };
+
+            (err.status_code(), resp)
+        }
+    };
+
+    HttpResponse::build(status_code).json(response)
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("{description}")]
+pub struct HttpError {
+    status_code: http::StatusCode,
+    description: String,
+}
+
+impl HttpError {
+    pub fn new(status_code: http::StatusCode, description: impl Into<String>) -> Self {
+        Self {
+            status_code,
+            description: description.into(),
+        }
+    }
+
+    pub fn status_code(&self) -> http::StatusCode {
+        self.status_code
+    }
+}
+
+impl actix_web::ResponseError for HttpError {
+    fn status_code(&self) -> http::StatusCode {
+        self.status_code
+    }
+}
+
+impl From<StorageError> for HttpError {
+    fn from(err: StorageError) -> Self {
+        let (status_code, description) = match err {
+            StorageError::BadInput { description } => (http::StatusCode::BAD_REQUEST, description),
+            StorageError::NotFound { description } => (http::StatusCode::NOT_FOUND, description),
+            StorageError::ServiceError { description, .. } => {
+                (http::StatusCode::INTERNAL_SERVER_ERROR, description)
+            }
+            StorageError::BadRequest { description } => {
+                (http::StatusCode::BAD_REQUEST, description)
+            }
+            StorageError::Locked { description } => (http::StatusCode::FORBIDDEN, description),
+            StorageError::Timeout { description } => {
+                (http::StatusCode::REQUEST_TIMEOUT, description)
+            }
+        };
+
+        Self {
+            status_code,
+            description,
+        }
+    }
+}
+
+impl From<CollectionError> for HttpError {
+    fn from(err: CollectionError) -> Self {
+        StorageError::from(err).into()
+    }
+}
+
+impl From<io::Error> for HttpError {
+    fn from(err: io::Error) -> Self {
+        todo!()
     }
 }
