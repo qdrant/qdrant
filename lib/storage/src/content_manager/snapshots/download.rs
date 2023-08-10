@@ -80,6 +80,21 @@ pub async fn download_snapshot(
                     "Snapshot file {local_path:?} does not exist"
                 )));
             }
+
+            // Try to canonicalize paths so we can more reliably compare with required prefix
+            let snapshots_dir = snapshots_dir
+                .canonicalize()
+                .unwrap_or_else(|_| snapshots_dir.to_path_buf());
+            let local_path = local_path.canonicalize().unwrap_or(local_path);
+
+            // Prevent using arbitrary files from our file system, enforce the file to be in the
+            // snapshots directory
+            if !local_path.starts_with(snapshots_dir) {
+                return Err(StorageError::forbidden(format!(
+                    "Snapshot file {local_path:?} must be inside snapshots directory",
+                )));
+            }
+
             Ok((local_path, None))
         }
         "http" | "https" => {
