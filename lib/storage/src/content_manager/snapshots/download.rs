@@ -74,7 +74,7 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf
             // Prevent using arbitrary files from our file system, enforce the file to be in the
             // snapshots directory
             if !local_path.starts_with(snapshots_dir) {
-                return Err(StorageError::bad_request(&format!(
+                return Err(StorageError::forbidden(&format!(
                     "Snapshot file {local_path:?} must be inside snapshots dir"
                 )));
             }

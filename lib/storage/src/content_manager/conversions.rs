@@ -14,6 +14,7 @@ pub fn error_to_status(error: StorageError) -> tonic::Status {
         StorageError::NotFound { .. } => tonic::Code::NotFound,
         StorageError::ServiceError { .. } => tonic::Code::Internal,
         StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
+        StorageError::Forbidden { .. } => tonic::Code::PermissionDenied,
         StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
         StorageError::Timeout { .. } => tonic::Code::DeadlineExceeded,
     };

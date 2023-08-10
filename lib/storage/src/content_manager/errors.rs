@@ -20,6 +20,8 @@ pub enum StorageError {
     },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
+    #[error("Forbidden: {description}")]
+    Forbidden { description: String },
     #[error("Storage locked: {description}")]
     Locked { description: String },
     #[error("Timeout: {description}")]
@@ -36,6 +38,12 @@ impl StorageError {
 
     pub fn bad_request(description: &str) -> StorageError {
         StorageError::BadRequest {
+            description: description.to_string(),
+        }
+    }
+
+    pub fn forbidden(description: &str) -> StorageError {
+        StorageError::Forbidden {
             description: description.to_string(),
         }
     }
