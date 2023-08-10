@@ -1198,6 +1198,7 @@ impl ShardReplicaSet {
         state: &ReplicaSetState,
     ) -> bool {
         let mut wait_for_deactivation = false;
+
         for (peer_id, err) in failures {
             log::warn!(
                 "Failed to update shard {}:{} on peer {}, error: {}",
@@ -1206,25 +1207,34 @@ impl ShardReplicaSet {
                 peer_id,
                 err
             );
-            if let Some(ReplicaState::Active) = state.get_peer_state(peer_id) {
-                if err.is_transient() {
-                    // If the error is transient, we should not deactivate the peer
-                    // before allowing other operations to continue.
-                    // Otherwise, the failed node can become responsive again, before
-                    // the other nodes deactivate it, so the storage might be inconsistent.
-                    wait_for_deactivation = true;
-                }
 
-                log::debug!(
-                    "Deactivating peer {} because of failed update of shard {}:{}",
-                    peer_id,
-                    self.collection_id,
-                    self.shard_id
-                );
-                self.locally_disabled_peers.write().insert(*peer_id);
-                self.notify_peer_failure(*peer_id);
+            let Some(&peer_state) = state.get_peer_state(peer_id) else {
+                continue;
+            };
+
+            if peer_state != ReplicaState::Active && peer_state != ReplicaState::Initializing {
+                continue;
             }
+
+            if err.is_transient() || peer_state == ReplicaState::Initializing {
+                // If the error is transient, we should not deactivate the peer
+                // before allowing other operations to continue.
+                // Otherwise, the failed node can become responsive again, before
+                // the other nodes deactivate it, so the storage might be inconsistent.
+                wait_for_deactivation = true;
+            }
+
+            log::debug!(
+                "Deactivating peer {} because of failed update of shard {}:{}",
+                peer_id,
+                self.collection_id,
+                self.shard_id
+            );
+
+            self.locally_disabled_peers.write().insert(*peer_id);
+            self.notify_peer_failure(*peer_id);
         }
+
         wait_for_deactivation
     }
 
