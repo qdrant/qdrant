@@ -1180,7 +1180,7 @@ impl ShardReplicaSet {
         };
 
         if let Some(Local(local)) = local_write.take() {
-            let proxy_shard = QueueProxyShard::new(local);
+            let proxy_shard = QueueProxyShard::new(local).await;
             let _ = local_write.insert(QueueProxy(proxy_shard));
         }
 
@@ -1217,6 +1217,9 @@ impl ShardReplicaSet {
         if let Some(QueueProxy(proxy)) = local_write.take() {
             // Transfer queue to remote before unproxying
             proxy.transfer_all_missed_updates(remote_shard).await?;
+
+            // Release max ack version in update handler
+            proxy.set_max_ack_version(None).await;
 
             // TODO: also switch state of remote here?
 

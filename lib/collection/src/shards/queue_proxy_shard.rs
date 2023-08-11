@@ -46,17 +46,19 @@ const BATCH_SIZE: usize = 100;
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = 3;
 
-// TODO: block truncating WAL!
 impl QueueProxyShard {
-    pub fn new(wrapped_shard: LocalShard) -> Self {
-        // Remember the last update ID from WAL
+    pub async fn new(wrapped_shard: LocalShard) -> Self {
         let last_idx = wrapped_shard.wal.lock().last_index();
-
-        Self {
+        let shard = Self {
             wrapped_shard,
             last_update_idx: last_idx.into(),
             update_lock: Default::default(),
-        }
+        };
+
+        // Set max ack version in WAL to not truncate parts we still need to transfer later
+        shard.set_max_ack_version(Some(last_idx)).await;
+
+        shard
     }
 
     /// Forward `create_snapshot` to `wrapped_shard`
@@ -134,6 +136,19 @@ impl QueueProxyShard {
             remote_shard.update(operation.clone(), true).await?;
         }
         Ok(())
+    }
+
+    /// Set or release maximum version to acknowledge in WAL
+    ///
+    /// Because this proxy shard relies on the WAL to obtain operations history, it cannot be
+    /// truncated before all these update operations have been flushed.
+    /// Using this function we set the WAL not to truncate past the given point.
+    ///
+    /// Providing `None` will release this limitation.
+    pub(super) async fn set_max_ack_version(&self, max_version: Option<u64>) {
+        let update_handler = self.wrapped_shard.update_handler.lock().await;
+        let mut max_ack_version = update_handler.max_ack_version.lock().await;
+        *max_ack_version = max_version;
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {

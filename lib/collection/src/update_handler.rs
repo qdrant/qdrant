@@ -83,7 +83,7 @@ pub struct UpdateHandler {
     /// Maximum version to acknowledge to WAL to prevent truncating too early
     /// This is used when another part still relies on part of the WAL, such as the queue proxy
     /// shard.
-    max_ack_version: Arc<TokioMutex<Option<u64>>>,
+    pub(super) max_ack_version: Arc<TokioMutex<Option<u64>>>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
 }
