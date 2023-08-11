@@ -214,7 +214,8 @@ mod tests {
         let mut gpu_context = gpu::Context::new(device.clone());
 
         let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
-        let mut gpu_links = GpuLinks::new(device.clone(), m, ef_construct, m0, num_vectors).unwrap();
+        let mut gpu_links =
+            GpuLinks::new(device.clone(), m, ef_construct, m0, num_vectors).unwrap();
         let gpu_search_context = GpuSearchContext::new(
             1,
             num_vectors,

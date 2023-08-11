@@ -92,7 +92,8 @@ impl GpuLinks {
     }
 
     pub fn upload(&self, gpu_context: &mut gpu::Context, count: usize) {
-        let upload_size = count * (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
+        let upload_size =
+            count * (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::CpuToGpu,

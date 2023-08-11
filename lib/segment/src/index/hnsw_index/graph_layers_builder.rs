@@ -28,16 +28,16 @@ pub struct GraphLayersBuilder {
     max_level: AtomicUsize,
     m: usize,
     m0: usize,
-    ef_construct: usize,
+    pub(crate) ef_construct: usize,
     // Factor of level probability
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
-    pub links_layers: Vec<LockedLayersContainer>,
+    pub(crate) links_layers: Vec<LockedLayersContainer>,
     entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
-    visited_pool: VisitedPool,
+    pub(crate) visited_pool: VisitedPool,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
