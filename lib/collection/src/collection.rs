@@ -1628,12 +1628,16 @@ impl Collection {
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
+        if !temp_dir.exists() {
+            std::fs::create_dir_all(temp_dir)?;
+        }
+
         let snapshot_temp_dir = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_file_name}-temp"))
+            .prefix(&format!("{snapshot_file_name}-temp-"))
             .tempdir_in(temp_dir)?;
 
         let snapshot_target_dir = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_file_name}-target"))
+            .prefix(&format!("{snapshot_file_name}-target-"))
             .tempdir_in(temp_dir)?;
 
         shard
@@ -1645,7 +1649,7 @@ impl Collection {
         }
 
         let mut temp_file = tempfile::Builder::new()
-            .prefix(&snapshot_file_name)
+            .prefix(&format!("{snapshot_file_name}-"))
             .tempfile_in(temp_dir)?;
 
         let task = {
@@ -1672,7 +1676,9 @@ impl Collection {
         let snapshot_path = self.shard_snapshot_path_unchecked(shard_id, snapshot_file_name)?;
 
         if let Some(snapshot_dir) = snapshot_path.parent() {
-            std::fs::create_dir_all(snapshot_dir)?;
+            if !snapshot_dir.exists() {
+                std::fs::create_dir_all(snapshot_dir)?;
+            }
         }
 
         let _ = temp_file.persist(&snapshot_path).map_err(|err| {
@@ -1707,11 +1713,17 @@ impl Collection {
         &self,
         shard_id: ShardId,
         snapshot_path: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
         temp_dir: &Path,
     ) -> CollectionResult<bool> {
         self.assert_is_shard_local(shard_id).await?;
 
         let snapshot = std::fs::File::open(snapshot_path)?;
+
+        if !temp_dir.exists() {
+            std::fs::create_dir_all(temp_dir)?;
+        }
 
         let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
 
@@ -1728,7 +1740,15 @@ impl Collection {
 
             tokio::task::spawn_blocking(move || -> CollectionResult<_> {
                 let mut tar = tar::Archive::new(snapshot);
-                tar.unpack(snapshot_temp_dir)?;
+                tar.unpack(&snapshot_temp_dir)?;
+                drop(tar);
+
+                ReplicaSetShard::restore_snapshot(
+                    &snapshot_temp_dir,
+                    this_peer_id,
+                    is_distributed,
+                )?;
+
                 Ok(())
             })
         };

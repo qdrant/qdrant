@@ -302,6 +302,7 @@ async fn create_shard_snapshot(
         let snapshot = collection
             .create_shard_snapshot(shard, &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR))
             .await?;
+
         Ok(snapshot)
     };
 
@@ -384,6 +385,8 @@ async fn restore_shard_snapshot(
             .restore_shard_snapshot(
                 shard,
                 &snapshot_path,
+                toc.this_peer_id,
+                toc.is_distributed(),
                 &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR),
             )
             .await?;
@@ -410,5 +413,6 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(create_shard_snapshot)
         .service(delete_shard_snapshot)
         .service(download_shard_snapshot)
-        .service(upload_shard_snapshot);
+        .service(upload_shard_snapshot)
+        .service(restore_shard_snapshot);
 }
