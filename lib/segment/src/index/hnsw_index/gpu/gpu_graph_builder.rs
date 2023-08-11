@@ -4,15 +4,14 @@ use std::sync::Arc;
 use num_traits::float::FloatCore;
 use rand::Rng;
 
+use super::gpu_links::GpuLinks;
+use super::gpu_vector_storage::GpuVectorStorage;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageEnum};
-
-use super::gpu_links::GpuLinks;
-use super::gpu_vector_storage::GpuVectorStorage;
 
 pub struct GpuGraphBuilder<'a> {
     pub graph_layers_builder: GraphLayersBuilder,
@@ -119,8 +118,9 @@ impl<'a> GpuGraphBuilder<'a> {
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let gpu_instance =
             Arc::new(gpu::Instance::new("qdrant", Some(&debug_messenger), false).unwrap());
-        let gpu_device =
-            Arc::new(gpu::Device::new(gpu_instance.clone(), gpu_instance.vk_physical_devices[0]).unwrap());
+        let gpu_device = Arc::new(
+            gpu::Device::new(gpu_instance.clone(), gpu_instance.vk_physical_devices[0]).unwrap(),
+        );
         let gpu_context = gpu::Context::new(gpu_device.clone());
         let gpu_vector_storage = GpuVectorStorage::new(gpu_device.clone(), vector_storage).unwrap();
         let gpu_links =
@@ -151,9 +151,7 @@ impl<'a> GpuGraphBuilder<'a> {
         self.gpu_links.clear(&mut self.gpu_context);
     }
 
-    pub fn into_graph_layers_builder(
-        self,
-    ) -> GraphLayersBuilder {
+    pub fn into_graph_layers_builder(self) -> GraphLayersBuilder {
         self.graph_layers_builder
     }
 
@@ -161,9 +159,7 @@ impl<'a> GpuGraphBuilder<'a> {
         for idx in 0..self.num_vectors() {
             if level < self.graph_layers_builder.links_layers[idx].len() {
                 let links = self.get_links(idx as PointOffsetType);
-                self
-                    .graph_layers_builder
-                    .links_layers[idx][level]
+                self.graph_layers_builder.links_layers[idx][level]
                     .write()
                     .extend_from_slice(links);
             }
@@ -360,11 +356,7 @@ impl<'a> GpuGraphBuilder<'a> {
         }
     }
 
-    fn search_entry(
-        &self,
-        id: PointOffsetType,
-        mut entry: ScoredPointOffset,
-    ) -> ScoredPointOffset {
+    fn search_entry(&self, id: PointOffsetType, mut entry: ScoredPointOffset) -> ScoredPointOffset {
         let mut changed = true;
         while changed {
             changed = false;
@@ -404,11 +396,7 @@ impl<'a> GpuGraphBuilder<'a> {
         self.gpu_links.get_links(point_id)
     }
 
-    pub fn set_links(
-        &mut self,
-        point_id: PointOffsetType,
-        links: &[PointOffsetType],
-    ) {
+    pub fn set_links(&mut self, point_id: PointOffsetType, links: &[PointOffsetType]) {
         self.gpu_links.set_links(point_id, links)
     }
 }
@@ -420,15 +408,13 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::fixtures::index_fixtures::{
-        FakeFilterContext, TestRawScorerProducer,
-    };
+    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::CosineMetric;
-    use crate::types::{PointOffsetType, Distance};
-    use crate::vector_storage::VectorStorage;
+    use crate::types::{Distance, PointOffsetType};
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+    use crate::vector_storage::VectorStorage;
 
     #[test]
     fn test_equal_hnsw() {
