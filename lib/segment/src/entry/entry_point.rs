@@ -22,6 +22,8 @@ use crate::types::{
 };
 use crate::utils::mem::Mem;
 
+pub const PROCESS_CANCELLED_BY_SERVICE_MESSAGE: &str = "process cancelled by service";
+
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum OperationError {
@@ -70,7 +72,7 @@ impl OperationError {
 pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {
     if stopped.load(Ordering::Relaxed) {
         return Err(OperationError::Cancelled {
-            description: "process cancelled by service".to_string(),
+            description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
         });
     }
     Ok(())
@@ -160,7 +162,16 @@ impl From<fs_extra::error::Error> for OperationError {
 
 impl From<quantization::EncodingError> for OperationError {
     fn from(err: quantization::EncodingError) -> Self {
-        OperationError::service_error(format!("Quantization encoding error: {err}"))
+        match err {
+            quantization::EncodingError::IOError(err)
+            | quantization::EncodingError::EncodingError(err)
+            | quantization::EncodingError::ArgumentsError(err) => {
+                OperationError::service_error(format!("Quantization encoding error: {err}"))
+            }
+            quantization::EncodingError::Stopped => OperationError::Cancelled {
+                description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
+            },
+        }
     }
 }
 
