@@ -123,7 +123,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
 
-        self.point_to_values[idx as usize].reserve(values.len());
+        self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
         for value in values {
             let entry = self.map.entry(value.into());
             self.point_to_values[idx as usize].push(entry.key().clone());
