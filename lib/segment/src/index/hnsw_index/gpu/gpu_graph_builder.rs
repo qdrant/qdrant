@@ -11,9 +11,10 @@ use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
-use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
-pub struct GpuGraphBuilder {
+pub struct GpuGraphBuilder<'a> {
+    pub scorer: Box<dyn RawScorer + 'a>,
     pub graph_layers_builder: GraphLayersBuilder,
     pub gpu_instance: Arc<gpu::Instance>,
     pub gpu_device: Arc<gpu::Device>,
@@ -25,10 +26,11 @@ pub struct GpuGraphBuilder {
     //pub gpu_builder_context: GpuBuilderContext,
 }
 
-impl GpuGraphBuilder {
+impl<'a> GpuGraphBuilder<'a> {
     pub fn new<R>(
         rng: &mut R,
-        vector_storage: &VectorStorageEnum,
+        vector_storage: &'a VectorStorageEnum,
+        scorer: Box<dyn RawScorer + 'a>,
         m: usize,
         m0: usize,
         ef_construct: usize,
@@ -77,6 +79,7 @@ impl GpuGraphBuilder {
             .collect::<Vec<_>>();
 
         Self {
+            scorer,
             graph_layers_builder,
             gpu_instance,
             gpu_device,
@@ -87,9 +90,28 @@ impl GpuGraphBuilder {
         }
     }
 
+    pub fn to_graph_layers_builder(self) -> GraphLayersBuilder {
+        self.graph_layers_builder
+    }
+
     pub fn build(&mut self) {
+        let mut gpu_context = gpu::Context::new(self.gpu_device.clone());
         for level in (0..=self.max_level).rev() {
+            self.gpu_links.clear(&mut gpu_context);
             self.build_level_cpu(level, self.graph_layers_builder.get_m(level));
+            self.finish_layer(level);
+        }
+    }
+
+    pub fn finish_layer(&mut self, level: usize) {
+        for idx in 0..self.num_vectors() {
+            let point_level = self.get_point_level(idx as PointOffsetType);
+            if point_level >= level {
+                let links = self.get_links(idx as PointOffsetType);
+                self.graph_layers_builder.links_layers[idx][level]
+                    .write()
+                    .extend_from_slice(links);
+            }
         }
     }
 
@@ -275,7 +297,7 @@ impl GpuGraphBuilder {
     }
 
     pub fn get_point_level(&self, point_id: PointOffsetType) -> usize {
-        self.graph_layers_builder.links_layers[point_id as usize].len()
+        self.graph_layers_builder.links_layers[point_id as usize].len() - 1
     }
 
     pub fn num_vectors(&self) -> usize {
@@ -290,7 +312,105 @@ impl GpuGraphBuilder {
         self.gpu_links.set_links(point_id, links);
     }
 
-    pub fn score(&self, _a: PointOffsetType, _b: PointOffsetType) -> ScoreType {
-        todo!()
+    pub fn score(&self, a: PointOffsetType, b: PointOffsetType) -> ScoreType {
+        self.scorer.score_internal(a, b)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitvec::vec::BitVec;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    use super::*;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+    use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+    use crate::index::hnsw_index::point_scorer::FilteredScorer;
+    use crate::spaces::simple::CosineMetric;
+    use crate::types::{Distance, PointOffsetType};
+    use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+    use crate::vector_storage::{new_raw_scorer, VectorStorage};
+
+    #[test]
+    fn hnsw_build_graph_on_gpu_only() {
+        let num_vectors = 1000;
+        let dim = 32;
+        let m = 8;
+        let m0 = 16;
+        let ef_construct = 16;
+        let entry_points_num = 10;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
+
+        let mut graph_layers_builder = GraphLayersBuilder::new_with_params(
+            num_vectors,
+            m,
+            m0,
+            ef_construct,
+            entry_points_num,
+            true,
+            true,
+        );
+
+        // init vector storage
+        let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot).unwrap();
+        {
+            let mut borrowed_storage = storage.borrow_mut();
+            for idx in 0..(num_vectors as PointOffsetType) {
+                borrowed_storage
+                    .insert_vector(idx, vector_holder.vectors.get(idx))
+                    .unwrap();
+            }
+        }
+
+        let deleted_vec = BitVec::repeat(false, num_vectors);
+        let borrowed_storage = storage.borrow();
+        let scorer = new_raw_scorer(vec![1.0; dim], &borrowed_storage, &deleted_vec);
+        let mut gpu_builder = GpuGraphBuilder::new(
+            &mut rng,
+            &borrowed_storage,
+            scorer,
+            m,
+            m0,
+            ef_construct,
+            entry_points_num,
+        );
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let point_level = gpu_builder.get_point_level(idx);
+            graph_layers_builder.set_levels(idx, point_level);
+
+            let fake_filter_context = FakeFilterContext {};
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers_builder.link_new_point(idx, scorer);
+        }
+
+        gpu_builder.build();
+        let max_level = gpu_builder.max_level;
+        let gpu_result = gpu_builder.to_graph_layers_builder();
+
+        for level in (0..=max_level).rev() {
+            println!("level: {}", level);
+            for i in 0..num_vectors {
+                let point_level = graph_layers_builder.links_layers[i].len();
+                let point_level_gpu = graph_layers_builder.links_layers[i].len();
+                assert_eq!(point_level, point_level_gpu);
+
+                if point_level >= level {
+                    let links_cpu = graph_layers_builder.links_layers[i][level].read().clone();
+                    let links_gpu = gpu_result.links_layers[i][level].read().clone();
+
+                    println!("{}: {:?} vs {:?}", i, links_gpu, links_cpu);
+                    assert_eq!(links_cpu, links_gpu);
+                }
+            }
+        }
     }
 }
