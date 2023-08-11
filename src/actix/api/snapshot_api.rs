@@ -4,7 +4,7 @@ use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, post, put, web, HttpResponse, Responder, Result};
+use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::shards::shard::ShardId;
@@ -17,7 +17,7 @@ use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots, get_full_snapshot_path,
 };
-use storage::content_manager::toc::TableOfContent;
+use storage::content_manager::toc::{TableOfContent, SNAPSHOTS_TEMP_DIR};
 use storage::dispatcher::Dispatcher;
 use uuid::Uuid;
 use validator::Validate;
@@ -299,7 +299,9 @@ async fn create_shard_snapshot(
     let future = async move {
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshot = collection.create_shard_snapshot(shard).await?;
+        let snapshot = collection
+            .create_shard_snapshot(shard, &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR))
+            .await?;
         Ok(snapshot)
     };
 
@@ -315,6 +317,12 @@ async fn delete_shard_snapshot(
         let (collection, shard, snapshot) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
         let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
+
+        if !snapshot_path.exists() {
+            todo!();
+        } else if !snapshot_path.is_file() {
+            todo!();
+        }
 
         std::fs::remove_file(&snapshot_path)?;
 
@@ -345,7 +353,7 @@ async fn upload_shard_snapshot(
     let future = async move {
         let (collection, shard, snapshot) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshots_path = collection.snapshots_path_for_shard(shard)?;
+        let snapshots_path = collection.get_snapshots_path_for_shard(shard).await?;
 
         if !snapshots_path.exists() {
             std::fs::create_dir_all(&snapshots_path)?;
@@ -353,10 +361,34 @@ async fn upload_shard_snapshot(
 
         form.snapshot
             .file
-            .persist(&snapshots_path.join(snapshot))
+            .persist(snapshots_path.join(snapshot))
             .map_err(io::Error::from)?;
 
         Ok(())
+    };
+
+    helpers::time(future).await
+}
+
+#[post("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn restore_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId, String)>,
+) -> impl Responder {
+    let future = async move {
+        let (collection, shard, snapshot) = path.into_inner();
+        let collection = toc.get_collection(&collection).await?;
+        let snapshot_path = collection.get_shard_snapshot_path(shard, snapshot).await?;
+
+        let result = collection
+            .restore_shard_snapshot(
+                shard,
+                &snapshot_path,
+                &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR),
+            )
+            .await?;
+
+        Ok(result)
     };
 
     helpers::time(future).await

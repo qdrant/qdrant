@@ -165,6 +165,6 @@ impl From<CollectionError> for HttpError {
 
 impl From<io::Error> for HttpError {
     fn from(err: io::Error) -> Self {
-        todo!()
+        StorageError::from(err).into() // TODO: Is this good enough?.. 🤔
     }
 }
