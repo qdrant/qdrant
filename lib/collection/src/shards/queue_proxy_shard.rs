@@ -87,16 +87,12 @@ impl QueueProxyShard {
     /// Returns `true` if this was the last batch and we're now done. `false` if more batches must
     /// be sent.
     async fn transfer_wal_batch(&self, remote_shard: &RemoteShard) -> CollectionResult<bool> {
-        let shard = &self.wrapped_shard;
-        let wal = &shard.wal;
-
         let mut update_lock = Some(self.update_lock.lock().await);
-
-        let start_index = self.last_update_idx.load(Ordering::Relaxed);
+        let start_index = self.last_update_idx.load(Ordering::Relaxed) + 1;
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, batch) = {
-            let wal = wal.lock();
+            let wal = self.wrapped_shard.wal.lock();
             let items_left = wal.last_index().saturating_sub(start_index);
             let batch = wal.read(start_index).take(BATCH_SIZE).collect::<Vec<_>>();
             (items_left, batch)
