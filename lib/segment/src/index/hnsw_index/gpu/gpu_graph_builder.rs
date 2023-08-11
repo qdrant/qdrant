@@ -21,44 +21,13 @@ pub struct GpuGraphBuilder<'a> {
     pub visited_pool: VisitedPool,
     pub points_scorer: Box<dyn RawScorer + 'a>,
     pub point_levels: Vec<usize>,
-    requests: Vec<Option<GraphLinkRequest>>,
+    requests: Vec<Option<PointOffsetType>>,
 
     pub gpu_instance: Arc<gpu::Instance>,
     pub gpu_device: Arc<gpu::Device>,
     pub gpu_context: gpu::Context,
     pub gpu_vector_storage: GpuVectorStorage,
     pub gpu_links: GpuLinks,
-}
-
-#[derive(Clone)]
-struct GraphLinkRequest {
-    pub point_id: PointOffsetType,
-    pub level: usize,
-    pub entry: ScoredPointOffset,
-}
-
-#[derive(Clone)]
-struct GraphLinkResponse {
-    point_id: PointOffsetType,
-    level: usize,
-    entry: ScoredPointOffset,
-    links: Vec<PointOffsetType>,
-    neighbor_ids: Vec<PointOffsetType>,
-    neighbor_links: Vec<Vec<PointOffsetType>>,
-}
-
-impl GraphLinkResponse {
-    pub fn next_request(&self) -> Option<GraphLinkRequest> {
-        if self.level > 0 {
-            Some(GraphLinkRequest {
-                point_id: self.point_id,
-                level: self.level - 1,
-                entry: self.entry,
-            })
-        } else {
-            None
-        }
-    }
 }
 
 impl<'a> GpuGraphBuilder<'a> {
@@ -96,20 +65,14 @@ impl<'a> GpuGraphBuilder<'a> {
         let mut entry_points = EntryPoints::new(entry_points_num);
         let mut requests = vec![];
         for (idx, &level) in point_levels.iter().enumerate() {
-            let entry_point =
-                entry_points.new_point(idx as PointOffsetType, point_levels[idx], |_| true);
+            let entry_point = entry_points.new_point(idx as PointOffsetType, level, |_| true);
             if let Some(entry_point) = entry_point {
                 let entry = ScoredPointOffset {
                     idx: entry_point.point_id,
                     score: points_scorer
                         .score_internal(idx as PointOffsetType, entry_point.point_id),
                 };
-                let level = std::cmp::min(level, entry_point.level);
-                requests.push(Some(GraphLinkRequest {
-                    point_id: idx as PointOffsetType,
-                    level,
-                    entry,
-                }))
+                requests.push(Some(entry.idx))
             } else {
                 requests.push(None);
             }
@@ -173,83 +136,74 @@ impl<'a> GpuGraphBuilder<'a> {
             self.build_level(level);
             self.finish_graph_layers_builder_level(level);
         }
-
-        for idx in 0..self.num_vectors() {
-            assert!(self.requests[idx].is_none());
-        }
     }
 
     pub fn update_entry(&mut self, point_id: PointOffsetType) {
-        let mut request = self.requests[point_id as usize].clone().unwrap();
-        request.entry = self.search_entry(point_id, request.entry);
-        self.requests[point_id as usize] = Some(request);
+        let entry_point = self.requests[point_id as usize].clone().unwrap();
+        let scored_entry = ScoredPointOffset {
+            idx: entry_point,
+            score: self.score(point_id, entry_point),
+        };
+        let new_entry = self.search_entry(point_id, scored_entry).idx;
+        self.requests[point_id as usize] = Some(new_entry);
     }
 
-    pub fn link_point(&mut self, point_id: PointOffsetType) {
-        let request = self.requests[point_id as usize].clone().unwrap();
-        let response = self.link(request);
-        self.apply_link_response(&response);
-        self.requests[point_id as usize] = response.next_request();
+    pub fn link_point(&mut self, point_id: PointOffsetType, level_m: usize) {
+        let entry_point = self.requests[point_id as usize].clone().unwrap();
+        let new_entry_point = self.link(point_id, level_m, entry_point);
+        self.requests[point_id as usize] = Some(new_entry_point);
     }
 
     fn build_level(&mut self, level: usize) {
-        for idx in 0..self.num_vectors() {
-            if let Some(request) = self.requests[idx].clone() {
-                let entry_level = self.get_point_level(request.entry.idx);
+        let level_m = self.get_m(level);
+        for idx in 0..self.num_vectors() as PointOffsetType {
+            if let Some(entry_point) = self.requests[idx as usize].clone() {
+                let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
-                if level > request.level && entry_level >= point_level {
-                    self.update_entry(idx as PointOffsetType);
-                } else if request.level == level {
-                    self.link_point(idx as PointOffsetType);
+                let link_level = std::cmp::min(entry_level, point_level);
+                if level > link_level && entry_level >= point_level {
+                    self.update_entry(idx);
+                } else if link_level >= level {
+                    self.link_point(idx, level_m);
                 }
             }
         }
     }
 
-    fn apply_link_response(&mut self, response: &GraphLinkResponse) {
-        self.set_links(response.point_id, &response.links);
-        for (id, links) in response
-            .neighbor_ids
-            .iter()
-            .zip(response.neighbor_links.iter())
-        {
-            self.set_links(*id, links);
-        }
-    }
-
-    fn link(&self, request: GraphLinkRequest) -> GraphLinkResponse {
-        let nearest_points = self.search(request.point_id, request.entry);
-
-        let mut response = GraphLinkResponse {
-            point_id: request.point_id,
-            level: request.level,
-            entry: nearest_points
-                .iter()
-                .copied()
-                .max()
-                .unwrap_or(request.entry),
-            links: vec![],
-            neighbor_ids: vec![],
-            neighbor_links: vec![],
+    fn link(
+        &mut self,
+        point_id: PointOffsetType,
+        level_m: usize,
+        entry_point: PointOffsetType,
+    ) -> PointOffsetType {
+        let entry = ScoredPointOffset {
+            idx: entry_point,
+            score: self.score(point_id, entry_point),
         };
-        let level_m = self.get_m(request.level);
+        let nearest_points = self.search(point_id, entry);
 
-        response.links = self.select_with_heuristic(nearest_points, level_m);
-        for &other_point in &response.links {
-            response.neighbor_ids.push(other_point);
+        let new_entry_point = nearest_points
+            .iter()
+            .copied()
+            .max()
+            .map(|s| s.idx)
+            .unwrap_or(entry_point);
 
+        let links = self.select_with_heuristic(nearest_points, level_m);
+        self.set_links(point_id, &links);
+        for other_point in links {
             let other_point_links = self.get_links(other_point);
             if other_point_links.len() < level_m {
                 // If linked point is lack of neighbours
                 let mut other_point_links = other_point_links.to_vec();
-                other_point_links.push(request.point_id);
-                response.neighbor_links.push(other_point_links);
+                other_point_links.push(point_id);
+                self.set_links(other_point, &other_point_links);
             } else {
                 let mut candidates =
                     FixedLengthPriorityQueue::<ScoredPointOffset>::new(level_m + 1);
                 candidates.push(ScoredPointOffset {
-                    idx: request.point_id,
-                    score: self.score(request.point_id, other_point),
+                    idx: point_id,
+                    score: self.score(point_id, other_point),
                 });
                 for other_point_link in other_point_links.iter().take(level_m).copied() {
                     candidates.push(ScoredPointOffset {
@@ -258,10 +212,10 @@ impl<'a> GpuGraphBuilder<'a> {
                     });
                 }
                 let selected_candidates = self.select_with_heuristic(candidates, level_m);
-                response.neighbor_links.push(selected_candidates);
+                self.set_links(other_point, &selected_candidates);
             }
         }
-        response
+        new_entry_point
     }
 
     fn select_with_heuristic(
