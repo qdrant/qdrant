@@ -2,8 +2,9 @@ import json
 
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.fixtures import on_disk_vectors
+from .helpers.helpers import request_with_validation
 
 collection_name = "test_collection_groups"
 lookup_collection_name = "test_collection_groups_lookup"
@@ -99,7 +100,7 @@ def upsert_multi_value_payload(collection_name):
     )
 
     assert response.ok
-    
+
 
 def upsert_doc_points(collection_name, docs=50):
     points = [
@@ -119,13 +120,13 @@ def upsert_doc_points(collection_name, docs=50):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     upsert_chunked_docs(collection_name=collection_name)
     upsert_points_with_array_fields(collection_name=collection_name)
     upsert_with_heterogenous_fields(collection_name=collection_name)
     upsert_multi_value_payload(collection_name=collection_name)
-    basic_collection_setup(collection_name=lookup_collection_name)
+    basic_collection_setup(collection_name=lookup_collection_name, on_disk_vectors=on_disk_vectors)
     upsert_doc_points(collection_name=lookup_collection_name)
     yield
     drop_collection(collection_name=collection_name)

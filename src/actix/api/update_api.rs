@@ -12,9 +12,9 @@ use validator::Validate;
 use super::CollectionPath;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
-    do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors, do_upsert_points,
-    CreateFieldIndex,
+    do_batch_update_points, do_clear_payload, do_create_index, do_delete_index, do_delete_payload,
+    do_delete_points, do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors,
+    do_upsert_points, CreateFieldIndex, UpdateOperations,
 };
 
 #[derive(Deserialize, Validate)]
@@ -222,6 +222,29 @@ async fn clear_payload(
     process_response(response, timing)
 }
 
+#[post("/collections/{name}/points/batch")]
+async fn update_batch(
+    toc: web::Data<TableOfContent>,
+    collection: Path<CollectionPath>,
+    operations: Json<UpdateOperations>,
+    params: Query<UpdateParam>,
+) -> impl Responder {
+    let timing = Instant::now();
+    let operations = operations.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
+
+    let response = do_batch_update_points(
+        &toc,
+        &collection.name,
+        operations.operations,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
+    process_response(response, timing)
+}
 #[put("/collections/{name}/index")]
 async fn create_field_index(
     toc: web::Data<TableOfContent>,
@@ -280,5 +303,6 @@ pub fn config_update_api(cfg: &mut web::ServiceConfig) {
         .service(delete_payload)
         .service(clear_payload)
         .service(create_field_index)
-        .service(delete_field_index);
+        .service(delete_field_index)
+        .service(update_batch);
 }

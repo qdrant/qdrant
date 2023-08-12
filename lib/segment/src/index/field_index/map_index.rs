@@ -9,6 +9,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
+use smol_str::SmolStr;
 
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -83,7 +84,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         self.db_wrapper.flusher()
     }
 
-    pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
+    pub fn match_cardinality<Q>(&self, value: &Q) -> CardinalityEstimation
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq,
+    {
         let values_count = self.map.get(value).map(|p| p.len()).unwrap_or(0);
 
         CardinalityEstimation::exact(values_count)
@@ -102,7 +108,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         }
     }
 
-    fn add_many_to_map(&mut self, idx: PointOffsetType, values: Vec<N>) -> OperationResult<()> {
+    fn add_many_to_map<Q>(&mut self, idx: PointOffsetType, values: Vec<Q>) -> OperationResult<()>
+    where
+        Q: Into<N>,
+    {
         if values.is_empty() {
             return Ok(());
         }
@@ -111,7 +120,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
-        self.point_to_values[idx as usize] = values.into_iter().collect();
+        self.point_to_values[idx as usize] = values.into_iter().map(|v| v.into()).collect();
         for value in &self.point_to_values[idx as usize] {
             let entry = self.map.entry(value.clone()).or_default();
             entry.insert(idx);
@@ -123,7 +132,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         Ok(())
     }
 
-    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn get_iterator<Q>(&self, value: &Q) -> Box<dyn Iterator<Item = PointOffsetType> + '_>
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq,
+    {
         self.map
             .get(value)
             .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
@@ -193,7 +207,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     /// # Returns
     ///
     /// * `CardinalityEstimation` - estimation of cardinality
-    fn except_cardinality(&self, excluded: &[N]) -> CardinalityEstimation {
+    fn except_cardinality<Q, I>(&self, excluded: impl Iterator<Item = I>) -> CardinalityEstimation
+    where
+        I: std::borrow::Borrow<Q>,
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq,
+    {
         // Minimal case: we exclude as many points as possible.
         // In this case, excluded points do not have any other values except excluded ones.
         // So the first step - we estimate how many other points is needed to fit unused values.
@@ -235,9 +255,14 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         // exp = ...
         // max = min(60, 20) = 20
 
+        // todo
         let excluded_value_counts: Vec<_> = excluded
-            .iter()
-            .map(|val| self.map.get(val).map(|points| points.len()).unwrap_or(0))
+            .map(|val| {
+                self.map
+                    .get(val.borrow())
+                    .map(|points| points.len())
+                    .unwrap_or(0)
+            })
             .collect();
         let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
 
@@ -245,7 +270,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 
         let non_excluded_values_count =
             self.values_count.saturating_sub(total_excluded_value_count);
-        let max_values_per_point = self.map.len().saturating_sub(excluded.len());
+        let max_values_per_point = self.map.len().saturating_sub(excluded_value_counts.len());
 
         if max_values_per_point == 0 {
             // All points are excluded, so we can't select any point
@@ -288,21 +313,24 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         }
     }
 
-    fn except_iterator<'a>(
+    fn except_iterator<'a, Q>(
         &'a self,
-        excluded: &'a [N],
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        excluded: &'a [Q],
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
+    where
+        Q: PartialEq<N>,
+    {
         let iter = self
             .map
             .keys()
-            .filter(|key| !excluded.contains(*key))
+            .filter(|key| !excluded.iter().any(|e| e.eq(*key)))
             .flat_map(|key| self.get_iterator(key))
             .unique();
         Box::new(iter)
     }
 }
 
-impl PayloadFieldIndex for MapIndex<String> {
+impl PayloadFieldIndex for MapIndex<SmolStr> {
     fn count_indexed_points(&self) -> usize {
         self.indexed_points
     }
@@ -326,13 +354,13 @@ impl PayloadFieldIndex for MapIndex<String> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
-            })) => Some(self.get_iterator(keyword)),
+            })) => Some(self.get_iterator(keyword.as_str())),
             Some(Match::Any(MatchAny {
                 any: AnyVariants::Keywords(keywords),
             })) => Some(Box::new(
                 keywords
                     .iter()
-                    .flat_map(|keyword| self.get_iterator(keyword))
+                    .flat_map(|keyword| self.get_iterator(keyword.as_str()))
                     .unique(),
             )),
             Some(Match::Except(MatchExcept {
@@ -347,7 +375,7 @@ impl PayloadFieldIndex for MapIndex<String> {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
             })) => {
-                let mut estimation = self.match_cardinality(keyword);
+                let mut estimation = self.match_cardinality(keyword.as_str());
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
@@ -358,7 +386,7 @@ impl PayloadFieldIndex for MapIndex<String> {
             })) => {
                 let estimations = keywords
                     .iter()
-                    .map(|keyword| self.match_cardinality(keyword))
+                    .map(|keyword| self.match_cardinality(keyword.as_str()))
                     .collect::<Vec<_>>();
                 Some(combine_should_estimations(
                     &estimations,
@@ -367,7 +395,7 @@ impl PayloadFieldIndex for MapIndex<String> {
             }
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Some(self.except_cardinality(keywords)),
+            })) => Some(self.except_cardinality::<str, &str>(keywords.iter().map(|k| k.as_str()))),
             _ => None,
         }
     }
@@ -454,7 +482,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             }
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => Some(self.except_cardinality(integers)),
+            })) => Some(
+                self.except_cardinality::<IntPayloadType, IntPayloadType>(integers.iter().cloned()),
+            ),
             _ => None,
         }
     }
@@ -476,7 +506,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 }
 
-impl ValueIndexer<String> for MapIndex<String> {
+impl ValueIndexer<String> for MapIndex<SmolStr> {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         self.add_many_to_map(id, values)
     }

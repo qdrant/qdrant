@@ -1,14 +1,15 @@
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.fixtures import on_disk_vectors
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_payload_indexing'
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -71,8 +72,8 @@ def test_payload_indexing_operations():
     )
     assert response.ok
     assert len(response.json()['result']['payload_schema']) == 0
-    
-    
+
+
 def set_payload(payload, points):
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload',
@@ -85,8 +86,8 @@ def set_payload(payload, points):
         }
     )
     assert response.ok
-    
-    
+
+
 def test_boolean_index():
     bool_key = "boolean_payload"
     # create payload

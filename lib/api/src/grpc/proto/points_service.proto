@@ -83,4 +83,9 @@ service Points {
    Count points in collection with given filtering conditions
    */
   rpc Count (CountPoints) returns (CountResponse) {}
+
+  /*
+   Perform multiple update operations in one request
+  */
+  rpc UpdateBatch (UpdateBatchPoints) returns (UpdateBatchResponse) {}
 }

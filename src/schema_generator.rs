@@ -21,7 +21,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::types::ClusterStatus;
 
 use crate::common::helpers::LocksOption;
-use crate::common::points::CreateFieldIndex;
+use crate::common::points::{CreateFieldIndex, UpdateOperations};
 use crate::common::telemetry::TelemetryData;
 
 mod actix;
@@ -71,6 +71,7 @@ struct AllDefinitions {
     b5: SearchGroupsRequest,
     b6: RecommendGroupsRequest,
     b7: GroupsResult,
+    b8: UpdateOperations,
 }
 
 fn save_schema<T: JsonSchema>() {

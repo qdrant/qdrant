@@ -25,6 +25,40 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
+#[derive(Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateOperation {
+    Upsert(PointInsertOperations),
+    Delete(PointsSelector),
+    SetPayload(SetPayload),
+    OverwritePayload(SetPayload),
+    DeletePayload(DeletePayload),
+    ClearPayload(PointsSelector),
+    UpdateVectors(UpdateVectors),
+    DeleteVectors(DeleteVectors),
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(transparent)]
+pub struct UpdateOperations {
+    pub operations: Vec<UpdateOperation>,
+}
+
+impl Validate for UpdateOperation {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            UpdateOperation::Upsert(op) => op.validate(),
+            UpdateOperation::Delete(op) => op.validate(),
+            UpdateOperation::SetPayload(op) => op.validate(),
+            UpdateOperation::OverwritePayload(op) => op.validate(),
+            UpdateOperation::DeletePayload(op) => op.validate(),
+            UpdateOperation::ClearPayload(op) => op.validate(),
+            UpdateOperation::UpdateVectors(op) => op.validate(),
+            UpdateOperation::DeleteVectors(op) => op.validate(),
+        }
+    }
+}
+
 pub async fn do_upsert_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -224,6 +258,111 @@ pub async fn do_clear_payload(
         ordering,
     )
     .await
+}
+
+pub async fn do_batch_update_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    operations: Vec<UpdateOperation>,
+    shard_selection: Option<ShardId>,
+    wait: bool,
+    ordering: WriteOrdering,
+) -> Result<Vec<UpdateResult>, StorageError> {
+    let mut results = Vec::with_capacity(operations.len());
+    for operation in operations {
+        let result = match operation {
+            UpdateOperation::Upsert(operation) => {
+                do_upsert_points(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::Delete(operation) => {
+                do_delete_points(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::SetPayload(operation) => {
+                do_set_payload(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::OverwritePayload(operation) => {
+                do_overwrite_payload(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::DeletePayload(operation) => {
+                do_delete_payload(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::ClearPayload(operation) => {
+                do_clear_payload(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::UpdateVectors(operation) => {
+                do_update_vectors(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+            UpdateOperation::DeleteVectors(operation) => {
+                do_delete_vectors(
+                    toc,
+                    collection_name,
+                    operation,
+                    shard_selection,
+                    wait,
+                    ordering,
+                )
+                .await
+            }
+        }?;
+        results.push(result);
+    }
+    Ok(results)
 }
 
 pub async fn do_create_index(

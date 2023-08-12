@@ -14,6 +14,7 @@ use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use smol_str::SmolStr;
 use uuid::Uuid;
 use validator::{Validate, ValidationErrors};
 
@@ -1116,6 +1117,14 @@ impl From<String> for Match {
     fn from(keyword: String) -> Self {
         Self::Value(MatchValue {
             value: ValueVariants::Keyword(keyword),
+        })
+    }
+}
+
+impl From<SmolStr> for Match {
+    fn from(keyword: SmolStr) -> Self {
+        Self::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword.into()),
         })
     }
 }

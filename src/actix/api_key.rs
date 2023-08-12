@@ -8,14 +8,14 @@ use futures_util::future::LocalBoxFuture;
 
 pub struct ApiKey {
     api_key: String,
-    skip_prefixes: Vec<String>,
+    whitelist: Vec<WhitelistItem>,
 }
 
 impl ApiKey {
-    pub fn new(api_key: &str, skip_prefixes: Vec<String>) -> Self {
+    pub fn new(api_key: &str, whitelist: Vec<WhitelistItem>) -> Self {
         Self {
             api_key: api_key.to_string(),
-            skip_prefixes,
+            whitelist,
         }
     }
 }
@@ -35,16 +35,57 @@ where
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(ApiKeyMiddleware {
             api_key: self.api_key.clone(),
-            skip_prefixes: self.skip_prefixes.clone(),
+            whitelist: self.whitelist.clone(),
             service,
         }))
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct WhitelistItem(pub String, pub PathMode);
+
+impl WhitelistItem {
+    pub fn exact<S: Into<String>>(path: S) -> Self {
+        Self(path.into(), PathMode::Exact)
+    }
+
+    pub fn prefix<S: Into<String>>(path: S) -> Self {
+        Self(path.into(), PathMode::Prefix)
+    }
+
+    pub fn matches(&self, other: &str) -> bool {
+        self.1.check(&self.0, other)
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub enum PathMode {
+    /// Path must match exactly
+    Exact,
+    /// Path must have given prefix
+    Prefix,
+}
+
+impl PathMode {
+    fn check(&self, key: &str, other: &str) -> bool {
+        match self {
+            Self::Exact => key == other,
+            Self::Prefix => other.starts_with(key),
+        }
+    }
+}
+
 pub struct ApiKeyMiddleware<S> {
     api_key: String,
-    skip_prefixes: Vec<String>,
+    /// List of items whitelisted from authentication.
+    whitelist: Vec<WhitelistItem>,
     service: S,
+}
+
+impl<S> ApiKeyMiddleware<S> {
+    pub fn is_path_whitelisted(&self, path: &str) -> bool {
+        self.whitelist.iter().any(|item| item.matches(path))
+    }
 }
 
 impl<S, B> Service<ServiceRequest> for ApiKeyMiddleware<S>
@@ -60,11 +101,9 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        if self
-            .skip_prefixes
-            .iter()
-            .any(|prefix| req.path().starts_with(prefix))
-        {
+        let path = req.path();
+
+        if self.is_path_whitelisted(path) {
             return Box::pin(self.service.call(req));
         }
 

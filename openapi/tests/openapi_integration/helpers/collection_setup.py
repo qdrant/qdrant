@@ -15,10 +15,8 @@ def drop_collection(collection_name='test_collection'):
 def basic_collection_setup(
         collection_name='test_collection',
         on_disk_payload=False,
-        on_disk_vectors=None,
+        on_disk_vectors=False,
 ):
-    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
-
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -34,7 +32,7 @@ def basic_collection_setup(
             "vectors": {
                 "size": 4,
                 "distance": "Dot",
-                "on_disk": on_disk_vectors
+                "on_disk": on_disk_vectors,
             },
             "on_disk_payload": on_disk_payload
         }
@@ -103,9 +101,9 @@ def basic_collection_setup(
 def multivec_collection_setup(
         collection_name='test_collection',
         on_disk_payload=False,
-        on_disk_vectors=None,
+        on_disk_vectors=False,
+        distance=None,
 ):
-    on_disk_vectors = on_disk_vectors or bool(int(os.getenv('QDRANT__ON_DISK_VECTORS', 0)))
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -121,16 +119,16 @@ def multivec_collection_setup(
             "vectors": {
                 "image": {
                     "size": 4,
-                    "distance": "Dot",
-                    "on_disk": on_disk_vectors
+                    "distance": distance or "Dot",
+                    "on_disk": on_disk_vectors,
                 },
                 "text": {
                     "size": 8,
-                    "distance": "Cosine",
-                    "on_disk": on_disk_vectors
-                }
+                    "distance": distance or "Cosine",
+                    "on_disk": on_disk_vectors,
+                },
             },
-            "on_disk_payload": on_disk_payload
+            "on_disk_payload": on_disk_payload,
         }
     )
     assert response.ok

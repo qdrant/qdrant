@@ -7,6 +7,8 @@ fn main() -> std::io::Result<()> {
         // so by extending the builder. This is ugly, but better than manually implementing
         // `Validation` for all these types and seems to be the best approach. The line below
         // configures all attributes.
+        .extern_path(".google.protobuf.Empty", "()")
+        .compile_well_known_types(true)
         .configure_validation()
         .out_dir("src/grpc/") // saves generated structures at this location
         .compile(
@@ -146,6 +148,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SetPayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("ClearPayloadPoints.collection_name", "length(min = 1, max = 255)"),
+            ("UpdateBatchPoints.collection_name", "length(min = 1, max = 255)"),
+            ("UpdateBatchPoints.operations", "length(min = 1)"),
             ("CreateFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("CreateFieldIndexCollection.field_name", "length(min = 1)"),
             ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
@@ -178,7 +182,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
             ("GeoPolygon.points", "custom = \"crate::grpc::validate::validate_geo_polygon\""),
         ], &[])
-        .type_attribute("GeoPoint", "#[derive(serde::Serialize)]")
+        .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
             ("UpsertPointsInternal.upsert_points", ""),

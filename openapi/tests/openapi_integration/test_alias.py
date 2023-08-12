@@ -1,23 +1,24 @@
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.fixtures import on_disk_vectors
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_alias'
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
     drop_collection(collection_name=f'{collection_name}_2')
 
 
-def test_cant_create_alias_if_collection_exists():
+def test_cant_create_alias_if_collection_exists(on_disk_vectors):
     second_collection_name = f'{collection_name}_2'
 
-    basic_collection_setup(collection_name=second_collection_name)
+    basic_collection_setup(collection_name=second_collection_name, on_disk_vectors=on_disk_vectors)
 
     response = request_with_validation(
         api='/collections/aliases',
@@ -37,7 +38,7 @@ def test_cant_create_alias_if_collection_exists():
     assert response.status_code == 400
 
 
-def test_cant_create_collection_if_alias_exists():
+def test_cant_create_collection_if_alias_exists(on_disk_vectors):
     second_collection_name = f'{collection_name}_3'
 
     response = request_with_validation(
@@ -77,7 +78,8 @@ def test_cant_create_collection_if_alias_exists():
         body={
             "vectors": {
                 "size": 4,
-                "distance": "Dot"
+                "distance": "Dot",
+                "on_disk_vectors": on_disk_vectors,
             }
         }
     )

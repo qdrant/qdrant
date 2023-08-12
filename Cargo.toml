@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.4.0"
+version = "1.4.1"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -30,7 +30,7 @@ tokio-tracing = ["tokio/tracing"]
 serde_urlencoded = "0.7"
 sealed_test = "1.0.0"
 
-tempfile = "3.7.0"
+tempfile = "3.7.1"
 rusty-hook = "^0.11.2"
 
 
@@ -52,7 +52,7 @@ itertools = "0.11"
 anyhow = "1.0.72"
 futures = "0.3.28"
 futures-util = "0.3.27"
-clap = { version = "4.3.19", features = ["derive"] }
+clap = { version = "4.3.21", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.4", features = ["v4", "serde"] }
 sys-info = "0.9.1"
@@ -69,7 +69,7 @@ tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.16"
-tar = "0.4.39"
+tar = "0.4.40"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
 rustls = "0.20.7"
 rustls-pemfile = "1.0.3"
