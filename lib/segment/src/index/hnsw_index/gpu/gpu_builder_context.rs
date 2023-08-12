@@ -219,12 +219,12 @@ mod tests {
         let gpu_search_context = GpuSearchContext::new(
             1,
             num_vectors,
-            m,
+            m0,
             ef_construct,
             candidates_capacity,
             device.clone(),
         );
-        let gpu_builder_context = GpuBuilderContext::new(device.clone(), m, num_vectors, 1);
+        let gpu_builder_context = GpuBuilderContext::new(device.clone(), m0, num_vectors, 1);
         let gpu_entries = entries
             .iter()
             .cloned()
