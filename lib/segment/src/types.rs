@@ -309,6 +309,11 @@ pub struct SearchParams {
     #[serde(default)]
     #[validate]
     pub quantization: Option<QuantizationSearchParams>,
+
+    ///ignore segments with no index(plain index), this is to speed up query especially when indexing
+    ///is lagging behind vector injection
+    #[serde(default)]
+    pub ignore_plain_index: bool,
 }
 
 /// Vector index configuration

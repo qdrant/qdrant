@@ -2921,6 +2921,8 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "3")]
     #[validate]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
+    #[prost(bool, optional, tag = "4")]
+    pub ignore_plain_index: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
