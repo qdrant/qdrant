@@ -8,14 +8,14 @@ use super::gpu_builder_context::GpuBuilderContext;
 use super::gpu_links::GpuLinks;
 use super::gpu_search_context::GpuSearchContext;
 use super::gpu_vector_storage::GpuVectorStorage;
-use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageEnum};
 
-pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 10;
+pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 2;
+pub const CANDIDATES_CAPACITY_DIV: usize = 8;
 
 pub struct GpuGraphBuilder<'a> {
     pub graph_layers_builder: GraphLayersBuilder,
@@ -73,10 +73,13 @@ impl<'a> GpuGraphBuilder<'a> {
             graph_layers_builder.set_levels(idx as PointOffsetType, point_levels[idx]);
         }
 
-        let mut entry_points = EntryPoints::new(entry_points_num);
         let mut requests = vec![];
         for (idx, &level) in point_levels.iter().enumerate() {
-            let entry_point = entry_points.new_point(idx as PointOffsetType, level, |_| true);
+            let entry_point = graph_layers_builder.get_entry_points().new_point(
+                idx as PointOffsetType,
+                level,
+                |_| true,
+            );
             if let Some(entry_point) = entry_point {
                 let entry = ScoredPointOffset {
                     idx: entry_point.point_id,
@@ -100,7 +103,7 @@ impl<'a> GpuGraphBuilder<'a> {
         let gpu_links =
             GpuLinks::new(gpu_device.clone(), m, ef_construct, m0, num_vectors).unwrap();
 
-        let candidates_capacity = num_vectors / 8;
+        let candidates_capacity = num_vectors / CANDIDATES_CAPACITY_DIV;
         let gpu_search_context = GpuSearchContext::new(
             gpu_threads,
             num_vectors,
@@ -205,7 +208,8 @@ impl<'a> GpuGraphBuilder<'a> {
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
             self.clear_links();
-            let cpu_count = (self.gpu_threads * CPU_POINTS_COUNT_MULTIPLICATOR) as PointOffsetType;
+            let cpu_count =
+                (self.gpu_threads * self.m * CPU_POINTS_COUNT_MULTIPLICATOR) as PointOffsetType;
             self.build_level_cpu(level, cpu_count);
             self.build_level_gpu(level, cpu_count);
             self.finish_graph_layers_builder_level(level);
@@ -228,6 +232,65 @@ impl<'a> GpuGraphBuilder<'a> {
         self.requests[point_id as usize] = Some(new_entry_point);
     }
 
+    fn run_gpu(
+        &mut self,
+        update_entry_points: &[PointOffsetType],
+        link_points: &[PointOffsetType],
+    ) {
+        debug_assert!(update_entry_points.len() <= self.gpu_threads);
+        debug_assert!(link_points.len() <= self.gpu_threads);
+
+        if update_entry_points.len() > 0 {
+            self.gpu_builder_context
+                .upload_process_points(&mut self.gpu_context, update_entry_points);
+
+            self.gpu_context.bind_pipeline(
+                self.update_entry_pipeline.clone(),
+                &[
+                    self.gpu_vector_storage.descriptor_set.clone(),
+                    self.gpu_links.descriptor_set.clone(),
+                    self.gpu_search_context.descriptor_set.clone(),
+                    self.gpu_builder_context.descriptor_set.clone(),
+                ],
+            );
+            self.gpu_context.dispatch(update_entry_points.len(), 1, 1);
+            self.gpu_context.run();
+            self.gpu_context.wait_finish();
+        }
+
+        if link_points.len() > 0 {
+            self.gpu_search_context.clear(&mut self.gpu_context);
+            self.gpu_builder_context
+                .upload_process_points(&mut self.gpu_context, link_points);
+
+            self.gpu_context.bind_pipeline(
+                self.link_pipeline.clone(),
+                &[
+                    self.gpu_vector_storage.descriptor_set.clone(),
+                    self.gpu_links.descriptor_set.clone(),
+                    self.gpu_search_context.descriptor_set.clone(),
+                    self.gpu_builder_context.descriptor_set.clone(),
+                ],
+            );
+            self.gpu_context.dispatch(link_points.len(), 1, 1);
+            self.gpu_context.run();
+            self.gpu_context.wait_finish();
+
+            self.gpu_context.bind_pipeline(
+                self.apply_links_pipeline.clone(),
+                &[
+                    self.gpu_vector_storage.descriptor_set.clone(),
+                    self.gpu_links.descriptor_set.clone(),
+                    self.gpu_search_context.descriptor_set.clone(),
+                    self.gpu_builder_context.descriptor_set.clone(),
+                ],
+            );
+            self.gpu_context.dispatch(link_points.len(), 1, 1);
+            self.gpu_context.run();
+            self.gpu_context.wait_finish();
+        }
+    }
+
     fn build_level_gpu(&mut self, level: usize, start_idx: PointOffsetType) {
         if start_idx == self.num_vectors() as PointOffsetType {
             return;
@@ -242,6 +305,8 @@ impl<'a> GpuGraphBuilder<'a> {
             .upload(&mut self.gpu_context, start_idx as usize);
         let mut link_count = 0;
         let mut update_entry_count = 0;
+        let mut update_entry_buffer = vec![];
+        let mut links_buffer = vec![];
         for idx in start_idx..self.num_vectors() as PointOffsetType {
             if let Some(entry_point) = self.requests[idx as usize].clone() {
                 let entry_level = self.get_point_level(entry_point);
@@ -249,57 +314,24 @@ impl<'a> GpuGraphBuilder<'a> {
                 let link_level = std::cmp::min(entry_level, point_level);
                 if level > link_level && entry_level >= point_level {
                     update_entry_count += 1;
-
-                    self.gpu_builder_context
-                        .upload_process_points(&mut self.gpu_context, &[idx as PointOffsetType]);
-
-                    self.gpu_context.bind_pipeline(
-                        self.update_entry_pipeline.clone(),
-                        &[
-                            self.gpu_vector_storage.descriptor_set.clone(),
-                            self.gpu_links.descriptor_set.clone(),
-                            self.gpu_search_context.descriptor_set.clone(),
-                            self.gpu_builder_context.descriptor_set.clone(),
-                        ],
-                    );
-                    self.gpu_context.dispatch(1, 1, 1);
-                    self.gpu_context.run();
-                    self.gpu_context.wait_finish();
+                    update_entry_buffer.push(idx as PointOffsetType);
+                    if update_entry_buffer.len() == self.gpu_threads {
+                        self.run_gpu(&update_entry_buffer, &[]);
+                        update_entry_buffer.clear();
+                    }
                 } else if link_level >= level {
                     link_count += 1;
-
-                    self.gpu_search_context.clear(&mut self.gpu_context);
-                    self.gpu_builder_context
-                        .upload_process_points(&mut self.gpu_context, &[idx as PointOffsetType]);
-
-                    self.gpu_context.bind_pipeline(
-                        self.link_pipeline.clone(),
-                        &[
-                            self.gpu_vector_storage.descriptor_set.clone(),
-                            self.gpu_links.descriptor_set.clone(),
-                            self.gpu_search_context.descriptor_set.clone(),
-                            self.gpu_builder_context.descriptor_set.clone(),
-                        ],
-                    );
-                    self.gpu_context.dispatch(1, 1, 1);
-                    self.gpu_context.run();
-                    self.gpu_context.wait_finish();
-
-                    self.gpu_context.bind_pipeline(
-                        self.apply_links_pipeline.clone(),
-                        &[
-                            self.gpu_vector_storage.descriptor_set.clone(),
-                            self.gpu_links.descriptor_set.clone(),
-                            self.gpu_search_context.descriptor_set.clone(),
-                            self.gpu_builder_context.descriptor_set.clone(),
-                        ],
-                    );
-                    self.gpu_context.dispatch(1, 1, 1);
-                    self.gpu_context.run();
-                    self.gpu_context.wait_finish();
+                    links_buffer.push(idx as PointOffsetType);
+                    if links_buffer.len() == self.gpu_threads {
+                        self.run_gpu(&update_entry_buffer, &links_buffer);
+                        update_entry_buffer.clear();
+                        links_buffer.clear();
+                    }
                 }
             }
         }
+        self.run_gpu(&update_entry_buffer, &links_buffer);
+
         self.gpu_links.download(&mut self.gpu_context);
         println!(
             "GPU level {}, links {}, updates {}",
@@ -515,8 +547,11 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+    use crate::fixtures::index_fixtures::{
+        random_vector, FakeFilterContext, TestRawScorerProducer,
+    };
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+    use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::CosineMetric;
     use crate::types::{Distance, PointOffsetType};
@@ -524,13 +559,14 @@ mod tests {
     use crate::vector_storage::VectorStorage;
 
     #[test]
-    fn test_equal_hnsw() {
+    fn test_gpu_hnsw_equal() {
         let num_vectors = 1000;
         let dim = 16;
         let m = 8;
         let m0 = 16;
         let ef_construct = 16;
         let entry_points_num = 10;
+        let gpu_threads_count = 1;
 
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
@@ -557,7 +593,7 @@ mod tests {
             raw_scorer,
             &storage.borrow(),
             &mut rng,
-            1,
+            gpu_threads_count,
         );
         graph_layers_2.build();
 
@@ -590,5 +626,122 @@ mod tests {
                 assert_eq!(links_1.as_slice(), links_2);
             }
         }
+    }
+
+    #[test]
+    fn test_gpu_hnsw_quality() {
+        let num_vectors = 1000;
+        let dim = 16;
+        let m = 8;
+        let m0 = 16;
+        let ef_construct = 16;
+        let entry_points_num = 10;
+        let gpu_threads_count = 2;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
+        let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Cosine).unwrap();
+        {
+            let mut borrowed_storage = storage.borrow_mut();
+            for idx in 0..(num_vectors as PointOffsetType) {
+                borrowed_storage
+                    .insert_vector(idx, vector_holder.vectors.get(idx))
+                    .unwrap();
+            }
+        }
+
+        let added_vector = vector_holder.vectors.get(0).to_vec();
+        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+        let mut graph_layers_2 = GpuGraphBuilder::new(
+            num_vectors,
+            m,
+            m0,
+            ef_construct,
+            entry_points_num,
+            raw_scorer,
+            &storage.borrow(),
+            &mut rng,
+            gpu_threads_count,
+        );
+        graph_layers_2.build();
+
+        let mut graph_layers_1 = GraphLayersBuilder::new_with_params(
+            num_vectors,
+            m,
+            m0,
+            ef_construct,
+            entry_points_num,
+            true,
+            true,
+        );
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let fake_filter_context = FakeFilterContext {};
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers_1.set_levels(idx, graph_layers_2.get_point_level(idx));
+            graph_layers_1.link_new_point(idx, scorer);
+        }
+
+        let graph_layers_2 = graph_layers_2.into_graph_layers_builder();
+
+        let graph_1 = graph_layers_1
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
+        let graph_2 = graph_layers_2
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
+
+        let attempts = 10;
+        let top = 10;
+        let ef = 16;
+        let mut total_sames_1 = 0;
+        let mut total_sames_2 = 0;
+        for _ in 0..attempts {
+            let query = random_vector(&mut rng, dim);
+            let fake_filter_context = FakeFilterContext {};
+            let raw_scorer = vector_holder.get_raw_scorer(query);
+
+            let mut reference_top = FixedLengthPriorityQueue::<ScoredPointOffset>::new(top);
+            for idx in 0..vector_holder.vectors.len() as PointOffsetType {
+                reference_top.push(ScoredPointOffset {
+                    idx,
+                    score: raw_scorer.score_point(idx),
+                });
+            }
+            let brute_top = reference_top.into_vec();
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let graph_search_1 = graph_1.search(top, ef, scorer);
+            let sames_1 = sames_count(&brute_top, &graph_search_1);
+            total_sames_1 += sames_1;
+
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let graph_search_2 = graph_2.search(top, ef, scorer);
+            let sames_2 = sames_count(&brute_top, &graph_search_2);
+            total_sames_2 += sames_2;
+        }
+        let min_sames = top as f32 * 0.7 * attempts as f32;
+        println!("total_sames_1 = {}", total_sames_1);
+        println!("total_sames_2 = {}", total_sames_2);
+        println!("min_sames = {}", min_sames);
+        assert!(total_sames_1 as f32 > min_sames);
+        assert!(total_sames_2 as f32 > min_sames);
+    }
+
+    fn sames_count(a: &[ScoredPointOffset], b: &[ScoredPointOffset]) -> usize {
+        let mut count = 0;
+        for a_item in a {
+            for b_item in b {
+                if a_item.idx == b_item.idx {
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 }
