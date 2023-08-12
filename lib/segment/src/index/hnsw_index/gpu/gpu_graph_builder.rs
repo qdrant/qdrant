@@ -4,7 +4,9 @@ use std::sync::Arc;
 use num_traits::float::FloatCore;
 use rand::Rng;
 
+use super::gpu_builder_context::GpuBuilderContext;
 use super::gpu_links::GpuLinks;
+use super::gpu_search_context::GpuSearchContext;
 use super::gpu_vector_storage::GpuVectorStorage;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -12,6 +14,8 @@ use crate::index::visited_pool::VisitedPool;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageEnum};
+
+pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 10;
 
 pub struct GpuGraphBuilder<'a> {
     pub graph_layers_builder: GraphLayersBuilder,
@@ -28,6 +32,12 @@ pub struct GpuGraphBuilder<'a> {
     pub gpu_context: gpu::Context,
     pub gpu_vector_storage: GpuVectorStorage,
     pub gpu_links: GpuLinks,
+    pub gpu_search_context: GpuSearchContext,
+    pub gpu_builder_context: GpuBuilderContext,
+    pub update_entry_pipeline: Arc<gpu::Pipeline>,
+    pub link_pipeline: Arc<gpu::Pipeline>,
+    pub apply_links_pipeline: Arc<gpu::Pipeline>,
+    pub gpu_threads: usize,
 }
 
 impl<'a> GpuGraphBuilder<'a> {
@@ -40,6 +50,7 @@ impl<'a> GpuGraphBuilder<'a> {
         points_scorer: Box<dyn RawScorer + 'a>,
         vector_storage: &VectorStorageEnum,
         rng: &mut R,
+        gpu_threads: usize,
     ) -> Self
     where
         R: Rng + ?Sized,
@@ -84,10 +95,65 @@ impl<'a> GpuGraphBuilder<'a> {
         let gpu_device = Arc::new(
             gpu::Device::new(gpu_instance.clone(), gpu_instance.vk_physical_devices[0]).unwrap(),
         );
-        let gpu_context = gpu::Context::new(gpu_device.clone());
+        let mut gpu_context = gpu::Context::new(gpu_device.clone());
         let gpu_vector_storage = GpuVectorStorage::new(gpu_device.clone(), vector_storage).unwrap();
         let gpu_links =
             GpuLinks::new(gpu_device.clone(), m, ef_construct, m0, num_vectors).unwrap();
+
+        let candidates_capacity = num_vectors / 8;
+        let gpu_search_context = GpuSearchContext::new(
+            gpu_threads,
+            num_vectors,
+            m0,
+            ef_construct,
+            candidates_capacity,
+            gpu_device.clone(),
+        );
+        let gpu_builder_context =
+            GpuBuilderContext::new(gpu_device.clone(), m0, num_vectors, gpu_threads);
+        let gpu_entries = requests
+            .iter()
+            .cloned()
+            .map(|entry| entry.unwrap_or(PointOffsetType::MAX))
+            .collect::<Vec<_>>();
+        gpu_builder_context.upload_entries(&mut gpu_context, &gpu_entries);
+
+        // init gpu pilelines
+        let update_entry_shader = Arc::new(gpu::Shader::new(
+            gpu_device.clone(),
+            include_bytes!("./shaders/update_entries.spv"),
+        ));
+        let update_entry_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
+            .add_shader(update_entry_shader.clone())
+            .build(gpu_device.clone());
+
+        let link_shader = Arc::new(gpu::Shader::new(
+            gpu_device.clone(),
+            include_bytes!("./shaders/run_requests.spv"),
+        ));
+        let link_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
+            .add_shader(link_shader.clone())
+            .build(gpu_device.clone());
+
+        let apply_links_shader = Arc::new(gpu::Shader::new(
+            gpu_device.clone(),
+            include_bytes!("./shaders/apply_responses.spv"),
+        ));
+        let apply_links_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
+            .add_shader(apply_links_shader.clone())
+            .build(gpu_device.clone());
 
         Self {
             graph_layers_builder,
@@ -103,6 +169,12 @@ impl<'a> GpuGraphBuilder<'a> {
             gpu_context,
             gpu_vector_storage,
             gpu_links,
+            gpu_search_context,
+            gpu_builder_context,
+            update_entry_pipeline,
+            link_pipeline,
+            apply_links_pipeline,
+            gpu_threads,
         }
     }
 
@@ -133,7 +205,9 @@ impl<'a> GpuGraphBuilder<'a> {
         let max_level = self.point_levels.iter().copied().max().unwrap();
         for level in (0..=max_level).rev() {
             self.clear_links();
-            self.build_level(level);
+            let cpu_count = (self.gpu_threads * CPU_POINTS_COUNT_MULTIPLICATOR) as PointOffsetType;
+            self.build_level_cpu(level, cpu_count);
+            self.build_level_gpu(level, cpu_count);
             self.finish_graph_layers_builder_level(level);
         }
     }
@@ -154,9 +228,88 @@ impl<'a> GpuGraphBuilder<'a> {
         self.requests[point_id as usize] = Some(new_entry_point);
     }
 
-    fn build_level(&mut self, level: usize) {
+    fn build_level_gpu(&mut self, level: usize, start_idx: PointOffsetType) {
+        if start_idx == self.num_vectors() as PointOffsetType {
+            return;
+        }
+
         let level_m = self.get_m(level);
-        for idx in 0..self.num_vectors() as PointOffsetType {
+        if level == 0 {
+            self.gpu_links
+                .update_params(&mut self.gpu_context, level_m, self.ef_construct);
+        }
+        self.gpu_links
+            .upload(&mut self.gpu_context, start_idx as usize);
+        let mut link_count = 0;
+        let mut update_entry_count = 0;
+        for idx in start_idx..self.num_vectors() as PointOffsetType {
+            if let Some(entry_point) = self.requests[idx as usize].clone() {
+                let entry_level = self.get_point_level(entry_point);
+                let point_level = self.get_point_level(idx as PointOffsetType);
+                let link_level = std::cmp::min(entry_level, point_level);
+                if level > link_level && entry_level >= point_level {
+                    update_entry_count += 1;
+
+                    self.gpu_builder_context
+                        .upload_process_points(&mut self.gpu_context, &[idx as PointOffsetType]);
+
+                    self.gpu_context.bind_pipeline(
+                        self.update_entry_pipeline.clone(),
+                        &[
+                            self.gpu_vector_storage.descriptor_set.clone(),
+                            self.gpu_links.descriptor_set.clone(),
+                            self.gpu_search_context.descriptor_set.clone(),
+                            self.gpu_builder_context.descriptor_set.clone(),
+                        ],
+                    );
+                    self.gpu_context.dispatch(1, 1, 1);
+                    self.gpu_context.run();
+                    self.gpu_context.wait_finish();
+                } else if link_level >= level {
+                    link_count += 1;
+
+                    self.gpu_search_context.clear(&mut self.gpu_context);
+                    self.gpu_builder_context
+                        .upload_process_points(&mut self.gpu_context, &[idx as PointOffsetType]);
+
+                    self.gpu_context.bind_pipeline(
+                        self.link_pipeline.clone(),
+                        &[
+                            self.gpu_vector_storage.descriptor_set.clone(),
+                            self.gpu_links.descriptor_set.clone(),
+                            self.gpu_search_context.descriptor_set.clone(),
+                            self.gpu_builder_context.descriptor_set.clone(),
+                        ],
+                    );
+                    self.gpu_context.dispatch(1, 1, 1);
+                    self.gpu_context.run();
+                    self.gpu_context.wait_finish();
+
+                    self.gpu_context.bind_pipeline(
+                        self.apply_links_pipeline.clone(),
+                        &[
+                            self.gpu_vector_storage.descriptor_set.clone(),
+                            self.gpu_links.descriptor_set.clone(),
+                            self.gpu_search_context.descriptor_set.clone(),
+                            self.gpu_builder_context.descriptor_set.clone(),
+                        ],
+                    );
+                    self.gpu_context.dispatch(1, 1, 1);
+                    self.gpu_context.run();
+                    self.gpu_context.wait_finish();
+                }
+            }
+        }
+        self.gpu_links.download(&mut self.gpu_context);
+        println!(
+            "GPU level {}, links {}, updates {}",
+            level, link_count, update_entry_count
+        );
+    }
+
+    fn build_level_cpu(&mut self, level: usize, limit: PointOffsetType) {
+        let level_m = self.get_m(level);
+        for idx in 0..limit {
             if let Some(entry_point) = self.requests[idx as usize].clone() {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
@@ -404,6 +557,7 @@ mod tests {
             raw_scorer,
             &storage.borrow(),
             &mut rng,
+            1,
         );
         graph_layers_2.build();
 
