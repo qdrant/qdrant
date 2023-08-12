@@ -6,7 +6,7 @@ use rocksdb::DB;
 use super::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
-use crate::index::field_index::map_index::MapIndex;
+use crate::index::field_index::map_index::MapIndexEnum;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
 use crate::types::{
@@ -22,10 +22,10 @@ pub fn index_selector(
     match payload_schema {
         PayloadFieldSchema::FieldType(payload_type) => match payload_type {
             PayloadSchemaType::Keyword => {
-                vec![FieldIndex::KeywordIndex(MapIndex::new(db, field))]
+                vec![FieldIndex::KeywordIndex(MapIndexEnum::new(db, field))]
             }
             PayloadSchemaType::Integer => vec![
-                FieldIndex::IntMapIndex(MapIndex::<IntPayloadType>::new(db.clone(), field)),
+                FieldIndex::IntMapIndex(MapIndexEnum::new(db.clone(), field)),
                 FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field)),
             ],
             PayloadSchemaType::Float => {

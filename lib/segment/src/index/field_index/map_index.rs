@@ -27,7 +27,7 @@ use crate::types::{
 use crate::vector_storage::div_ceil;
 
 /// HashMap-based type of index
-pub struct MapIndex<N: Hash + Eq + Clone + Display> {
+pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     map: HashMap<N, BTreeSet<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,
     /// Amount of point which have at least one indexed payload value
@@ -36,75 +36,20 @@ pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     db_wrapper: DatabaseColumnWrapper,
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
-    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndex<N> {
+pub enum MapIndexEnum<N: Hash + Eq + Clone + Display + FromStr> {
+    Mutable(MutableMapIndex<N>),
+}
+
+impl<N: Hash + Eq + Clone + Display + FromStr> MutableMapIndex<N> {
+    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = Self::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
-        MapIndex {
+        Self {
             map: Default::default(),
             point_to_values: Vec::new(),
             indexed_points: 0,
             values_count: 0,
             db_wrapper,
-        }
-    }
-
-    fn storage_cf_name(field: &str) -> String {
-        format!("{field}_map")
-    }
-
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
-            return Ok(false);
-        }
-        self.indexed_points = 0;
-        for (record, _) in self.db_wrapper.lock_db().iter()? {
-            let record = std::str::from_utf8(&record).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
-            let (value, idx) = Self::decode_db_record(record)?;
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize(idx as usize + 1, Vec::new())
-            }
-            if self.point_to_values[idx as usize].is_empty() {
-                self.indexed_points += 1;
-            }
-            self.values_count += 1;
-            self.point_to_values[idx as usize].push(value.clone());
-            self.map.entry(value).or_default().insert(idx);
-        }
-        Ok(true)
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
-    }
-
-    pub fn match_cardinality<Q>(&self, value: &Q) -> CardinalityEstimation
-    where
-        Q: ?Sized,
-        N: std::borrow::Borrow<Q>,
-        Q: Hash + Eq,
-    {
-        let values_count = self.map.get(value).map(|p| p.len()).unwrap_or(0);
-
-        CardinalityEstimation::exact(values_count)
-    }
-
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
-        self.point_to_values.get(idx as usize)
-    }
-
-    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {
-            field_name: None,
-            points_count: self.indexed_points,
-            points_values_count: self.values_count,
-            histogram_bucket_size: None,
         }
     }
 
@@ -132,6 +77,83 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         Ok(())
     }
 
+    fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        if self.point_to_values.len() <= idx as usize {
+            return Ok(());
+        }
+
+        let removed_values = std::mem::take(&mut self.point_to_values[idx as usize]);
+
+        if !removed_values.is_empty() {
+            self.indexed_points -= 1;
+        }
+        self.values_count -= removed_values.len();
+
+        for value in &removed_values {
+            if let Some(vals) = self.map.get_mut(value) {
+                vals.remove(&idx);
+            }
+            let key = Self::encode_db_record(value, idx);
+            self.db_wrapper.remove(key)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for MutableMapIndex<N> {
+    fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
+        &self.db_wrapper
+    }
+
+    fn load_from_db(&mut self) -> OperationResult<bool> {
+        if !self.db_wrapper.has_column_family()? {
+            return Ok(false);
+        }
+        self.indexed_points = 0;
+        for (record, _) in self.db_wrapper.lock_db().iter()? {
+            let record = std::str::from_utf8(&record).map_err(|_| {
+                OperationError::service_error("Index load error: UTF8 error while DB parsing")
+            })?;
+            let (value, idx) = Self::decode_db_record(record)?;
+            if self.point_to_values.len() <= idx as usize {
+                self.point_to_values.resize(idx as usize + 1, Vec::new())
+            }
+            if self.point_to_values[idx as usize].is_empty() {
+                self.indexed_points += 1;
+            }
+            self.values_count += 1;
+            self.point_to_values[idx as usize].push(value.clone());
+            self.map.entry(value).or_default().insert(idx);
+        }
+        Ok(true)
+    }
+
+    fn get_values(&self, idx: PointOffsetType) -> Option<&[N]> {
+        self.point_to_values.get(idx as usize).map(|v| v.as_slice())
+    }
+
+    fn get_indexed_points(&self) -> usize {
+        self.indexed_points
+    }
+
+    fn get_values_count(&self) -> usize {
+        self.values_count
+    }
+
+    fn get_unique_values_count(&self) -> usize {
+        self.map.len()
+    }
+
+    fn get_points_with_value_count<Q>(&self, value: &Q) -> Option<usize>
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        self.map.get(value).map(|p| p.len())
+    }
+
     fn get_iterator<Q>(&self, value: &Q) -> Box<dyn Iterator<Item = PointOffsetType> + '_>
     where
         Q: ?Sized,
@@ -143,6 +165,169 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
+
+    fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+        Box::new(self.map.keys())
+    }
+
+    fn except_iterator<'a, Q>(
+        &'a self,
+        excluded: &'a [Q],
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
+    where
+        Q: PartialEq<N>,
+    {
+        Box::new(
+            self.get_values_iterator()
+                .filter(|key| !excluded.iter().any(|e| e.eq(*key)))
+                .flat_map(|key| self.get_iterator(key))
+                .unique(),
+        )
+    }
+}
+
+impl<N: Hash + Eq + Clone + Display + FromStr> MapIndexEnum<N> {
+    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
+        MapIndexEnum::Mutable(MutableMapIndex::new(db, field_name))
+    }
+}
+
+impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for MapIndexEnum<N> {
+    fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_db_wrapper(),
+        }
+    }
+
+    fn load_from_db(&mut self) -> OperationResult<bool> {
+        match self {
+            MapIndexEnum::Mutable(index) => index.load_from_db(),
+        }
+    }
+
+    fn get_values(&self, idx: PointOffsetType) -> Option<&[N]> {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_values(idx),
+        }
+    }
+
+    fn get_indexed_points(&self) -> usize {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_indexed_points(),
+        }
+    }
+
+    fn get_values_count(&self) -> usize {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_values_count(),
+        }
+    }
+
+    fn get_unique_values_count(&self) -> usize {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_unique_values_count(),
+        }
+    }
+
+    fn get_points_with_value_count<Q>(&self, value: &Q) -> Option<usize>
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_points_with_value_count(value),
+        }
+    }
+
+    fn get_iterator<Q>(&self, value: &Q) -> Box<dyn Iterator<Item = PointOffsetType> + '_>
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_iterator(value),
+        }
+    }
+
+    fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+        match self {
+            MapIndexEnum::Mutable(index) => index.get_values_iterator(),
+        }
+    }
+
+    fn except_iterator<'a, Q>(
+        &'a self,
+        excluded: &'a [Q],
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
+    where
+        Q: PartialEq<N>,
+    {
+        match self {
+            MapIndexEnum::Mutable(index) => index.except_iterator(excluded),
+        }
+    }
+}
+
+pub trait MapIndex<N: Hash + Eq + Clone + Display + FromStr> {
+    fn get_db_wrapper(&self) -> &DatabaseColumnWrapper;
+
+    fn storage_cf_name(field: &str) -> String {
+        format!("{field}_map")
+    }
+
+    fn recreate(&self) -> OperationResult<()> {
+        self.get_db_wrapper().recreate_column_family()
+    }
+
+    fn load_from_db(&mut self) -> OperationResult<bool>;
+
+    fn flusher(&self) -> Flusher {
+        self.get_db_wrapper().flusher()
+    }
+
+    fn match_cardinality<Q>(&self, value: &Q) -> CardinalityEstimation
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        let values_count = self.get_points_with_value_count(value).unwrap_or(0);
+
+        CardinalityEstimation::exact(values_count)
+    }
+
+    fn get_values(&self, idx: PointOffsetType) -> Option<&[N]>;
+
+    fn get_indexed_points(&self) -> usize;
+
+    fn get_values_count(&self) -> usize;
+
+    fn get_unique_values_count(&self) -> usize;
+
+    fn get_points_with_value_count<Q>(&self, value: &Q) -> Option<usize>
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq;
+
+    fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.get_indexed_points(),
+            points_values_count: self.get_values_count(),
+            histogram_bucket_size: None,
+        }
+    }
+
+    fn get_iterator<Q>(&self, value: &Q) -> Box<dyn Iterator<Item = PointOffsetType> + '_>
+    where
+        Q: ?Sized,
+        N: std::borrow::Borrow<Q>,
+        Q: Hash + Eq;
+
+    fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_>;
 
     fn encode_db_record(value: &N, idx: PointOffsetType) -> String {
         format!("{value}/{idx}")
@@ -165,34 +350,11 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         Ok((value, idx))
     }
 
-    fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if self.point_to_values.len() <= idx as usize {
-            return Ok(());
-        }
-
-        let removed_values = std::mem::take(&mut self.point_to_values[idx as usize]);
-
-        if !removed_values.is_empty() {
-            self.indexed_points -= 1;
-        }
-        self.values_count -= removed_values.len();
-
-        for value in &removed_values {
-            if let Some(vals) = self.map.get_mut(value) {
-                vals.remove(&idx);
-            }
-            let key = MapIndex::encode_db_record(value, idx);
-            self.db_wrapper.remove(key)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
     }
 
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         self.get_values(point_id)
             .map(|x| x.is_empty())
             .unwrap_or(true)
@@ -257,20 +419,18 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 
         // todo
         let excluded_value_counts: Vec<_> = excluded
-            .map(|val| {
-                self.map
-                    .get(val.borrow())
-                    .map(|points| points.len())
-                    .unwrap_or(0)
-            })
+            .map(|val| self.get_points_with_value_count(val.borrow()).unwrap_or(0))
             .collect();
         let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
 
-        debug_assert!(total_excluded_value_count <= self.values_count);
+        debug_assert!(total_excluded_value_count <= self.get_values_count());
 
-        let non_excluded_values_count =
-            self.values_count.saturating_sub(total_excluded_value_count);
-        let max_values_per_point = self.map.len().saturating_sub(excluded_value_counts.len());
+        let non_excluded_values_count = self
+            .get_values_count()
+            .saturating_sub(total_excluded_value_count);
+        let max_values_per_point = self
+            .get_unique_values_count()
+            .saturating_sub(excluded_value_counts.len());
 
         if max_values_per_point == 0 {
             // All points are excluded, so we can't select any point
@@ -283,7 +443,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         let min_not_excluded_by_values = div_ceil(non_excluded_values_count, max_values_per_point);
 
         let min = min_not_excluded_by_values.max(
-            self.indexed_points
+            self.get_indexed_points()
                 .saturating_sub(total_excluded_value_count),
         );
 
@@ -295,13 +455,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         let max_excluded_value_count = excluded_value_counts.iter().max().copied().unwrap_or(0);
 
         let max = self
-            .indexed_points
+            .get_indexed_points()
             .saturating_sub(max_excluded_value_count)
             .min(non_excluded_values_count);
 
         // Expected case: we assume that all points are filled equally.
         // So we can estimate the probability of the point to have non-excluded value.
-        let exp = number_of_selected_points(self.indexed_points, non_excluded_values_count)
+        let exp = number_of_selected_points(self.get_indexed_points(), non_excluded_values_count)
             .max(min)
             .min(max);
 
@@ -318,29 +478,20 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         excluded: &'a [Q],
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
     where
-        Q: PartialEq<N>,
-    {
-        let iter = self
-            .map
-            .keys()
-            .filter(|key| !excluded.iter().any(|e| e.eq(*key)))
-            .flat_map(|key| self.get_iterator(key))
-            .unique();
-        Box::new(iter)
-    }
+        Q: PartialEq<N>;
 }
 
-impl PayloadFieldIndex for MapIndex<SmolStr> {
+impl PayloadFieldIndex for MapIndexEnum<SmolStr> {
     fn count_indexed_points(&self) -> usize {
-        self.indexed_points
+        self.get_indexed_points()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        MapIndex::load(self)
+        self.load_from_db()
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
+        self.get_db_wrapper().recreate_column_family()
     }
 
     fn flusher(&self) -> Flusher {
@@ -390,7 +541,7 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
                     .collect::<Vec<_>>();
                 Some(combine_should_estimations(
                     &estimations,
-                    self.indexed_points,
+                    self.get_indexed_points(),
                 ))
             }
             Some(Match::Except(MatchExcept {
@@ -405,29 +556,29 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        let iter = self
-            .map
-            .iter()
-            .filter(move |(_value, point_ids)| point_ids.len() > threshold)
-            .map(move |(value, point_ids)| PayloadBlockCondition {
-                condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
-                cardinality: point_ids.len(),
-            });
-        Box::new(iter)
+        Box::new(
+            self.get_values_iterator()
+                .map(|value| (value, self.get_points_with_value_count(value).unwrap_or(0)))
+                .filter(move |(_value, count)| *count > threshold)
+                .map(move |(value, count)| PayloadBlockCondition {
+                    condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
+                    cardinality: count,
+                }),
+        )
     }
 }
 
-impl PayloadFieldIndex for MapIndex<IntPayloadType> {
+impl PayloadFieldIndex for MapIndexEnum<IntPayloadType> {
     fn count_indexed_points(&self) -> usize {
-        self.indexed_points
+        self.get_indexed_points()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        MapIndex::load(self)
+        self.load_from_db()
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
+        self.get_db_wrapper().recreate_column_family()
     }
 
     fn flusher(&self) -> Flusher {
@@ -477,7 +628,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     .collect::<Vec<_>>();
                 Some(combine_should_estimations(
                     &estimations,
-                    self.indexed_points,
+                    self.get_indexed_points(),
                 ))
             }
             Some(Match::Except(MatchExcept {
@@ -494,21 +645,23 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        let iter = self
-            .map
-            .iter()
-            .filter(move |(_value, point_ids)| point_ids.len() >= threshold)
-            .map(move |(value, point_ids)| PayloadBlockCondition {
-                condition: FieldCondition::new_match(key.clone(), (*value).into()),
-                cardinality: point_ids.len(),
-            });
-        Box::new(iter)
+        Box::new(
+            self.get_values_iterator()
+                .map(|value| (value, self.get_points_with_value_count(value).unwrap_or(0)))
+                .filter(move |(_value, count)| *count >= threshold)
+                .map(move |(value, count)| PayloadBlockCondition {
+                    condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
+                    cardinality: count,
+                }),
+        )
     }
 }
 
-impl ValueIndexer<String> for MapIndex<SmolStr> {
+impl ValueIndexer<String> for MapIndexEnum<SmolStr> {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
-        self.add_many_to_map(id, values)
+        match self {
+            MapIndexEnum::Mutable(index) => index.add_many_to_map(id, values),
+        }
     }
 
     fn get_value(&self, value: &Value) -> Option<String> {
@@ -519,17 +672,21 @@ impl ValueIndexer<String> for MapIndex<SmolStr> {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.remove_point(id)
+        match self {
+            MapIndexEnum::Mutable(index) => index.remove_point(id),
+        }
     }
 }
 
-impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
+impl ValueIndexer<IntPayloadType> for MapIndexEnum<IntPayloadType> {
     fn add_many(
         &mut self,
         id: PointOffsetType,
         values: Vec<IntPayloadType>,
     ) -> OperationResult<()> {
-        self.add_many_to_map(id, values)
+        match self {
+            MapIndexEnum::Mutable(index) => index.add_many_to_map(id, values),
+        }
     }
 
     fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
@@ -540,7 +697,9 @@ impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.remove_point(id)
+        match self {
+            MapIndexEnum::Mutable(index) => index.remove_point(id),
+        }
     }
 }
 
@@ -562,12 +721,14 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let mut index = MapIndexEnum::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
         index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
-            index
-                .add_many_to_map(idx as PointOffsetType, values.clone())
-                .unwrap();
+            match &mut index {
+                MapIndexEnum::Mutable(index) => index
+                    .add_many_to_map(idx as PointOffsetType, values.clone())
+                    .unwrap(),
+            }
         }
         index.flusher()().unwrap();
     }
@@ -576,8 +737,8 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
-        index.load().unwrap();
+        let mut index = MapIndexEnum::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(
                 index
