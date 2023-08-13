@@ -402,7 +402,14 @@ fn search_in_segment(
             // different params means different batches
             // execute what has been batched so far
             if !vectors_batch.is_empty() {
-                let (mut res, mut further) = execute_batch_search(&segment, &vectors_batch, &prev_params, use_sampling, total_points, is_stopped)?;
+                let (mut res, mut further) = execute_batch_search(
+                    &segment,
+                    &vectors_batch,
+                    &prev_params,
+                    use_sampling,
+                    total_points,
+                    is_stopped,
+                )?;
                 further_results.append(&mut further);
                 result.append(&mut res);
                 vectors_batch.clear()
@@ -415,7 +422,14 @@ fn search_in_segment(
 
     // run last batch if any
     if !vectors_batch.is_empty() {
-        let (mut res, mut further) = execute_batch_search(&segment, &vectors_batch, &prev_params, use_sampling, total_points, is_stopped)?;
+        let (mut res, mut further) = execute_batch_search(
+            &segment,
+            &vectors_batch,
+            &prev_params,
+            use_sampling,
+            total_points,
+            is_stopped,
+        )?;
         further_results.append(&mut further);
         result.append(&mut res);
     }
@@ -443,9 +457,13 @@ fn execute_batch_search(
     } else {
         prev_params.top
     };
-    if prev_params.params.map(|p| p.ignore_plain_index).unwrap_or(false) {
+    if prev_params
+        .params
+        .map(|p| p.ignore_plain_index)
+        .unwrap_or(false)
+    {
         let batch_len = vectors_batch.len();
-        return Ok((vec![vec![];batch_len], vec![false; batch_len]))
+        return Ok((vec![vec![]; batch_len], vec![false; batch_len]));
     }
     let res = read_segment.search_batch(
         prev_params.vector_name,
@@ -458,7 +476,10 @@ fn execute_batch_search(
         is_stopped,
     )?;
 
-    let further_results = res.iter().map(|batch_result| batch_result.len() == top).collect();
+    let further_results = res
+        .iter()
+        .map(|batch_result| batch_result.len() == top)
+        .collect();
 
     Ok((res, further_results))
 }
