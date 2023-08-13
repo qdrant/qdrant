@@ -8,10 +8,7 @@ use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
-use segment::types::{
-    Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig,
-    SeqNumberType, WithPayload, WithPayloadInterface, WithVector,
-};
+use segment::types::{Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType, WithPayload, WithPayloadInterface, WithVector, SegmentType};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
@@ -460,8 +457,9 @@ fn execute_batch_search(
     if prev_params
         .params
         .map(|p| p.ignore_plain_index)
-        .unwrap_or(false)
+        .unwrap_or(false) && read_segment.segment_type() == SegmentType::Plain
     {
+        log::debug!("ignore plain index search:{:?}", read_segment.info());
         let batch_len = vectors_batch.len();
         return Ok((vec![vec![]; batch_len], vec![false; batch_len]));
     }
