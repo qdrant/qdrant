@@ -5,6 +5,7 @@ use crate::types::PointOffsetType;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const ALIGNMENT: usize = 4;
+pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
 
 #[repr(C)]
 struct GpuVectorParamsBuffer {
@@ -30,9 +31,10 @@ impl GpuVectorStorage {
 
         let dim = vector_storage.vector_dim();
         let capacity = Self::get_capacity(dim);
-        let count = vector_storage.total_vector_count();
+        let upload_points_count = UPLOAD_CHUNK_SIZE / (capacity * std::mem::size_of::<f32>());
 
-        let storage_size = dim * count * std::mem::size_of::<f32>();
+        let count = vector_storage.total_vector_count();
+        let storage_size = capacity * count * std::mem::size_of::<f32>();
         let vectors_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
@@ -48,7 +50,7 @@ impl GpuVectorStorage {
         let staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
-            dim * std::mem::size_of::<f32>(),
+            upload_points_count * capacity * std::mem::size_of::<f32>(),
         ));
 
         let params = GpuVectorParamsBuffer {
@@ -67,15 +69,43 @@ impl GpuVectorStorage {
         upload_context.run();
         upload_context.wait_finish();
 
+        let mut gpu_offset = 0;
+        let mut upload_size = 0;
+        let mut upload_points = 0;
+        let mut extended_vector = vec![0.0f32; capacity];
         for i in 0..count {
             let vector = vector_storage.get_vector(i as PointOffsetType);
-            staging_buffer.upload_slice(vector, 0);
+            extended_vector[..vector.len()].copy_from_slice(vector);
+            staging_buffer.upload_slice(
+                &extended_vector,
+                upload_points * capacity * std::mem::size_of::<f32>(),
+            );
+            upload_size += vector.len() * std::mem::size_of::<f32>();
+            upload_points += 1;
+
+            if upload_points == upload_points_count {
+                upload_context.copy_gpu_buffer(
+                    staging_buffer.clone(),
+                    vectors_buffer.clone(),
+                    0,
+                    gpu_offset,
+                    upload_size,
+                );
+                upload_context.run();
+                upload_context.wait_finish();
+
+                gpu_offset += upload_size;
+                upload_size = 0;
+                upload_points = 0;
+            }
+        }
+        if upload_points > 0 {
             upload_context.copy_gpu_buffer(
                 staging_buffer.clone(),
                 vectors_buffer.clone(),
                 0,
-                i * dim * std::mem::size_of::<f32>(),
-                dim * std::mem::size_of::<f32>(),
+                gpu_offset,
+                upload_size,
             );
             upload_context.run();
             upload_context.wait_finish();
