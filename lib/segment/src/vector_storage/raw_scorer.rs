@@ -4,7 +4,7 @@ use bitvec::prelude::BitSlice;
 
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::VectorElementType;
-use crate::query::query_scorer::{MetricQueryScorer, QueryScorer};
+use crate::vector_storage::query_scorer::query_scorer::{MetricQueryScorer, QueryScorer};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};

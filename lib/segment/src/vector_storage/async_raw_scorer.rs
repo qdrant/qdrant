@@ -5,7 +5,7 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::query::query_scorer::{MetricQueryScorer, QueryScorer};
+use crate::vector_storage::query_scorer::query_scorer::{MetricQueryScorer, QueryScorer};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::types::{Distance, PointOffsetType, ScoreType};
