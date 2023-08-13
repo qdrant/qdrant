@@ -26,9 +26,14 @@ buffer ResponsesBuffer {
 } responses;
 
 layout(set = BUILDER_LAYOUT_SET, binding = 3)
-readonly buffer ProcessPointsBuffer {
+readonly buffer LinkPointsBuffer {
     POINT_ID data[];
-} process_points;
+} link_points;
+
+layout(set = BUILDER_LAYOUT_SET, binding = 4)
+readonly buffer UpdateEntryPointsBuffer {
+    POINT_ID data[];
+} update_entry_points;
 
 #define RESPONSE_CAPACITY \
     (LEVEL_M + 2)
@@ -55,7 +60,7 @@ readonly buffer ProcessPointsBuffer {
     responses.data[RESPONSE_OFFSET(THREAD, I) + 2 + J]
 
 void update_entry() {
-    POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
+    POINT_ID point_id = update_entry_points.data[gl_GlobalInvocationID.x];
     ScoredPoint entry_point = {
         requests.data[point_id],
         similarity(point_id, requests.data[point_id])
@@ -66,7 +71,7 @@ void update_entry() {
 void run_request() {
     searcher_init();
 
-    POINT_ID point_id = process_points.data[gl_GlobalInvocationID.x];
+    POINT_ID point_id = link_points.data[gl_GlobalInvocationID.x];
     ScoredPoint entry = {
         requests.data[point_id],
         similarity(point_id, requests.data[point_id])

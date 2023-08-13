@@ -239,11 +239,21 @@ impl<'a> GpuGraphBuilder<'a> {
     ) {
         debug_assert!(update_entry_points.len() <= self.gpu_threads);
         debug_assert!(link_points.len() <= self.gpu_threads);
+        if update_entry_points.len() == 0 && link_points.len() == 0 {
+            return;
+        }
+
+        if link_points.len() > 0 {
+            self.gpu_search_context.clear(&mut self.gpu_context);
+        }
+
+        self.gpu_builder_context.upload_process_points(
+            &mut self.gpu_context,
+            update_entry_points,
+            link_points,
+        );
 
         if update_entry_points.len() > 0 {
-            self.gpu_builder_context
-                .upload_process_points(&mut self.gpu_context, update_entry_points);
-
             self.gpu_context.bind_pipeline(
                 self.update_entry_pipeline.clone(),
                 &[
@@ -254,15 +264,9 @@ impl<'a> GpuGraphBuilder<'a> {
                 ],
             );
             self.gpu_context.dispatch(update_entry_points.len(), 1, 1);
-            self.gpu_context.run();
-            self.gpu_context.wait_finish();
         }
 
         if link_points.len() > 0 {
-            self.gpu_search_context.clear(&mut self.gpu_context);
-            self.gpu_builder_context
-                .upload_process_points(&mut self.gpu_context, link_points);
-
             self.gpu_context.bind_pipeline(
                 self.link_pipeline.clone(),
                 &[
@@ -273,9 +277,12 @@ impl<'a> GpuGraphBuilder<'a> {
                 ],
             );
             self.gpu_context.dispatch(link_points.len(), 1, 1);
-            self.gpu_context.run();
-            self.gpu_context.wait_finish();
+        }
 
+        self.gpu_context.run();
+        self.gpu_context.wait_finish();
+
+        if link_points.len() > 0 {
             self.gpu_context.bind_pipeline(
                 self.apply_links_pipeline.clone(),
                 &[

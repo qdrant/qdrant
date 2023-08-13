@@ -12,8 +12,10 @@ pub struct GpuBuilderContext {
     pub builder_params_buffer: Arc<gpu::Buffer>,
     pub requests_buffer: Arc<gpu::Buffer>,
     pub responses_buffer: Arc<gpu::Buffer>,
-    pub process_points_buffer: Arc<gpu::Buffer>,
-    pub process_points_staging_buffer: Arc<gpu::Buffer>,
+    pub link_points_buffer: Arc<gpu::Buffer>,
+    pub update_entry_points_buffer: Arc<gpu::Buffer>,
+    pub link_points_staging_buffer: Arc<gpu::Buffer>,
+    pub update_entry_points_staging_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
 }
@@ -46,15 +48,25 @@ impl GpuBuilderContext {
             full_responses_size,
         ));
 
-        let process_points_buffer = Arc::new(gpu::Buffer::new(
+        let link_points_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
             threads_count * std::mem::size_of::<PointOffsetType>(),
         ));
-        let process_points_staging_buffer = Arc::new(gpu::Buffer::new(
+        let update_entry_points_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            threads_count * std::mem::size_of::<PointOffsetType>(),
+        ));
+        let link_points_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
             threads_count * std::mem::size_of::<PointOffsetType>() + std::mem::size_of::<u32>(),
+        ));
+        let update_entry_points_staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::CpuToGpu,
+            threads_count * std::mem::size_of::<PointOffsetType>(),
         ));
 
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
@@ -62,13 +74,15 @@ impl GpuBuilderContext {
             .add_storage_buffer(1)
             .add_storage_buffer(2)
             .add_storage_buffer(3)
+            .add_storage_buffer(4)
             .build(device.clone());
 
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
             .add_uniform_buffer(0, builder_params_buffer.clone())
             .add_storage_buffer(1, requests_buffer.clone())
             .add_storage_buffer(2, responses_buffer.clone())
-            .add_storage_buffer(3, process_points_buffer.clone())
+            .add_storage_buffer(3, link_points_buffer.clone())
+            .add_storage_buffer(4, update_entry_points_buffer.clone())
             .build();
 
         Self {
@@ -76,8 +90,10 @@ impl GpuBuilderContext {
             builder_params_buffer,
             requests_buffer,
             responses_buffer,
-            process_points_buffer,
-            process_points_staging_buffer,
+            link_points_buffer,
+            update_entry_points_buffer,
+            link_points_staging_buffer,
+            update_entry_points_staging_buffer,
             descriptor_set_layout,
             descriptor_set,
         }
@@ -126,27 +142,40 @@ impl GpuBuilderContext {
     pub fn upload_process_points(
         &self,
         gpu_context: &mut gpu::Context,
-        points: &[PointOffsetType],
+        update_entry_points: &[PointOffsetType],
+        link_points: &[PointOffsetType],
     ) {
-        let requests_count = points.len() as u32;
-        self.process_points_staging_buffer
-            .upload(&requests_count, 0);
-        self.process_points_staging_buffer
-            .upload_slice(points, std::mem::size_of::<u32>());
-        gpu_context.copy_gpu_buffer(
-            self.process_points_staging_buffer.clone(),
-            self.process_points_buffer.clone(),
-            std::mem::size_of::<u32>(),
-            0,
-            points.len() * std::mem::size_of::<PointOffsetType>(),
-        );
-        gpu_context.copy_gpu_buffer(
-            self.process_points_staging_buffer.clone(),
-            self.builder_params_buffer.clone(),
-            0,
-            0,
-            std::mem::size_of::<u32>(),
-        );
+        if link_points.len() > 0 {
+            let requests_count = link_points.len() as u32;
+            self.link_points_staging_buffer.upload(&requests_count, 0);
+            self.link_points_staging_buffer
+                .upload_slice(link_points, std::mem::size_of::<u32>());
+            gpu_context.copy_gpu_buffer(
+                self.link_points_staging_buffer.clone(),
+                self.link_points_buffer.clone(),
+                std::mem::size_of::<u32>(),
+                0,
+                link_points.len() * std::mem::size_of::<PointOffsetType>(),
+            );
+            gpu_context.copy_gpu_buffer(
+                self.link_points_staging_buffer.clone(),
+                self.builder_params_buffer.clone(),
+                0,
+                0,
+                std::mem::size_of::<u32>(),
+            );
+        }
+        if update_entry_points.len() > 0 {
+            self.update_entry_points_staging_buffer
+                .upload_slice(update_entry_points, 0);
+            gpu_context.copy_gpu_buffer(
+                self.update_entry_points_staging_buffer.clone(),
+                self.update_entry_points_buffer.clone(),
+                0,
+                0,
+                update_entry_points.len() * std::mem::size_of::<PointOffsetType>(),
+            );
+        }
         gpu_context.run();
         gpu_context.wait_finish();
     }
@@ -303,8 +332,11 @@ mod tests {
                     let point_level = point_levels[idx];
                     let request_level = std::cmp::min(entry_level, point_level);
                     if level > request_level && entry_level >= point_level {
-                        gpu_builder_context
-                            .upload_process_points(&mut gpu_context, &[idx as PointOffsetType]);
+                        gpu_builder_context.upload_process_points(
+                            &mut gpu_context,
+                            &[idx as PointOffsetType],
+                            &[],
+                        );
 
                         gpu_context.bind_pipeline(
                             update_entry_pipeline.clone(),
@@ -321,8 +353,11 @@ mod tests {
                     } else if request_level >= level {
                         println!("Link point {} with entry {}", idx, entry.point_id);
                         gpu_search_context.clear(&mut gpu_context);
-                        gpu_builder_context
-                            .upload_process_points(&mut gpu_context, &[idx as PointOffsetType]);
+                        gpu_builder_context.upload_process_points(
+                            &mut gpu_context,
+                            &[],
+                            &[idx as PointOffsetType],
+                        );
 
                         gpu_context.bind_pipeline(
                             link_pipeline.clone(),
