@@ -4,9 +4,12 @@ use crate::entry::entry_point::OperationResult;
 use crate::types::PointOffsetType;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
+pub const ALIGNMENT: usize = 4;
+
 #[repr(C)]
 struct GpuVectorParamsBuffer {
     dim: u32,
+    capacity: u32,
     count: u32,
 }
 
@@ -26,6 +29,7 @@ impl GpuVectorStorage {
         let timer = std::time::Instant::now();
 
         let dim = vector_storage.vector_dim();
+        let capacity = Self::get_capacity(dim);
         let count = vector_storage.total_vector_count();
 
         let storage_size = dim * count * std::mem::size_of::<f32>();
@@ -49,6 +53,7 @@ impl GpuVectorStorage {
 
         let params = GpuVectorParamsBuffer {
             dim: dim as u32,
+            capacity: capacity as u32,
             count: count as u32,
         };
         staging_buffer.upload(&params, 0);
@@ -99,6 +104,10 @@ impl GpuVectorStorage {
             descriptor_set_layout,
             descriptor_set,
         })
+    }
+
+    pub fn get_capacity(dim: usize) -> usize {
+        dim + (ALIGNMENT - dim % ALIGNMENT) % ALIGNMENT
     }
 }
 
@@ -207,7 +216,11 @@ mod tests {
         context.run();
         context.wait_finish();
 
-        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
+        let mut vector_storage_params = GpuVectorParamsBuffer {
+            dim: 0,
+            capacity: 0,
+            count: 0,
+        };
         staging_buffer.download(&mut vector_storage_params, 0);
         assert_eq!(vector_storage_params.dim, dim as u32);
         assert_eq!(vector_storage_params.count, num_vectors as u32);

@@ -8,6 +8,7 @@
 layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 0)
 readonly uniform VectorStorageParams {
     uint dim;
+    uint capacity;
     uint count;
 } vector_storage_params;
 
@@ -22,9 +23,10 @@ readonly buffer Vectors {
 
 float similarity(uint a, uint b) {
     float result = 0.0;
+    uint c = vector_storage_params.capacity / 4;
+    uint aId = a * c;
+    uint bId = b * c;
     uint d = DIM / 4;
-    uint aId = a * d;
-    uint bId = b * d;
     for (uint i = 0; i < d; i++, aId++, bId++) {
         result += dot(
             vectors.data[aId],
