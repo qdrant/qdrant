@@ -102,6 +102,19 @@ impl GpuSearchContext {
             .add_storage_buffer(3, visited_flags_buffer.clone())
             .build();
 
+        println!(
+            "Visited buffer size {} MB",
+            visited_flags_buffer.size / 1024 / 1024
+        );
+        println!(
+            "Candidates buffer size {} MB",
+            candidates_buffer.size / 1024 / 1024
+        );
+        println!(
+            "Nearest buffer size {} MB",
+            nearest_buffer.size / 1024 / 1024
+        );
+
         Self {
             device,
             search_context_params_buffer,

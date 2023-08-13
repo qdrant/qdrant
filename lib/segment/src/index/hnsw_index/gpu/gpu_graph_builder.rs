@@ -205,15 +205,24 @@ impl<'a> GpuGraphBuilder<'a> {
     }
 
     pub fn build(&mut self) {
+        let timer = std::time::Instant::now();
         let max_level = self.point_levels.iter().copied().max().unwrap();
         let cpu_count =
             (self.gpu_threads * self.m * CPU_POINTS_COUNT_MULTIPLICATOR) as PointOffsetType;
         for level in (0..=max_level).rev() {
             self.clear_links();
+
+            let timer = std::time::Instant::now();
             let gpu_start = self.build_level_cpu(level, cpu_count);
+            println!("CPU level {} build time = {:?}", level, timer.elapsed());
+
+            let timer = std::time::Instant::now();
             self.build_level_gpu(level, gpu_start);
+            println!("GPU level {} build time = {:?}", level, timer.elapsed());
+
             self.finish_graph_layers_builder_level(level);
         }
+        println!("GPU+CPU total build time = {:?}", timer.elapsed());
     }
 
     pub fn update_entry(&mut self, point_id: PointOffsetType) {
@@ -665,13 +674,13 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality() {
-        let num_vectors = 1000;
+        let num_vectors = 1_000_000;
         let dim = 19;
         let m = 8;
         let m0 = 16;
         let ef_construct = 16;
         let entry_points_num = 10;
-        let gpu_threads_count = 4;
+        let gpu_threads_count = 1000;
 
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
@@ -712,6 +721,7 @@ mod tests {
             true,
         );
 
+        let timer = std::time::Instant::now();
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx).to_vec();
@@ -721,6 +731,7 @@ mod tests {
             graph_layers_1.set_levels(idx, graph_layers_2.get_point_level(idx));
             graph_layers_1.link_new_point(idx, scorer);
         }
+        println!("CPU total build time = {:?}", timer.elapsed());
 
         let graph_layers_2 = graph_layers_2.into_graph_layers_builder();
 

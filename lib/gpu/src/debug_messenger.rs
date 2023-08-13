@@ -104,8 +104,9 @@ unsafe extern "system" fn vulkan_debug_callback_panic(
         vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "error",
         _ => "info",
     };
+    let backtrace = std::backtrace::Backtrace::force_capture().to_string();
     panic!(
-        "Vulkan panic ({} {}) with message: {}",
-        message_type, severity, message
+        "Vulkan panic ({} {}) \nWith message: {}, \nBackrace: {}",
+        message_type, severity, message, backtrace,
     )
 }
