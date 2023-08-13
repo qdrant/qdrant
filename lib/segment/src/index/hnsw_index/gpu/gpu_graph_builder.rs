@@ -14,7 +14,7 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageEnum};
 
-pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 2;
+pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 8;
 pub const CANDIDATES_CAPACITY_DIV: usize = 8;
 
 pub struct GpuGraphBuilder<'a> {
@@ -206,12 +206,12 @@ impl<'a> GpuGraphBuilder<'a> {
 
     pub fn build(&mut self) {
         let max_level = self.point_levels.iter().copied().max().unwrap();
+        let cpu_count =
+            (self.gpu_threads * self.m * CPU_POINTS_COUNT_MULTIPLICATOR) as PointOffsetType;
         for level in (0..=max_level).rev() {
             self.clear_links();
-            let cpu_count =
-                (self.gpu_threads * self.m * CPU_POINTS_COUNT_MULTIPLICATOR) as PointOffsetType;
-            self.build_level_cpu(level, cpu_count);
-            self.build_level_gpu(level, cpu_count);
+            let gpu_start = self.build_level_cpu(level, cpu_count);
+            self.build_level_gpu(level, gpu_start);
             self.finish_graph_layers_builder_level(level);
         }
     }
@@ -296,6 +296,15 @@ impl<'a> GpuGraphBuilder<'a> {
             return;
         }
 
+        let mut gpu_entries = self
+            .requests
+            .iter()
+            .cloned()
+            .map(|entry| entry.unwrap_or(PointOffsetType::MAX))
+            .collect::<Vec<_>>();
+        self.gpu_builder_context
+            .upload_entries(&mut self.gpu_context, &gpu_entries);
+
         let level_m = self.get_m(level);
         if level == 0 {
             self.gpu_links
@@ -333,15 +342,29 @@ impl<'a> GpuGraphBuilder<'a> {
         self.run_gpu(&update_entry_buffer, &links_buffer);
 
         self.gpu_links.download(&mut self.gpu_context);
+
+        if level != 0 {
+            self.gpu_builder_context
+                .download_entries(&mut self.gpu_context, &mut gpu_entries);
+            for (idx, &entry) in gpu_entries.iter().enumerate() {
+                if entry != PointOffsetType::MAX {
+                    self.requests[idx] = Some(entry);
+                } else {
+                    self.requests[idx] = None;
+                }
+            }
+        }
+
         println!(
             "GPU level {}, links {}, updates {}",
             level, link_count, update_entry_count
         );
     }
 
-    fn build_level_cpu(&mut self, level: usize, limit: PointOffsetType) {
+    fn build_level_cpu(&mut self, level: usize, links_count: PointOffsetType) -> PointOffsetType {
         let level_m = self.get_m(level);
-        for idx in 0..limit {
+        let mut counter = 0;
+        for idx in 0..self.num_vectors() as PointOffsetType {
             if let Some(entry_point) = self.requests[idx as usize].clone() {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
@@ -349,10 +372,15 @@ impl<'a> GpuGraphBuilder<'a> {
                 if level > link_level && entry_level >= point_level {
                     self.update_entry(idx);
                 } else if link_level >= level {
+                    counter += 1;
+                    if counter == links_count {
+                        return idx;
+                    }
                     self.link_point(idx, level_m);
                 }
             }
         }
+        self.num_vectors() as PointOffsetType
     }
 
     fn link(
@@ -630,13 +658,13 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality() {
-        let num_vectors = 1000;
+        let num_vectors = 10000;
         let dim = 16;
         let m = 8;
         let m0 = 16;
         let ef_construct = 16;
         let entry_points_num = 10;
-        let gpu_threads_count = 2;
+        let gpu_threads_count = 4;
 
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
