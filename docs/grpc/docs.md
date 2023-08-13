@@ -2488,6 +2488,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | hnsw_ef | [uint64](#uint64) | optional | Params relevant to HNSW index. Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search. |
 | exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
 | quantization | [QuantizationSearchParams](#qdrant-QuantizationSearchParams) | optional | If set to true, search will ignore quantized vector data |
+| ignore_plain_index | [bool](#bool) | optional |  |
 
 
 
