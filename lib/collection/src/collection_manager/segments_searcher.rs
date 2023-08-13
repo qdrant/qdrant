@@ -434,6 +434,7 @@ fn search_in_segment(
     Ok((result, further_results))
 }
 
+#[inline(always)]
 fn execute_batch_search(
     segment: &LockedSegment,
     vectors_batch: &Vec<&[VectorElementType]>,
@@ -465,7 +466,7 @@ fn execute_batch_search(
     }
     let res = read_segment.search_batch(
         prev_params.vector_name,
-        &vectors_batch,
+       vectors_batch,
         &prev_params.with_payload,
         &prev_params.with_vector,
         prev_params.filter,
