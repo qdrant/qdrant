@@ -218,6 +218,7 @@ message SearchParams {
   If set to true, search will ignore quantized vector data 
   */
   optional QuantizationSearchParams quantization = 3;
+  optional bool ignore_plain_index = 4;
 }
 
 message SearchPoints {
