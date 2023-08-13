@@ -16,6 +16,7 @@ pub mod data_types;
 pub mod types;
 pub mod utils;
 pub mod vector_storage;
+mod query;
 
 #[macro_use]
 extern crate num_derive;
