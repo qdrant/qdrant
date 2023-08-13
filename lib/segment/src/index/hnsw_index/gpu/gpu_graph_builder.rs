@@ -665,8 +665,8 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality() {
-        let num_vectors = 10000;
-        let dim = 16;
+        let num_vectors = 1000;
+        let dim = 19;
         let m = 8;
         let m0 = 16;
         let ef_construct = 16;

@@ -10,7 +10,6 @@ pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
 #[repr(C)]
 struct GpuVectorParamsBuffer {
     dim: u32,
-    capacity: u32,
     count: u32,
 }
 
@@ -54,8 +53,7 @@ impl GpuVectorStorage {
         ));
 
         let params = GpuVectorParamsBuffer {
-            dim: dim as u32,
-            capacity: capacity as u32,
+            dim: capacity as u32,
             count: count as u32,
         };
         staging_buffer.upload(&params, 0);
@@ -80,7 +78,7 @@ impl GpuVectorStorage {
                 &extended_vector,
                 upload_points * capacity * std::mem::size_of::<f32>(),
             );
-            upload_size += vector.len() * std::mem::size_of::<f32>();
+            upload_size += capacity * std::mem::size_of::<f32>();
             upload_points += 1;
 
             if upload_points == upload_points_count {
@@ -93,6 +91,12 @@ impl GpuVectorStorage {
                 );
                 upload_context.run();
                 upload_context.wait_finish();
+
+                println!(
+                    "Uploaded {} vectors, {} MB",
+                    upload_points,
+                    upload_size / 1024 / 1024,
+                );
 
                 gpu_offset += upload_size;
                 upload_size = 0;
@@ -109,9 +113,15 @@ impl GpuVectorStorage {
             );
             upload_context.run();
             upload_context.wait_finish();
+
+            println!(
+                "Uploaded {} vectors, {} MB",
+                upload_points,
+                upload_size / 1024 / 1024,
+            );
         }
 
-        log::debug!(
+        println!(
             "Upload vector data to GPU time = {:?}, vector data size {} MB",
             timer.elapsed(),
             storage_size / 1024 / 1024
@@ -156,8 +166,9 @@ mod tests {
 
     #[test]
     fn test_gpu_vector_storage_scoring() {
-        let num_vectors = 1000;
-        let dim = 64;
+        let num_vectors = 3013;
+        let dim = 13;
+        let capacity = 16;
 
         let mut rnd = StdRng::seed_from_u64(42);
         let points = (0..num_vectors)
@@ -246,13 +257,9 @@ mod tests {
         context.run();
         context.wait_finish();
 
-        let mut vector_storage_params = GpuVectorParamsBuffer {
-            dim: 0,
-            capacity: 0,
-            count: 0,
-        };
+        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
         staging_buffer.download(&mut vector_storage_params, 0);
-        assert_eq!(vector_storage_params.dim, dim as u32);
+        assert_eq!(vector_storage_params.dim, capacity as u32);
         assert_eq!(vector_storage_params.count, num_vectors as u32);
 
         for i in 0..num_vectors {
