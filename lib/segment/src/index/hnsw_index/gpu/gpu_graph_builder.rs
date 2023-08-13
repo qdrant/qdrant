@@ -285,7 +285,7 @@ impl<'a> GpuGraphBuilder<'a> {
                     self.gpu_builder_context.descriptor_set.clone(),
                 ],
             );
-            self.gpu_context.dispatch(link_points.len(), 1, 1);
+            self.gpu_context.dispatch(1, 1, 1);
             self.gpu_context.run();
             self.gpu_context.wait_finish();
         }
