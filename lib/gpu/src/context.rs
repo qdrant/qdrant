@@ -12,6 +12,7 @@ pub struct Context {
     pub vk_command_buffer: vk::CommandBuffer,
     pub vk_fence: vk::Fence,
     pub resources: Vec<Arc<dyn Resource>>,
+    pub submit_info: Vec<vk::SubmitInfo>,
 }
 
 impl Drop for Context {
@@ -72,6 +73,7 @@ impl Context {
             vk_command_buffer: vk::CommandBuffer::null(),
             vk_fence,
             resources: Vec::new(),
+            submit_info: vec![],
         };
         context.init_command_buffer();
         context
@@ -197,13 +199,13 @@ impl Context {
                 .unwrap();
         }
 
-        let submit_info = vk::SubmitInfo::builder()
+        self.submit_info = vec![vk::SubmitInfo::builder()
             .command_buffers(&[self.vk_command_buffer])
-            .build();
+            .build()];
         unsafe {
             self.device
                 .vk_device
-                .queue_submit(self.vk_queue, &[submit_info], self.vk_fence)
+                .queue_submit(self.vk_queue, &self.submit_info, self.vk_fence)
                 .unwrap();
         }
     }
