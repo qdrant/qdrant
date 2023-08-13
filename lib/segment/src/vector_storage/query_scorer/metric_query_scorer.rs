@@ -3,12 +3,7 @@ use std::marker::PhantomData;
 use crate::data_types::vectors::VectorElementType;
 use crate::spaces::metric::Metric;
 use crate::types::ScoreType;
-
-pub trait QueryScorer {
-    fn score(&self, v2: &[VectorElementType]) -> ScoreType;
-
-    fn score_raw(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType;
-}
+use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct MetricQueryScorer<TMetric: Metric> {
     query: Vec<VectorElementType>,

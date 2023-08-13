@@ -5,12 +5,13 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::vector_storage::query_scorer::query_scorer::{MetricQueryScorer, QueryScorer};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::mmap_vectors::MmapVectors;
+use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage as _, DEFAULT_STOPPED};
 
 pub fn new<'a>(

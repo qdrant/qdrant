@@ -4,10 +4,11 @@ use bitvec::prelude::BitSlice;
 
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::VectorElementType;
-use crate::vector_storage::query_scorer::query_scorer::{MetricQueryScorer, QueryScorer};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+use crate::vector_storage::query_scorer::QueryScorer;
 
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
