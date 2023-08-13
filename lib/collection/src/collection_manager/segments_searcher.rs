@@ -9,7 +9,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig,
+    Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig, SegmentType,
     SeqNumberType, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
@@ -402,34 +402,17 @@ fn search_in_segment(
             // different params means different batches
             // execute what has been batched so far
             if !vectors_batch.is_empty() {
-                let locked_segment = segment.get();
-                let read_segment = locked_segment.read();
-                let segment_points = read_segment.available_point_count();
-                let top = if use_sampling {
-                    let ef_limit = prev_params.params.and_then(|p| p.hnsw_ef).or_else(|| {
-                        get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name)
-                    });
-                    sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
-                } else {
-                    prev_params.top
-                };
-
-                let mut res = read_segment.search_batch(
-                    prev_params.vector_name,
+                let (mut res, mut further) = execute_batch_search(
+                    &segment,
                     &vectors_batch,
-                    &prev_params.with_payload,
-                    &prev_params.with_vector,
-                    prev_params.filter,
-                    top,
-                    prev_params.params,
+                    &prev_params,
+                    use_sampling,
+                    total_points,
                     is_stopped,
                 )?;
-                for batch_result in &res {
-                    further_results.push(batch_result.len() == top);
-                }
+                further_results.append(&mut further);
                 result.append(&mut res);
-                // clear current batch
-                vectors_batch.clear();
+                vectors_batch.clear()
             }
             // start new batch for current search query
             vectors_batch.push(search_query.vector.get_vector().as_slice());
@@ -439,37 +422,69 @@ fn search_in_segment(
 
     // run last batch if any
     if !vectors_batch.is_empty() {
-        let locked_segment = segment.get();
-        let read_segment = locked_segment.read();
-        let segment_points = read_segment.available_point_count();
-        let top = if use_sampling {
-            let ef_limit = prev_params
-                .params
-                .and_then(|p| p.hnsw_ef)
-                .or_else(|| get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name));
-            sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
-        } else {
-            prev_params.top
-        };
-        let mut res = read_segment.search_batch(
-            prev_params.vector_name,
+        let (mut res, mut further) = execute_batch_search(
+            &segment,
             &vectors_batch,
-            &prev_params.with_payload,
-            &prev_params.with_vector,
-            prev_params.filter,
-            top,
-            prev_params.params,
+            &prev_params,
+            use_sampling,
+            total_points,
             is_stopped,
         )?;
-        for batch_result in &res {
-            further_results.push(batch_result.len() == top);
-        }
+        further_results.append(&mut further);
         result.append(&mut res);
     }
 
     Ok((result, further_results))
 }
 
+fn execute_batch_search(
+    segment: &LockedSegment,
+    vectors_batch: &Vec<&[VectorElementType]>,
+    prev_params: &BatchSearchParams,
+    use_sampling: bool,
+    total_points: usize,
+    is_stopped: &AtomicBool,
+) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
+    let locked_segment = segment.get();
+    let read_segment = locked_segment.read();
+    let segment_points = read_segment.available_point_count();
+    let top = if use_sampling {
+        let ef_limit = prev_params
+            .params
+            .and_then(|p| p.hnsw_ef)
+            .or_else(|| get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name));
+        sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
+    } else {
+        prev_params.top
+    };
+    if prev_params
+        .params
+        .map(|p| p.ignore_plain_index)
+        .unwrap_or(false)
+        && read_segment.segment_type() == SegmentType::Plain
+    {
+        log::debug!("ignore plain index search:{:?}", read_segment.info());
+        let batch_len = vectors_batch.len();
+        return Ok((vec![vec![]; batch_len], vec![false; batch_len]));
+    }
+    let res = read_segment.search_batch(
+        prev_params.vector_name,
+        &vectors_batch,
+        &prev_params.with_payload,
+        &prev_params.with_vector,
+        prev_params.filter,
+        top,
+        prev_params.params,
+        is_stopped,
+    )?;
+
+    let further_results = res
+        .iter()
+        .map(|batch_result| batch_result.len() == top)
+        .collect();
+
+    Ok((res, further_results))
+}
 /// Find the HNSW ef_construct for a named vector
 ///
 /// If the given named vector has no HNSW index, `None` is returned.
