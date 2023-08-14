@@ -465,7 +465,7 @@ fn execute_batch_search(
     }
     let res = read_segment.search_batch(
         prev_params.vector_name,
-        &vectors_batch,
+        vectors_batch,
         &prev_params.with_payload,
         &prev_params.with_vector,
         prev_params.filter,
