@@ -64,8 +64,10 @@ pub trait RawScorer {
 }
 
 pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer> {
-    pub points_count: PointOffsetType,
     pub query_scorer: TQueryScorer,
+    /// Point deleted flags should be explicitly present as `false`
+    /// for each existing point in the segment.
+    /// If there are no flags for some points, they are considered deleted.
     /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
     pub point_deleted: &'a BitSlice,
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
@@ -121,40 +123,41 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
-    let points_count = vector_storage.total_vector_count() as PointOffsetType;
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match vector_storage.distance() {
-        Distance::Cosine => Box::new(RawScorerImpl::<
-            'a,
-            MetricQueryScorer<'a, CosineMetric, TVectorStorage>,
-        > {
-            points_count,
-            query_scorer: MetricQueryScorer::new(vector, vector_storage),
+        Distance::Cosine => raw_scorer_from_query_scorer(
+            MetricQueryScorer::<CosineMetric, TVectorStorage>::new(vector, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
-        }),
-        Distance::Euclid => Box::new(RawScorerImpl::<
-            'a,
-            MetricQueryScorer<'a, EuclidMetric, TVectorStorage>,
-        > {
-            points_count,
-            query_scorer: MetricQueryScorer::new(vector, vector_storage),
+        ),
+        Distance::Euclid => raw_scorer_from_query_scorer(
+            MetricQueryScorer::<EuclidMetric, TVectorStorage>::new(vector, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
-        }),
-        Distance::Dot => Box::new(RawScorerImpl::<
-            'a,
-            MetricQueryScorer<'a, DotProductMetric, TVectorStorage>,
-        > {
-            points_count,
-            query_scorer: MetricQueryScorer::new(vector, vector_storage),
+        ),
+        Distance::Dot => raw_scorer_from_query_scorer(
+            MetricQueryScorer::<DotProductMetric, TVectorStorage>::new(vector, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
-        }),
+        ),
     }
+}
+
+pub fn raw_scorer_from_query_scorer<'a, TQueryScorer: QueryScorer + 'a>(
+    query_scorer: TQueryScorer,
+    point_deleted: &'a BitSlice,
+    vec_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> Box<dyn RawScorer + 'a> {
+    Box::new(RawScorerImpl::<TQueryScorer> {
+        query_scorer,
+        point_deleted,
+        vec_deleted,
+        is_stopped,
+    })
 }
 
 impl<'a, TQueryScorer> RawScorer for RawScorerImpl<'a, TQueryScorer>
@@ -201,9 +204,8 @@ where
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {
-        point < self.points_count
-            // Deleted points propagate to vectors; check vector deletion for possible early return
-            && !self
+        // Deleted points propagate to vectors; check vector deletion for possible early return
+        !self
                 .vec_deleted
                 .get(point as usize)
                 .map(|x| *x)
@@ -242,7 +244,7 @@ where
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
-        let scores = (0..self.points_count)
+        let scores = (0..self.point_deleted.len() as PointOffsetType)
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
