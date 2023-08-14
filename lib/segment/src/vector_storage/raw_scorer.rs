@@ -10,6 +10,18 @@ use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
 
+/// RawScorer            QueryScorer        Metric
+/// ┌────────────────┐   ┌──────────────┐   ┌───────────────────┐
+/// │                │   │              │   │  - Cosine         │
+/// │       ┌─────┐  │   │     ┌─────┐  │   │  - Dot            │
+/// │       │     │◄─┼───┤     │     │◄─┼───┤  - Euclidean      │
+/// │       └─────┘  │   │     └─────┘  │   │                   │
+/// │                │   │              │   │                   │
+/// └────────────────┘   └──────────────┘   └───────────────────┘
+/// - Deletions          - Scoring logic    - Vector Distance
+/// - Stopping           - Query holding
+/// - Access patterns    - Complex Queries
+///
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
 pub trait RawScorer {
@@ -51,10 +63,9 @@ pub trait RawScorer {
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
 }
 
-pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer, TVectorStorage: VectorStorage> {
+pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer> {
     pub points_count: PointOffsetType,
     pub query_scorer: TQueryScorer,
-    pub vector_storage: &'a TVectorStorage,
     /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
     pub point_deleted: &'a BitSlice,
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
@@ -113,49 +124,42 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match vector_storage.distance() {
-        Distance::Cosine => {
-            Box::new(
-                RawScorerImpl::<'a, MetricQueryScorer<CosineMetric>, TVectorStorage> {
-                    points_count,
-                    query_scorer: MetricQueryScorer::new(vector),
-                    vector_storage,
-                    point_deleted,
-                    vec_deleted,
-                    is_stopped,
-                },
-            )
-        }
-        Distance::Euclid => {
-            Box::new(
-                RawScorerImpl::<'a, MetricQueryScorer<EuclidMetric>, TVectorStorage> {
-                    points_count,
-                    query_scorer: MetricQueryScorer::new(vector),
-                    vector_storage,
-                    point_deleted,
-                    vec_deleted,
-                    is_stopped,
-                },
-            )
-        }
-        Distance::Dot => {
-            Box::new(
-                RawScorerImpl::<'a, MetricQueryScorer<DotProductMetric>, TVectorStorage> {
-                    points_count,
-                    query_scorer: MetricQueryScorer::new(vector),
-                    vector_storage,
-                    point_deleted,
-                    vec_deleted,
-                    is_stopped,
-                },
-            )
-        }
+        Distance::Cosine => Box::new(RawScorerImpl::<
+            'a,
+            MetricQueryScorer<'a, CosineMetric, TVectorStorage>,
+        > {
+            points_count,
+            query_scorer: MetricQueryScorer::new(vector, vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        }),
+        Distance::Euclid => Box::new(RawScorerImpl::<
+            'a,
+            MetricQueryScorer<'a, EuclidMetric, TVectorStorage>,
+        > {
+            points_count,
+            query_scorer: MetricQueryScorer::new(vector, vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        }),
+        Distance::Dot => Box::new(RawScorerImpl::<
+            'a,
+            MetricQueryScorer<'a, DotProductMetric, TVectorStorage>,
+        > {
+            points_count,
+            query_scorer: MetricQueryScorer::new(vector, vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        }),
     }
 }
 
-impl<'a, TQueryScorer, TVectorStorage> RawScorer for RawScorerImpl<'a, TQueryScorer, TVectorStorage>
+impl<'a, TQueryScorer> RawScorer for RawScorerImpl<'a, TQueryScorer>
 where
     TQueryScorer: QueryScorer,
-    TVectorStorage: VectorStorage,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         if self.is_stopped.load(Ordering::Relaxed) {
@@ -166,10 +170,9 @@ where
             if !self.check_vector(point_id) {
                 continue;
             }
-            let other_vector = self.vector_storage.get_vector(point_id);
             scores[size] = ScoredPointOffset {
                 idx: point_id,
-                score: self.query_scorer.score(other_vector),
+                score: self.query_scorer.score_stored(point_id),
             };
 
             size += 1;
@@ -189,10 +192,9 @@ where
         }
         let mut scores = vec![];
         for point_id in points {
-            let other_vector = self.vector_storage.get_vector(point_id);
             scores.push(ScoredPointOffset {
                 idx: point_id,
-                score: self.query_scorer.score(other_vector),
+                score: self.query_scorer.score_stored(point_id),
             });
         }
         scores
@@ -217,15 +219,11 @@ where
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
-        let other_vector = self.vector_storage.get_vector(point);
-        self.query_scorer.score(other_vector)
+        self.query_scorer.score_stored(point)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        let vector_a = self.vector_storage.get_vector(point_a);
-        let vector_b = self.vector_storage.get_vector(point_b);
-
-        TQueryScorer::score_raw(vector_a, vector_b)
+        self.query_scorer.score_internal(point_a, point_b)
     }
 
     fn peek_top_iter(
@@ -236,12 +234,9 @@ where
         let scores = points
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
-            .map(|point_id| {
-                let other_vector = self.vector_storage.get_vector(point_id);
-                ScoredPointOffset {
-                    idx: point_id,
-                    score: self.query_scorer.score(other_vector),
-                }
+            .map(|point_id| ScoredPointOffset {
+                idx: point_id,
+                score: self.query_scorer.score_stored(point_id),
             });
         peek_top_largest_iterable(scores, top)
     }
@@ -252,10 +247,9 @@ where
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let point_id = point_id as PointOffsetType;
-                let other_vector = &self.vector_storage.get_vector(point_id);
                 ScoredPointOffset {
                     idx: point_id,
-                    score: self.query_scorer.score(other_vector),
+                    score: self.query_scorer.score_stored(point_id),
                 }
             });
         peek_top_largest_iterable(scores, top)

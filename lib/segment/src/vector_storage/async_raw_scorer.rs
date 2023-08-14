@@ -134,14 +134,11 @@ where
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
-        let other_vector = self.storage.get_vector(point);
-        self.query_scorer.score(other_vector)
+        self.query_scorer.score_stored(point)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        let vector_a = self.storage.get_vector(point_a);
-        let vector_b = self.storage.get_vector(point_b);
-        TQueryScorer::score_raw(vector_a, vector_b)
+        self.query_scorer.score_internal(point_a, point_b)
     }
 
     fn peek_top_iter(
@@ -206,7 +203,7 @@ where
 struct AsyncRawScorerBuilder<'a> {
     points_count: PointOffsetType,
     vector: Vec<VectorElementType>,
-    storage: &'a MmapVectors,
+    storage: &'a MemmapVectorStorage,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     distance: Distance,
@@ -223,7 +220,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         let vec_deleted = storage.deleted_vector_bitslice();
 
         let distance = storage.distance();
-        let storage = storage.get_mmap_vectors();
 
         let builder = Self {
             points_count,
@@ -253,11 +249,11 @@ impl<'a> AsyncRawScorerBuilder<'a> {
 
     fn with_metric_scorer<TMetric: Metric>(
         self,
-    ) -> AsyncRawScorerImpl<'a, MetricQueryScorer<TMetric>> {
+    ) -> AsyncRawScorerImpl<'a, MetricQueryScorer<'a, TMetric, MemmapVectorStorage>> {
         AsyncRawScorerImpl::new(
             self.points_count,
-            MetricQueryScorer::new(self.vector),
-            self.storage,
+            MetricQueryScorer::new(self.vector, self.storage),
+            self.storage.get_mmap_vectors(),
             self.point_deleted,
             self.vec_deleted,
             self.is_stopped.unwrap_or(&DEFAULT_STOPPED),
