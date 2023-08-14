@@ -18,6 +18,7 @@ pub struct DescriptorSet {
     pub storage_buffers: Vec<(usize, Arc<Buffer>)>,
     pub vk_descriptor_pool: vk::DescriptorPool,
     pub vk_descriptor_set: vk::DescriptorSet,
+    pub vk_descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 }
 
 impl Resource for DescriptorSet {}
@@ -75,11 +76,9 @@ impl DescriptorSet {
     ) -> Self {
         let vk_descriptor_pool =
             Self::create_vk_descriptor_pool(&device, &uniform_buffers, &storage_buffers);
-        let vk_descriptor_set = Self::create_vk_descriptor_set(
-            &device,
-            layout.vk_descriptor_set_layout,
-            vk_descriptor_pool,
-        );
+        let vk_descriptor_set_layouts = vec![layout.vk_descriptor_set_layout];
+        let vk_descriptor_set =
+            Self::create_vk_descriptor_set(&device, &vk_descriptor_set_layouts, vk_descriptor_pool);
         let result = Self {
             device,
             layout,
@@ -87,6 +86,7 @@ impl DescriptorSet {
             storage_buffers,
             vk_descriptor_pool,
             vk_descriptor_set,
+            vk_descriptor_set_layouts,
         };
         result.update();
         result
@@ -133,12 +133,12 @@ impl DescriptorSet {
 
     fn create_vk_descriptor_set(
         device: &Arc<Device>,
-        vk_descriptor_set_layout: vk::DescriptorSetLayout,
+        vk_descriptor_set_layout: &[vk::DescriptorSetLayout],
         vk_descriptor_pool: vk::DescriptorPool,
     ) -> vk::DescriptorSet {
         let vk_descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(vk_descriptor_pool)
-            .set_layouts(&[vk_descriptor_set_layout])
+            .set_layouts(vk_descriptor_set_layout)
             .build();
         unsafe {
             *device
