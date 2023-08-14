@@ -1716,8 +1716,12 @@ impl Collection {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
-    ) -> CollectionResult<bool> {
-        self.assert_is_shard_local(shard_id).await?;
+    ) -> CollectionResult<()> {
+        if !self.contains_shard(shard_id).await {
+            return Err(CollectionError::NotFound {
+                what: format!("Shard {shard_id}"),
+            });
+        }
 
         let snapshot = std::fs::File::open(snapshot_path)?;
 
@@ -1755,15 +1759,17 @@ impl Collection {
 
         task.await??;
 
-        let recover_result = self
+        let recovered = self
             .recover_local_shard_from(snapshot_temp_dir.path(), shard_id)
-            .await;
+            .await?;
 
-        if let Err(err) = snapshot_temp_dir.close() {
-            log::error!("Failed to remove temporary directory: {err}");
+        if !recovered {
+            return Err(CollectionError::bad_request(format!(
+                "Invalid snapshot {snapshot_file_name}"
+            )));
         }
 
-        recover_result
+        Ok(())
     }
 
     async fn assert_is_shard_local(&self, shard_id: ShardId) -> CollectionResult<()> {
