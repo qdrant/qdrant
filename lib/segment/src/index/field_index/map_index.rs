@@ -74,8 +74,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
                 self.indexed_points += 1;
             }
             self.values_count += 1;
-            self.point_to_values[idx as usize].push(value.clone());
-            self.map.entry(value).or_default().insert(idx);
+
+            let entry = self.map.entry(value);
+            self.point_to_values[idx as usize].push(entry.key().clone());
+            entry.or_default().insert(idx);
         }
         Ok(true)
     }
@@ -120,12 +122,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
-        self.point_to_values[idx as usize] = values.into_iter().map(|v| v.into()).collect();
-        for value in &self.point_to_values[idx as usize] {
-            let entry = self.map.entry(value.clone()).or_default();
-            entry.insert(idx);
 
-            let db_record = Self::encode_db_record(value, idx);
+        self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
+        for value in values {
+            let entry = self.map.entry(value.into());
+            self.point_to_values[idx as usize].push(entry.key().clone());
+            let db_record = Self::encode_db_record(entry.key(), idx);
+            entry.or_default().insert(idx);
             self.db_wrapper.put(db_record, [])?;
         }
         self.indexed_points += 1;
