@@ -5166,9 +5166,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-tracy"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55c48ef3e655220d4e43a6be44aa84f078c3004357251cab45f9cc15551a593e"
+checksum = "8f3edd27f53bc0e55aefa9223f68eb44354060103d3e34635f6e27627fe0227f"
 dependencies = [
  "tracing-core",
  "tracing-subscriber",
@@ -5177,9 +5177,9 @@ dependencies = [
 
 [[package]]
 name = "tracy-client"
-version = "0.15.2"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434ecabbda9f67eeea1eab44d52f4a20538afa3e2c2770f2efc161142b25b608"
+checksum = "1c78458aa3759647e0399e959a06f9f6dc61450a1caaa4f1632a3df8e8c55af7"
 dependencies = [
  "loom",
  "once_cell",
