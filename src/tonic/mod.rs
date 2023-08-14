@@ -6,6 +6,7 @@ mod tonic_telemetry;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
@@ -17,6 +18,7 @@ use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{
     HealthCheckReply, HealthCheckRequest, HttpPortRequest, HttpPortResponse,
+    WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
@@ -53,12 +55,15 @@ impl Qdrant for QdrantService {
 pub struct QdrantInternalService {
     /// HTTP port accessible from inside the cluster
     http_port: u16,
+    /// Consensus state
+    consensus_state: ConsensusStateRef,
 }
 
 impl QdrantInternalService {
-    fn new(internal_http_port: u16) -> Self {
+    fn new(internal_http_port: u16, consensus_state: ConsensusStateRef) -> Self {
         Self {
             http_port: internal_http_port,
+            consensus_state,
         }
     }
 }
@@ -72,6 +77,48 @@ impl QdrantInternal for QdrantInternalService {
         Ok(Response::new(HttpPortResponse {
             port: self.http_port as i32,
         }))
+    }
+
+    async fn wait_on_consensus_commit(
+        &self,
+        request: Request<WaitOnConsensusCommitRequest>,
+    ) -> Result<Response<WaitOnConsensusCommitResponse>, Status> {
+        let request = request.into_inner();
+        let commit = request.commit as u64;
+        let term = request.term as u64;
+        let ok = wait_for_consensus_commit(&self.consensus_state, commit, term).await;
+        Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
+    }
+}
+
+/// Wait and block until consensus reaches a `commit` and `term`
+///
+/// # Returns
+///
+/// Returns `true` if succesful.
+/// Returns `false` on failure, if we have diverged commit/term for example.
+async fn wait_for_consensus_commit(
+    consensus_state: &ConsensusStateRef,
+    commit: u64,
+    term: u64,
+) -> bool {
+    // TODO: naive approach with spinlock for waiting on commit/term, find better way
+    loop {
+        let state = &consensus_state.hard_state();
+
+        // Okay if we're on a newer term, or if commit is reached within same term
+        let is_ok = state.term > term || (state.term == term && state.commit >= commit);
+        if is_ok {
+            return true;
+        }
+
+        // Fail if commit is reached but we're on an older term
+        let is_fail = state.term < term && state.commit >= commit;
+        if is_fail {
+            return false;
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await
     }
 }
 
@@ -207,7 +254,8 @@ pub fn init_internal(
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
             let qdrant_service = QdrantService::default();
-            let qdrant_internal_service = QdrantInternalService::new(settings.service.http_port);
+            let qdrant_internal_service =
+                QdrantInternalService::new(settings.service.http_port, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
             let raft_service = RaftService::new(to_consensus, consensus_state);
