@@ -5,7 +5,10 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
+use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
+use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::collection_state;
 use collection::config::{
@@ -19,9 +22,9 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    AliasDescription, CollectionResult, CountRequest, CountResult, GroupsResult, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
-    SearchRequestBatch, UpdateResult, VectorsConfig,
+    AliasDescription, CollectionError, CollectionResult, CountRequest, CountResult, GroupsResult,
+    PointRequest, RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult,
+    SearchRequest, SearchRequestBatch, UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -34,10 +37,14 @@ use collection::shards::transfer::shard_transfer::{
 };
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
+use futures::future::try_join_all;
+use futures::Future;
 use segment::common::cpu::get_num_cpus;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
+use tonic::transport::Channel;
+use tonic::Status;
 use uuid::Uuid;
 
 use super::collection_meta_ops::{
@@ -1631,6 +1638,99 @@ impl TableOfContent {
     pub fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.general_runtime
             .block_on(self.remove_shards_at_peer(peer_id))
+    }
+
+    /// Wait until all other known peers reach the given commit
+    ///
+    /// # Errors
+    ///
+    /// This errors if:
+    /// - any of the peers has a diverged commit/term and the specified commit can never be reached
+    /// - waiting takes longer than the specified timeout
+    /// - any of the peers cannot be reached
+    pub async fn await_commit_on_all_peers(
+        &self,
+        commit: u64,
+        term: u64,
+        timeout: Duration,
+    ) -> Result<(), StorageError> {
+        let requests = self
+            .peer_address_by_id()
+            .keys()
+            .filter(|id| **id != self.this_peer_id)
+            .map(|peer_id| self.await_commit_on_peer(*peer_id, commit, term))
+            .collect::<Vec<_>>();
+        let responses = try_join_all(requests);
+
+        // Handle requests with timeout
+        tokio::time::timeout(timeout, responses)
+            .await
+            .map_err(|_elapsed| StorageError::Timeout {
+                description: "Failed to wait for consensus commit on all peers, timed out.".into(),
+            })?
+            .map(|_oks| ())
+    }
+
+    /// Wait until the given peer reaches the given commit
+    ///
+    /// # Errors
+    ///
+    /// This errors if the given peer has a diverged commit/term and the specified commit can never
+    /// be reached. Also errors if the peer cannot be reached.
+    pub async fn await_commit_on_peer(
+        &self,
+        peer_id: PeerId,
+        commit: u64,
+        term: u64,
+    ) -> Result<(), StorageError> {
+        let response = self
+            .with_qdrant_client(peer_id, |mut client| async move {
+                let request = WaitOnConsensusCommitRequest {
+                    commit: commit as i64,
+                    term: term as i64,
+                };
+                client
+                    .wait_on_consensus_commit(tonic::Request::new(request))
+                    .await
+            })
+            .await
+            .map_err(|err| {
+                StorageError::service_error(format!(
+                    "Failed to wait for consensus commit on peer {peer_id}: {err}"
+                ))
+            })?
+            .into_inner();
+
+        // Create error if wait request failed
+        if !response.ok {
+            return Err(StorageError::service_error(format!(
+                "Failed to wait for consensus commit on peer {peer_id}, has diverged commit/term."
+            )));
+        }
+        Ok(())
+    }
+
+    async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        peer_id: PeerId,
+        f: impl Fn(QdrantInternalClient<Channel>) -> O,
+    ) -> Result<T, CollectionError> {
+        let address = self
+            .channel_service
+            .id_to_address
+            .read()
+            .get(&peer_id)
+            .ok_or_else(|| CollectionError::service_error("Address for peer ID is not found."))?
+            .clone();
+        self.channel_service
+            .channel_pool
+            .with_channel(&address, |channel| {
+                let client = QdrantInternalClient::new(channel);
+                let client = client.max_decoding_message_size(usize::MAX);
+                f(client)
+            })
+            .await
+            .map_err(Into::into)
     }
 }
 
