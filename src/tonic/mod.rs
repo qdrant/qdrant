@@ -95,7 +95,7 @@ impl QdrantInternal for QdrantInternalService {
 ///
 /// # Returns
 ///
-/// Returns `true` if succesful.
+/// Returns `true` if successful.
 /// Returns `false` on failure, if we have diverged commit/term for example.
 async fn wait_for_consensus_commit(
     consensus_state: &ConsensusStateRef,
