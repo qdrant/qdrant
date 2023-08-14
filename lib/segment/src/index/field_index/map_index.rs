@@ -28,7 +28,7 @@ use crate::types::{
 use crate::vector_storage::div_ceil;
 
 /// HashMap-based type of index
-pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
+pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr + Default> {
     map: HashMap<N, BTreeSet<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,
     /// Amount of point which have at least one indexed payload value
@@ -37,7 +37,7 @@ pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     db_wrapper: DatabaseColumnWrapper,
 }
 
-pub struct ImmutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
+pub struct ImmutableMapIndex<N: Hash + Eq + Clone + Display + FromStr + Default> {
     value_to_points: HashMap<N, Range<u32>>,
     value_to_points_container: Vec<PointOffsetType>,
     point_to_values: Vec<Range<u32>>,
@@ -48,12 +48,12 @@ pub struct ImmutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     db_wrapper: DatabaseColumnWrapper,
 }
 
-pub enum MapIndexEnum<N: Hash + Eq + Clone + Display + FromStr> {
+pub enum MapIndexEnum<N: Hash + Eq + Clone + Display + FromStr + Default> {
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MutableMapIndex<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = Self::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
@@ -114,7 +114,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MutableMapIndex<N> {
     }
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for MutableMapIndex<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> for MutableMapIndex<N> {
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
         &self.db_wrapper
     }
@@ -199,7 +199,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for MutableMapIndex<N
     }
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> ImmutableMapIndex<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = Self::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
@@ -214,13 +214,40 @@ impl<N: Hash + Eq + Clone + Display + FromStr> ImmutableMapIndex<N> {
         }
     }
 
-    fn remove_point(&mut self, _idx: PointOffsetType) -> OperationResult<()> {
-        // TODO(ivan)
-        todo!()
+    fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        if self.point_to_values.len() <= idx as usize {
+            return Ok(());
+        }
+
+        let removed_values = self.point_to_values[idx as usize].clone();
+
+        if !removed_values.is_empty() {
+            self.indexed_points -= 1;
+        }
+        self.values_count -= removed_values.len();
+
+        for value_index in removed_values {
+            let value = std::mem::take(&mut self.point_to_values_container[value_index as usize]);
+            if let Some(vals_range) = self.value_to_points.get_mut(&value) {
+                if vals_range.start != vals_range.end {
+                    let range = vals_range.start as usize..vals_range.end as usize;
+                    let vals = &self.value_to_points_container[range.clone()];
+                    if let Some(pos) = vals.iter().position(|&x| x == idx) {
+                        self.value_to_points_container
+                            .swap(range.start + pos, range.end - 1);
+                        vals_range.end -= 1;
+                    }
+                }
+            }
+            let key = Self::encode_db_record(&value, idx);
+            self.db_wrapper.remove(key)?;
+        }
+
+        Ok(())
     }
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for ImmutableMapIndex<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> for ImmutableMapIndex<N> {
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
         &self.db_wrapper
     }
@@ -329,13 +356,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for ImmutableMapIndex
     }
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MapIndexEnum<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndexEnum<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         MapIndexEnum::Mutable(MutableMapIndex::new(db, field_name))
     }
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for MapIndexEnum<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> for MapIndexEnum<N> {
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
         match self {
             MapIndexEnum::Mutable(index) => index.get_db_wrapper(),
@@ -423,7 +450,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> for MapIndexEnum<N> {
     }
 }
 
-pub trait MapIndex<N: Hash + Eq + Clone + Display + FromStr> {
+pub trait MapIndex<N: Hash + Eq + Clone + Display + FromStr + Default> {
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper;
 
     fn storage_cf_name(field: &str) -> String {
@@ -570,7 +597,6 @@ pub trait MapIndex<N: Hash + Eq + Clone + Display + FromStr> {
         // exp = ...
         // max = min(60, 20) = 20
 
-        // todo
         let excluded_value_counts: Vec<_> = excluded
             .map(|val| self.get_points_with_value_count(val.borrow()).unwrap_or(0))
             .collect();
@@ -874,7 +900,7 @@ mod tests {
 
     const FIELD_NAME: &str = "test";
 
-    fn save_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug>(
+    fn save_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug + Default>(
         data: &[Vec<N>],
         path: &Path,
     ) {
