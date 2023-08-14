@@ -75,7 +75,32 @@ where
 
 pub async fn time<T, Fut>(future: Fut) -> impl actix_web::Responder
 where
-    Fut: Future<Output = Result<T, HttpError>>,
+    Fut: Future<Output = HttpResult<T>>,
+    T: serde::Serialize,
+{
+    time_impl(async move { future.await.map(Some) }).await
+}
+
+pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> impl actix_web::Responder
+where
+    Fut: Future<Output = HttpResult<T>> + Send + 'static,
+    T: serde::Serialize + Send + 'static,
+{
+    let future = async move {
+        if wait {
+            future.await.map(Some)
+        } else {
+            drop(tokio::task::spawn(future)); // drop `JoinHandle` explicitly to make clippy happy
+            Ok(None)
+        }
+    };
+
+    time_impl(future).await
+}
+
+async fn time_impl<T, Fut>(future: Fut) -> impl actix_web::Responder
+where
+    Fut: Future<Output = HttpResult<Option<T>>>,
     T: serde::Serialize,
 {
     let instant = Instant::now();
@@ -83,29 +108,37 @@ where
     let time = instant.elapsed().as_secs_f64();
 
     let (status_code, response) = match result {
-        Ok(resp) => {
-            let resp = ApiResponse {
-                result: Some(resp),
-                status: ApiStatus::Ok,
+        Ok(result) => {
+            let (status_code, status) = if result.is_some() {
+                (http::StatusCode::OK, ApiStatus::Ok)
+            } else {
+                (http::StatusCode::ACCEPTED, ApiStatus::Accepted)
+            };
+
+            let response = ApiResponse {
+                result,
+                status,
                 time,
             };
 
-            (http::StatusCode::OK, resp)
+            (status_code, response)
         }
 
-        Err(err) => {
-            let resp = ApiResponse {
+        Err(error) => {
+            let response = ApiResponse {
                 result: None,
-                status: ApiStatus::Error(err.to_string()),
+                status: ApiStatus::Error(error.to_string()),
                 time,
             };
 
-            (err.status_code(), resp)
+            (error.status_code(), response)
         }
     };
 
     HttpResponse::build(status_code).json(response)
 }
+
+pub type HttpResult<T, E = HttpError> = Result<T, E>;
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{description}")]
