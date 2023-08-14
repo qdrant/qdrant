@@ -13,7 +13,7 @@ use crate::content_manager::snapshots::download::{download_snapshot, downloaded_
 use crate::dispatcher::Dispatcher;
 use crate::{StorageError, TableOfContent};
 
-async fn activate_shard(
+pub async fn activate_shard(
     toc: &TableOfContent,
     collection: &Collection,
     peer_id: PeerId,

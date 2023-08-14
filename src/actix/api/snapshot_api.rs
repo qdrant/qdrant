@@ -7,14 +7,15 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
-use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
+use storage::content_manager::snapshots::recover::{activate_shard, do_recover_from_snapshot};
 use storage::content_manager::snapshots::{
-    do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
+    self, do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots, get_full_snapshot_path,
 };
 use storage::content_manager::toc::{TableOfContent, SNAPSHOTS_TEMP_DIR};
@@ -295,6 +296,7 @@ async fn list_shard_snapshots(
 async fn create_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
+    query: web::Query<SnapshottingParam>,
 ) -> impl Responder {
     let future = async move {
         let (collection, shard) = path.into_inner();
@@ -306,13 +308,14 @@ async fn create_shard_snapshot(
         Ok(snapshot)
     };
 
-    helpers::time(future).await
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
 async fn delete_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
+    query: web::Query<SnapshottingParam>,
 ) -> impl Responder {
     let future = async move {
         let (collection, shard, snapshot) = path.into_inner();
@@ -330,7 +333,7 @@ async fn delete_shard_snapshot(
         Ok(())
     };
 
-    helpers::time(future).await
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
 #[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
@@ -350,38 +353,53 @@ async fn upload_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
+    query: web::Query<SnapshotUploadingParam>,
 ) -> impl Responder {
     let future = async move {
         let (collection, shard, snapshot) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshots_path = collection.get_snapshots_path_for_shard(shard).await?;
+        let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
 
-        if !snapshots_path.exists() {
-            std::fs::create_dir_all(&snapshots_path)?;
+        if !snapshots_dir.exists() {
+            std::fs::create_dir_all(&snapshots_dir)?;
         }
+
+        let snapshot_path = snapshots_dir.join(snapshot);
 
         form.snapshot
             .file
-            .persist(snapshots_path.join(snapshot))
+            .persist(snapshot_path)
             .map_err(io::Error::from)?;
+
+        // TODO: Handle Raft state notification/transition!
 
         Ok(())
     };
 
-    helpers::time(future).await
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-#[post("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+#[post("/collections/{collection}/shards/{shard}/snapshots")]
 async fn restore_shard_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, ShardId, String)>,
+    path: web::Path<(String, ShardId)>,
+    query: web::Query<SnapshottingParam>,
+    web::Json(request): web::Json<SnapshotRecover>,
 ) -> impl Responder {
     let future = async move {
-        let (collection, shard, snapshot) = path.into_inner();
+        let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshot_path = collection.get_shard_snapshot_path(shard, snapshot).await?;
+        let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
 
-        let result = collection
+        // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!
+
+        let snapshot_path =
+            snapshots::download::download_snapshot(request.location, &snapshots_dir).await?;
+
+        // TODO: Check snapshot compatibility?
+        // TODO: Switch replica into `Partial` state?
+
+        collection
             .restore_shard_snapshot(
                 shard,
                 &snapshot_path,
@@ -391,10 +409,62 @@ async fn restore_shard_snapshot(
             )
             .await?;
 
-        Ok(result)
+        let state = collection.state().await;
+        let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
+
+        let other_active_replicas: Vec<_> = shard_info
+            .replicas
+            .iter()
+            .map(|(&peer, &state)| (peer, state))
+            .filter(|&(peer, state)| peer != toc.this_peer_id && state == ReplicaState::Active)
+            .collect();
+
+        if other_active_replicas.is_empty() {
+            activate_shard(&toc, &collection, toc.this_peer_id, &shard).await?;
+        } else {
+            match request.priority.unwrap_or_default() {
+                SnapshotPriority::Snapshot => {
+                    activate_shard(&toc, &collection, toc.this_peer_id, &shard).await?;
+
+                    let replicas_to_keep = state.config.params.replication_factor.get() - 1;
+
+                    let replicas_to_remove = other_active_replicas
+                        .len()
+                        .saturating_sub(replicas_to_keep as usize);
+
+                    let mut other_active_replicas = other_active_replicas.iter().copied();
+
+                    for (peer, _) in other_active_replicas.by_ref().take(replicas_to_remove) {
+                        toc.request_remove_replica(collection.name(), shard, peer)?;
+                    }
+
+                    for (peer, _) in other_active_replicas {
+                        toc.send_set_replica_state_proposal(
+                            collection.name(),
+                            peer,
+                            shard,
+                            ReplicaState::Dead,
+                            None,
+                        )?;
+                    }
+                }
+
+                SnapshotPriority::Replica => {
+                    toc.send_set_replica_state_proposal(
+                        collection.name(),
+                        toc.this_peer_id,
+                        shard,
+                        ReplicaState::Dead,
+                        None,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
     };
 
-    helpers::time(future).await
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
 // Configure services
