@@ -1,8 +1,9 @@
 import pathlib
 from random import randrange
 
-from .utils import *
 from .assertions import assert_http_ok
+from .fixtures import upsert_random_points
+from .utils import *
 
 N_PEERS = 5
 
@@ -52,6 +53,10 @@ def test_collection_creation_after_dropping(tmp_path: pathlib.Path):
             json={"vectors": {"size": 4, "distance": "Dot"}},
         )
         assert_http_ok(r)
+
+        # Upload some points to every peer
+        for uri in peer_api_uris:
+            upsert_random_points(uri, collection_name="test_collection", num=50, wait="false")
 
     # Get collections on all peers
     for i in range(N_PEERS):
