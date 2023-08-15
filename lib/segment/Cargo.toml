@@ -70,7 +70,7 @@ common = {path = "../common"}
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.15", default-features = false }
-io-uring = "0.6.0"
+io-uring = "0.6.1"
 
 [[bench]]
 name = "vector_search"
