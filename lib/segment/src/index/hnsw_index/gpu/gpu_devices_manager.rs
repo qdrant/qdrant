@@ -9,6 +9,7 @@ use crate::common::operation_error::OperationResult;
 /// Simple non-invasive permits to use GPU devices.
 pub struct GpuDevicesMaganer {
     devices: Vec<Mutex<Arc<gpu::Device>>>,
+    device_names: Vec<String>,
     wait_free: bool,
 }
 
@@ -16,7 +17,11 @@ pub struct LockedGpuDevice<'a> {
     locked_device: MutexGuard<'a, Arc<gpu::Device>>,
 }
 
-impl LockedGpuDevice<'_> {
+impl<'a> LockedGpuDevice<'a> {
+    pub fn new(locked_device: MutexGuard<'a, Arc<gpu::Device>>) -> Self {
+        Self { locked_device }
+    }
+
     pub fn device(&self) -> Arc<gpu::Device> {
         self.locked_device.clone()
     }
@@ -79,7 +84,17 @@ impl GpuDevicesMaganer {
                     }),
             );
         }
-        Ok(Self { devices, wait_free })
+
+        let device_names = devices
+            .iter()
+            .map(|device| device.lock().name().to_owned())
+            .collect();
+
+        Ok(Self {
+            devices,
+            device_names,
+            wait_free,
+        })
     }
 
     pub fn lock_device(&self, stopped: &AtomicBool) -> OperationResult<Option<LockedGpuDevice>> {
@@ -89,9 +104,7 @@ impl GpuDevicesMaganer {
         loop {
             for device in &self.devices {
                 if let Some(guard) = device.try_lock() {
-                    return Ok(Some(LockedGpuDevice {
-                        locked_device: guard,
-                    }));
+                    return Ok(Some(LockedGpuDevice::new(guard)));
                 }
             }
 
@@ -102,5 +115,9 @@ impl GpuDevicesMaganer {
             check_stopped(stopped)?;
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
+    }
+
+    pub fn device_names(&self) -> Vec<String> {
+        self.device_names.clone()
     }
 }

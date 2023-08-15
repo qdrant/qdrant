@@ -141,6 +141,41 @@ pub struct TlsConfig {
     pub cert_ttl: Option<u64>,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, Deserialize, Validate)]
+pub struct GpuConfig {
+    /// Enable GPU indexing.
+    #[serde(default)]
+    pub indexing: bool,
+    /// Force half precision for `f32` values while indexing.
+    #[serde(default)]
+    pub force_half_precision: bool,
+    /// Warps count for GPU.
+    /// In other words, how many parallel points can be indexed by GPU.
+    #[serde(default)]
+    #[validate(range(min = 1))]
+    pub groups_count: Option<usize>,
+    /// Filter for GPU devices by hardware name.
+    /// Comma-separated list of substrings to match against the gpu device name.
+    #[serde(default)]
+    pub device_filter: String,
+    /// How many gpu devices to skip before starting to use them.
+    #[serde(default)]
+    pub device_index: Option<usize>,
+    /// How many gpu devices to use.
+    #[serde(default)]
+    pub devices_count: Option<usize>,
+    /// How many parallel indexes to run.
+    #[serde(default)]
+    pub parallel_indexes: Option<usize>,
+    /// Allow to use integrated GPUs.
+    #[serde(default)]
+    pub allow_integrated: bool,
+    /// Allow to use emulated GPUs like LLVMpipe. Useful for CI.
+    #[serde(default)]
+    pub allow_emulated: bool,
+}
+
 #[derive(Debug, Deserialize, Clone, Validate)]
 #[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct Settings {
@@ -168,6 +203,9 @@ pub struct Settings {
     pub load_errors: Vec<LogMsg>,
     #[serde(default)]
     pub inference: Option<InferenceConfig>,
+    #[serde(default)]
+    #[validate(nested)]
+    pub gpu: Option<GpuConfig>,
 }
 
 impl Settings {

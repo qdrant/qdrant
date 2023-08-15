@@ -150,6 +150,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         payload_index: segment.payload_index.clone(),
         hnsw_config: hnsw_config.clone(),
         permit: Some(permit.clone()),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();
@@ -164,6 +165,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         payload_index: segment.payload_index.clone(),
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

@@ -194,6 +194,17 @@ impl CpuPermit {
     pub fn release(&mut self) {
         self.permit.take();
     }
+
+    /// Partial release CPU permit, giving them back to the semaphore.
+    pub fn release_count(&mut self, release_count: u32) {
+        if self.num_cpus > release_count {
+            self.num_cpus -= release_count;
+            let permit = self.permit.take();
+            self.permit = permit.and_then(|mut permit| permit.split(self.num_cpus as usize));
+        } else {
+            self.release();
+        }
+    }
 }
 
 impl Drop for CpuPermit {

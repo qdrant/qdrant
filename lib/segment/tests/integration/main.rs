@@ -7,6 +7,8 @@ mod fail_recovery_test;
 mod filtering_context_check;
 mod filtrable_hnsw_test;
 mod fixtures;
+#[cfg(feature = "gpu")]
+mod gpu_hnsw_test;
 mod hnsw_discover_test;
 mod hnsw_quantized_search_test;
 mod multivector_filtrable_hnsw_test;
