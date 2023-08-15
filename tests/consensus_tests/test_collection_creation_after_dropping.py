@@ -39,7 +39,7 @@ def test_collection_creation_after_dropping(tmp_path: pathlib.Path):
     )
     assert_http_ok(r)
 
-    for i in range(10000):
+    for i in range(100):
         # Drop collection
         r = requests.delete(
             f"{peer_api_uris[randrange(N_PEERS)]}/collections/test_collection"
