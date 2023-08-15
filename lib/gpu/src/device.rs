@@ -98,6 +98,10 @@ impl Device {
                 "maxComputeWorkGroupInvocations: {:?}",
                 props.limits.max_compute_work_group_invocations
             );
+            println!(
+                "Device name: {:?}",
+                ::std::ffi::CStr::from_ptr(props.device_name.as_ptr())
+            );
         }
 
         let mut compute_queues = Vec::new();
