@@ -313,41 +313,37 @@ async fn create_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-#[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
-async fn delete_shard_snapshot(
+// TODO: `POST` or `PUT` (same as `recover_from_snapshot`)!?
+#[post("/collections/{collection}/shards/{shard}/snapshots/recover")]
+async fn recover_shard_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, ShardId, String)>,
+    path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
+    web::Json(request): web::Json<SnapshotRecover>,
 ) -> impl Responder {
     let future = async move {
-        let (collection, shard, snapshot) = path.into_inner();
+        let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
+        let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
 
-        if !snapshot_path.exists() {
-            todo!();
-        } else if !snapshot_path.is_file() {
-            todo!();
-        }
+        // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!
 
-        std::fs::remove_file(&snapshot_path)?;
+        let snapshot_path =
+            snapshots::download::download_snapshot(request.location, &snapshots_dir).await?;
+
+        recover_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard,
+            &snapshot_path,
+            request.priority.unwrap_or_default(),
+        )
+        .await?;
 
         Ok(())
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
-}
-
-#[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
-async fn download_shard_snapshot(
-    toc: web::Data<TableOfContent>,
-    path: web::Path<(String, ShardId, String)>,
-) -> Result<impl Responder, helpers::HttpError> {
-    let (collection, shard, snapshot) = path.into_inner();
-    let collection = toc.get_collection(&collection).await?;
-    let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
-
-    Ok(NamedFile::open(snapshot_path))
 }
 
 // TODO: `PUT` or `POST` (same as `upload_snapshot`)!?
@@ -376,7 +372,7 @@ async fn upload_shard_snapshot(
             .persist(&snapshot_path)
             .map_err(io::Error::from)?;
 
-        restore_shard_snapshot_impl(
+        recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard,
@@ -391,32 +387,41 @@ async fn upload_shard_snapshot(
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
-// TODO: `POST` or `PUT` (same as `recover_from_snapshot`)!?
-#[post("/collections/{collection}/shards/{shard}/snapshots/recover")]
-async fn recover_shard_snapshot(
+#[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn download_shard_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, ShardId)>,
+    path: web::Path<(String, ShardId, String)>,
+) -> Result<impl Responder, helpers::HttpError> {
+    let (collection, shard, snapshot) = path.into_inner();
+    let collection = toc.get_collection(&collection).await?;
+    let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
+
+    Ok(NamedFile::open(snapshot_path))
+}
+
+#[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn delete_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId, String)>,
     query: web::Query<SnapshottingParam>,
-    web::Json(request): web::Json<SnapshotRecover>,
 ) -> impl Responder {
     let future = async move {
-        let (collection, shard) = path.into_inner();
+        let (collection, shard, snapshot) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
+        let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
-        // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!
+        // TODO: Do we need these explicit checks/errors?
+        // TODO: `std::fs::remove_file` would fail with roughly the same errors.
 
-        let snapshot_path =
-            snapshots::download::download_snapshot(request.location, &snapshots_dir).await?;
+        if !snapshot_path.exists() {
+            let description = format!("Snapshot {snapshot} not found");
+            return Err(StorageError::NotFound { description }.into());
+        } else if !snapshot_path.is_file() {
+            let description = format!("{} is not a file", snapshot_path.display());
+            return Err(StorageError::service_error(description).into());
+        }
 
-        restore_shard_snapshot_impl(
-            &toc,
-            &collection,
-            shard,
-            &snapshot_path,
-            request.priority.unwrap_or_default(),
-        )
-        .await?;
+        std::fs::remove_file(&snapshot_path)?;
 
         Ok(())
     };
@@ -513,8 +518,8 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(delete_collection_snapshot)
         .service(list_shard_snapshots)
         .service(create_shard_snapshot)
-        .service(delete_shard_snapshot)
-        .service(download_shard_snapshot)
+        .service(recover_shard_snapshot)
         .service(upload_shard_snapshot)
-        .service(restore_shard_snapshot);
+        .service(download_shard_snapshot)
+        .service(delete_shard_snapshot);
 }
