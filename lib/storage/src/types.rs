@@ -97,6 +97,8 @@ pub struct StorageConfig {
     /// Default values for collections.
     #[serde(default)]
     pub collection: Option<CollectionConfigDefaults>,
+    #[serde(default)]
+    pub gpu_indexing: bool,
 }
 
 impl StorageConfig {

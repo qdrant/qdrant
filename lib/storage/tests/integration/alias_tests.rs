@@ -68,6 +68,7 @@ fn test_alias_operation() {
         // update_concurrency: None,
         shard_transfer_method: None,
         collection: None,
+        gpu_indexing: false,
     };
 
     let search_runtime = Runtime::new().unwrap();
