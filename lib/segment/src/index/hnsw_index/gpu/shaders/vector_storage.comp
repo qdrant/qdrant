@@ -13,7 +13,7 @@ readonly uniform VectorStorageParams {
 
 layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1)
 readonly buffer Vectors {
-    vec4 data[];
+    mat4 data[];
 } vectors;
 
 #define COUNT vector_storage_params.count
@@ -21,17 +21,24 @@ readonly buffer Vectors {
 #define DIM vector_storage_params.dim
 
 float similarity(uint a, uint b) {
-    float result = 0.0;
-    uint d = DIM / 4;
+    mat4 result = mat4(0.0);
+    uint d = DIM / 16;
     uint aId = a * d;
     uint bId = b * d;
     for (uint i = 0; i < d; i++, aId++, bId++) {
-        result += dot(
+        result += matrixCompMult(
             vectors.data[aId],
             vectors.data[bId]
         );
     }
-    return result;
+    vec4 v1 = result[0];
+    vec4 v2 = result[1];
+    vec4 v3 = result[2];
+    vec4 v4 = result[3];
+    return v1.x + v1.y + v1.z + v1.w
+         + v2.x + v2.y + v2.z + v2.w
+         + v3.x + v3.y + v3.z + v3.w
+         + v4.x + v4.y + v4.z + v4.w;
 }
 
 #endif

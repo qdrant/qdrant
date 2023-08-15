@@ -4,7 +4,7 @@ use crate::entry::entry_point::OperationResult;
 use crate::types::PointOffsetType;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
-pub const ALIGNMENT: usize = 4;
+pub const ALIGNMENT: usize = 16;
 pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
 
 #[repr(C)]
@@ -167,8 +167,8 @@ mod tests {
     #[test]
     fn test_gpu_vector_storage_scoring() {
         let num_vectors = 3013;
-        let dim = 13;
-        let capacity = 16;
+        let dim = 21;
+        let capacity = 32;
 
         let mut rnd = StdRng::seed_from_u64(42);
         let points = (0..num_vectors)
