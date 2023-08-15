@@ -157,6 +157,17 @@ impl Distance {
             Order::SmallBetter => score < threshold,
         }
     }
+
+    /// Calculates distance between two vectors
+    ///
+    /// Warn: prefer compile-time generics with `Metric` trait
+    pub fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        match self {
+            Distance::Cosine => CosineMetric::similarity(v1, v2),
+            Distance::Euclid => EuclidMetric::similarity(v1, v2),
+            Distance::Dot => DotProductMetric::similarity(v1, v2),
+        }
+    }
 }
 
 pub enum Order {
