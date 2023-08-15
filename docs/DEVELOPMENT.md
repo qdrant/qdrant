@@ -140,6 +140,7 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 Qdrant have basic [`tracing`] support with [`Tracy`] profiler and [`tokio-console`] integrations
 that can be enabled with optional features.
 
+- [`tracing`] is an _optional_ dependency that can be enabled with `tracing` feature
 - `tracy` feature enables [`Tracy`] profiler integration
 - `console` feature enables [`tokio-console`] integration
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
@@ -151,15 +152,16 @@ that can be enabled with optional features.
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
   - this is required (and enabled automatically) by the `console` feature
   - but you can enable it explicitly with the `tracy` feature, to see Tokio traces in [`Tracy`] profiler
-- `tracing` feature simply enables optional [`tracing`] crate dependency (without any integrations)
-  - this is required (and enabled automatically) by all of the above features
 
 Qdrant code is **not** instrumented by default, so you'll have to manually add `#[tracing::instrument]` attributes
 on functions and methods that you want to profile.
 
+Qdrant uses [`tracing-log`] as the [`log`] backend, so `log` and `log-always` features of the [`tracing`] crate
+[should _not_ be enabled][tracing-log-warning]!
+
 ```rust
-// `tracing` crate is an *optional* dependency, so if you want the code to compile when `tracing`
-// feature is disabled, you have to use `#[cfg_attr(...)]`...
+// `tracing` crate is an *optional* dependency in `lib/*` crates, so if you want the code to compile
+// when `tracing` feature is disabled, you have to use `#[cfg_attr(...)]`...
 //
 // See https://doc.rust-lang.org/reference/conditional-compilation.html#the-cfg_attr-attribute
 #[cfg_attr(feature = "tracing", tracing::instrument)]
@@ -180,6 +182,9 @@ fn some_other_function() {
 [`Tracy`]: https://github.com/wolfpld/tracy
 [`tokio-console`]: https://docs.rs/tokio-console/latest/tokio_console/
 [tokio-tracing]: https://docs.rs/tokio/latest/tokio/#unstable-features
+[`tracing-log`]: https://docs.rs/tracing-log/latest/tracing_log/
+[`log`]: https://docs.rs/log/latest/log/
+[tracing-log-warning]: https://docs.rs/tracing-log/latest/tracing_log/#caution-mixing-both-conversions
 
 ## API changes
 

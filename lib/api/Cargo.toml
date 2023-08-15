@@ -8,6 +8,9 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+[features]
+tracing = ["dep:tracing", "segment/tracing"]
+
 [dependencies]
 log = "0.4"
 env_logger = "0.10.0"
@@ -27,6 +30,8 @@ parking_lot = "0.12"
 validator = { version = "0.16", features = ["derive"] }
 
 segment = {path = "../segment"}
+
+tracing = { version = "0.1", features = ["async-await"], optional = true }
 
 [build-dependencies]
 tonic-build = { version = "0.9.2", features = ["prost"] }
