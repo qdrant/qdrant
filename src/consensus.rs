@@ -1139,7 +1139,7 @@ mod tests {
         let mut settings = crate::Settings::new(None).expect("Can't read config.");
         settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
         std::env::set_var("RUST_LOG", log::Level::Debug.as_str());
-        env_logger::init();
+        tracing_subscriber::fmt::init();
         let search_runtime =
             crate::create_search_runtime(settings.storage.performance.max_search_threads)
                 .expect("Can't create search runtime.");

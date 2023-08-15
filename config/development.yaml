@@ -1,5 +1,5 @@
 debug: true
-log_level: DEBUG
+log_level: DEBUG,hyper=INFO,h2=INFO,tower=INFO,rustls=INFO,raft=INFO
 
 service:
   host: 127.0.0.1
