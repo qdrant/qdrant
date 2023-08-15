@@ -350,7 +350,8 @@ async fn download_shard_snapshot(
     Ok(NamedFile::open(snapshot_path))
 }
 
-#[put("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+// TODO: `PUT` or `POST` (same as `upload_snapshot`)!?
+#[put("/collections/{collection}/shards/{shard}/snapshots/upload")]
 async fn upload_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
@@ -390,8 +391,9 @@ async fn upload_shard_snapshot(
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
-#[post("/collections/{collection}/shards/{shard}/snapshots")]
-async fn restore_shard_snapshot(
+// TODO: `POST` or `PUT` (same as `recover_from_snapshot`)!?
+#[post("/collections/{collection}/shards/{shard}/snapshots/recover")]
+async fn recover_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
@@ -422,7 +424,7 @@ async fn restore_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-async fn restore_shard_snapshot_impl(
+async fn recover_shard_snapshot_impl(
     toc: &TableOfContent,
     collection: &RwLockReadGuard<'_, Collection>,
     shard: ShardId,
