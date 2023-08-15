@@ -1,0 +1,205 @@
+#ifndef NEAREST_HEAP_HEADER
+#define NEAREST_HEAP_HEADER
+
+#include "common.comp"
+
+shared ScoredPoint nearest[NEAREST_HEAP_CAPACITY];
+
+ScoredPoint nearest_smaller;
+uint nearest_smaller_index;
+uint nearest_count;
+
+void nearest_heap_init() {
+    nearest_count = 0;
+    nearest_smaller_index = 0;
+    nearest_smaller = ScoredPoint(UINT_MAX, positive_infinity);
+
+    uint capacity = NEAREST_HEAP_CAPACITY;
+    for (uint i = gl_SubgroupInvocationID; i < capacity; i += SUBGROUP_SIZE) {
+        uint buffer_index = i;
+        nearest[buffer_index] = ScoredPoint(UINT_MAX, negative_infinity);
+    }
+}
+
+// Push the nearest `ScoredPoint`. Returns true if the `ScoredPoint` was added.
+bool push_nearest(ScoredPoint scored_point) {
+    uint ef = NEAREST_HEAP_EF;
+    if (nearest_count == ef) {
+        if (scored_point.score > nearest_smaller.score) {
+            if (subgroupElect()) {
+                uint buffer_index = nearest_smaller_index;
+                nearest[buffer_index] = scored_point;
+            }
+            nearest_smaller_index = 0;
+            nearest_smaller.score = positive_infinity;
+            for (uint i = gl_SubgroupInvocationID; i < ef; i += SUBGROUP_SIZE) {
+                uint buffer_index = i;
+                float score = nearest[buffer_index].score;
+                if (score < nearest_smaller.score) {
+                    nearest_smaller.score = score;
+                    nearest_smaller_index = i;
+                }
+            }
+
+            float subgroup_smaller = subgroupMin(nearest_smaller.score);
+            bool is_min_thread = nearest_smaller.score == subgroup_smaller;
+            uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
+            uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
+            nearest_smaller_index = subgroupShuffle(nearest_smaller_index, subgroup_min_thread);
+            nearest_smaller.score = subgroupShuffle(nearest_smaller.score, subgroup_min_thread);
+            nearest_smaller.id = nearest[nearest_smaller_index].id;
+
+            return true;
+        } else {
+            return false;
+        }
+    } else {
+        if (subgroupElect()) {
+            uint buffer_index = nearest_count;
+            nearest[buffer_index] = scored_point;
+        }
+        if (scored_point.score < nearest_smaller.score) {
+            nearest_smaller = scored_point;
+            nearest_smaller_index = nearest_count;
+        }
+        nearest_count++;
+        return true;
+    }
+}
+
+uint subgroup_bubble_sort(float score) {
+    uint invocation = gl_SubgroupInvocationID;
+    bool is_even = invocation % 2 == 0;
+    uint invocation_forward = is_even ? invocation + 1 : invocation - 1;
+    uint invocation_backward = invocation;
+    if (invocation != SUBGROUP_SIZE - 1 && invocation != 0) {
+        invocation_backward = is_even ? invocation - 1 : invocation + 1;
+    }
+
+    uint index = invocation;
+    for (uint j = 0; j < SUBGROUP_SIZE / 2; j++) {
+        bool is_even = gl_SubgroupInvocationID % 2 == 0;
+        bool was_changed = false;
+
+        // step one: compare with the next element
+        {
+            float next_score = subgroupShuffle(score, invocation_forward);
+            uint next_index = subgroupShuffle(index, invocation_forward);
+            bool need_exchange = is_even ? score < next_score : score > next_score;
+            if (need_exchange) {
+                was_changed = true;
+                score = next_score;
+                index = next_index;
+            }
+        }
+
+        // step two: compare with previous element
+        {
+            float next_score = subgroupShuffle(score, invocation_backward);
+            uint next_index = subgroupShuffle(index, invocation_backward);
+            bool need_exchange = is_even ? score > next_score : score < next_score;
+            if (need_exchange) {
+                was_changed = true;
+                score = next_score;
+                index = next_index;
+            }
+        }
+
+        if (!subgroupAny(was_changed)) {
+            break;
+        }
+    }
+    return index;
+}
+
+void sort_nearest_bubble() {
+    uint iterations_count = nearest_count / (SUBGROUP_SIZE / 2) + uint(sign(float(nearest_count % (SUBGROUP_SIZE / 2))));
+    for (uint _cnt = 0; _cnt < iterations_count; _cnt++) {
+        // do bubble sort in each subgroup to reduce the number of memory accesses
+        for (uint i = gl_SubgroupInvocationID; i < NEAREST_HEAP_CAPACITY; i += SUBGROUP_SIZE) {
+            ScoredPoint scored_point = nearest[i];
+
+            if (i >= nearest_count) {
+                scored_point.score = negative_infinity;
+            }
+            uint permut = subgroup_bubble_sort(scored_point.score);
+            float shuffled_scored_point_score = subgroupShuffle(scored_point.score, permut);
+            uint shuffled_scored_point_id = subgroupShuffle(scored_point.id, permut);
+            nearest[i] = ScoredPoint(shuffled_scored_point_id, shuffled_scored_point_score);
+            subgroupMemoryBarrierShared();
+        }
+
+        if (NEAREST_HEAP_CAPACITY > SUBGROUP_SIZE) {
+            // do bubble sort in each subgroup to reduce the number of memory accesses
+            for (uint i = gl_SubgroupInvocationID + (SUBGROUP_SIZE / 2); i < NEAREST_HEAP_CAPACITY - (SUBGROUP_SIZE / 2); i += SUBGROUP_SIZE) {
+                ScoredPoint scored_point = nearest[i];
+                
+                if (i >= nearest_count) {
+                    scored_point.score = negative_infinity;
+                }
+                uint permut = subgroup_bubble_sort(scored_point.score);
+                float shuffled_scored_point_score = subgroupShuffle(scored_point.score, permut);
+                uint shuffled_scored_point_id = subgroupShuffle(scored_point.id, permut);
+                nearest[i] = ScoredPoint(shuffled_scored_point_id, shuffled_scored_point_score);
+                subgroupMemoryBarrierShared();
+            }
+        }
+    }
+}
+
+void bitonic_cmp(uint i, uint j) {
+    uint b_i = i;
+    uint b_j = j;
+    if (i < j && j < nearest_count && nearest[b_j].score > nearest[b_i].score) {
+        ScoredPoint temp = nearest[b_i];
+        nearest[b_i] = nearest[b_j];
+        nearest[b_j] = temp;
+    }
+}
+
+void sort_nearest() {
+    for (uint group_offset = 0; group_offset < nearest_count; group_offset += SUBGROUP_SIZE) {
+        ScoredPoint scored_point = ScoredPoint(0, negative_infinity);
+        uint i = group_offset + gl_SubgroupInvocationID;
+        if (i < nearest_count) {
+            scored_point = nearest[i];
+        }
+
+        uint permut = subgroup_bubble_sort(scored_point.score);
+        scored_point = ScoredPoint(
+            subgroupShuffle(scored_point.id, permut),
+            subgroupShuffle(scored_point.score, permut)
+        );
+
+        if (i < nearest_count) {
+            nearest[i] = scored_point;
+        }
+    }
+
+    for (uint k = 64; (k >> 1) < nearest_count; k <<= 1) {
+        for (uint i = gl_SubgroupInvocationID; i < nearest_count; i += SUBGROUP_SIZE) {
+            bitonic_cmp(i, i ^ (k - 1));
+        }
+        subgroupMemoryBarrierShared();
+
+        for (uint j = k >> 1; 0 < j; j >>= 1) {
+            for (uint i = gl_SubgroupInvocationID; i < nearest_count; i += SUBGROUP_SIZE) {
+                bitonic_cmp(i, i ^ j);
+            }
+            subgroupMemoryBarrierShared();
+        }
+    }
+}
+
+ScoredPoint get_nearest(uint i) {
+    return nearest[i];
+}
+
+void set_nearest(uint i, ScoredPoint scored_point) {
+    if (subgroupElect()) {
+        nearest[i] = scored_point;
+    }
+    subgroupMemoryBarrierShared();
+}
+
+#endif

@@ -200,6 +200,7 @@ fn _test_filterable_hnsw(
         payload_index: payload_index_ptr.clone(),
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

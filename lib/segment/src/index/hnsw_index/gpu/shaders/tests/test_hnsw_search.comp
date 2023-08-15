@@ -1,0 +1,53 @@
+#version 450
+
+#include "extensions.comp"
+
+#include "common.comp"
+layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+#define VECTOR_STORAGE_LAYOUT_SET 1
+#include "vector_storage.comp"
+
+#define LINKS_LAYOUT_SET 2
+#include "links.comp"
+
+#define VISITED_FLAGS_LAYOUT_SET 3
+#include "visited_flags.comp"
+
+#include "search_context.comp"
+
+struct SearchRequest {
+    uint id;
+    uint entry;
+};
+
+layout(set = 0, binding = 0) buffer SearchRequests {
+    SearchRequest data[];
+} search_requests;
+
+layout(set = 0, binding = 1) buffer SearchResults {
+    ScoredPoint data[];
+} search_results;
+
+void main() {
+    search_context_init();
+    uint subgroup_index = SUBGROUP_ID;
+    SearchRequest search_request = search_requests.data[subgroup_index];
+
+    set_target(search_request.id);
+    float entry_score = similarity(search_request.entry);
+    uint count = search(search_request.id, ScoredPoint(search_request.entry, entry_score));
+
+    barrier();
+
+    if (subgroupElect()) {
+        uint result_index_offset = NEAREST_HEAP_EF * subgroup_index;
+        uint i = 0;
+        for (; i < count; i++) {
+            search_results.data[result_index_offset + i] = get_nearest(i);
+        }
+        for (; i < NEAREST_HEAP_EF; i++) {
+            search_results.data[result_index_offset + i] = ScoredPoint(UINT_MAX, 0.0);
+        }
+    }
+}

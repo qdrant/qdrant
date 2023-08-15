@@ -1,0 +1,140 @@
+#ifndef SEARCH_CONTEXT_HEADER
+#define SEARCH_CONTEXT_HEADER
+
+#include "common.comp"
+#include "vector_storage.comp"
+#include "links.comp"
+#include "nearest_heap.comp"
+#include "candidates_heap.comp"
+#include "visited_flags.comp"
+
+void process_candidate(ScoredPoint scored_point) {
+    bool not_presented = nearest_smaller.id != scored_point.id;
+    bool was_added = push_nearest(scored_point);
+    if (was_added && not_presented) {
+        push_candidate(scored_point);
+        subgroupMemoryBarrierShared();
+    }
+}
+
+void process_candidate(POINT_ID candidate_id) {
+    uint links_count = LINKS_COUNT(candidate_id);
+    uint subgroup_link = 0;
+    bool subgroup_is_visited = true;
+    uint invocation = gl_SubgroupInvocationID;
+
+    for (uint i = 0; i < links_count; i++) {
+        if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
+            subgroup_link = GET_LINK(candidate_id, i + invocation);
+            subgroup_is_visited = is_visited(subgroup_link);
+            if (!subgroup_is_visited) {
+                mark_visited(subgroup_link);
+            }
+        }
+
+        uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
+        bool is_visited = subgroupShuffle(subgroup_is_visited, i % SUBGROUP_SIZE);
+
+        if (!is_visited) {
+            float score = similarity(link);
+            ScoredPoint scored_point = ScoredPoint(link, score);
+            process_candidate(scored_point);
+        }
+    }
+
+    // flush all changed visited flags
+    subgroupMemoryBarrierBuffer();
+}
+
+ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
+    bool changed = true;
+    ScoredPoint result = entry;
+
+    uint subgroup_link = 0;
+    uint invocation = gl_SubgroupInvocationID;
+
+    while (changed) {
+        changed = false;
+
+        uint current = result.id;
+        uint links_count = LINKS_COUNT(current);
+        for (uint i = 0; i < links_count; i++) {
+            if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
+                subgroup_link = GET_LINK(current, i + invocation);
+            }
+            uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
+
+            float score = similarity(link);
+            if (score > result.score) {
+                changed = true;
+                result = ScoredPoint(link, score);
+            }
+        }
+    }
+    return result;
+}
+
+uint search(POINT_ID point_id, ScoredPoint entry) {
+#ifndef EXACT
+    entry = greedy_search(point_id, entry);
+#endif
+
+    if (subgroupElect()) {
+        mark_visited(point_id);
+        mark_visited(entry.id);
+    }
+    push_nearest(entry);
+    push_candidate(entry);
+    groupMemoryBarrier();
+    
+    while (candidates_count > 0) {
+        ScoredPoint candidate = pop_candidate();
+        if (candidate.score < nearest_smaller.score) {
+            continue;
+        }
+        process_candidate(candidate.id);
+    }
+
+    process_candidate(point_id);
+
+    sort_nearest();
+    return nearest_count;
+}
+
+uint run_heuristic() {
+    uint result_count = 0;
+
+    for (uint i = 0; i < nearest_count; i++) {
+        if (result_count >= LEVEL_M) {
+            break;
+        }
+
+        ScoredPoint current_closest = get_nearest(i);
+        set_target(current_closest.id);
+        bool is_good = true;
+
+        for (uint j = 0; j < result_count; j++) {
+            ScoredPoint selected_point = get_nearest(j);
+            float dist_to_already_selected = similarity(selected_point.id);
+            if (dist_to_already_selected > current_closest.score) {
+                is_good = false;
+                break;
+            }
+        }
+
+        if (is_good) {
+            set_nearest(result_count, current_closest);
+            result_count += 1;
+        }
+    }
+
+    nearest_count = result_count;
+    return result_count;
+}
+
+void search_context_init() {
+    nearest_heap_init();
+    candidates_heap_init();
+}
+
+#endif

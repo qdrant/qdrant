@@ -137,6 +137,39 @@ pub trait GraphLayersBase {
         }
         current_point
     }
+
+    fn search_entry_on_level(
+        &self,
+        entry_point: PointOffsetType,
+        level: usize,
+        points_scorer: &mut FilteredScorer,
+    ) -> ScoredPointOffset {
+        let limit = self.get_m(level);
+        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
+        let mut current_point = ScoredPointOffset {
+            idx: entry_point,
+            score: points_scorer.score_point(entry_point),
+        };
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            links.clear();
+            self.links_map(current_point.idx, level, |link| {
+                links.push(link);
+            });
+
+            let scores = points_scorer.score_points(&mut links, limit);
+            scores.iter().copied().for_each(|score_point| {
+                if score_point.score > current_point.score {
+                    changed = true;
+                    current_point = score_point;
+                }
+            });
+        }
+        current_point
+    }
 }
 
 impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {

@@ -364,6 +364,7 @@ pub(crate) fn create_vector_index(
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     permit: Option<Arc<CpuPermit>>,
+    gpu_device: Option<Arc<gpu::Device>>,
     stopped: &AtomicBool,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match &vector_config.index {
@@ -379,6 +380,7 @@ pub(crate) fn create_vector_index(
                 payload_index,
                 hnsw_config: vector_hnsw_config.clone(),
                 permit,
+                gpu_device,
                 stopped,
             };
             if vector_hnsw_config.on_disk == Some(true) {
@@ -558,6 +560,7 @@ fn create_segment(
             vector_storage.clone(),
             payload_index.clone(),
             quantized_vectors.clone(),
+            None,
             None,
             stopped,
         )?);

@@ -1,0 +1,51 @@
+#version 450
+
+#include "extensions.comp"
+
+#include "common.comp"
+layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+#include "candidates_heap.comp"
+
+layout(set = 0, binding = 0)
+readonly uniform TestParams {
+    uint input_counts;
+} test_params;
+
+layout(set = 0, binding = 1) buffer ScoredPointsInput {
+    ScoredPoint data[];
+} input_points;
+
+layout(set = 0, binding = 2) buffer ScoresOuput {
+    ScoredPoint data[];
+} scores_output;
+
+void main() {
+    candidates_heap_init();
+    uint subgroup_index = SUBGROUP_ID;
+
+    for (uint i = 0; i < test_params.input_counts; i++) {
+        uint point_index = subgroup_index * test_params.input_counts + i;
+        ScoredPoint point = input_points.data[point_index];
+        push_candidate(point);
+    }
+
+    while (candidates_count > 0) {
+        ScoredPoint candidate = pop_candidate();
+    }
+
+    for (uint i = 0; i < test_params.input_counts; i++) {
+        uint point_index = subgroup_index * test_params.input_counts + i;
+        ScoredPoint point = input_points.data[point_index];
+        push_candidate(point);
+    }
+
+    uint output_index = subgroup_index * test_params.input_counts;
+    while (candidates_count > 0) {
+        ScoredPoint candidate = pop_candidate();
+        if (subgroupElect()) {
+            scores_output.data[output_index] = candidate;
+        }
+        output_index++;
+    }
+}

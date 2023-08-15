@@ -1,0 +1,129 @@
+#version 450
+
+#include "extensions.comp"
+
+#include "common.comp"
+layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+#define VECTOR_STORAGE_LAYOUT_SET 1
+#include "vector_storage.comp"
+
+#define LINKS_LAYOUT_SET 2
+#include "links.comp"
+
+#define VISITED_FLAGS_LAYOUT_SET 3
+#include "visited_flags.comp"
+
+#include "search_context.comp"
+
+struct Request {
+    uint id;
+    uint entry;
+};
+
+layout(set = 0, binding = 0) buffer Requests {
+    Request data[];
+} requests;
+
+layout(set = 0, binding = 1) buffer NewEntries {
+    uint data[];
+} new_entries;
+
+layout(set = 0, binding = 2) buffer Atomics {
+    uint data[];
+} atomics;
+
+void main() {
+    search_context_init();
+    uint subgroup_index = SUBGROUP_ID;
+    Request request = requests.data[subgroup_index];
+
+    set_target(request.id);
+    float entry_score = similarity(request.entry);
+#ifdef NO_EQUIVALENCY
+    ScoredPoint new_entry = greedy_search(request.id, ScoredPoint(request.entry, entry_score));
+    uint search_count = search(request.id, new_entry);
+#else
+    uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
+#endif
+    if (search_count == UINT_MAX) {
+        // error while searching. propably candidates heap overflow
+        return;
+    }
+
+    if (subgroupElect()) {
+        if (search_count > 0) {
+            new_entries.data[subgroup_index] = get_nearest(0).id;
+        } else {
+            new_entries.data[subgroup_index] = request.entry;
+        }
+    }
+
+    uint count = run_heuristic();
+
+    // sync all threads to make sure that we don't do search while updating links
+    barrier();
+
+    // update request.id links
+    for (uint i = gl_SubgroupInvocationID; i < count; i += SUBGROUP_SIZE) {
+        GET_LINK(request.id, i) = get_nearest(i).id;
+    }
+    if (subgroupElect()) {
+        LINKS_SET_SIZE(request.id, count);
+    }
+
+    subgroupMemoryBarrier();
+
+    uint generation = VISITED_GENERATION;
+
+    for (uint i = 0; i < count; i++) {
+        uint other_id = GET_LINK(request.id, i);
+
+        bool is_changed = false;
+        if (subgroupElect()) {
+            uint other_atomic = atomicExchange(atomics.data[other_id], generation);
+            is_changed = other_atomic == generation;
+        }
+        if (subgroupAny(is_changed)) {
+            // other_id is already being processed by another subgroup
+            continue;
+        }
+
+        uint other_links_count = LINKS_COUNT(other_id);
+        if (other_links_count < LEVEL_M) {
+            if (subgroupElect()) {
+                GET_LINK(other_id, other_links_count) = request.id;
+                LINKS_SET_SIZE(other_id, other_links_count + 1);
+            }
+        } else {
+            set_target(other_id);
+            nearest_count = 0;
+            LINKS_FOREACH(other_id) {
+                set_nearest(
+                    nearest_count,
+                    ScoredPoint(
+                        LINKS_FOREACH_VALUE,
+                        similarity(LINKS_FOREACH_VALUE))
+                );
+                nearest_count++;
+            }
+            set_nearest(
+                nearest_count,
+                ScoredPoint(
+                    request.id,
+                    similarity(request.id))
+            );
+            nearest_count++;
+
+            sort_nearest();
+            uint other_new_links_count = run_heuristic();
+
+            for (uint j = gl_SubgroupInvocationID; j < other_new_links_count; j += SUBGROUP_SIZE) {
+                GET_LINK(other_id, j) = get_nearest(j).id;
+            }
+            if (subgroupElect()) {
+                LINKS_SET_SIZE(other_id, other_new_links_count);
+            }
+        }
+    }
+}

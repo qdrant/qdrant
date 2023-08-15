@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicUsize;
 use bitvec::prelude::BitVec;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use itertools::Itertools;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -25,22 +26,22 @@ pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 /// Same as `GraphLayers`,  but allows to build in parallel
 /// Convertible to `GraphLayers`
 pub struct GraphLayersBuilder {
-    max_level: AtomicUsize,
-    m: usize,
-    m0: usize,
-    ef_construct: usize,
+    pub max_level: AtomicUsize,
+    pub m: usize,
+    pub m0: usize,
+    pub ef_construct: usize,
     // Factor of level probability
-    level_factor: f64,
+    pub level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
-    use_heuristic: bool,
-    links_layers: Vec<LockedLayersContainer>,
-    entry_points: Mutex<EntryPoints>,
+    pub use_heuristic: bool,
+    pub links_layers: Vec<LockedLayersContainer>,
+    pub entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
-    visited_pool: VisitedPool,
+    pub visited_pool: VisitedPool,
 
     // List of bool flags, which defines if the point is already indexed or not
-    ready_list: RwLock<BitVec>,
+    pub ready_list: RwLock<BitVec>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -206,7 +207,7 @@ impl GraphLayersBuilder {
         picked_level.round() as usize
     }
 
-    fn get_point_level(&self, point_id: PointOffsetType) -> usize {
+    pub fn get_point_level(&self, point_id: PointOffsetType) -> usize {
         self.links_layers[point_id as usize].len() - 1
     }
 
@@ -286,7 +287,7 @@ impl GraphLayersBuilder {
     }
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
-    fn select_candidates_with_heuristic<F>(
+    pub(crate) fn select_candidates_with_heuristic<F>(
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
         score_internal: F,
@@ -321,12 +322,14 @@ impl GraphLayersBuilder {
                     // Let's find closest one on same level
 
                     // greedy search for a single closest point
-                    self.search_entry(
+                    let new_entry = self.search_entry(
                         entry_point.point_id,
                         entry_point.level,
                         level,
                         &mut points_scorer,
-                    )
+                    );
+
+                    new_entry
                 } else {
                     ScoredPointOffset {
                         idx: entry_point.point_id,
@@ -475,6 +478,128 @@ impl GraphLayersBuilder {
             0.0
         } else {
             sum as f32 / count as f32
+        }
+    }
+
+    pub fn get_patch(
+        &self,
+        request: super::gpu::gpu_search_context::GpuRequest,
+        level: usize,
+        points_scorer: &mut FilteredScorer,
+    ) -> (
+        Vec<super::gpu::gpu_search_context::GpuGraphLinksPatch>,
+        Vec<PointOffsetType>,
+    ) {
+        let entry = request.entry;
+        let point_id = request.id;
+        let mut patches = vec![];
+
+        let level_m = self.get_m(level);
+        let mut visited_list = self.get_visited_list_from_pool();
+
+        visited_list.check_and_update_visited(entry);
+
+        let level_entry = ScoredPointOffset {
+            idx: entry,
+            score: points_scorer.score_point(entry),
+        };
+        let mut search_context = SearchContext::new(level_entry, self.ef_construct);
+
+        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
+
+        let new_entries = search_context
+            .nearest
+            .clone()
+            .into_vec()
+            .iter()
+            .map(|p| p.idx)
+            .collect_vec();
+
+        let scorer = |a, b| points_scorer.score_internal(a, b);
+
+        let selected_nearest = {
+            let selected_nearest =
+                Self::select_candidates_with_heuristic(search_context.nearest, level_m, scorer);
+            patches.push(super::gpu::gpu_search_context::GpuGraphLinksPatch {
+                id: point_id,
+                links: selected_nearest.clone(),
+            });
+            selected_nearest
+        };
+
+        for &other_point in &selected_nearest {
+            let mut other_point_links = self.links_layers[other_point as usize][level]
+                .read()
+                .clone();
+            if other_point_links.len() < level_m {
+                // If linked point is lack of neighbours
+                other_point_links.push(point_id);
+            } else {
+                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                candidates.push(ScoredPointOffset {
+                    idx: point_id,
+                    score: scorer(point_id, other_point),
+                });
+                for other_point_link in other_point_links.iter().take(level_m).copied() {
+                    candidates.push(ScoredPointOffset {
+                        idx: other_point_link,
+                        score: scorer(other_point_link, other_point),
+                    });
+                }
+                let selected_candidates = Self::select_candidate_with_heuristic_from_sorted(
+                    candidates.into_sorted_vec().into_iter().rev(),
+                    level_m,
+                    scorer,
+                );
+                other_point_links.clear(); // this do not free memory, which is good
+                for selected in selected_candidates.iter().copied() {
+                    other_point_links.push(selected);
+                }
+            }
+            patches.push(super::gpu::gpu_search_context::GpuGraphLinksPatch {
+                id: other_point,
+                links: other_point_links,
+            });
+        }
+
+        (patches, new_entries)
+    }
+
+    pub fn try_apply_patch(
+        &self,
+        level: usize,
+        patches: Vec<super::gpu::gpu_search_context::GpuGraphLinksPatch>,
+    ) -> bool {
+        let mut locks = Vec::with_capacity(patches.len());
+        let mut links_to_apply = Vec::with_capacity(patches.len());
+        for patch in patches {
+            if let Some(lock) = self.links_layers[patch.id as usize][level].try_write() {
+                //if lock.as_slice() != patch.old_links.as_slice() {
+                //    return false;
+                //}
+
+                locks.push(lock);
+                links_to_apply.push(patch.links);
+            } else {
+                return false;
+            }
+        }
+
+        for (links, lock) in links_to_apply.into_iter().zip(locks.iter_mut()) {
+            **lock = links;
+        }
+
+        true
+    }
+
+    pub fn apply_patch(
+        &self,
+        level: usize,
+        patches: Vec<super::gpu::gpu_search_context::GpuGraphLinksPatch>,
+    ) {
+        for patch in patches {
+            let mut lock = self.links_layers[patch.id as usize][level].write();
+            *lock = patch.links;
         }
     }
 }

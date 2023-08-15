@@ -1,0 +1,46 @@
+#ifndef LINKS_HEADER
+#define LINKS_HEADER
+
+#ifndef LINKS_LAYOUT_SET
+#error "LINKS_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+#include "iterators.comp"
+
+layout(set = LINKS_LAYOUT_SET, binding = 0)
+readonly uniform LinksParams {
+    uint m;
+} links_params;
+
+layout(set = LINKS_LAYOUT_SET, binding = 1)
+buffer Links {
+    POINT_ID data[];
+} links;
+
+#define LINKS_CONTAINER links.data
+
+#define LEVEL_M links_params.m
+
+#define LINKS_CONTAINER_OFFSET(ID) \
+    ID * (LINKS_CAPACITY + 1)
+
+#define LINKS_NEW_ITERATOR(ID) \
+    NEW_ITERATOR((LINKS_CONTAINER_OFFSET(ID) + 1), (LINKS_CONTAINER_OFFSET(ID) + 1 + LINKS_COUNT(ID)))
+
+#define LINKS_COUNT(ID) \
+    LINKS_CONTAINER[LINKS_CONTAINER_OFFSET(ID)]
+
+#define GET_LINK(ID, I) \
+    LINKS_CONTAINER[LINKS_CONTAINER_OFFSET(ID) + 1 + I]
+
+#define LINKS_FOREACH(ID) \
+    FOREACH(LINKS_NEW_ITERATOR(ID))
+
+#define LINKS_FOREACH_VALUE \
+    FOREACH_VALUE(LINKS_CONTAINER)
+
+#define LINKS_SET_SIZE(ID, SIZE) \
+    LINKS_CONTAINER[LINKS_CONTAINER_OFFSET(ID)] = SIZE
+
+#endif

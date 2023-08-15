@@ -347,3 +347,6 @@ tls:
   # Only works for HTTPS endpoints. Does not support gRPC (and intra-cluster communication).
   # If `null` - TTL is disabled.
   cert_ttl: 3600
+
+gpu:
+  indexing: false

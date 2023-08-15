@@ -168,6 +168,24 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
+    if let Some(settings_gpu) = &settings.gpu {
+        segment::index::hnsw_index::gpu::set_gpu_indexing(settings_gpu.indexing);
+        segment::index::hnsw_index::gpu::set_gpu_force_half_precision(
+            settings_gpu.force_half_precision,
+        );
+        segment::index::hnsw_index::gpu::set_gpu_max_groups(settings_gpu.max_groups);
+        segment::index::hnsw_index::gpu::set_device_index(settings_gpu.device_index);
+        segment::index::hnsw_index::gpu::set_devices_count(settings_gpu.devices_count);
+        segment::index::hnsw_index::gpu::set_device_filter(&settings_gpu.device_filter);
+        segment::index::hnsw_index::gpu::set_wait_free(settings_gpu.wait_free.unwrap_or(true));
+        segment::index::hnsw_index::gpu::set_gpu_parallel_indexes(
+            settings_gpu.parallel_indexes.unwrap_or(1),
+        );
+        // initialize GPU devices
+        let _ = segment::index::hnsw_index::gpu::GPU_DEVICES_MANAGER
+            .as_ref()
+            .map(|devices_manager| devices_manager.lock_device());
+    }
 
     welcome(&settings);
 

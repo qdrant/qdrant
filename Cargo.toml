@@ -17,7 +17,7 @@ default-run = "qdrant"
 workspace = true
 
 [features]
-default = ["web", "parking_lot"]
+default = ["web", "parking_lot", "gpu"]
 web = ["actix-web"]
 multiling-chinese = ["segment/multiling-chinese"]
 multiling-japanese = ["segment/multiling-japanese"]
@@ -100,6 +100,7 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
+quantization = { path = "lib/quantization" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }

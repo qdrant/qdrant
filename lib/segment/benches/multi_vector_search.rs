@@ -85,6 +85,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
         payload_index: segment.payload_index.clone(),
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

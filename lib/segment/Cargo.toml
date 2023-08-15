@@ -12,6 +12,7 @@ edition = "2021"
 workspace = true
 
 [features]
+default = ["gpu"]
 multiling-chinese = ["charabia/chinese-segmentation", "charabia/chinese-normalization", "charabia/chinese-normalization-pinyin"]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
@@ -85,6 +86,8 @@ is_sorted = "0.1.1"
 strum = { workspace = true }
 byteorder = { workspace = true }
 zerocopy = { workspace = true }
+lazy_static = "1.5.0"
+env_logger = "0.11"
 
 sysinfo = "0.32"
 charabia = { version = "0.9.1", default-features = false, features = ["greek", "hebrew", "thai"] }

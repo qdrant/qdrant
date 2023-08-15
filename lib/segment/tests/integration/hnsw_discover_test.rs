@@ -118,6 +118,7 @@ fn hnsw_discover_precision() {
         payload_index: payload_index_ptr,
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();
@@ -241,6 +242,7 @@ fn filtered_hnsw_discover_precision() {
         payload_index: payload_index_ptr,
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

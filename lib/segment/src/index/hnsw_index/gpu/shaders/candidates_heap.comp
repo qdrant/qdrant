@@ -1,0 +1,75 @@
+#ifndef CANDIDATES_HEAP_HEADER
+#define CANDIDATES_HEAP_HEADER
+
+#include "common.comp"
+
+shared ScoredPoint candidates[CANDIDATES_HEAP_CAPACITY];
+uint candidates_count;
+
+void candidates_heap_init() {
+    candidates_count = 0;
+    for (uint i = gl_SubgroupInvocationID; i < CANDIDATES_HEAP_CAPACITY; i += SUBGROUP_SIZE) {
+        candidates[i] = ScoredPoint(0, positive_infinity);
+    }
+}
+
+ScoredPoint pop_candidate() {
+    if (candidates_count == 0) {
+        return ScoredPoint(0, 0.0);
+    }
+
+    ScoredPoint max_scored_point = ScoredPoint(0, negative_infinity);
+    uint max_index = 0;
+    for (uint i = gl_SubgroupInvocationID; i < candidates_count; i += SUBGROUP_SIZE) {
+        if (candidates[i].score > max_scored_point.score) {
+            max_scored_point = candidates[i];
+            max_index = i;
+        }
+    }
+
+    candidates_count--;
+
+    float subgroup_largest = subgroupMax(max_scored_point.score);
+    bool is_max_thread = max_scored_point.score == subgroup_largest;
+    uvec4 subgroup_max_threads = subgroupBallot(is_max_thread);
+    uint subgroup_max_thread = subgroupBallotFindLSB(subgroup_max_threads);
+    max_index = subgroupShuffle(max_index, subgroup_max_thread);
+    max_scored_point.score = subgroupShuffle(max_scored_point.score, subgroup_max_thread);
+    max_scored_point.id = subgroupShuffle(max_scored_point.id, subgroup_max_thread);
+
+    if (subgroupElect()) {
+        candidates[max_index] = candidates[candidates_count];
+    }
+    return max_scored_point;
+}
+
+bool push_candidate(ScoredPoint scored_point) {
+    if (candidates_count == CANDIDATES_HEAP_CAPACITY) {
+        ScoredPoint min_scored_point = ScoredPoint(0, positive_infinity);
+        uint min_index = 0;
+        for (uint i = gl_SubgroupInvocationID; i < candidates_count; i += SUBGROUP_SIZE) {
+            if (candidates[i].score < min_scored_point.score) {
+                min_scored_point = candidates[i];
+                min_index = i;
+            }
+        }
+
+        float subgroup_smallest = subgroupMin(min_scored_point.score);
+        bool is_min_thread = min_scored_point.score == subgroup_smallest;
+        uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
+        uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
+        min_index = subgroupShuffle(min_index, subgroup_min_thread);
+        
+        if (subgroupElect()) {
+            candidates[min_index] = scored_point;
+        }
+    } else {
+        if (subgroupElect()) {
+            candidates[candidates_count] = scored_point;
+        }
+        candidates_count++;
+    }
+    return true;
+}
+
+#endif
