@@ -7,6 +7,15 @@ from .utils import *
 
 N_PEERS = 5
 
+COLLECTION_CONFIG = {
+    "vectors": {
+        "size": 4,
+        "distance": "Dot",
+    },
+    "shard_number": 8,
+    "replication_factor": 2,
+}
+
 
 def test_collection_creation_after_dropping(tmp_path: pathlib.Path):
     assert_project_root()
@@ -36,7 +45,7 @@ def test_collection_creation_after_dropping(tmp_path: pathlib.Path):
     # Create collection
     r = requests.put(
         f"{peer_api_uris[randrange(N_PEERS)]}/collections/test_collection",
-        json={"vectors": {"size": 4, "distance": "Dot"}},
+        json=COLLECTION_CONFIG,
     )
     assert_http_ok(r)
 
@@ -50,7 +59,7 @@ def test_collection_creation_after_dropping(tmp_path: pathlib.Path):
         # Create collection
         r = requests.put(
             f"{peer_api_uris[randrange(N_PEERS)]}/collections/test_collection",
-            json={"vectors": {"size": 4, "distance": "Dot"}},
+            json=COLLECTION_CONFIG,
         )
         assert_http_ok(r)
 
