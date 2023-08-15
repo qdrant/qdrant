@@ -1,4 +1,6 @@
+use std::any::Any;
 use std::collections::HashMap;
+use std::ops::Index;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -7,7 +9,7 @@ use ordered_float::Float;
 use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
-use segment::entry::entry_point::OperationError;
+use segment::entry::entry_point::{OperationError, SegmentEntry};
 use segment::types::{
     Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig, SegmentType,
     SeqNumberType, WithPayload, WithPayloadInterface, WithVector,
@@ -447,6 +449,7 @@ fn execute_batch_search(
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let locked_segment = segment.get();
     let read_segment = locked_segment.read();
+
     let segment_points = read_segment.available_point_count();
     let top = if use_sampling {
         let ef_limit = prev_params
@@ -461,11 +464,17 @@ fn execute_batch_search(
         .params
         .map(|p| p.ignore_plain_index)
         .unwrap_or(false)
-        && read_segment.segment_type() == SegmentType::Plain
     {
-        log::debug!("ignore plain index search:{:?}", read_segment.info());
-        let batch_len = vectors_batch.len();
-        return Ok((vec![vec![]; batch_len], vec![false; batch_len]));
+        if match segment {
+            LockedSegment::Original(s) => s.read().segment_type == SegmentType::Plain,
+            LockedSegment::Proxy(s) => {
+                s.read().wrapped_segment.get().read().segment_type() == SegmentType::Plain
+            }
+        } {
+            log::debug!("ignore plain index search:{:?}", read_segment.info());
+            let batch_len = vectors_batch.len();
+            return Ok((vec![vec![]; batch_len], vec![false; batch_len]));
+        }
     }
     let res = read_segment.search_batch(
         prev_params.vector_name,
