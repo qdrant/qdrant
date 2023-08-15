@@ -1,6 +1,7 @@
 use serde_json::Value;
 use smol_str::SmolStr;
 
+use super::map_index::MapIndexEnum;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
@@ -115,8 +116,8 @@ pub trait ValueIndexer<T> {
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
-    IntMapIndex(MapIndex<IntPayloadType>),
-    KeywordIndex(MapIndex<SmolStr>),
+    IntMapIndex(MapIndexEnum<IntPayloadType>),
+    KeywordIndex(MapIndexEnum<SmolStr>),
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
