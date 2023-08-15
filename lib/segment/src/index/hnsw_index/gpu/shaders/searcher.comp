@@ -1,0 +1,174 @@
+#ifndef SEARCHER_HEADER
+#define SEARCHER_HEADER
+
+#ifndef SEARCHER_LAYOUT_SET
+#error "SEARCHER_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+#include "vector_storage.comp"
+#include "links.comp"
+
+layout(set = SEARCHER_LAYOUT_SET, binding = 0)
+readonly uniform SearcherParams {
+    uint nearest_capacity;
+    uint candidates_capacity;
+    uint visited_flags_capacity;
+} searcher_params;
+
+layout(set = SEARCHER_LAYOUT_SET, binding = 1)
+buffer NearestBuffer {
+    ScoredPoint data[];
+} nearest;
+
+layout(set = SEARCHER_LAYOUT_SET, binding = 2)
+buffer CandidatesBuffer {
+    ScoredPoint data[];
+} candidates;
+
+layout(set = SEARCHER_LAYOUT_SET, binding = 3)
+buffer VisitedFlagsBuffer {
+    uint data[];
+} visited_flags;
+
+// nearest binary heap
+#define BHEAP_NAME nearest
+#define BHEAP_DATA nearest.data
+#define BHEAP_TYPE ScoredPoint
+#define BHEAP_CMP(a, b) a.score < b.score
+#include "bheap.comp"
+
+// candidates binary heap
+#define BHEAP_NAME candidates
+#define BHEAP_DATA candidates.data
+#define BHEAP_TYPE ScoredPoint
+#define BHEAP_CMP(a, b) a.score > b.score
+#include "bheap.comp"
+
+ScoredPoint get_nearest(uint i) {
+    return nearest.data[gl_GlobalInvocationID.x * searcher_params.nearest_capacity + i];
+}
+
+void set_nearest(uint i, ScoredPoint scored_point) {
+    nearest.data[gl_GlobalInvocationID.x * searcher_params.nearest_capacity + i] = scored_point;
+}
+
+ScoredPoint get_candidate(uint i) {
+    return candidates.data[gl_GlobalInvocationID.x * searcher_params.candidates_capacity + i];
+}
+
+void set_candidate(uint i, ScoredPoint scored_point) {
+    candidates.data[gl_GlobalInvocationID.x * searcher_params.candidates_capacity + i] = scored_point;
+}
+
+bool check_and_process_visited(POINT_ID point_id) {
+    uint flag_index = gl_GlobalInvocationID.x * searcher_params.visited_flags_capacity + point_id / 32;
+    uint flag_bit = point_id % 32;
+    uint flag = visited_flags.data[flag_index];
+    uint flag_mask = 1 << flag_bit;
+    bool unvisited = (flag & flag_mask) == 0;
+    visited_flags.data[flag_index] = flag | flag_mask;
+    return unvisited;
+}
+
+void process_candidate(ScoredPoint scored_point) {
+    if (BHEAP(nearest, size) == EF) {
+        if (scored_point.score > BHEAP(nearest, top)().score) {
+            BHEAP(nearest, change_top)(scored_point);
+            BHEAP(candidates, push)(scored_point);
+        }
+    } else {
+        BHEAP(nearest, push)(scored_point);
+        BHEAP(candidates, push)(scored_point);
+    }
+}
+
+void process_link(POINT_ID point_id, POINT_ID link) {
+    if (check_and_process_visited(link)) {
+        float score = similarity(point_id, link);
+        ScoredPoint scored = ScoredPoint(link, score);
+        process_candidate(scored);
+    }
+}
+
+void search(POINT_ID point_id, ScoredPoint entry) {
+    check_and_process_visited(point_id);
+    check_and_process_visited(entry.id);
+    BHEAP(nearest, push)(entry);
+    BHEAP(candidates, push)(entry);
+
+    while (BHEAP(candidates, size) > 0) {
+        ScoredPoint candidate = BHEAP(candidates, pop)();
+        if (candidate.score < BHEAP(nearest, top)().score) {
+            continue;
+        }
+        LINKS_FOREACH(candidate.id) {
+            process_link(point_id, LINKS_FOREACH_VALUE);
+        }
+    }
+
+    LINKS_FOREACH(point_id) {
+        process_link(point_id, LINKS_FOREACH_VALUE);
+    }
+}
+
+ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
+    bool changed = true;
+    ScoredPoint result = entry;
+    while (changed) {
+        changed = false;
+
+        LINKS_FOREACH(result.id) {
+            float score = similarity(point_id, LINKS_FOREACH_VALUE);
+            if (score > result.score) {
+                changed = true;
+                result = ScoredPoint(LINKS_FOREACH_VALUE, score);
+            }
+        }
+    }
+    return result;
+}
+
+uint run_heuristic() {
+    uint nearest_count = BHEAP(nearest, into_array)();
+    uint result_count = 0;
+
+    for (uint i = 0; i < nearest_count; i++) {
+        if (result_count >= LEVEL_M) {
+            break;
+        }
+
+        ScoredPoint current_closest = get_nearest(i);
+        bool is_good = true;
+
+        for (uint j = 0; j < result_count; j++) {
+            ScoredPoint selected_point = get_nearest(j);
+            float dist_to_already_selected = similarity(current_closest.id, selected_point.id);
+            if (dist_to_already_selected > current_closest.score) {
+                is_good = false;
+                break;
+            }
+        }
+
+        if (is_good) {
+            set_nearest(result_count, current_closest);
+            result_count += 1;
+        }
+    }
+
+    return result_count;
+}
+
+void searcher_init() {
+    BHEAP(nearest, init)(
+        ScoredPoint(0, negative_infinity),
+        searcher_params.nearest_capacity,
+        gl_GlobalInvocationID.x * searcher_params.nearest_capacity);
+
+    BHEAP(candidates, init)(
+        ScoredPoint(0, positive_infinity),
+        searcher_params.candidates_capacity,
+        gl_GlobalInvocationID.x * searcher_params.candidates_capacity);
+}
+
+#endif

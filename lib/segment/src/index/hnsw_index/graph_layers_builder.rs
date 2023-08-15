@@ -33,7 +33,7 @@ pub struct GraphLayersBuilder {
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
-    links_layers: Vec<LockedLayersContainer>,
+    pub(crate) links_layers: Vec<LockedLayersContainer>,
     entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
@@ -286,7 +286,7 @@ impl GraphLayersBuilder {
     }
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
-    fn select_candidates_with_heuristic<F>(
+    pub(crate) fn select_candidates_with_heuristic<F>(
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
         score_internal: F,

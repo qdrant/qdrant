@@ -1,0 +1,18 @@
+#ifndef COMMON_HEADER
+#define COMMON_HEADER
+
+#define CONCAT(a, b) a##_##b
+
+#define POINT_ID uint
+
+const POINT_ID INVALID_POINT_ID = 0xffffffff;
+
+float positive_infinity = 1.0 / 0.0;
+float negative_infinity = -1.0 / 0.0;
+
+struct ScoredPoint {
+    POINT_ID id;
+    float score;
+};
+
+#endif

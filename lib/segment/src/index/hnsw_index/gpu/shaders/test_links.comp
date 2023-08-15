@@ -1,0 +1,26 @@
+#version 450
+
+#define LINKS_LAYOUT_SET 0
+#include "links.comp"
+
+#define BHEAP_NAME LINKS_BHEAP
+POINT_ID heap_data[16];
+#define BHEAP_DATA heap_data
+#define BHEAP_TYPE POINT_ID
+#define BHEAP_CMP(a, b) a > b
+#include "bheap.comp" 
+
+void main() {
+    BHEAP(LINKS_BHEAP, init)(0, 16, 0);
+
+    POINT_ID point_id = gl_GlobalInvocationID.x;
+    
+    LINKS_FOREACH(point_id) {
+        BHEAP(LINKS_BHEAP, push)(LINKS_FOREACH_VALUE);
+    }
+
+    LINKS_SET_SIZE(point_id, BHEAP(LINKS_BHEAP, size));
+    LINKS_FOREACH(point_id) {
+        LINKS_FOREACH_VALUE = BHEAP(LINKS_BHEAP, pop)();
+    }
+}

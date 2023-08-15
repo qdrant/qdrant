@@ -84,6 +84,7 @@ io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 memory = { path = "../common/memory" }
 sparse = { path = "../sparse" }
+gpu = {path = "../gpu"}
 
 tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.0"

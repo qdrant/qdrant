@@ -4,6 +4,7 @@ mod build_cache;
 pub mod build_condition_checker;
 mod config;
 mod entry_points;
+pub mod gpu;
 pub mod graph_layers;
 pub mod graph_layers_builder;
 pub mod graph_links;

@@ -1,0 +1,16 @@
+[package]
+name = "gpu"
+version = "0.0.1"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Ivan Pleshkov <pleshkov.ivan@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+rand = "0.8.5"
+ash = { version = "0.37.0", default-features = false, features = ["loaded", "debug"] }
+gpu-allocator = "0.21.0"

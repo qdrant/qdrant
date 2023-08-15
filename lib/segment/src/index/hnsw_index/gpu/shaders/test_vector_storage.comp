@@ -1,0 +1,12 @@
+#version 450
+
+#define VECTOR_STORAGE_LAYOUT_SET 1
+#include "vector_storage.comp"
+
+layout(set = 0, binding = 0) buffer ScoresData {
+    float data[];
+} scores;
+
+void main() {
+    scores.data[gl_GlobalInvocationID.x] = similarity(0, gl_GlobalInvocationID.x);
+}

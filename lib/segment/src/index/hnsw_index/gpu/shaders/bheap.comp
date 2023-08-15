@@ -1,0 +1,123 @@
+/******
+Shader binary heap.
+
+Usage example.
+Step 1: defines
+
+#define BHEAP_NAME bheap // provide binary heap name. Name is required for cases when there are many binary heaps in one shader
+float heap_data[8]; // reserve storage for binary heap
+#define BHEAP_DATA heap_data // provide storage name
+#define BHEAP_TYPE float // binary tree element type
+#define BHEAP_CMP(a, b) a > b // cmp function
+#include "bheap.comp" // define all binary tree functions
+
+Step 2: init
+BHEAP(BHEAP_NAME, init)(0.0, 8, 0); // default value, capacity and offset in storage
+
+Step 3: usage
+BHEAP(BHEAP_NAME, capacity) // get capacity
+BHEAP(BHEAP_NAME, offset) // get offset
+BHEAP(BHEAP_NAME, size); // get size
+BHEAP(BHEAP_NAME, top)(); // get top value
+BHEAP(BHEAP_NAME, pop)(); // pop value
+BHEAP(BHEAP_NAME, change_top)(1.0); // pop and push
+BHEAP(BHEAP_NAME, push)(1.0); // push value
+BHEAP(BHEAP_NAME, into_array)(); // convert to sorted array and return array size
+
+******/
+
+#include "common.comp"
+
+#define BHEAP(NAME, a) CONCAT(NAME, a)
+
+uint BHEAP(BHEAP_NAME, offset) = 0;
+uint BHEAP(BHEAP_NAME, capacity) = 0;
+uint BHEAP(BHEAP_NAME, size) = 0;
+
+// swap
+void BHEAP(BHEAP_NAME, swap)(uint i, uint j) {
+    BHEAP_TYPE tmp = BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i];
+    BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i] = BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + j];
+    BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + j] = tmp;
+}
+
+// compare, call BHEAP_CMP function
+bool BHEAP(BHEAP_NAME, cmp)(uint i, uint j) {
+    return BHEAP_CMP(
+        (BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i]),
+        (BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + j])
+    );
+}
+
+// sift down
+void BHEAP(BHEAP_NAME, sift_down)(uint i) {
+    while (2 * i + 1 < BHEAP(BHEAP_NAME, size)) {
+        uint left = 2 * i + 1;
+        uint right = 2 * i + 2;
+        uint j = left;
+        if (right < BHEAP(BHEAP_NAME, size) && BHEAP(BHEAP_NAME, cmp)(right, left)) {
+            j = right;
+        }
+        if (BHEAP(BHEAP_NAME, cmp)(i, j)) {
+            break;
+        }
+        BHEAP(BHEAP_NAME, swap)(i, j);
+        i = j;
+    }
+}
+
+// push
+void BHEAP(BHEAP_NAME, push)(BHEAP_TYPE score) {
+    uint i = BHEAP(BHEAP_NAME, size);
+    BHEAP(BHEAP_NAME, size)++;
+    BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i] = score;
+    while (i > 0 && BHEAP(BHEAP_NAME, cmp)(i, (i - 1) / 2)) {
+        BHEAP(BHEAP_NAME, swap)(i, (i - 1) / 2);
+        i = (i - 1) / 2;
+    }
+}
+
+// get top value
+BHEAP_TYPE BHEAP(BHEAP_NAME, top)() {
+    return BHEAP_DATA[BHEAP(BHEAP_NAME, offset)];
+}
+
+// pop value
+BHEAP_TYPE BHEAP(BHEAP_NAME, pop)() {
+    BHEAP_TYPE top_value = BHEAP(BHEAP_NAME, top)();
+    BHEAP(BHEAP_NAME, size)--;
+    BHEAP_DATA[BHEAP(BHEAP_NAME, offset)] = BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + BHEAP(BHEAP_NAME, size)];
+    BHEAP(BHEAP_NAME, sift_down)(0);
+    return top_value;
+}
+
+// replace top value
+void BHEAP(BHEAP_NAME, change_top)(BHEAP_TYPE new_value) {
+    BHEAP_DATA[BHEAP(BHEAP_NAME, offset)] = new_value;
+    BHEAP(BHEAP_NAME, sift_down)(0);
+}
+
+// into_array
+uint BHEAP(BHEAP_NAME, into_array)() {
+    uint array_size = BHEAP(BHEAP_NAME, size);
+    while (BHEAP(BHEAP_NAME, size) > 0) {
+        uint i = BHEAP(BHEAP_NAME, size) - 1;
+        BHEAP_TYPE value = BHEAP(BHEAP_NAME, pop)();
+        BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i] = value;
+    }
+    return array_size;
+}
+
+// init
+void BHEAP(BHEAP_NAME, init)(BHEAP_TYPE none_value, uint capacity, uint offset) {
+    BHEAP(BHEAP_NAME, offset) = offset;
+    BHEAP(BHEAP_NAME, capacity) = capacity;
+    for (uint i = 0; i < capacity; i++) {
+        BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i] = none_value;
+    }
+}
+
+#undef BHEAP_NAME
+#undef BHEAP_DATA
+#undef BHEAP_TYPE
+#undef BHEAP_CMP

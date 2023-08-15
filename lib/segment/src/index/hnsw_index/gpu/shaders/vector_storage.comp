@@ -1,0 +1,37 @@
+#ifndef VECTOR_STORAGE_HEADER
+#define VECTOR_STORAGE_HEADER
+
+#ifndef VECTOR_STORAGE_LAYOUT_SET
+#error "VECTOR_STORAGE_LAYOUT_SET not defined"
+#endif
+
+layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 0)
+readonly uniform VectorStorageParams {
+    uint dim;
+    uint count;
+} vector_storage_params;
+
+layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1)
+readonly buffer Vectors {
+    vec4 data[];
+} vectors;
+
+#define COUNT vector_storage_params.count
+
+#define DIM vector_storage_params.dim
+
+float similarity(uint a, uint b) {
+    float result = 0.0;
+    uint d = DIM / 4;
+    uint aId = a * d;
+    uint bId = b * d;
+    for (uint i = 0; i < d; i++, aId++, bId++) {
+        result += dot(
+            vectors.data[aId],
+            vectors.data[bId]
+        );
+    }
+    return result;
+}
+
+#endif

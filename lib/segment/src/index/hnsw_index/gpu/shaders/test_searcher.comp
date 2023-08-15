@@ -1,0 +1,35 @@
+#version 450
+
+#define VECTOR_STORAGE_LAYOUT_SET 0
+#define LINKS_LAYOUT_SET 1
+#define SEARCHER_LAYOUT_SET 2
+
+#include "vector_storage.comp"
+#include "links.comp"
+#include "searcher.comp"
+
+layout(set = 3, binding = 0) buffer RequestData {
+    POINT_ID data[];
+} request;
+
+layout(set = 3, binding = 1) buffer ResponseData {
+    POINT_ID data[];
+} response;
+
+void main() {
+    searcher_init();
+
+    POINT_ID point_id = request.data[2 * gl_GlobalInvocationID.x];
+    POINT_ID entry_id = request.data[2 * gl_GlobalInvocationID.x + 1];
+    float score = similarity(point_id, entry_id);
+    ScoredPoint entry = ScoredPoint(entry_id, score);
+
+    search(point_id, entry);
+    
+    uint index = gl_GlobalInvocationID.x * EF;
+    while (BHEAP(nearest, size) > 0) {
+        ScoredPoint scored_point = BHEAP(nearest, pop)();
+        response.data[index] = scored_point.id;
+        index += 1;
+    }
+}

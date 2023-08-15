@@ -96,6 +96,7 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
+gpu = { path = "lib/gpu" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
