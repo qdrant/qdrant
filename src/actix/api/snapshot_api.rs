@@ -6,6 +6,7 @@ use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator::{Json, Path, Query};
+use collection::collection::Collection;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
@@ -20,6 +21,7 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::{TableOfContent, SNAPSHOTS_TEMP_DIR};
 use storage::dispatcher::Dispatcher;
+use tokio::sync::RwLockReadGuard;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -352,9 +354,11 @@ async fn download_shard_snapshot(
 async fn upload_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
-    MultipartForm(form): MultipartForm<SnapshottingForm>,
     query: web::Query<SnapshotUploadingParam>,
+    MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
+    let SnapshotUploadingParam { wait, priority } = query.into_inner();
+
     let future = async move {
         let (collection, shard, snapshot) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
@@ -368,15 +372,22 @@ async fn upload_shard_snapshot(
 
         form.snapshot
             .file
-            .persist(snapshot_path)
+            .persist(&snapshot_path)
             .map_err(io::Error::from)?;
 
-        // TODO: Handle Raft state notification/transition!
+        restore_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard,
+            &snapshot_path,
+            priority.unwrap_or_default(),
+        )
+        .await?;
 
         Ok(())
     };
 
-    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+    helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
 #[post("/collections/{collection}/shards/{shard}/snapshots")]
@@ -396,75 +407,94 @@ async fn restore_shard_snapshot(
         let snapshot_path =
             snapshots::download::download_snapshot(request.location, &snapshots_dir).await?;
 
-        // TODO: Check snapshot compatibility?
-        // TODO: Switch replica into `Partial` state?
+        restore_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard,
+            &snapshot_path,
+            request.priority.unwrap_or_default(),
+        )
+        .await?;
 
-        collection
-            .restore_shard_snapshot(
-                shard,
-                &snapshot_path,
-                toc.this_peer_id,
-                toc.is_distributed(),
-                &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR),
-            )
-            .await?;
+        Ok(())
+    };
 
-        let state = collection.state().await;
-        let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+}
 
-        let other_active_replicas: Vec<_> = shard_info
-            .replicas
-            .iter()
-            .map(|(&peer, &state)| (peer, state))
-            .filter(|&(peer, state)| peer != toc.this_peer_id && state == ReplicaState::Active)
-            .collect();
+async fn restore_shard_snapshot_impl(
+    toc: &TableOfContent,
+    collection: &RwLockReadGuard<'_, Collection>,
+    shard: ShardId,
+    snapshot_path: &std::path::Path,
+    priority: SnapshotPriority,
+) -> Result<(), StorageError> {
+    // TODO: Check snapshot compatibility?
+    // TODO: Switch replica into `Partial` state?
 
-        if other_active_replicas.is_empty() {
-            activate_shard(&toc, &collection, toc.this_peer_id, &shard).await?;
-        } else {
-            match request.priority.unwrap_or_default() {
-                SnapshotPriority::Snapshot => {
-                    activate_shard(&toc, &collection, toc.this_peer_id, &shard).await?;
+    collection
+        .restore_shard_snapshot(
+            shard,
+            snapshot_path,
+            toc.this_peer_id,
+            toc.is_distributed(),
+            &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR),
+        )
+        .await?;
 
-                    let replicas_to_keep = state.config.params.replication_factor.get() - 1;
+    let state = collection.state().await;
+    let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
 
-                    let replicas_to_remove = other_active_replicas
-                        .len()
-                        .saturating_sub(replicas_to_keep as usize);
+    let other_active_replicas: Vec<_> = shard_info
+        .replicas
+        .iter()
+        .map(|(&peer, &state)| (peer, state))
+        .filter(|&(peer, state)| peer != toc.this_peer_id && state == ReplicaState::Active)
+        .collect();
 
-                    let mut other_active_replicas = other_active_replicas.iter().copied();
+    if other_active_replicas.is_empty() {
+        activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
+    } else {
+        match priority {
+            SnapshotPriority::Snapshot => {
+                activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
 
-                    for (peer, _) in other_active_replicas.by_ref().take(replicas_to_remove) {
-                        toc.request_remove_replica(collection.name(), shard, peer)?;
-                    }
+                let replicas_to_keep = state.config.params.replication_factor.get() - 1;
 
-                    for (peer, _) in other_active_replicas {
-                        toc.send_set_replica_state_proposal(
-                            collection.name(),
-                            peer,
-                            shard,
-                            ReplicaState::Dead,
-                            None,
-                        )?;
-                    }
+                let replicas_to_remove = other_active_replicas
+                    .len()
+                    .saturating_sub(replicas_to_keep as usize);
+
+                let mut other_active_replicas = other_active_replicas.iter().copied();
+
+                for (peer, _) in other_active_replicas.by_ref().take(replicas_to_remove) {
+                    toc.request_remove_replica(collection.name(), shard, peer)?;
                 }
 
-                SnapshotPriority::Replica => {
+                for (peer, _) in other_active_replicas {
                     toc.send_set_replica_state_proposal(
                         collection.name(),
-                        toc.this_peer_id,
+                        peer,
                         shard,
                         ReplicaState::Dead,
                         None,
                     )?;
                 }
             }
+
+            SnapshotPriority::Replica => {
+                toc.send_set_replica_state_proposal(
+                    collection.name(),
+                    toc.this_peer_id,
+                    shard,
+                    ReplicaState::Dead,
+                    None,
+                )?;
+            }
         }
+    }
 
-        Ok(())
-    };
-
-    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+    Ok(())
 }
 
 // Configure services
