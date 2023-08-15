@@ -28,6 +28,8 @@ use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::hnsw_index::gpu::get_gpu_indexing;
+use crate::index::hnsw_index::gpu::gpu_graph_builder::GpuGraphBuilder;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -56,6 +58,9 @@ const HNSW_USE_HEURISTIC: bool = true;
 const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
 const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
+
+const BYTES_IN_KB: usize = 1024;
+const GPU_THREADS_COUNT: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -690,6 +695,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         let quantized_vectors = self.quantized_vectors.borrow();
         let mut rng = thread_rng();
+        let gpu_indexing = get_gpu_indexing();
+
+        let total_vector_count = vector_storage.total_vector_count();
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
         debug!(
@@ -697,16 +705,17 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             permit.num_cpus,
         );
         let indexing_threshold = self.config.full_scan_threshold;
+        let entry_points_num = (total_vector_count
+            .checked_div(indexing_threshold)
+            .unwrap_or(0)
+            * 10)
+            .max(1);
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
-            (total_vector_count
-                .checked_div(indexing_threshold)
-                .unwrap_or(0)
-                * 10)
-                .max(1),
+            entry_points_num,
             HNSW_USE_HEURISTIC,
         );
 
@@ -736,10 +745,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             })
             .build()?;
 
-        for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
-            check_process_stopped(stopped)?;
-            let level = graph_layers_builder.get_random_layer(&mut rng);
-            graph_layers_builder.set_levels(vector_id, level);
+        if !gpu_indexing {
+            for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
+                check_process_stopped(stopped)?;
+                let level = graph_layers_builder.get_random_layer(&mut rng);
+                graph_layers_builder.set_levels(vector_id, level);
+            }
         }
 
         let mut indexed_vectors = 0;
@@ -783,7 +794,33 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
             }
 
-            debug!("finish main graph");
+                debug!("finish main graph in time {:?}", timer.elapsed());
+            } else {
+                let raw_scorer = if let Some(quantized_storage) = vector_storage.quantized_storage()
+                {
+                    quantized_storage.raw_scorer(
+                        &vec![],
+                        id_tracker.deleted_point_bitslice(),
+                        vector_storage.deleted_vector_bitslice(),
+                        stopped,
+                    )
+                } else {
+                    new_raw_scorer(vec![], &vector_storage, id_tracker.deleted_point_bitslice())
+                };
+                let mut gpu_graph_builder = GpuGraphBuilder::new(
+                    total_vector_count,
+                    self.config.m,
+                    self.config.m0,
+                    self.config.ef_construct,
+                    entry_points_num,
+                    raw_scorer,
+                    &vector_storage,
+                    &mut rng,
+                    GPU_THREADS_COUNT,
+                );
+                gpu_graph_builder.build();
+                graph_layers_builder = gpu_graph_builder.into_graph_layers_builder();
+            }
         } else {
             debug!("skip building main HNSW graph");
         }
