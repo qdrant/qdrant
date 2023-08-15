@@ -226,8 +226,11 @@ mod tests {
             &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
         );
         context.dispatch(num_vectors, 1, 1);
+
+        let timer = std::time::Instant::now();
         context.run();
         context.wait_finish();
+        println!("GPU scoring time = {:?}", timer.elapsed());
 
         let staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
