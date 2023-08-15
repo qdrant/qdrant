@@ -1,14 +1,46 @@
+use std::fmt::Write as _;
+use std::str::FromStr as _;
+
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, fmt};
 
-pub fn setup(log_level: &str) -> anyhow::Result<()> {
+const DEFAULT_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Info;
+
+const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
+    ("hyper", log::LevelFilter::Info),
+    ("h2", log::LevelFilter::Error),
+    ("tower", log::LevelFilter::Warn),
+    ("rustls", log::LevelFilter::Info),
+    ("wal", log::LevelFilter::Warn),
+    ("raft", log::LevelFilter::Warn),
+];
+
+pub fn setup(user_filters: &str) -> anyhow::Result<()> {
     tracing_log::LogTracer::init()?;
+
+    let mut filters = DEFAULT_LOG_LEVEL.to_string();
+
+    let user_log_level = user_filters
+        .rsplit(',')
+        .find_map(|dir| log::LevelFilter::from_str(dir).ok());
+
+    for (target, log_level) in DEFAULT_FILTERS.iter().copied() {
+        if user_log_level.unwrap_or(DEFAULT_LOG_LEVEL) > log_level {
+            write!(&mut filters, ",{target}={log_level}").unwrap(); // Writing into `String` never fails
+        }
+    }
+
+    write!(&mut filters, ",{user_filters}").unwrap(); // Writing into `String` never fails
 
     let reg = tracing_subscriber::registry().with(
         fmt::layer()
             .with_ansi(true)
             .with_span_events(fmt::format::FmtSpan::NEW)
-            .with_filter(filter::EnvFilter::builder().parse_lossy(log_level)),
+            .with_filter(
+                filter::EnvFilter::builder()
+                    .with_regex(false)
+                    .parse_lossy(filters),
+            ),
     );
 
     // Use `console` or `console-subscriber` feature to enable `console-subscriber`
