@@ -19,11 +19,16 @@ multiling-chinese = ["segment/multiling-chinese"]
 multiling-japanese = ["segment/multiling-japanese"]
 multiling-korean = ["segment/multiling-korean"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
-tracing-log = ["tracing", "tracing/log"]
+tracing = [
+    "api/tracing",
+    "collection/tracing",
+    "segment/tracing",
+    "storage/tracing",
+]
 console = ["console-subscriber"]
-console-subscriber = ["tracing", "tracing-subscriber", "dep:console-subscriber"]
+console-subscriber = ["tracing", "dep:console-subscriber"]
 tracy = ["tracing-tracy"]
-tracing-tracy = ["tracing", "tracing-subscriber", "dep:tracing-tracy"]
+tracing-tracy = ["tracing", "dep:tracing-tracy"]
 tokio-tracing = ["tokio/tracing"]
 
 [dev-dependencies]
@@ -41,7 +46,6 @@ parking_lot = { version = "0.12.1", features=["deadlock_detection"], optional = 
 num_cpus = "1.16"
 thiserror = "1.0"
 log = "0.4"
-env_logger = "0.10.0"
 atty = "0.2"
 colored = "2"
 serde = { version = "~1.0", features = ["derive"] }
@@ -92,8 +96,9 @@ actix-multipart = "0.6.0"
 constant_time_eq = "0.3.0"
 
 # Profiling
-tracing = { version = "0.1", features = ["async-await"], optional = true }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"], optional = true }
+tracing = { version = "0.1", features = ["async-await"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = { version = "0.1", default-features = false, features = ["log-tracer", "std"] }
 console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
 tracing-tracy = { version = "0.10.3", features = ["ondemand"], optional = true }
 

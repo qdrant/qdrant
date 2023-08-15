@@ -1,35 +1,72 @@
-pub fn setup() -> anyhow::Result<()> {
-    // Use `console` and/or `tracy` features to enable both `tracing-subscriber` and the layer(s)
-    #[cfg(feature = "tracing-subscriber")]
-    {
-        use tracing_subscriber::prelude::*;
+use std::fmt::Write as _;
+use std::str::FromStr as _;
 
-        let reg = tracing_subscriber::registry();
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{filter, fmt};
 
-        // Use `console` feature to enable both `tracing-subscriber` and `console-subscriber`
-        #[cfg(feature = "console-subscriber")]
-        let reg = reg.with(console_subscriber::spawn());
+const DEFAULT_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Info;
 
-        // Note, that `console-subscriber` requires manually enabling
-        // `--cfg tokio_unstable` rust flags during compilation!
-        //
-        // Otherwise `console_subscriber::spawn` call panics!
-        //
-        // See https://docs.rs/tokio/latest/tokio/#unstable-features
-        #[cfg(all(feature = "console-subscriber", not(tokio_unstable)))]
-        eprintln!(
-            "`console-subscriber` requires manually enabling \
-             `--cfg tokio_unstable` rust flags during compilation!"
-        );
+const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
+    ("hyper", log::LevelFilter::Info),
+    ("h2", log::LevelFilter::Error),
+    ("tower", log::LevelFilter::Warn),
+    ("rustls", log::LevelFilter::Info),
+    ("wal", log::LevelFilter::Warn),
+    ("raft", log::LevelFilter::Warn),
+];
 
-        // Use `tracy` feature to enable both `tracing-subscriber` and `tracing-tracy`
-        #[cfg(feature = "tracing-tracy")]
-        let reg = reg.with(tracing_tracy::TracyLayer::new().with_filter(
-            tracing_subscriber::filter::filter_fn(|metadata| metadata.is_span()),
-        ));
+pub fn setup(user_filters: &str) -> anyhow::Result<()> {
+    tracing_log::LogTracer::init()?;
 
-        tracing::subscriber::set_global_default(reg)?;
+    let mut filters = DEFAULT_LOG_LEVEL.to_string();
+
+    let user_log_level = user_filters
+        .rsplit(',')
+        .find_map(|dir| log::LevelFilter::from_str(dir).ok());
+
+    for (target, log_level) in DEFAULT_FILTERS.iter().copied() {
+        if user_log_level.unwrap_or(DEFAULT_LOG_LEVEL) > log_level {
+            write!(&mut filters, ",{target}={log_level}").unwrap(); // Writing into `String` never fails
+        }
     }
+
+    write!(&mut filters, ",{user_filters}").unwrap(); // Writing into `String` never fails
+
+    let reg = tracing_subscriber::registry().with(
+        fmt::layer()
+            .with_ansi(true)
+            .with_span_events(fmt::format::FmtSpan::NEW)
+            .with_filter(
+                filter::EnvFilter::builder()
+                    .with_regex(false)
+                    .parse_lossy(filters),
+            ),
+    );
+
+    // Use `console` or `console-subscriber` feature to enable `console-subscriber`
+    //
+    // Note, that `console-subscriber` requires manually enabling
+    // `--cfg tokio_unstable` rust flags during compilation!
+    //
+    // Otherwise `console_subscriber::spawn` call panics!
+    //
+    // See https://docs.rs/tokio/latest/tokio/#unstable-features
+    #[cfg(all(feature = "console-subscriber", tokio_unstable))]
+    let reg = reg.with(console_subscriber::spawn());
+
+    #[cfg(all(feature = "console-subscriber", not(tokio_unstable)))]
+    eprintln!(
+        "`console-subscriber` requires manually enabling \
+         `--cfg tokio_unstable` rust flags during compilation!"
+    );
+
+    // Use `tracy` or `tracing-tracy` feature to enable `tracing-tracy`
+    #[cfg(feature = "tracing-tracy")]
+    let reg = reg.with(tracing_tracy::TracyLayer::new().with_filter(
+        tracing_subscriber::filter::filter_fn(|metadata| metadata.is_span()),
+    ));
+
+    tracing::subscriber::set_global_default(reg)?;
 
     Ok(())
 }
