@@ -35,6 +35,7 @@ pub struct ProxySegment {
     deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsMap,
     last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
+    wrapped_config: SegmentConfig,
 }
 
 impl ProxySegment {
@@ -45,6 +46,7 @@ impl ProxySegment {
         created_indexes: LockedFieldsMap,
         deleted_indexes: LockedFieldsSet,
     ) -> Self {
+        let wrapped_config = segment.get().read().config().clone();
         ProxySegment {
             write_segment,
             wrapped_segment: segment,
@@ -52,6 +54,7 @@ impl ProxySegment {
             created_indexes,
             deleted_indexes,
             last_flushed_version: Arc::new(RwLock::new(None)),
+            wrapped_config,
         }
     }
 
@@ -573,28 +576,48 @@ impl SegmentEntry for ProxySegment {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
 
+        let vector_name_count = self.config().vector_data.len();
+        let deleted_points_count = self.deleted_points.read().len();
+
         // This is a best estimate
-        let num_vectors = {
-            let vector_name_count = self.config().vector_data.len();
-            let deleted_points_count = self.deleted_points.read().len();
-            (wrapped_info.num_vectors + write_info.num_vectors)
+        let num_vectors = (wrapped_info.num_vectors + write_info.num_vectors)
+            .saturating_sub(deleted_points_count * vector_name_count);
+
+        let num_indexed_vectors = if wrapped_info.segment_type == SegmentType::Indexed {
+            wrapped_info
+                .num_vectors
                 .saturating_sub(deleted_points_count * vector_name_count)
+        } else {
+            0
         };
+
+        let mut vector_data = wrapped_info.vector_data;
+
+        for (key, info) in write_info.vector_data.into_iter() {
+            vector_data
+                .entry(key)
+                .and_modify(|wrapped_info| {
+                    wrapped_info.num_vectors += info.num_vectors;
+                })
+                .or_insert(info);
+        }
 
         SegmentInfo {
             segment_type: SegmentType::Special,
             num_vectors,
+            num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false,
             index_schema: wrapped_info.index_schema,
+            vector_data,
         }
     }
 
-    fn config(&self) -> SegmentConfig {
-        self.wrapped_segment.get().read().config()
+    fn config(&self) -> &SegmentConfig {
+        &self.wrapped_config
     }
 
     fn is_appendable(&self) -> bool {

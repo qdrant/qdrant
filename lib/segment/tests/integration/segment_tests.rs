@@ -261,7 +261,7 @@ fn test_update_named_vector() {
         hnsw_ef: None,
         exact: true,
         quantization: None,
-        ignore_plain_index: false,
+        indexed_only: false,
     };
     let nearest_upsert = segment
         .search(

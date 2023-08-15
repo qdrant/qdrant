@@ -11,7 +11,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::data_types::vectors::VectorElementType;
-use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
@@ -747,30 +746,13 @@ impl LocalShard {
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
 
-            let segment_info = match segment {
-                LockedSegment::Original(original_segment) => {
-                    let info = original_segment.read().info();
-                    if info.segment_type == SegmentType::Indexed {
-                        indexed_vectors_count += info.num_vectors;
-                    }
-                    info
-                }
-                LockedSegment::Proxy(proxy_segment) => {
-                    let proxy_segment_lock = proxy_segment.read();
-                    let proxy_segment_info = proxy_segment_lock.info();
-
-                    let wrapped_info = proxy_segment_lock.wrapped_segment.get().read().info();
-                    if wrapped_info.segment_type == SegmentType::Indexed {
-                        indexed_vectors_count += wrapped_info.num_vectors;
-                    }
-                    proxy_segment_info
-                }
-            };
+            let segment_info = segment.get().read().info();
 
             if segment_info.segment_type == SegmentType::Special {
                 status = CollectionStatus::Yellow;
             }
             vectors_count += segment_info.num_vectors;
+            indexed_vectors_count += segment_info.num_indexed_vectors;
             points_count += segment_info.num_points;
             for (key, val) in segment_info.index_schema {
                 match schema.entry(key) {

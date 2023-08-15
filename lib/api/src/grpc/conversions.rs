@@ -368,7 +368,7 @@ impl From<SearchParams> for segment::types::SearchParams {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
             exact: params.exact.unwrap_or(false),
             quantization: params.quantization.map(|q| q.into()),
-            ignore_plain_index: params.ignore_plain_index.unwrap_or(false),
+            indexed_only: params.indexed_only.unwrap_or(false),
         }
     }
 }
@@ -379,7 +379,7 @@ impl From<segment::types::SearchParams> for SearchParams {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
             exact: Some(params.exact),
             quantization: params.quantization.map(|q| q.into()),
-            ignore_plain_index: Some(params.ignore_plain_index),
+            indexed_only: Some(params.indexed_only),
         }
     }
 }

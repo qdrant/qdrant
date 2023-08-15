@@ -16,8 +16,8 @@ pub struct Struct {
 }
 /// `Value` represents a dynamically typed value which can be either
 /// null, a number, a string, a boolean, a recursive struct value, or a
-/// list of values. A producer of value is expected to set one of these
-/// variants. Absence of any variant indicates an error.
+/// list of values. A producer of value is expected to set one of that
+/// variants, absence of any variant indicates an error.
 ///
 /// The JSON representation for `Value` is JSON value.
 #[derive(serde::Serialize)]
@@ -153,17 +153,7 @@ impl NullValue {
 ///      .setNanos((int) ((millis % 1000) * 1000000)).build();
 /// ```
 ///
-/// Example 5: Compute Timestamp from Java `Instant.now()`.
-///
-/// ```text
-/// Instant now = Instant.now();
-///
-/// Timestamp timestamp =
-///      Timestamp.newBuilder().setSeconds(now.getEpochSecond())
-///          .setNanos(now.getNano()).build();
-/// ```
-///
-/// Example 6: Compute Timestamp from current time in Python.
+/// Example 5: Compute Timestamp from current time in Python.
 ///
 /// ```text
 /// timestamp = Timestamp()
@@ -193,7 +183,7 @@ impl NullValue {
 /// to this format using
 /// \[`strftime`\](<https://docs.python.org/2/library/time.html#time.strftime>) with
 /// the time format spec '%Y-%m-%dT%H:%M:%S.%fZ'. Likewise, in Java, one can use
-/// the Joda Time's \[`ISODateTimeFormat.dateTime()`\](<http://joda-time.sourceforge.net/apidocs/org/joda/time/format/ISODateTimeFormat.html#dateTime(>)) to obtain a formatter capable of generating timestamps in this format.
+/// the Joda Time's \[`ISODateTimeFormat.dateTime()`\](<http://www.joda.org/joda-time/apidocs/org/joda/time/format/ISODateTimeFormat.html#dateTime%2D%2D>) to obtain a formatter capable of generating timestamps in this format.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
