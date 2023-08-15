@@ -64,7 +64,7 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf
                     "Snapshot file {local_path:?} does not exist"
                 )));
             }
-            Ok(local_path.to_path_buf())
+            Ok(local_path)
         }
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));

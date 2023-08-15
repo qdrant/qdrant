@@ -5,7 +5,6 @@ use bitvec::slice::BitSlice;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
-use super::quantized_raw_scorer::QuantizedRawScorer;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::vectors::VectorElementType;
@@ -17,7 +16,8 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
-use crate::vector_storage::RawScorer;
+use crate::vector_storage::quantized::quantized_query_scorer::QuantizedQueryScorer;
+use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
@@ -57,44 +57,28 @@ impl QuantizedVectors {
             .unwrap_or_else(|| query.to_vec());
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                    is_stopped,
-                })
+                let encoded_query = storage.encode_query(&query);
+                let quant_scorer =
+                    QuantizedQueryScorer::new(query, encoded_query, storage, self.distance);
+                raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::ScalarMmap(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                    is_stopped,
-                })
+                let encoded_query = storage.encode_query(&query);
+                let quant_scorer =
+                    QuantizedQueryScorer::new(query, encoded_query, storage, self.distance);
+                raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::PQRam(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                    is_stopped,
-                })
+                let encoded_query = storage.encode_query(&query);
+                let quant_scorer =
+                    QuantizedQueryScorer::new(query, encoded_query, storage, self.distance);
+                raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::PQMmap(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                    is_stopped,
-                })
+                let encoded_query = storage.encode_query(&query);
+                let quant_scorer =
+                    QuantizedQueryScorer::new(query, encoded_query, storage, self.distance);
+                raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
         }
     }

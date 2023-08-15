@@ -17,7 +17,7 @@ pub struct Struct {
 /// `Value` represents a dynamically typed value which can be either
 /// null, a number, a string, a boolean, a recursive struct value, or a
 /// list of values. A producer of value is expected to set one of these
-/// variants. Absence of any variant indicates an error.
+/// variants, absence of any variant indicates an error.
 ///
 /// The JSON representation for `Value` is JSON value.
 #[derive(serde::Serialize)]
@@ -153,17 +153,7 @@ impl NullValue {
 ///      .setNanos((int) ((millis % 1000) * 1000000)).build();
 /// ```
 ///
-/// Example 5: Compute Timestamp from Java `Instant.now()`.
-///
-/// ```text
-/// Instant now = Instant.now();
-///
-/// Timestamp timestamp =
-///      Timestamp.newBuilder().setSeconds(now.getEpochSecond())
-///          .setNanos(now.getNano()).build();
-/// ```
-///
-/// Example 6: Compute Timestamp from current time in Python.
+/// Example 5: Compute Timestamp from current time in Python.
 ///
 /// ```text
 /// timestamp = Timestamp()
