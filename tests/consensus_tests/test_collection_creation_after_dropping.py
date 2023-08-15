@@ -55,8 +55,9 @@ def test_collection_creation_after_dropping(tmp_path: pathlib.Path):
         assert_http_ok(r)
 
         # Upload some points to every peer
-        for uri in peer_api_uris:
-            upsert_random_points(uri, collection_name="test_collection", num=50, wait="false")
+        for _ in range(20):
+            for peer_api_uri in peer_api_uris:
+                upsert_random_points(peer_api_uri, collection_name="test_collection", num=50, wait="false")
 
     # Get collections on all peers
     for i in range(N_PEERS):
