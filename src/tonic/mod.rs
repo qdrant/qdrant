@@ -19,7 +19,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tokio::runtime::Handle;
-use tokio::signal;
+use tokio::sync::watch;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
@@ -46,29 +46,13 @@ impl Qdrant for QdrantService {
     }
 }
 
-#[cfg(not(unix))]
-async fn wait_stop_signal(for_what: &str) {
-    signal::ctrl_c().await.unwrap();
-    log::debug!("Stopping {for_what} on SIGINT");
-}
-
-#[cfg(unix)]
-async fn wait_stop_signal(for_what: &str) {
-    let mut term = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
-    let mut inrt = signal::unix::signal(signal::unix::SignalKind::interrupt()).unwrap();
-
-    tokio::select! {
-        _ = term.recv() => log::debug!("Stopping {for_what} on SIGTERM"),
-        _ = inrt.recv() => log::debug!("Stopping {for_what} on SIGINT"),
-    }
-}
-
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     settings: Settings,
     grpc_port: u16,
     runtime: Handle,
+    mut shutdown_flag: watch::Receiver<bool>,
 ) -> io::Result<()> {
     runtime.block_on(async {
         let socket =
@@ -136,7 +120,7 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
-                wait_stop_signal("gRPC service").await;
+                shutdown_flag.wait_for(|value| *value).await.unwrap();
             })
             .await
             .map_err(helpers::tonic_error_to_io_error)
@@ -155,6 +139,7 @@ pub fn init_internal(
     tls_config: Option<ServerTlsConfig>,
     to_consensus: tokio::sync::mpsc::Sender<crate::consensus::Message>,
     runtime: Handle,
+    mut shutdown_flag: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     use ::api::grpc::qdrant::raft_server::RaftServer;
 
@@ -224,7 +209,7 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .serve_with_shutdown(socket, async {
-                    wait_stop_signal("internal gRPC").await;
+                    shutdown_flag.wait_for(|value| *value).await.unwrap();
                 })
                 .await
         })

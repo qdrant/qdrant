@@ -32,6 +32,12 @@ use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
 
+/// gRPC and consensus thread handles.
+type ConsensusHandles = (
+    JoinHandle<std::io::Result<()>>,
+    JoinHandle<std::io::Result<()>>,
+);
+
 const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
@@ -53,6 +59,7 @@ pub struct Consensus {
     /// ToDo: Make if many
     config: ConsensusConfig,
     broker: RaftMessageBroker,
+    shutdown_flag: watch::Receiver<bool>,
 }
 
 impl Consensus {
@@ -69,7 +76,8 @@ impl Consensus {
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
-    ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
+        shutdown_flag: watch::Receiver<bool>,
+    ) -> anyhow::Result<ConsensusHandles> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
         let p2p_host = settings.service.host;
@@ -86,20 +94,24 @@ impl Consensus {
             tls_client_config,
             channel_service,
             runtime.clone(),
+            shutdown_flag.clone(),
         )?;
 
         let state_ref_clone = state_ref.clone();
-        thread::Builder::new()
-            .name("consensus".to_string())
-            .spawn(move || {
-                if let Err(err) = consensus.start() {
-                    log::error!("Consensus stopped with error: {err}");
-                    state_ref_clone.on_consensus_thread_err(err);
-                } else {
-                    log::info!("Consensus stopped");
-                    state_ref_clone.on_consensus_stopped();
-                }
-            })?;
+
+        let consensus_handle =
+            thread::Builder::new()
+                .name("consensus".to_string())
+                .spawn(move || {
+                    if let Err(err) = consensus.start() {
+                        log::error!("Consensus stopped with error: {err}");
+                        state_ref_clone.on_consensus_thread_err(err);
+                    } else {
+                        log::info!("Consensus stopped");
+                        state_ref_clone.on_consensus_stopped();
+                    }
+                    Ok(())
+                })?;
 
         let message_sender_moved = message_sender.clone();
         thread::Builder::new()
@@ -126,7 +138,7 @@ impl Consensus {
             None
         };
 
-        let handle = thread::Builder::new()
+        let grpc_handle = thread::Builder::new()
             .name("grpc_internal".to_string())
             .spawn(move || {
                 init_internal(
@@ -138,11 +150,12 @@ impl Consensus {
                     server_tls,
                     message_sender,
                     runtime,
+                    shutdown_flag,
                 )
             })
             .unwrap();
 
-        Ok(handle)
+        Ok((grpc_handle, consensus_handle))
     }
 
     /// If `bootstrap_peer` peer is supplied, then either `uri` or `p2p_port` should be also supplied
@@ -157,6 +170,7 @@ impl Consensus {
         tls_config: Option<ClientTlsConfig>,
         channel_service: ChannelService,
         runtime: Handle,
+        shutdown_flag: watch::Receiver<bool>,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
@@ -234,6 +248,7 @@ impl Consensus {
             runtime,
             config,
             broker,
+            shutdown_flag,
         };
 
         Ok((consensus, sender))
@@ -426,7 +441,7 @@ impl Consensus {
         let mut t = Instant::now();
         let mut timeout = Duration::from_millis(self.config.tick_period_ms);
 
-        loop {
+        while !*self.shutdown_flag.borrow() {
             if !self
                 .try_promote_learner()
                 .map_err(|err| anyhow!("Failed to promote learner: {}", err))?
@@ -457,6 +472,7 @@ impl Consensus {
                 return Ok(());
             }
         }
+        Ok(())
     }
 
     fn try_sync_local_state(&mut self) -> anyhow::Result<()> {
@@ -1127,6 +1143,7 @@ mod tests {
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
     use tempfile::Builder;
+    use tokio::sync::watch;
 
     use super::Consensus;
     use crate::common::helpers::create_general_purpose_runtime;
@@ -1155,9 +1172,9 @@ mod tests {
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            search_runtime,
-            update_runtime,
-            general_runtime,
+            search_runtime.handle().clone(),
+            update_runtime.handle().clone(),
+            general_runtime.handle().clone(),
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
@@ -1173,6 +1190,7 @@ mod tests {
         .into();
         let dispatcher = Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone());
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
+        let (_, shutdown_rx) = watch::channel(false);
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
             consensus_state.clone(),
@@ -1183,6 +1201,7 @@ mod tests {
             None,
             ChannelService::default(),
             handle.clone(),
+            shutdown_rx,
         )
         .unwrap();
 
