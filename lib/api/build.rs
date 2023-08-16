@@ -7,8 +7,6 @@ fn main() -> std::io::Result<()> {
         // so by extending the builder. This is ugly, but better than manually implementing
         // `Validation` for all these types and seems to be the best approach. The line below
         // configures all attributes.
-        .extern_path(".google.protobuf.Empty", "()")
-        .compile_well_known_types(true)
         .configure_validation()
         .out_dir("src/grpc/") // saves generated structures at this location
         .compile(
@@ -220,6 +218,7 @@ fn configure_validation(builder: Builder) -> Builder {
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",
         ])
+        .field_attribute("SnapshotDescription.creation_time", "#[serde(skip)]")
 }
 
 fn append_to_file(path: &str, line: &str) {
