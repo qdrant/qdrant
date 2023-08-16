@@ -452,6 +452,8 @@ async fn recover_shard_snapshot_impl(
     let state = collection.state().await;
     let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
 
+    // TODO: Unify (and de-duplicate) "recovered shard state notification" logic in `_do_recover_from_snapshot` with this one!
+
     let other_active_replicas: Vec<_> = shard_info
         .replicas
         .iter()
@@ -466,22 +468,7 @@ async fn recover_shard_snapshot_impl(
             SnapshotPriority::Snapshot => {
                 activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
 
-                let replicas_to_keep = state.config.params.replication_factor.get() - 1;
-
-                let replicas_to_remove = other_active_replicas
-                    .len()
-                    .saturating_sub(replicas_to_keep as usize);
-
-                let mut other_active_replicas = other_active_replicas.iter().copied();
-
-                for (peer, _) in other_active_replicas.by_ref().take(replicas_to_remove) {
-                    // Is it right to remove *active* replicas!?
-                    // Why not remove some `Dead` or `Partial` replica instead?
-                    // What if there's no active replicas? Are we going *over* the replication factor then?
-                    toc.request_remove_replica(collection.name(), shard, peer)?;
-                }
-
-                for (peer, _) in other_active_replicas {
+                for &(peer, _) in other_active_replicas.iter() {
                     toc.send_set_replica_state_proposal(
                         collection.name(),
                         peer,
