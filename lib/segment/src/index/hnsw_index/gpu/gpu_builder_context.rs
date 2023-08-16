@@ -94,6 +94,8 @@ impl GpuBuilderContext {
     }
 
     pub fn upload_entries(&self, gpu_context: &mut gpu::Context, entries: &[PointOffsetType]) {
+        gpu_context.clear_buffer(self.generations_buffer.clone());
+
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::CpuToGpu,
@@ -302,18 +304,6 @@ mod tests {
             .add_shader(link_shader.clone())
             .build(device.clone());
 
-        let apply_links_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            include_bytes!("./shaders/apply_responses.spv"),
-        ));
-        let apply_links_pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
-            .add_shader(apply_links_shader.clone())
-            .build(device.clone());
-
         // test building each level
         for level in (0..=max_level).rev() {
             if level == 0 {
@@ -355,19 +345,6 @@ mod tests {
 
                         gpu_context.bind_pipeline(
                             link_pipeline.clone(),
-                            &[
-                                gpu_vector_storage.descriptor_set.clone(),
-                                gpu_links.descriptor_set.clone(),
-                                gpu_search_context.descriptor_set.clone(),
-                                gpu_builder_context.descriptor_set.clone(),
-                            ],
-                        );
-                        gpu_context.dispatch(1, 1, 1);
-                        gpu_context.run();
-                        gpu_context.wait_finish();
-
-                        gpu_context.bind_pipeline(
-                            apply_links_pipeline.clone(),
                             &[
                                 gpu_vector_storage.descriptor_set.clone(),
                                 gpu_links.descriptor_set.clone(),

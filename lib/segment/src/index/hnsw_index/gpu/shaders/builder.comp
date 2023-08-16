@@ -12,7 +12,6 @@
 
 layout(set = BUILDER_LAYOUT_SET, binding = 0)
 readonly uniform BuilderParams {
-    uint processed_requests_count;
     uint generation;
 } builder_params;
 
@@ -51,7 +50,7 @@ void run_request(uint thread_index) {
     searcher_init();
 
     POINT_ID point_id = link_points.data[thread_index];
-    //atomicExchange(generations.data[point_id], GENERATION);
+    atomicExchange(generations.data[point_id], GENERATION);
 
     ScoredPoint entry = {
         requests.data[point_id],
@@ -71,7 +70,7 @@ void run_request(uint thread_index) {
 
     uint point_links_count = run_heuristic();
     
-    //barrier();
+    barrier();
 
     uint i = 0;
     LINKS_SET_SIZE(point_id, point_links_count);
@@ -82,10 +81,10 @@ void run_request(uint thread_index) {
 
     for (i = 0; i < point_links_count; i += 1) {
         POINT_ID other_point_id = GET_LINK(point_id, i);
-        //uint prev_generation = atomicExchange(generations.data[other_point_id], GENERATION);
-        //if (prev_generation == GENERATION) {
-            //continue;
-        //}
+        uint prev_generation = atomicExchange(generations.data[other_point_id], GENERATION);
+        if (prev_generation == GENERATION) {
+            continue;
+        }
 
         uint other_point_links_count = LINKS_COUNT(other_point_id);
         if (other_point_links_count < LEVEL_M) {
