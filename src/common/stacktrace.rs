@@ -50,7 +50,8 @@ pub fn get_stack_trace() -> StackTrace {
     #[cfg(feature = "stacktrace")]
     {
         let exe = std::env::current_exe().unwrap();
-        let trace = rstack_self::trace(std::process::Command::new(exe).arg("--stacktrace")).unwrap();
+        let trace =
+            rstack_self::trace(std::process::Command::new(exe).arg("--stacktrace")).unwrap();
         StackTrace {
             threads: trace
                 .threads()
