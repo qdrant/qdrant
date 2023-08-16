@@ -59,8 +59,8 @@ readonly buffer UpdateEntryPointsBuffer {
 #define RESPONSE_LINK(THREAD, I, J) \
     responses.data[RESPONSE_OFFSET(THREAD, I) + 2 + J]
 
-void update_entry() {
-    POINT_ID point_id = update_entry_points.data[gl_GlobalInvocationID.x];
+void update_entry(uint thread_index) {
+    POINT_ID point_id = update_entry_points.data[thread_index];
     ScoredPoint entry_point = {
         requests.data[point_id],
         similarity(point_id, requests.data[point_id])
@@ -68,10 +68,10 @@ void update_entry() {
     requests.data[point_id] = greedy_search(point_id, entry_point).id;
 }
 
-void run_request() {
+void run_request(uint thread_index) {
     searcher_init();
 
-    POINT_ID point_id = link_points.data[gl_GlobalInvocationID.x];
+    POINT_ID point_id = link_points.data[thread_index];
     ScoredPoint entry = {
         requests.data[point_id],
         similarity(point_id, requests.data[point_id])
@@ -97,7 +97,7 @@ void run_request() {
         i += 1;
     }
 
-    RESPONSE_THREAD_SIZE(gl_GlobalInvocationID.x) = point_links_count;
+    RESPONSE_THREAD_SIZE(thread_index) = point_links_count;
     for (i = 0; i < point_links_count; i += 1) {
         POINT_ID other_point_id = GET_LINK(point_id, i);
 
@@ -120,11 +120,11 @@ void run_request() {
             selected_candidates_count = run_heuristic();
         }
 
-        RESPONSE_ID(gl_GlobalInvocationID.x, i) = other_point_id;
-        RESPONSE_SIZE(gl_GlobalInvocationID.x, i) = selected_candidates_count;
+        RESPONSE_ID(thread_index, i) = other_point_id;
+        RESPONSE_SIZE(thread_index, i) = selected_candidates_count;
         for (uint j = 0; j < selected_candidates_count; j += 1) {
             POINT_ID link = get_nearest(j).id;
-            RESPONSE_LINK(gl_GlobalInvocationID.x, i, j) = link;
+            RESPONSE_LINK(thread_index, i, j) = link;
         }
     }
 }

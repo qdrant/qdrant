@@ -11,5 +11,5 @@
 #include "builder.comp"
 
 void main() {
-    update_entry();
+    update_entry(gl_GlobalInvocationID.x);
 }

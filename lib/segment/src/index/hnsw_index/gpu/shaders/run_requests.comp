@@ -11,5 +11,5 @@
 #include "builder.comp"
 
 void main() {
-    run_request();
+    run_request(gl_GlobalInvocationID.x);
 }
