@@ -5435,6 +5435,11 @@
                 "nullable": true
               }
             ]
+          },
+          "indexed_only": {
+            "description": "If enabled, the engine will only perform search among indexed or small segments. Using this option prevents slow searches in case of delayed index, but does not guarantee that all uploaded vectors will be included in search results",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
@@ -7142,10 +7147,12 @@
           "index_schema",
           "is_appendable",
           "num_deleted_vectors",
+          "num_indexed_vectors",
           "num_points",
           "num_vectors",
           "ram_usage_bytes",
-          "segment_type"
+          "segment_type",
+          "vector_data"
         ],
         "properties": {
           "segment_type": {
@@ -7157,6 +7164,11 @@
             "minimum": 0
           },
           "num_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_indexed_vectors": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -7184,6 +7196,12 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadIndexInfo"
             }
+          },
+          "vector_data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/VectorDataInfo"
+            }
           }
         }
       },
@@ -7195,6 +7213,31 @@
           "indexed",
           "special"
         ]
+      },
+      "VectorDataInfo": {
+        "type": "object",
+        "required": [
+          "num_deleted_vectors",
+          "num_indexed_vectors",
+          "num_vectors"
+        ],
+        "properties": {
+          "num_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_indexed_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_deleted_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
       },
       "SegmentConfig": {
         "type": "object",

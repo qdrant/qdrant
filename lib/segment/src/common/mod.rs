@@ -111,3 +111,5 @@ pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {
     }
     Ok(())
 }
+
+pub const BYTES_IN_KB: usize = 1024;

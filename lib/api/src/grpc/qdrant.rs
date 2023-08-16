@@ -2976,6 +2976,11 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "3")]
     #[validate]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
+    /// If enabled, the engine will only perform search among indexed or small segments.
+    /// Using this option prevents slow searches in case of delayed index, but does not
+    /// guarantee that all uploaded vectors will be included in search results
+    #[prost(bool, optional, tag = "4")]
+    pub indexed_only: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

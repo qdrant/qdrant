@@ -32,7 +32,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
+    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -1110,26 +1110,51 @@ impl SegmentEntry for Segment {
                 (key, PayloadIndexInfo::new(index_schema, points_count))
             })
             .collect();
+
         let num_vectors = self
             .vector_data
             .values()
             .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
+        let vector_data_info = self
+            .vector_data
+            .iter()
+            .map(|(key, vector_data)| {
+                let vector_storage = vector_data.vector_storage.borrow();
+                let num_vectors = vector_storage.available_vector_count();
+                let is_indexed = vector_data.vector_index.borrow().is_index();
+                let vector_data_info = VectorDataInfo {
+                    num_vectors,
+                    num_indexed_vectors: if is_indexed { num_vectors } else { 0 },
+                    num_deleted_vectors: vector_storage.deleted_vector_count(),
+                };
+                (key.to_string(), vector_data_info)
+            })
+            .collect();
+
+        let num_indexed_vectors = if self.segment_type == SegmentType::Indexed {
+            num_vectors
+        } else {
+            0
+        };
+
         SegmentInfo {
             segment_type: self.segment_type,
             num_vectors,
+            num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
             index_schema: schema,
+            vector_data: vector_data_info,
         }
     }
 
-    fn config(&self) -> SegmentConfig {
-        self.segment_config.clone()
+    fn config(&self) -> &SegmentConfig {
+        &self.segment_config
     }
 
     fn is_appendable(&self) -> bool {
@@ -1483,7 +1508,7 @@ impl SegmentEntry for Segment {
 
         SegmentTelemetry {
             info: self.info(),
-            config: self.config(),
+            config: self.config().clone(),
             vector_index_searches,
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
