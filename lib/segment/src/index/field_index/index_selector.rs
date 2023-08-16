@@ -25,7 +25,7 @@ pub fn index_selector(
                 vec![FieldIndex::KeywordIndex(MapIndex::new(db, field))]
             }
             PayloadSchemaType::Integer => vec![
-                FieldIndex::IntMapIndex(MapIndex::<IntPayloadType>::new(db.clone(), field)),
+                FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field)),
                 FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field)),
             ],
             PayloadSchemaType::Float => {
