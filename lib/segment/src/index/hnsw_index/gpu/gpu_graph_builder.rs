@@ -3,12 +3,16 @@ use std::sync::Arc;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use num_traits::float::FloatCore;
+use parking_lot::Mutex;
 use rand::Rng;
 
 use super::gpu_builder_context::GpuBuilderContext;
 use super::gpu_links::GpuLinks;
 use super::gpu_search_context::GpuSearchContext;
 use super::gpu_vector_storage::GpuVectorStorage;
+use crate::common::operation_time_statistics::{
+    OperationDurationsAggregator, ScopeDurationMeasurer,
+};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
 use crate::types::{PointOffsetType, ScoreType};
@@ -36,7 +40,11 @@ pub struct GpuGraphBuilder<'a> {
     pub gpu_builder_context: GpuBuilderContext,
     pub update_entry_pipeline: Arc<gpu::Pipeline>,
     pub link_pipeline: Arc<gpu::Pipeline>,
+    pub profile_helper_pipeline: Arc<gpu::Pipeline>,
     pub gpu_threads: usize,
+
+    pub profile_gpu_links: Arc<Mutex<OperationDurationsAggregator>>,
+    pub profile_gpu_helper: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl<'a> GpuGraphBuilder<'a> {
@@ -145,6 +153,18 @@ impl<'a> GpuGraphBuilder<'a> {
             .add_shader(link_shader.clone())
             .build(gpu_device.clone());
 
+        let builder_profile_helper_shader = Arc::new(gpu::Shader::new(
+            gpu_device.clone(),
+            include_bytes!("./shaders/builder_profile_helper.spv"),
+        ));
+        let profile_helper_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
+            .add_shader(builder_profile_helper_shader.clone())
+            .build(gpu_device.clone());
+
         Self {
             graph_layers_builder,
             m,
@@ -162,8 +182,12 @@ impl<'a> GpuGraphBuilder<'a> {
             gpu_search_context,
             gpu_builder_context,
             update_entry_pipeline,
+            profile_helper_pipeline,
             link_pipeline,
             gpu_threads,
+
+            profile_gpu_links: OperationDurationsAggregator::new(),
+            profile_gpu_helper: OperationDurationsAggregator::new(),
         }
     }
 
@@ -232,6 +256,31 @@ impl<'a> GpuGraphBuilder<'a> {
         update_entry_points: &[PointOffsetType],
         link_points: &[PointOffsetType],
     ) {
+        self.gpu_builder_context.upload_process_points(
+            &mut self.gpu_context,
+            update_entry_points,
+            link_points,
+        );
+
+        if true && link_points.len() > 0 {
+            let _timer = ScopeDurationMeasurer::new(&self.profile_gpu_helper);
+
+            self.gpu_context.bind_pipeline(
+                self.profile_helper_pipeline.clone(),
+                &[
+                    self.gpu_vector_storage.descriptor_set.clone(),
+                    self.gpu_links.descriptor_set.clone(),
+                    self.gpu_search_context.descriptor_set.clone(),
+                    self.gpu_builder_context.descriptor_set.clone(),
+                ],
+            );
+            self.gpu_context.dispatch(link_points.len(), 1, 1);
+
+            self.gpu_context.run();
+            self.gpu_context.wait_finish();
+        }
+
+        let _timer = ScopeDurationMeasurer::new(&self.profile_gpu_links);
         debug_assert!(update_entry_points.len() <= self.gpu_threads);
         debug_assert!(link_points.len() <= self.gpu_threads);
         if update_entry_points.len() == 0 && link_points.len() == 0 {
@@ -241,12 +290,6 @@ impl<'a> GpuGraphBuilder<'a> {
         if link_points.len() > 0 {
             self.gpu_search_context.clear(&mut self.gpu_context);
         }
-
-        self.gpu_builder_context.upload_process_points(
-            &mut self.gpu_context,
-            update_entry_points,
-            link_points,
-        );
 
         if update_entry_points.len() > 0 {
             self.gpu_context.bind_pipeline(
@@ -346,6 +389,11 @@ impl<'a> GpuGraphBuilder<'a> {
             "GPU level {}, links {}, updates {}",
             level, link_count, update_entry_count
         );
+
+        let links_stats = self.profile_gpu_links.lock().get_statistics();
+        println!("Links statistics {:?}", &links_stats);
+        let helper_stats = self.profile_gpu_helper.lock().get_statistics();
+        println!("Helper statistics {:?}", &helper_stats);
     }
 
     fn build_level_cpu(&mut self, level: usize, links_count: PointOffsetType) -> PointOffsetType {
