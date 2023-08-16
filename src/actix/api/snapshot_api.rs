@@ -475,6 +475,9 @@ async fn recover_shard_snapshot_impl(
                 let mut other_active_replicas = other_active_replicas.iter().copied();
 
                 for (peer, _) in other_active_replicas.by_ref().take(replicas_to_remove) {
+                    // Is it right to remove *active* replicas!?
+                    // Why not remove some `Dead` or `Partial` replica instead?
+                    // What if there's no active replicas? Are we going *over* the replication factor then?
                     toc.request_remove_replica(collection.name(), shard, peer)?;
                 }
 
