@@ -4,29 +4,25 @@ use crate::types::PointOffsetType;
 
 #[repr(C)]
 struct GpuBuilderContextParamsBuffer {
-    processed_requests_count: u32,
+    generation: u32,
 }
 
 pub struct GpuBuilderContext {
     pub device: Arc<gpu::Device>,
     pub builder_params_buffer: Arc<gpu::Buffer>,
     pub requests_buffer: Arc<gpu::Buffer>,
-    pub responses_buffer: Arc<gpu::Buffer>,
+    pub generations_buffer: Arc<gpu::Buffer>,
     pub link_points_buffer: Arc<gpu::Buffer>,
     pub update_entry_points_buffer: Arc<gpu::Buffer>,
     pub link_points_staging_buffer: Arc<gpu::Buffer>,
     pub update_entry_points_staging_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
+    pub generation: u32,
 }
 
 impl GpuBuilderContext {
-    pub fn new(
-        device: Arc<gpu::Device>,
-        m: usize,
-        points_count: usize,
-        threads_count: usize,
-    ) -> Self {
+    pub fn new(device: Arc<gpu::Device>, points_count: usize, threads_count: usize) -> Self {
         let builder_params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Uniform,
@@ -39,13 +35,10 @@ impl GpuBuilderContext {
             points_count * std::mem::size_of::<PointOffsetType>(),
         ));
 
-        let response_size = (m + 2) * std::mem::size_of::<PointOffsetType>();
-        let thread_response_size = m * response_size + std::mem::size_of::<PointOffsetType>();
-        let full_responses_size = threads_count * thread_response_size;
-        let responses_buffer = Arc::new(gpu::Buffer::new(
+        let generations_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            full_responses_size,
+            points_count * std::mem::size_of::<u32>(),
         ));
 
         let link_points_buffer = Arc::new(gpu::Buffer::new(
@@ -80,7 +73,7 @@ impl GpuBuilderContext {
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
             .add_uniform_buffer(0, builder_params_buffer.clone())
             .add_storage_buffer(1, requests_buffer.clone())
-            .add_storage_buffer(2, responses_buffer.clone())
+            .add_storage_buffer(2, generations_buffer.clone())
             .add_storage_buffer(3, link_points_buffer.clone())
             .add_storage_buffer(4, update_entry_points_buffer.clone())
             .build();
@@ -89,13 +82,14 @@ impl GpuBuilderContext {
             device,
             builder_params_buffer,
             requests_buffer,
-            responses_buffer,
+            generations_buffer,
             link_points_buffer,
             update_entry_points_buffer,
             link_points_staging_buffer,
             update_entry_points_staging_buffer,
             descriptor_set_layout,
             descriptor_set,
+            generation: 0,
         }
     }
 
@@ -140,14 +134,14 @@ impl GpuBuilderContext {
     }
 
     pub fn upload_process_points(
-        &self,
+        &mut self,
         gpu_context: &mut gpu::Context,
         update_entry_points: &[PointOffsetType],
         link_points: &[PointOffsetType],
     ) {
         if link_points.len() > 0 {
-            let requests_count = link_points.len() as u32;
-            self.link_points_staging_buffer.upload(&requests_count, 0);
+            self.generation += 1;
+            self.link_points_staging_buffer.upload(&self.generation, 0);
             self.link_points_staging_buffer
                 .upload_slice(link_points, std::mem::size_of::<u32>());
             gpu_context.copy_gpu_buffer(
@@ -275,7 +269,7 @@ mod tests {
             candidates_capacity,
             device.clone(),
         );
-        let gpu_builder_context = GpuBuilderContext::new(device.clone(), m0, num_vectors, 1);
+        let mut gpu_builder_context = GpuBuilderContext::new(device.clone(), num_vectors, 1);
         let gpu_entries = entries
             .iter()
             .cloned()

@@ -36,7 +36,6 @@ pub struct GpuGraphBuilder<'a> {
     pub gpu_builder_context: GpuBuilderContext,
     pub update_entry_pipeline: Arc<gpu::Pipeline>,
     pub link_pipeline: Arc<gpu::Pipeline>,
-    pub apply_links_pipeline: Arc<gpu::Pipeline>,
     pub gpu_threads: usize,
 }
 
@@ -113,7 +112,7 @@ impl<'a> GpuGraphBuilder<'a> {
             gpu_device.clone(),
         );
         let gpu_builder_context =
-            GpuBuilderContext::new(gpu_device.clone(), m0, num_vectors, gpu_threads);
+            GpuBuilderContext::new(gpu_device.clone(), num_vectors, gpu_threads);
         let gpu_entries = requests
             .iter()
             .cloned()
@@ -146,18 +145,6 @@ impl<'a> GpuGraphBuilder<'a> {
             .add_shader(link_shader.clone())
             .build(gpu_device.clone());
 
-        let apply_links_shader = Arc::new(gpu::Shader::new(
-            gpu_device.clone(),
-            include_bytes!("./shaders/apply_responses.spv"),
-        ));
-        let apply_links_pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
-            .add_shader(apply_links_shader.clone())
-            .build(gpu_device.clone());
-
         Self {
             graph_layers_builder,
             m,
@@ -176,7 +163,6 @@ impl<'a> GpuGraphBuilder<'a> {
             gpu_builder_context,
             update_entry_pipeline,
             link_pipeline,
-            apply_links_pipeline,
             gpu_threads,
         }
     }
@@ -290,21 +276,6 @@ impl<'a> GpuGraphBuilder<'a> {
 
         self.gpu_context.run();
         self.gpu_context.wait_finish();
-
-        if link_points.len() > 0 {
-            self.gpu_context.bind_pipeline(
-                self.apply_links_pipeline.clone(),
-                &[
-                    self.gpu_vector_storage.descriptor_set.clone(),
-                    self.gpu_links.descriptor_set.clone(),
-                    self.gpu_search_context.descriptor_set.clone(),
-                    self.gpu_builder_context.descriptor_set.clone(),
-                ],
-            );
-            self.gpu_context.dispatch(1, 1, 1);
-            self.gpu_context.run();
-            self.gpu_context.wait_finish();
-        }
     }
 
     fn build_level_gpu(&mut self, level: usize, start_idx: PointOffsetType) {
