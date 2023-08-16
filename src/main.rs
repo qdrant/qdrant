@@ -104,12 +104,26 @@ struct Args {
     /// Read more: <https://qdrant.tech/documentation/guides/telemetry>
     #[arg(long, action, default_value_t = false)]
     disable_telemetry: bool,
+
+    /// Run stacktrace collector. Used for debugging.
+    #[arg(long, action, default_value_t = false)]
+    stacktrace: bool,
 }
 
 fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    // Run backtrace collector, expected to used by `rstack` crate
+    if args.stacktrace {
+        #[cfg(feature = "stacktrace")]
+        {
+            let _ = rstack_self::child();
+        }
+        return Ok(());
+    }
+
     remove_started_file_indicator();
 
-    let args = Args::parse();
     let settings = Settings::new(args.config_path)?;
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
