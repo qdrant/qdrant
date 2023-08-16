@@ -313,8 +313,8 @@ async fn create_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-// TODO: `POST` or `PUT` (same as `recover_from_snapshot`)!?
-#[post("/collections/{collection}/shards/{shard}/snapshots/recover")]
+// TODO: `PUT` (same as `recover_from_snapshot`) or `POST`!?
+#[put("/collections/{collection}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
@@ -326,7 +326,7 @@ async fn recover_shard_snapshot(
         let collection = toc.get_collection(&collection).await?;
         let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
 
-        // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!
+        // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!?
 
         let snapshot_path =
             snapshots::download::download_snapshot(request.location, &snapshots_dir).await?;
@@ -346,8 +346,8 @@ async fn recover_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-// TODO: `PUT` or `POST` (same as `upload_snapshot`)!?
-#[put("/collections/{collection}/shards/{shard}/snapshots/upload")]
+// TODO: `POST` (same as `upload_snapshot`) or `PUT`!?
+#[post("/collections/{collection}/shards/{shard}/snapshots/upload")]
 async fn upload_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
