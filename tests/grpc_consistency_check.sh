@@ -16,6 +16,7 @@ cd "$(dirname "$0")/../"
 
 # Keep current version of file to check
 cp ./lib/api/src/grpc/{,.diff.}qdrant.rs
+cp ./lib/api/src/grpc/{,.diff.}google.protobuf.rs
 cp ./docs/grpc/{,.diff.}docs.md
 
 # Regenerate gRPC files
