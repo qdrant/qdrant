@@ -25,10 +25,10 @@ float similarity(uint a, uint b) {
     uint d = DIM / 16;
     uint aId = a * d;
     uint bId = b * d;
-    for (uint i = 0; i < d; i++, aId++, bId++) {
+    for (uint i = 0; i < d; i++) {
         result += matrixCompMult(
-            vectors.data[aId],
-            vectors.data[bId]
+            vectors.data[aId + i],
+            vectors.data[bId + i]
         );
     }
     vec4 v1 = result[0];
