@@ -253,6 +253,14 @@ impl PayloadIndexInfo {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorDataInfo {
+    pub num_vectors: usize,
+    pub num_indexed_vectors: usize,
+    pub num_deleted_vectors: usize,
+}
+
 /// Aggregated information about segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -260,11 +268,13 @@ pub struct SegmentInfo {
     pub segment_type: SegmentType,
     pub num_vectors: usize,
     pub num_points: usize,
+    pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    pub vector_data: HashMap<String, VectorDataInfo>,
 }
 
 /// Additional parameters of the search
@@ -321,6 +331,12 @@ pub struct SearchParams {
     #[serde(default)]
     #[validate]
     pub quantization: Option<QuantizationSearchParams>,
+
+    /// If enabled, the engine will only perform search among indexed or small segments.
+    /// Using this option prevents slow searches in case of delayed index, but does not
+    /// guarantee that all uploaded vectors will be included in search results
+    #[serde(default)]
+    pub indexed_only: bool,
 }
 
 /// Vector index configuration

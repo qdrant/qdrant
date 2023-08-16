@@ -337,7 +337,7 @@ pub trait SegmentEntry {
     fn info(&self) -> SegmentInfo;
 
     /// Get segment configuration
-    fn config(&self) -> SegmentConfig;
+    fn config(&self) -> &SegmentConfig;
 
     /// Get current stats of the segment
     fn is_appendable(&self) -> bool;

@@ -16,6 +16,7 @@ use crate::operations::types::{
     Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
+use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
@@ -120,7 +121,16 @@ impl ShardOperation for LocalShard {
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let collection_params = self.collection_config.read().await.params.clone();
+        let (collection_params, indexing_threshold_kb) = {
+            let collection_config = self.collection_config.read().await;
+            (
+                collection_config.params.clone(),
+                collection_config
+                    .optimizer_config
+                    .indexing_threshold
+                    .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
+            )
+        };
         // check vector names existing
         for req in &request.searches {
             collection_params.get_vector_params(req.vector.get_name())?;
@@ -134,6 +144,7 @@ impl ShardOperation for LocalShard {
             search_runtime_handle,
             true,
             is_stopped.get_is_stopped(),
+            indexing_threshold_kb,
         );
         let timeout = self.shared_storage_config.search_timeout;
         let res: Vec<Vec<ScoredPoint>> = tokio::select! {

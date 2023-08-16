@@ -16,7 +16,7 @@ use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
 
 const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
-const DEFAULT_INDEXING_THRESHOLD_KB: usize = 20_000;
+pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 20_000;
 const SEGMENTS_PATH: &str = "segments";
 const TEMP_SEGMENTS_PATH: &str = "temp_segments";
 

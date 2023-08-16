@@ -11,10 +11,10 @@ use rayon::prelude::*;
 use rayon::ThreadPool;
 
 use super::graph_links::{GraphLinks, GraphLinksMmap};
-use crate::common::mmap_ops;
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
+use crate::common::{mmap_ops, BYTES_IN_KB};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
@@ -42,7 +42,6 @@ use crate::vector_storage::{
 };
 
 const HNSW_USE_HEURISTIC: bool = true;
-const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,

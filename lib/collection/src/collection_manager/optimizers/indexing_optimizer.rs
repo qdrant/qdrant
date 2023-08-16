@@ -348,7 +348,7 @@ mod tests {
         let configs = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().config())
+            .map(|(_sid, segment)| segment.get().read().config().clone())
             .collect_vec();
 
         assert_eq!(infos.len(), 2);
@@ -508,7 +508,7 @@ mod tests {
         let configs = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().config())
+            .map(|(_sid, segment)| segment.get().read().config().clone())
             .collect_vec();
 
         let indexed_count = infos
