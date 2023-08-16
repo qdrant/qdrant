@@ -1,3 +1,4 @@
+pub mod immutable_map_index;
 pub mod mutable_map_index;
 
 use std::fmt::Display;
@@ -5,6 +6,7 @@ use std::hash::Hash;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use immutable_map_index::ImmutableMapIndex;
 use itertools::Itertools;
 use mutable_map_index::MutableMapIndex;
 use parking_lot::RwLock;
@@ -29,9 +31,10 @@ use crate::vector_storage::div_ceil;
 
 pub enum MapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     Mutable(MutableMapIndex<N>),
+    Immutable(ImmutableMapIndex<N>),
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         MapIndex::Mutable(MutableMapIndex::new(db, field_name))
     }
@@ -39,36 +42,42 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
         match self {
             MapIndex::Mutable(index) => index.get_db_wrapper(),
+            MapIndex::Immutable(index) => index.get_db_wrapper(),
         }
     }
 
     fn load_from_db(&mut self) -> OperationResult<bool> {
         match self {
             MapIndex::Mutable(index) => index.load_from_db(),
+            MapIndex::Immutable(index) => index.load_from_db(),
         }
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&[N]> {
         match self {
             MapIndex::Mutable(index) => index.get_values(idx),
+            MapIndex::Immutable(index) => index.get_values(idx),
         }
     }
 
     fn get_indexed_points(&self) -> usize {
         match self {
             MapIndex::Mutable(index) => index.get_indexed_points(),
+            MapIndex::Immutable(index) => index.get_indexed_points(),
         }
     }
 
     fn get_values_count(&self) -> usize {
         match self {
             MapIndex::Mutable(index) => index.get_values_count(),
+            MapIndex::Immutable(index) => index.get_values_count(),
         }
     }
 
     fn get_unique_values_count(&self) -> usize {
         match self {
             MapIndex::Mutable(index) => index.get_unique_values_count(),
+            MapIndex::Immutable(index) => index.get_unique_values_count(),
         }
     }
 
@@ -80,6 +89,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     {
         match self {
             MapIndex::Mutable(index) => index.get_points_with_value_count(value),
+            MapIndex::Immutable(index) => index.get_points_with_value_count(value),
         }
     }
 
@@ -91,12 +101,14 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     {
         match self {
             MapIndex::Mutable(index) => index.get_iterator(value),
+            MapIndex::Immutable(index) => index.get_iterator(value),
         }
     }
 
     fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         match self {
             MapIndex::Mutable(index) => index.get_values_iterator(),
+            MapIndex::Immutable(index) => index.get_values_iterator(),
         }
     }
 
@@ -471,6 +483,9 @@ impl ValueIndexer<String> for MapIndex<SmolStr> {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable map index",
+            )),
         }
     }
 
@@ -484,6 +499,7 @@ impl ValueIndexer<String> for MapIndex<SmolStr> {
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.remove_point(id),
+            MapIndex::Immutable(index) => index.remove_point(id),
         }
     }
 }
@@ -496,6 +512,9 @@ impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
     ) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable map index",
+            )),
         }
     }
 
@@ -509,6 +528,7 @@ impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.remove_point(id),
+            MapIndex::Immutable(index) => index.remove_point(id),
         }
     }
 }
@@ -527,7 +547,7 @@ mod tests {
 
     const FIELD_NAME: &str = "test";
 
-    fn save_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug>(
+    fn save_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug + Default>(
         data: &[Vec<N>],
         path: &Path,
     ) {
@@ -538,12 +558,13 @@ mod tests {
                 MapIndex::Mutable(index) => index
                     .add_many_to_map(idx as PointOffsetType, values.clone())
                     .unwrap(),
+                _ => panic!("Wrong index type"),
             }
         }
         index.flusher()().unwrap();
     }
 
-    fn load_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug>(
+    fn load_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug + Default>(
         data: &[Vec<N>],
         path: &Path,
     ) {
