@@ -260,6 +260,8 @@ impl<'a> GpuGraphBuilder<'a> {
         update_entry_points: &[PointOffsetType],
         link_points: &[PointOffsetType],
     ) {
+        self.gpu_context.wait_finish();
+
         self.gpu_builder_context.upload_process_points(
             &mut self.gpu_context,
             update_entry_points,
@@ -322,7 +324,6 @@ impl<'a> GpuGraphBuilder<'a> {
         }
 
         self.gpu_context.run();
-        self.gpu_context.wait_finish();
     }
 
     fn build_level_gpu(&mut self, level: usize, start_idx: PointOffsetType) {
@@ -374,6 +375,7 @@ impl<'a> GpuGraphBuilder<'a> {
             }
         }
         self.run_gpu(&update_entry_buffer, &links_buffer);
+        self.gpu_context.wait_finish();
 
         self.gpu_links.download(&mut self.gpu_context);
 
