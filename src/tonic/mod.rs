@@ -54,15 +54,15 @@ impl Qdrant for QdrantService {
 
 pub struct QdrantInternalService {
     /// HTTP port accessible from inside the cluster
-    http_port: u16,
+    settings: Settings,
     /// Consensus state
     consensus_state: ConsensusStateRef,
 }
 
 impl QdrantInternalService {
-    fn new(internal_http_port: u16, consensus_state: ConsensusStateRef) -> Self {
+    fn new(settings: Settings, consensus_state: ConsensusStateRef) -> Self {
         Self {
-            http_port: internal_http_port,
+            settings,
             consensus_state,
         }
     }
@@ -75,7 +75,7 @@ impl QdrantInternal for QdrantInternalService {
         _request: Request<HttpPortRequest>,
     ) -> Result<Response<HttpPortResponse>, Status> {
         Ok(Response::new(HttpPortResponse {
-            port: self.http_port as i32,
+            port: self.settings.service.http_port as i32,
         }))
     }
 
@@ -86,7 +86,8 @@ impl QdrantInternal for QdrantInternalService {
         let request = request.into_inner();
         let commit = request.commit as u64;
         let term = request.term as u64;
-        let ok = wait_for_consensus_commit(&self.consensus_state, commit, term).await;
+        let ok =
+            wait_for_consensus_commit(&self.consensus_state, &self.settings, commit, term).await;
         Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
     }
 }
@@ -99,9 +100,12 @@ impl QdrantInternal for QdrantInternalService {
 /// Returns `false` on failure, if we have diverged commit/term for example.
 async fn wait_for_consensus_commit(
     consensus_state: &ConsensusStateRef,
+    settings: &Settings,
     commit: u64,
     term: u64,
 ) -> bool {
+    let consensus_tick = Duration::from_millis(settings.cluster.consensus.tick_period_ms);
+
     // TODO: naive approach with spinlock for waiting on commit/term, find better way
     loop {
         let state = &consensus_state.hard_state();
@@ -118,7 +122,7 @@ async fn wait_for_consensus_commit(
             return false;
         }
 
-        tokio::time::sleep(Duration::from_millis(100)).await
+        tokio::time::sleep(consensus_tick).await
     }
 }
 
@@ -255,7 +259,7 @@ pub fn init_internal(
 
             let qdrant_service = QdrantService::default();
             let qdrant_internal_service =
-                QdrantInternalService::new(settings.service.http_port, consensus_state.clone());
+                QdrantInternalService::new(settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
             let raft_service = RaftService::new(to_consensus, consensus_state);
