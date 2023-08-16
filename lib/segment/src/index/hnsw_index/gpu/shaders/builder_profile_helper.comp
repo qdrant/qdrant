@@ -12,4 +12,16 @@
 
 void main() {
     uint thread_index = gl_GlobalInvocationID.x;
+
+    searcher_init();
+
+    POINT_ID point_id = link_points.data[thread_index];
+    atomicExchange(generations.data[point_id], GENERATION);
+
+    ScoredPoint entry = {
+        requests.data[point_id],
+        similarity(point_id, requests.data[point_id])
+    };
+
+    search(point_id, entry);
 }

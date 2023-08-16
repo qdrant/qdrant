@@ -21,6 +21,8 @@ use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageEnum};
 pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 8;
 pub const CANDIDATES_CAPACITY_DIV: usize = 8;
 
+pub const USE_HELPER_PIPELINE: bool = false;
+
 pub struct GpuGraphBuilder<'a> {
     pub graph_layers_builder: GraphLayersBuilder,
     pub m: usize,
@@ -45,6 +47,7 @@ pub struct GpuGraphBuilder<'a> {
 
     pub profile_gpu_links: Arc<Mutex<OperationDurationsAggregator>>,
     pub profile_gpu_helper: Arc<Mutex<OperationDurationsAggregator>>,
+    pub use_helper_pipeline: bool,
 }
 
 impl<'a> GpuGraphBuilder<'a> {
@@ -188,6 +191,7 @@ impl<'a> GpuGraphBuilder<'a> {
 
             profile_gpu_links: OperationDurationsAggregator::new(),
             profile_gpu_helper: OperationDurationsAggregator::new(),
+            use_helper_pipeline: USE_HELPER_PIPELINE,
         }
     }
 
@@ -262,7 +266,7 @@ impl<'a> GpuGraphBuilder<'a> {
             link_points,
         );
 
-        if true && link_points.len() > 0 {
+        if self.use_helper_pipeline && link_points.len() > 0 {
             let _timer = ScopeDurationMeasurer::new(&self.profile_gpu_helper);
 
             self.gpu_context.bind_pipeline(
