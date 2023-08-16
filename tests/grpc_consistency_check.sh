@@ -27,6 +27,7 @@ cargo build --package api
 
 # Ensure generated files are the same as files in this repository
 if diff -Zwa ./lib/api/src/grpc/{,.diff.}qdrant.rs \
+&& diff -Zwa ./lib/api/src/grpc/{,.diff.}google.protobuf.rs \
 && diff -Zwa ./docs/grpc/{,.diff.}docs.md
 then
     set +x
