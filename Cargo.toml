@@ -30,6 +30,7 @@ console-subscriber = ["tracing", "dep:console-subscriber"]
 tracy = ["tracing-tracy"]
 tracing-tracy = ["tracing", "dep:tracing-tracy"]
 tokio-tracing = ["tokio/tracing"]
+stacktrace = ["rstack-self"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
@@ -41,7 +42,7 @@ rusty-hook = "^0.11.2"
 
 [dependencies]
 
-parking_lot = { version = "0.12.1", features=["deadlock_detection"], optional = true }
+parking_lot = { version = "0.12.1", features = ["deadlock_detection"], optional = true }
 
 num_cpus = "1.16"
 thiserror = "1.0"
@@ -57,7 +58,7 @@ anyhow = "1.0.74"
 futures = "0.3.28"
 futures-util = "0.3.27"
 clap = { version = "4.3.21", features = ["derive"] }
-serde_cbor = { version = "0.11.2"}
+serde_cbor = { version = "0.11.2" }
 uuid = { version = "1.4", features = ["v4", "serde"] }
 sys-info = "0.9.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "a32f6a38acf7ffd761df83b0790eaefeb107cd60" }
@@ -86,7 +87,7 @@ raft = { version = "0.7.0", features = ["prost-codec"], default-features = false
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
 prost = "0.11.9"
-raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false}
+raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
@@ -101,6 +102,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = { version = "0.1", default-features = false, features = ["log-tracer", "std"] }
 console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
 tracing-tracy = { version = "0.10.3", features = ["ondemand"], optional = true }
+
+# Backtrace
+rstack-self = { version = "0.3.0", optional = true }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5"

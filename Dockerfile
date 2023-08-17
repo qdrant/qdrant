@@ -31,7 +31,7 @@ COPY --from=xx / /
 # so, please, don't reorder them without prior consideration. 🥲
 
 RUN apt-get update \
-    && apt-get install -y clang lld cmake protobuf-compiler jq \
+    && apt-get install -y clang lld cmake protobuf-compiler jq libunwind-dev \
     && rustup component add rustfmt
 
 # `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
@@ -79,12 +79,12 @@ ARG LINKER=mold
 COPY --from=planner /qdrant/recipe.json recipe.json
 RUN PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --recipe-path recipe.json
+    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
 
 COPY . .
 RUN PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --bin qdrant \
+    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --bin qdrant \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
@@ -95,7 +95,7 @@ RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
 FROM debian:12-slim AS qdrant
 
 RUN apt-get update \
-    && apt-get install -y ca-certificates tzdata \
+    && apt-get install -y ca-certificates tzdata libunwind8 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG APP=/qdrant
