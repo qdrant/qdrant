@@ -8,7 +8,6 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::protobuf;
 use super::qdrant::{CompressionRatio, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1068,8 +1067,8 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
     }
 }
 
-pub fn date_time_to_proto(date_time: NaiveDateTime) -> protobuf::Timestamp {
-    protobuf::Timestamp {
+pub fn date_time_to_proto(date_time: NaiveDateTime) -> prost_types::Timestamp {
+    prost_types::Timestamp {
         seconds: date_time.timestamp(), // number of non-leap seconds since the midnight on January 1, 1970.
         nanos: date_time.nanosecond() as i32,
     }
