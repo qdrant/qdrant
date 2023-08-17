@@ -1140,7 +1140,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    // TODO: remove remote_shard here?
     pub async fn queue_proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
@@ -1190,7 +1189,7 @@ impl ShardReplicaSet {
     /// Un-proxify local shard.
     ///
     /// Returns true if the replica was un-proxified, false if it was already handled
-    pub async fn queue_un_proxify_local(&self, remote_shard: &RemoteShard) -> CollectionResult<()> {
+    pub async fn un_queue_proxify_local(&self, remote_shard: &RemoteShard) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
         match &*local_write {
