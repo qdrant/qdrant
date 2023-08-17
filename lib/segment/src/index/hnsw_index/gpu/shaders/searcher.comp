@@ -14,6 +14,7 @@ readonly uniform SearcherParams {
     uint nearest_capacity;
     uint candidates_capacity;
     uint visited_flags_capacity;
+    uint generation;
 } searcher_params;
 
 layout(set = SEARCHER_LAYOUT_SET, binding = 1)
@@ -30,6 +31,9 @@ layout(set = SEARCHER_LAYOUT_SET, binding = 3)
 buffer VisitedFlagsBuffer {
     uint data[];
 } visited_flags;
+
+#define BYTE_MASK 0xFF
+#define VISITED_GENERATION searcher_params.generation
 
 // nearest binary heap
 #define BHEAP_NAME nearest
@@ -62,13 +66,16 @@ void set_candidate(uint i, ScoredPoint scored_point) {
 }
 
 bool check_and_process_visited(POINT_ID point_id) {
-    uint flag_index = gl_GlobalInvocationID.x * searcher_params.visited_flags_capacity + point_id / 32;
-    uint flag_bit = point_id % 32;
-    uint flag = visited_flags.data[flag_index];
-    uint flag_mask = 1 << flag_bit;
-    bool unvisited = (flag & flag_mask) == 0;
-    visited_flags.data[flag_index] = flag | flag_mask;
-    return unvisited;
+    uint index = gl_GlobalInvocationID.x * searcher_params.visited_flags_capacity + point_id / 4;
+    uint byte_index = point_id % 4;
+    uint shift = byte_index * 8;
+    uint value = visited_flags.data[index];
+    uint prev_generation = (value >> shift) & BYTE_MASK;
+
+    uint cleared = value & (~(BYTE_MASK << shift));
+    visited_flags.data[index] = cleared | (VISITED_GENERATION << shift);
+
+    return prev_generation != VISITED_GENERATION;
 }
 
 void process_candidate(ScoredPoint scored_point) {

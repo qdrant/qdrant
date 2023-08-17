@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 #[repr(C)]
-struct GpuSearchContextParamsBuffer {
+pub struct GpuSearchContextParamsBuffer {
     nearest_capacity: u32,
     candidates_capacity: u32,
     visited_flags_capacity: u32,
+    generation: u32,
 }
 
 pub struct GpuSearchContext {
@@ -15,6 +16,8 @@ pub struct GpuSearchContext {
     pub visited_flags_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
+    pub params: GpuSearchContextParamsBuffer,
+    pub params_staging_buffer: Arc<gpu::Buffer>,
 }
 
 impl GpuSearchContext {
@@ -28,10 +31,10 @@ impl GpuSearchContext {
     ) -> Self {
         let nearest_capacity = std::cmp::max(m + 1, ef);
 
-        let visited_flags_capacity = if points_count % 32 == 0 {
-            points_count / 32
+        let visited_flags_capacity = if points_count % 4 == 0 {
+            points_count / 4
         } else {
-            points_count / 32 + 1
+            points_count / 4 + 1
         };
 
         let search_context_params_buffer = Arc::new(gpu::Buffer::new(
@@ -40,7 +43,7 @@ impl GpuSearchContext {
             std::mem::size_of::<GpuSearchContextParamsBuffer>(),
         ));
 
-        let staging_buffer = Arc::new(gpu::Buffer::new(
+        let params_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
             std::mem::size_of::<GpuSearchContextParamsBuffer>(),
@@ -50,12 +53,13 @@ impl GpuSearchContext {
             nearest_capacity: nearest_capacity as u32,
             candidates_capacity: candidates_capacity as u32,
             visited_flags_capacity: visited_flags_capacity as u32,
+            generation: 0,
         };
-        staging_buffer.upload(&params, 0);
+        params_staging_buffer.upload(&params, 0);
 
         let mut upload_context = gpu::Context::new(device.clone());
         upload_context.copy_gpu_buffer(
-            staging_buffer.clone(),
+            params_staging_buffer.clone(),
             search_context_params_buffer.clone(),
             0,
             0,
@@ -83,9 +87,7 @@ impl GpuSearchContext {
         let visited_flags_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            threads_count
-                * visited_flags_capacity
-                * (std::mem::size_of::<f32>() + std::mem::size_of::<u32>()),
+            threads_count * visited_flags_capacity * std::mem::size_of::<u32>(),
         ));
 
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
@@ -123,11 +125,28 @@ impl GpuSearchContext {
             visited_flags_buffer,
             descriptor_set_layout,
             descriptor_set,
+            params,
+            params_staging_buffer,
         }
     }
 
-    pub fn clear(&self, gpu_context: &mut gpu::Context) {
-        gpu_context.clear_buffer(self.visited_flags_buffer.clone());
+    pub fn clear(&mut self, gpu_context: &mut gpu::Context) {
+        if self.params.generation == 255 {
+            self.params.generation = 1;
+            gpu_context.clear_buffer(self.visited_flags_buffer.clone());
+        } else {
+            self.params.generation += 1;
+        }
+
+        self.params_staging_buffer.upload(&self.params, 0);
+        gpu_context.copy_gpu_buffer(
+            self.params_staging_buffer.clone(),
+            self.search_context_params_buffer.clone(),
+            0,
+            0,
+            std::mem::size_of::<GpuSearchContextParamsBuffer>(),
+        );
+
         gpu_context.clear_buffer(self.candidates_buffer.clone());
         gpu_context.clear_buffer(self.nearest_buffer.clone());
         gpu_context.run();
@@ -285,7 +304,7 @@ mod tests {
             _instance,
             device,
             gpu_links,
-            gpu_search_context,
+            mut gpu_search_context,
             gpu_vector_storage,
         } = new_test_data(
             &mut rnd,
@@ -593,7 +612,7 @@ mod tests {
             _instance,
             device,
             gpu_links,
-            gpu_search_context,
+            mut gpu_search_context,
             gpu_vector_storage,
         } = new_test_data(
             &mut rnd,
