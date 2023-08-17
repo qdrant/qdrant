@@ -78,7 +78,7 @@ where
     Fut: Future<Output = HttpResult<T>>,
     T: serde::Serialize,
 {
-    time_impl(async move { future.await.map(Some) }).await
+    time_impl(async { future.await.map(Some) }).await
 }
 
 pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> impl actix_web::Responder
@@ -87,10 +87,11 @@ where
     T: serde::Serialize + Send + 'static,
 {
     let future = async move {
+        let handle = tokio::task::spawn(future);
+
         if wait {
-            future.await.map(Some)
+            handle.await?.map(Some)
         } else {
-            drop(tokio::task::spawn(future)); // drop `JoinHandle` explicitly to make clippy happy
             Ok(None)
         }
     };
@@ -199,5 +200,11 @@ impl From<CollectionError> for HttpError {
 impl From<io::Error> for HttpError {
     fn from(err: io::Error) -> Self {
         StorageError::from(err).into() // TODO: Is this good enough?.. 🤔
+    }
+}
+
+impl From<tokio::task::JoinError> for HttpError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        StorageError::service_error(err.to_string()).into()
     }
 }
