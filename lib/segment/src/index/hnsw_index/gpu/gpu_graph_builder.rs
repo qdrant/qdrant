@@ -335,9 +335,15 @@ impl<'a> GpuGraphBuilder<'a> {
             return;
         }
 
-        let mut gpu_entries = self
+        let upload_entries_count = if self.gpu_builder_context.has_been_runned() {
+            start_idx as usize
+        } else {
+            self.num_vectors()
+        };
+        let gpu_entries = self
             .requests
             .iter()
+            .take(upload_entries_count)
             .cloned()
             .map(|entry| entry.unwrap_or(PointOffsetType::MAX))
             .collect::<Vec<_>>();
@@ -382,18 +388,6 @@ impl<'a> GpuGraphBuilder<'a> {
         self.gpu_context.wait_finish();
 
         self.gpu_links.download(&mut self.gpu_context);
-
-        if level != 0 {
-            self.gpu_builder_context
-                .download_entries(&mut self.gpu_context, &mut gpu_entries);
-            for (idx, &entry) in gpu_entries.iter().enumerate() {
-                if entry != PointOffsetType::MAX {
-                    self.requests[idx] = Some(entry);
-                } else {
-                    self.requests[idx] = None;
-                }
-            }
-        }
 
         println!(
             "GPU level {}, links {}, updates {}, start_idx {}",

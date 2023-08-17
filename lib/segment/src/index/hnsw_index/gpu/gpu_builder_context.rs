@@ -113,28 +113,6 @@ impl GpuBuilderContext {
         gpu_context.wait_finish();
     }
 
-    pub fn download_entries(
-        &self,
-        gpu_context: &mut gpu::Context,
-        entries: &mut [PointOffsetType],
-    ) {
-        let staging_buffer = Arc::new(gpu::Buffer::new(
-            self.device.clone(),
-            gpu::BufferType::GpuToCpu,
-            entries.len() * std::mem::size_of::<PointOffsetType>(),
-        ));
-        gpu_context.copy_gpu_buffer(
-            self.requests_buffer.clone(),
-            staging_buffer.clone(),
-            0,
-            0,
-            entries.len() * std::mem::size_of::<PointOffsetType>(),
-        );
-        gpu_context.run();
-        gpu_context.wait_finish();
-        staging_buffer.download_slice(entries, 0);
-    }
-
     pub fn upload_process_points(
         &mut self,
         gpu_context: &mut gpu::Context,
@@ -174,6 +152,10 @@ impl GpuBuilderContext {
         }
         gpu_context.run();
         gpu_context.wait_finish();
+    }
+
+    pub fn has_been_runned(&self) -> bool {
+        self.generation > 0
     }
 }
 
