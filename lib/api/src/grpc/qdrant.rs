@@ -8049,7 +8049,8 @@ pub struct SnapshotDescription {
     pub name: ::prost::alloc::string::String,
     /// Creation time of the snapshot
     #[prost(message, optional, tag = "2")]
-    pub creation_time: ::core::option::Option<super::google::protobuf::Timestamp>,
+    #[serde(skip)]
+    pub creation_time: ::core::option::Option<::prost_types::Timestamp>,
     /// Size of the snapshot in bytes
     #[prost(int64, tag = "3")]
     pub size: i64,
