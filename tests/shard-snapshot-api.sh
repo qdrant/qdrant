@@ -15,7 +15,7 @@ declare BFB="${BFB-}"
 declare FILESERVER_ADDR="${FILESERVER_ADDR:-127.0.0.1}"
 declare FILESERVER_PORT="${FILESERVER_PORT:-8080}"
 
-# When running Docker on macOS, use `host.docker.internal` to access *macOS* localhost
+# When running Qdrant in Docker on macOS, use `host.docker.internal` to access *macOS* localhost from inside the container
 declare FILESERVER_URL="${FILESEVER_URL:-http://localhost:8080}"
 
 
@@ -25,7 +25,6 @@ declare POINTS_UPSERTED=0
 declare SNAPSHOT=''
 
 declare DOWNLOADED_SNAPSHOT=''
-
 
 declare FILESERVER_PID=''
 
@@ -53,15 +52,16 @@ function load-collection-status {
 }
 
 function cleanup {
+	kill-jobs
+
 	if [[ $DOWNLOADED_SNAPSHOT && -f $DOWNLOADED_SNAPSHOT ]]
 	then
 		rm "$DOWNLOADED_SNAPSHOT"
 	fi
+}
 
-	if [[ $FILESERVER_PID ]]
-	then
-		kill -TERM "$FILESERVER_PID"
-	fi
+function kill-jobs {
+	kill $(jobs -p) &>/dev/null || :
 }
 
 
