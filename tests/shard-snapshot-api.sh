@@ -137,7 +137,7 @@ function create {
 
 function create-concurrent {
 	fixture-with-points
-	:
+	concurrent - create
 }
 
 function create-invalid-collection {
@@ -160,14 +160,16 @@ function recover-local {
 		--data-raw "{ \"location\": \"$SNAPSHOT\" }"
 
 	# TODO: Check that shard was successfully restored!
-
 	POINTS_UPSERTED=1
 }
 
 function recover-local-concurrent {
 	fixture-with-snapshot
 	fixture-with-empty-collection
-	:
+
+	concurrent - recover-local
+	# TODO: Check that shard was successfully restored!
+	POINTS_UPSERTED=1
 }
 
 function recover-local-invalid-collection {
@@ -206,14 +208,16 @@ function recover-remote {
 		--data-raw "{ \"location\": \"$FILESERVER_URL/$DOWNLOADED_SNAPSHOT\" }"
 
 	# TODO: Check that shard was successfully restored!
-
 	POINTS_UPSERTED=1
 }
 
 function recover-remote-concurrent {
 	fixture-with-remote-snapshot
 	fixture-with-empty-collection
-	:
+
+	concurrent - recover-remote
+	# TODO: Check that shard was successfully restored!
+	POINTS_UPSERTED=1
 }
 
 function recover-remote-invalid-collection {
@@ -254,7 +258,10 @@ function upload {
 function upload-concurrent {
 	fixture-with-downloaded-snapshot
 	fixture-with-empty-collection
-	:
+
+	concurrent - upload
+	# TODO: Check that shard was successfully restored!
+	POINTS_UPSERTED=1
 }
 
 function upload-invalid-collection {
@@ -414,12 +421,25 @@ function curl-status {
 	[[ $STATUS == "$EXPECTED" ]]
 }
 
-function curl-status-with-body {
-	declare EXPECTED="$1"
-	declare ARGS=( "${@:2}" )
+function concurrent {
+	declare PARALLEL ; PARALLEL="$(or-default "$1" 2)"
+	declare CMD=( "${@:2}" )
 
-	echo "curl-status-with-body: unimplemented" >&2
-	return 1
+	declare -A JOBS
+
+	for _ in $(seq "$PARALLEL")
+	do
+		"${CMD[@]}" &
+		JOBS[$!]=$!
+	done
+
+	declare JOB
+
+	for _ in $(seq "$PARALLEL")
+	do
+		wait -n -p JOB "${JOBS[@]}"
+		unset JOBS[$JOB]
+	done
 }
 
 
