@@ -174,3 +174,22 @@ jobs:
         working-directory: ./tests/low-ram
         shell: bash
         run: ./low-ram.sh
+
+  test-shard-snapshot-api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: sudo apt-get install clang protobuf-compiler jq
+      - name: Build
+        run: cargo build --bin qdrant
+      - name: Run Shard Snapshot API Tests
+        shell: bash
+        run: |
+          cargo run &
+          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
+          ./tests/shard-snapshot-api.sh
