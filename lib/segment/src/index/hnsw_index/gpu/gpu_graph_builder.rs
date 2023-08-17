@@ -102,6 +102,8 @@ impl<'a> GpuGraphBuilder<'a> {
             }
         }
 
+        let gpu_init_timer = std::time::Instant::now();
+
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let gpu_instance =
             Arc::new(gpu::Instance::new("qdrant", Some(&debug_messenger), false).unwrap());
@@ -167,6 +169,8 @@ impl<'a> GpuGraphBuilder<'a> {
             .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
             .add_shader(builder_profile_helper_shader.clone())
             .build(gpu_device.clone());
+
+        println!("Gpu init time {:?}", gpu_init_timer.elapsed());
 
         Self {
             graph_layers_builder,
@@ -392,8 +396,8 @@ impl<'a> GpuGraphBuilder<'a> {
         }
 
         println!(
-            "GPU level {}, links {}, updates {}",
-            level, link_count, update_entry_count
+            "GPU level {}, links {}, updates {}, start_idx {}",
+            level, link_count, update_entry_count, start_idx,
         );
 
         let links_stats = self.profile_gpu_links.lock().get_statistics();
