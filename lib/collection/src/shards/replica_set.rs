@@ -1141,13 +1141,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<Option<UpdateResult>> {
         if let Some(local_shard) = &*self.local.read().await {
             match self.peer_state(&self.this_peer_id()) {
-                Some(ReplicaState::Active) => {
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
-                }
-                Some(ReplicaState::Partial) => {
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
-                }
-                Some(ReplicaState::Initializing) => {
+                Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
                 Some(ReplicaState::Listener) => {
