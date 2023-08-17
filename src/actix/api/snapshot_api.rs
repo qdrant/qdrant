@@ -1,11 +1,13 @@
+use std::fmt;
 use std::io;
+use std::path::{Path, PathBuf};
 
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
-use actix_web_validator::{Json, Path, Query};
+use actix_web_validator as valid;
 use collection::collection::Collection;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::shards::replica_set::ReplicaState;
@@ -129,7 +131,7 @@ async fn list_snapshots(toc: web::Data<TableOfContent>, path: web::Path<String>)
 async fn create_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let wait = params.wait.unwrap_or(true);
@@ -146,9 +148,9 @@ async fn create_snapshot(
 #[post("/collections/{name}/snapshots/upload")]
 async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
+    collection: valid::Path<CollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
-    params: Query<SnapshotUploadingParam>,
+    params: valid::Query<SnapshotUploadingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let snapshot = form.snapshot;
@@ -182,9 +184,9 @@ async fn upload_snapshot(
 #[put("/collections/{name}/snapshots/recover")]
 async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
-    request: Json<SnapshotRecover>,
-    params: Query<SnapshottingParam>,
+    collection: valid::Path<CollectionPath>,
+    request: valid::Json<SnapshotRecover>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let snapshot_recover = request.into_inner();
@@ -222,7 +224,7 @@ async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
 #[post("/snapshots")]
 async fn create_full_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
@@ -247,7 +249,7 @@ async fn get_full_snapshot(
 async fn delete_full_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let snapshot_name = path.into_inner();
     let timing = Instant::now();
@@ -264,7 +266,7 @@ async fn delete_full_snapshot(
 async fn delete_collection_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
     let timing = Instant::now();
@@ -319,7 +321,7 @@ async fn recover_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
-    web::Json(request): web::Json<SnapshotRecover>,
+    web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
     let future = async move {
         let (collection, shard) = path.into_inner();
@@ -328,8 +330,21 @@ async fn recover_shard_snapshot(
 
         // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!?
 
-        let snapshot_path =
-            snapshots::download::download_snapshot(request.location, &snapshots_dir).await?;
+        let snapshot_path = match request.location {
+            ShardSnapshotLocation::Url(url) => {
+                if ! matches!(url.scheme(), "http" | "https") {
+                    return Err(StorageError::bad_input("TODO").into());
+                }
+
+                snapshots::download::download_snapshot(url, &snapshots_dir).await?
+            }
+
+            ShardSnapshotLocation::Path(path) => {
+                let snapshot_path = collection.get_shard_snapshot_path(shard, path).await?;
+                check_shard_snapshot_file_exists(&snapshot_path)?;
+                snapshot_path
+            }
+        };
 
         recover_shard_snapshot_impl(
             &toc,
@@ -350,14 +365,14 @@ async fn recover_shard_snapshot(
 #[post("/collections/{collection}/shards/{shard}/snapshots/upload")]
 async fn upload_shard_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, ShardId, String)>,
+    path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
     let SnapshotUploadingParam { wait, priority } = query.into_inner();
 
     let future = async move {
-        let (collection, shard, snapshot) = path.into_inner();
+        let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
         let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
 
@@ -365,7 +380,12 @@ async fn upload_shard_snapshot(
             std::fs::create_dir_all(&snapshots_dir)?;
         }
 
-        let snapshot_path = snapshots_dir.join(snapshot);
+        let snapshot_file_name = form
+            .snapshot
+            .file_name
+            .unwrap_or_else(|| format!("{}.snapshot", Uuid::new_v4()));
+
+        let snapshot_path = snapshots_dir.join(snapshot_file_name);
 
         form.snapshot
             .file
@@ -410,23 +430,35 @@ async fn delete_shard_snapshot(
         let collection = toc.get_collection(&collection).await?;
         let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
-        // TODO: Do we need these explicit checks/errors?
-        // TODO: `std::fs::remove_file` would fail with roughly the same errors.
-
-        if !snapshot_path.exists() {
-            let description = format!("Snapshot {snapshot} not found");
-            return Err(StorageError::NotFound { description }.into());
-        } else if !snapshot_path.is_file() {
-            let description = format!("{} is not a file", snapshot_path.display());
-            return Err(StorageError::service_error(description).into());
-        }
-
+        check_shard_snapshot_file_exists(&snapshot_path)?;
         std::fs::remove_file(&snapshot_path)?;
 
         Ok(())
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+}
+
+fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageError> {
+    let snapshot_path_display = snapshot_path.display();
+
+    let snapshot_file_name = snapshot_path
+        .file_name()
+        .and_then(|str| str.to_str());
+
+    let snapshot: &dyn fmt::Display = snapshot_file_name
+        .as_ref()
+        .map_or(&snapshot_path_display, |str| str);
+
+    if !snapshot_path.exists() {
+        let description = format!("Snapshot {snapshot} not found");
+        Err(StorageError::NotFound { description })
+    } else if !snapshot_path.is_file() {
+        let description = format!("{snapshot} is not a file");
+        Err(StorageError::service_error(description))
+    } else {
+        Ok(())
+    }
 }
 
 async fn recover_shard_snapshot_impl(
@@ -492,6 +524,21 @@ async fn recover_shard_snapshot_impl(
     }
 
     Ok(())
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+struct ShardSnapshotRecover {
+    location: ShardSnapshotLocation,
+
+    #[serde(default)]
+    priority: Option<SnapshotPriority>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum ShardSnapshotLocation {
+    Url(Url),
+    Path(PathBuf),
 }
 
 // Configure services
