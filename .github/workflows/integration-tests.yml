@@ -192,4 +192,5 @@ jobs:
         run: |
           cargo run &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
-          ./tests/shard-snapshot-api.sh
+          sleep 10
+          ./tests/shard-snapshot-api.sh all
