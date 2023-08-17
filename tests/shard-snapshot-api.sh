@@ -3,23 +3,43 @@
 set -euo pipefail
 
 
-declare URL="${URL:-localhost:6333}"
+declare QDRANT_HOST="${QDRANT_HOST:-localhost}"
+
+declare QDRANT_HTTP_PORT="${QDRANT_HTTP_PORT:-6333}"
+declare QDRANT_GRPC_PORT="${QDRANT_GRPC_PORT:-6334}"
+
+
+declare BFB="${BFB-}"
+
+
+declare FILESERVER_ADDR="${FILESERVER_ADDR:-127.0.0.1}"
+declare FILESERVER_PORT="${FILESERVER_PORT:-8080}"
+
+# When running Docker on macOS, use `host.docker.internal` to access *macOS* localhost
+declare FILESERVER_URL="${FILESEVER_URL:-http://localhost:8080}"
+
 
 declare COLLECTION_CREATED=0
 declare POINTS_UPSERTED=0
 
 declare SNAPSHOT=''
 
+declare DOWNLOADED_SNAPSHOT=''
+
+
+declare FILESERVER_PID=''
+
 
 function main {
 	load-collection-status
+	trap cleanup EXIT
 	"$@"
 }
 
 function load-collection-status {
 	declare POINTS_COUNT
 
-	if POINTS_COUNT="$(curl-ok "$(url)" | jq .result.points_count)" || true
+	if POINTS_COUNT="$(curl-ok "$(url)" | jq .result.points_count)"
 	then
 		COLLECTION_CREATED=1
 
@@ -32,43 +52,55 @@ function load-collection-status {
 	return 0
 }
 
+function cleanup {
+	if [[ $DOWNLOADED_SNAPSHOT && -f $DOWNLOADED_SNAPSHOT ]]
+	then
+		rm "$DOWNLOADED_SNAPSHOT"
+	fi
+
+	if [[ $FILESERVER_PID ]]
+	then
+		kill -TERM "$FILESERVER_PID"
+	fi
+}
+
 
 declare TESTS=(
-	list-snapshots
-	list-snapshots-wrong-collection
-	list-snapshots-wrong-shard
+	list
+	list-invalid-collection
+	list-invalid-shard
 
-	create-snapshot
-	create-snapshot-concurrent
-	create-snapshot-wrong-collection
-	create-snapshot-wrong-shard
+	create
+	create-concurrent
+	create-invalid-collection
+	create-invalid-shard
 
-	# recover-local-snapshot
-	# recover-local-concurrent
-	recover-local-snapshot-wrong-collection
-	recover-local-snapshot-wrong-shard
-	# recover-local-snapshot-wrong-snapshot
+	recover-local
+	recover-local-concurrent
+	recover-local-invalid-collection
+	recover-local-invalid-shard
+	recover-local-invalid-snapshot
 
-	# recover-remote
-	# recover-remote-concurrent
-	recover-remote-wrong-collection
-	recover-remote-wrong-shard
-	# recover-remote-wrong-snapshot
+	recover-remote
+	recover-remote-concurrent
+	recover-remote-invalid-collection
+	recover-remote-invalid-shard
+	recover-remote-invalid-snapshot
 
 	upload
 	upload-concurrent
 	upload-invalid-collection
 	upload-invalid-shard
 
-	download-snapshot
-	download-snapshot-wrong-collection
-	download-snapshot-wrong-shard
-	download-snapshot-wrong-snapshot
+	download
+	download-invalid-collection
+	download-invalid-shard
+	download-invalid-snapshot
 
-	delete-snapshot
-	delete-snapshot-wrong-collection
-	delete-snapshot-wrong-shard
-	delete-snapshot-wrong-snapshot
+	delete
+	delete-invalid-collection
+	delete-invalid-shard
+	delete-invalid-snapshot
 )
 
 function all {
@@ -80,43 +112,45 @@ function all {
 }
 
 
-function list-snapshots {
+function list {
 	fixture-with-collection
 	curl-ok "$(url - -)"
 }
 
-function list-snapshots-wrong-collection {
+function list-invalid-collection {
 	curl-status 404 "$(url invalid-collection -)"
 }
 
-function list-snapshots-wrong-shard {
+function list-invalid-shard {
 	fixture-with-collection
 	curl-status 404 "$(url - 1)"
 }
 
 
-function create-snapshot {
+function create {
 	fixture-with-points
-	curl-ok -X POST "$(url - -)"
+
+	declare RESPONSE ; RESPONSE="$(curl-ok -X POST "$(url - -)")"
+	SNAPSHOT="$(echo "$RESPONSE" | jq -r .result.name)"
+	echo "$RESPONSE" | jq
 }
 
-function create-snapshot-concurrent {
+function create-concurrent {
 	fixture-with-points
 	:
 }
 
-function create-snapshot-wrong-collection {
+function create-invalid-collection {
 	curl-status 404 -X POST "$(url invalid-collection -)"
 }
 
-function create-snapshot-wrong-shard {
+function create-invalid-shard {
 	fixture-with-collection
 	curl-status 404 -X POST "$(url - 1)"
 }
 
 
-# TODO: Switch from `file://` URL to simple snapshot filename
-function recover-local-snapshot {
+function recover-local {
 	fixture-with-snapshot
 	fixture-with-empty-collection
 
@@ -124,6 +158,10 @@ function recover-local-snapshot {
 		-X PUT "$(url - -)"/recover \
 		-H 'Content-Type: application/json' \
 		--data-raw "{ \"location\": \"$SNAPSHOT\" }"
+
+	# TODO: Check that shard was successfully restored!
+
+	POINTS_UPSERTED=1
 }
 
 function recover-local-concurrent {
@@ -132,27 +170,23 @@ function recover-local-concurrent {
 	:
 }
 
-# TODO: Switch from `file://` URL to simple snapshot filename
-function recover-local-snapshot-wrong-collection {
+function recover-local-invalid-collection {
 	curl-status 404 \
 		-X PUT "$(url invalid-collection -)"/recover \
 		-H 'Content-Type: application/json' \
-		--data-raw '{ "location": "file:///invalid.snapshot" }'
+		--data-raw '{ "location": "invalid.snapshot" }'
 }
 
-# TODO: Switch from `file://` URL to simple snapshot filename
-function recover-local-snapshot-wrong-shard {
+function recover-local-invalid-shard {
 	fixture-with-collection
 
 	curl-status 404 \
 		-X PUT "$(url - 1)"/recover \
 		-H 'Content-Type: application/json' \
-		--data-raw '{ "location": "file:///invalid.snapshot" }'
+		--data-raw '{ "location": "invalid.snapshot" }'
 }
 
-# TODO: Switch from `file://` URL to simple snapshot filename
-# TODO: `file:///invalid.snapshot` returns `400`, not `404`? 🤔
-function recover-local-snapshot-wrong-snapshot {
+function recover-local-invalid-snapshot {
 	fixture-with-collection
 
 	curl-status 404 \
@@ -165,7 +199,15 @@ function recover-local-snapshot-wrong-snapshot {
 function recover-remote {
 	fixture-with-remote-snapshot
 	fixture-with-empty-collection
-	:
+
+	curl-ok \
+		-X PUT "$(url - -)/recover" \
+		-H 'Content-Type: application/json' \
+		--data-raw "{ \"location\": \"$FILESERVER_URL/$DOWNLOADED_SNAPSHOT\" }"
+
+	# TODO: Check that shard was successfully restored!
+
+	POINTS_UPSERTED=1
 }
 
 function recover-remote-concurrent {
@@ -174,14 +216,14 @@ function recover-remote-concurrent {
 	:
 }
 
-function recover-remote-wrong-collection {
+function recover-remote-invalid-collection {
 	curl-status 404 \
 		-X PUT "$(url invalid-collection -)"/recover \
 		-H 'Content-Type: application/json' \
-		--data-raw '{ "location": "http://invalid-host/invalid.snapshot" }'
+		--data-raw '{ "location": "http://localhost:8080/invalid.snapshot" }'
 }
 
-function recover-remote-wrong-shard {
+function recover-remote-invalid-shard {
 	fixture-with-collection
 
 	curl-status 404 \
@@ -190,7 +232,7 @@ function recover-remote-wrong-shard {
 		--data-raw '{ "location": "http://localhost:8080/invalid.snapshot" }'
 }
 
-function recover-remote-wrong-snapshot {
+function recover-remote-invalid-snapshot {
 	fixture-with-collection
 
 	curl-status 404 \
@@ -203,7 +245,10 @@ function recover-remote-wrong-snapshot {
 function upload {
 	fixture-with-downloaded-snapshot
 	fixture-with-empty-collection
-	:
+
+	curl-ok -X POST "$(url - -)/upload" -F snapshot=@"$DOWNLOADED_SNAPSHOT"
+	# TODO: Check that shard was successfully restored!
+	POINTS_UPSERTED=1
 }
 
 function upload-concurrent {
@@ -213,52 +258,57 @@ function upload-concurrent {
 }
 
 function upload-invalid-collection {
-	:
+	curl-status 404 -X POST "$(url invalid-collection -)/upload" -F snapshot=invalid-snapshot-data
 }
 
 function upload-invalid-shard {
 	fixture-with-collection
-	:
+	curl-status 404 -X POST "$(url - 1)/upload" -F snapshot=invalid-snapshot-data
 }
 
 
-function download-snapshot {
+function download {
 	fixture-with-collection
 	fixture-with-snapshot
-	curl-ok "$(url - - -)" -o /dev/null
+
+	DOWNLOADED_SNAPSHOT=downloaded.snapshot
+	curl-ok "$(url - - -)" -o "$DOWNLOADED_SNAPSHOT"
 }
 
-function download-snapshot-wrong-collection {
+function download-invalid-collection {
 	curl-status 404 "$(url invalid-collection - invalid.snapshot)"
 }
 
-function download-snapshot-wrong-shard {
+function download-invalid-shard {
 	fixture-with-collection
 	curl-status 404 "$(url - 1 invalid.snapshot)"
 }
 
-function download-snapshot-wrong-snapshot {
+function download-invalid-snapshot {
 	fixture-with-collection
 	curl-status 404 "$(url - - invalid.snapshot)"
 }
 
 
-function delete-snapshot {
+function delete {
 	fixture-with-collection
 	fixture-with-snapshot
+
 	curl-ok -X DELETE "$(url - - -)"
+	# TODO: Check that snapshot was successfully deleted!
+	SNAPSHOT=''
 }
 
-function delete-snapshot-wrong-collection {
+function delete-invalid-collection {
 	curl-status 404 -X DELETE "$(url invalid-collection - invalid.snapshot)"
 }
 
-function delete-snapshot-wrong-shard {
+function delete-invalid-shard {
 	fixture-with-collection
 	curl-status 404 -X DELETE "$(url - 1 invalid.snapshot)"
 }
 
-function delete-snapshot-wrong-snapshot {
+function delete-invalid-snapshot {
 	fixture-with-collection
 	curl-status 404 -X DELETE "$(url - - invalid.snapshot)"
 }
@@ -305,8 +355,7 @@ function fixture-with-points {
 function fixture-with-snapshot {
 	if [[ ! $SNAPSHOT ]]
 	then
-		fixture-with-points
-		SNAPSHOT="$(curl-ok -X POST "$(url - -)" | jq -r .result.name)"
+		create
 	fi
 }
 
@@ -329,21 +378,32 @@ function fixture-with-empty-collection {
 }
 
 function fixture-with-downloaded-snapshot {
-	fixture-with-collection
-	fixture-with-snapshot
-
-	:
+	if [[ ! $DOWNLOADED_SNAPSHOT || ! -f $DOWNLOADED_SNAPSHOT ]]
+	then
+		download
+	fi
 }
 
 function fixture-with-remote-snapshot {
 	fixture-with-downloaded-snapshot
 
-	:
+	if [[ ! $FILESERVER_PID ]]
+	then
+		python3 -m http.server -b "$FILESERVER_ADDR" "$FILESERVER_PORT" &
+		FILESERVER_PID="$!"
+
+		sleep 0.5
+	fi
 }
 
 
 function curl-ok {
-	curl -sS --fail-with-body "$@" | jq # TODO!?
+	if [[ -t 1 ]]
+	then
+		curl -sS --fail-with-body "$@" | jq
+	else
+		curl -sS --fail-with-body "$@"
+	fi
 }
 
 function curl-status {
@@ -364,6 +424,11 @@ function curl-status-with-body {
 
 
 function url {
+	declare QDRANT_PORT="${PORT:-$QDRANT_HTTP_PORT}"
+
+	declare URL="$QDRANT_HOST:$QDRANT_PORT"
+
+
 	declare COLLECTION=test-collection
 	declare SHARD=0
 	declare SNAPSHOT="${SNAPSHOT-}"
@@ -382,6 +447,7 @@ function url {
 	then
 		SNAPSHOT="$(or-default "$3" "$SNAPSHOT")"
 	fi
+
 
 	if (( $# <= 1 ))
 	then
