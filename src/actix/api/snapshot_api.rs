@@ -1,6 +1,5 @@
-use std::fmt;
-use std::io;
 use std::path::{Path, PathBuf};
+use std::{fmt, io};
 
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
@@ -332,7 +331,7 @@ async fn recover_shard_snapshot(
 
         let snapshot_path = match request.location {
             ShardSnapshotLocation::Url(url) => {
-                if ! matches!(url.scheme(), "http" | "https") {
+                if !matches!(url.scheme(), "http" | "https") {
                     return Err(StorageError::bad_input("TODO").into());
                 }
 
@@ -441,10 +440,7 @@ async fn delete_shard_snapshot(
 
 fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageError> {
     let snapshot_path_display = snapshot_path.display();
-
-    let snapshot_file_name = snapshot_path
-        .file_name()
-        .and_then(|str| str.to_str());
+    let snapshot_file_name = snapshot_path.file_name().and_then(|str| str.to_str());
 
     let snapshot: &dyn fmt::Display = snapshot_file_name
         .as_ref()
