@@ -55,3 +55,7 @@ fi
 ./tests/basic_api_test.sh
 
 ./tests/basic_grpc_test.sh
+
+if [ $MODE == "distributed" ]; then
+  ./tests/basic_internal_grpc_test.sh
+fi

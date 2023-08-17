@@ -177,6 +177,12 @@
   
     - [Qdrant](#qdrant-Qdrant)
   
+- [qdrant_internal_service.proto](#qdrant_internal_service-proto)
+    - [HttpPortRequest](#qdrant-HttpPortRequest)
+    - [HttpPortResponse](#qdrant-HttpPortResponse)
+  
+    - [QdrantInternal](#qdrant-QdrantInternal)
+  
 - [snapshots_service.proto](#snapshots_service-proto)
     - [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest)
     - [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest)
@@ -2969,6 +2975,57 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
 | HealthCheck | [HealthCheckRequest](#qdrant-HealthCheckRequest) | [HealthCheckReply](#qdrant-HealthCheckReply) |  |
+
+ 
+
+
+
+<a name="qdrant_internal_service-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## qdrant_internal_service.proto
+
+
+
+<a name="qdrant-HttpPortRequest"></a>
+
+### HttpPortRequest
+
+
+
+
+
+
+
+<a name="qdrant-HttpPortResponse"></a>
+
+### HttpPortResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| port | [int32](#int32) |  |  |
+
+
+
+
+
+ 
+
+ 
+
+ 
+
+
+<a name="qdrant-QdrantInternal"></a>
+
+### QdrantInternal
+
+
+| Method Name | Request Type | Response Type | Description |
+| ----------- | ------------ | ------------- | ------------|
+| GetHttpPort | [HttpPortRequest](#qdrant-HttpPortRequest) | [HttpPortResponse](#qdrant-HttpPortResponse) | Get HTTP port for remote host. |
 
  
 

@@ -12,9 +12,12 @@ use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
+use ::api::grpc::qdrant::qdrant_internal_server::{QdrantInternal, QdrantInternalServer};
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
-use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
+use ::api::grpc::qdrant::{
+    HealthCheckReply, HealthCheckRequest, HttpPortRequest, HttpPortResponse,
+};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -43,6 +46,31 @@ impl Qdrant for QdrantService {
         _request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckReply>, Status> {
         Ok(Response::new(VersionInfo::default().into()))
+    }
+}
+
+pub struct QdrantInternalService {
+    /// HTTP port accessible from inside the cluster
+    http_port: u16,
+}
+
+impl QdrantInternalService {
+    fn new(internal_http_port: u16) -> Self {
+        Self {
+            http_port: internal_http_port,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl QdrantInternal for QdrantInternalService {
+    async fn get_http_port(
+        &self,
+        _request: Request<HttpPortRequest>,
+    ) -> Result<Response<HttpPortResponse>, Status> {
+        Ok(Response::new(HttpPortResponse {
+            port: self.http_port as i32,
+        }))
     }
 }
 
@@ -150,6 +178,7 @@ pub fn init_internal(
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    settings: Settings,
     host: String,
     internal_grpc_port: u16,
     tls_config: Option<ServerTlsConfig>,
@@ -165,6 +194,7 @@ pub fn init_internal(
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
             let qdrant_service = QdrantService::default();
+            let qdrant_internal_service = QdrantInternalService::new(settings.service.http_port);
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
             let raft_service = RaftService::new(to_consensus, consensus_state);
@@ -201,6 +231,12 @@ pub fn init_internal(
                 .layer(middleware_layer)
                 .add_service(
                     QdrantServer::new(qdrant_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
+                )
+                .add_service(
+                    QdrantInternalServer::new(qdrant_internal_service)
                         .send_compressed(CompressionEncoding::Gzip)
                         .accept_compressed(CompressionEncoding::Gzip)
                         .max_decoding_message_size(usize::MAX),
