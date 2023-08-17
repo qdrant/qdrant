@@ -19,7 +19,7 @@ pub const CANDIDATES_CAPACITY_DIV: usize = 8;
 
 pub const USE_HELPER_PIPELINE: bool = false;
 
-pub struct GpuGraphBuilder<'a> {
+pub struct CombinedGraphBuilder<'a> {
     pub graph_layers_builder: GraphLayersBuilder,
     pub m: usize,
     pub m0: usize,
@@ -27,7 +27,7 @@ pub struct GpuGraphBuilder<'a> {
     pub visited_pool: VisitedPool,
     pub points_scorer: Box<dyn RawScorer + 'a>,
     pub point_levels: Vec<usize>,
-    requests: Vec<Option<PointOffsetType>>,
+    pub requests: Vec<Option<PointOffsetType>>,
 
     pub gpu_instance: Arc<gpu::Instance>,
     pub gpu_device: Arc<gpu::Device>,
@@ -41,7 +41,7 @@ pub struct GpuGraphBuilder<'a> {
     pub gpu_threads: usize,
 }
 
-impl<'a> GpuGraphBuilder<'a> {
+impl<'a> CombinedGraphBuilder<'a> {
     pub fn new<R>(
         num_vectors: usize,
         m: usize,
@@ -601,7 +601,7 @@ mod tests {
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-        let mut graph_layers_2 = GpuGraphBuilder::new(
+        let mut graph_layers_2 = CombinedGraphBuilder::new(
             num_vectors,
             m,
             m0,
@@ -671,7 +671,7 @@ mod tests {
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-        let mut graph_layers_2 = GpuGraphBuilder::new(
+        let mut graph_layers_2 = CombinedGraphBuilder::new(
             num_vectors,
             m,
             m0,
