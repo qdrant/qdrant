@@ -30,6 +30,9 @@ pub struct ShardTransfer {
     /// If this flag is true, this is a replication related transfer of shard from 1 peer to another
     /// Shard on original peer will not be deleted in this case
     pub sync: bool,
+    /// Method to transfer shard with. `None` to choose automatically.
+    #[serde(default)]
+    pub method: Option<ShardTransferMethod>,
 }
 
 /// Unique identifier of a transfer
@@ -54,6 +57,15 @@ impl ShardTransfer {
             to: self.to,
         }
     }
+}
+
+/// Methods for transferring a shard from one node to another.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ShardTransferMethod {
+    /// Stream all shard records in batches until the whole shard is transferred.
+    StreamRecords,
+    /// Snapshot the shard, transfer and restore it on the receiver.
+    Snapshot,
 }
 
 async fn transfer_batches(
