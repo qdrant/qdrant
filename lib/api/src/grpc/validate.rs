@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use common::validation::validate_range_generic;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::qdrant::NamedVectors;
+use super::qdrant::{GeoLineString, NamedVectors};
 
 pub trait ValidateExt {
     fn validate(&self) -> Result<(), ValidationErrors>;
@@ -176,12 +176,53 @@ pub fn validate_named_vectors_not_empty(
     Err(err)
 }
 
+/// Validate that GeoLineString has at least 4 points and is closed.
+pub fn validate_geo_polygon_line_helper(line: &GeoLineString) -> Result<(), ValidationError> {
+    let points = &line.points;
+    let min_length = 4;
+    if points.len() < min_length {
+        let mut err: ValidationError = ValidationError::new("min_line_length");
+        err.add_param(Cow::from("length"), &points.len());
+        err.add_param(Cow::from("min_length"), &min_length);
+        return Err(err);
+    }
+
+    let first_point = &points[0];
+    let last_point = &points[points.len() - 1];
+    if first_point != last_point {
+        return Err(ValidationError::new("closed_line"));
+    }
+
+    Ok(())
+}
+
+pub fn validate_geo_polygon_exterior(line: &Option<GeoLineString>) -> Result<(), ValidationError> {
+    match line {
+        Some(l) => {
+            if l.points.is_empty() {
+                return Err(ValidationError::new("not_empty"));
+            }
+            validate_geo_polygon_line_helper(l)?;
+            Ok(())
+        }
+        _ => Err(ValidationError::new("not_empty")),
+    }
+}
+
+pub fn validate_geo_polygon_interiors(lines: &Vec<GeoLineString>) -> Result<(), ValidationError> {
+    for line in lines {
+        validate_geo_polygon_line_helper(line)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, SearchPoints, UpdateCollection,
+        CreateCollection, CreateFieldIndexCollection, GeoLineString, GeoPoint, GeoPolygon,
+        SearchPoints, UpdateCollection,
     };
 
     #[test]
@@ -292,6 +333,90 @@ mod tests {
         assert!(
             bad_request.validate().is_err(),
             "bad search request should error on validation"
+        );
+    }
+
+    #[test]
+    fn test_geo_polygon() {
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString { points: vec![] }),
+            interiors: vec![],
+        };
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                ],
+            }),
+            interiors: vec![],
+        };
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 4., lon: 4. },
+                ],
+            }),
+            interiors: vec![],
+        };
+
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 1., lon: 1. },
+                ],
+            }),
+            interiors: vec![GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 2., lon: 2. },
+                ],
+            }],
+        };
+
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let good_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 1., lon: 1. },
+                ],
+            }),
+            interiors: vec![],
+        };
+        assert!(
+            good_polygon.validate().is_ok(),
+            "good polygon should not error on validation"
         );
     }
 }

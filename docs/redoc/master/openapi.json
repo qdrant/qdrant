@@ -5848,6 +5848,17 @@
               }
             ]
           },
+          "geo_polygon": {
+            "description": "Check if geo point is within a given polygon",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoPolygon"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "values_count": {
             "description": "Check number of values of the field",
             "anyOf": [
@@ -6036,6 +6047,41 @@
             "description": "Radius of the area in meters",
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "GeoPolygon": {
+        "description": "Geo filter request\n\nMatches coordinates inside the polygon, defined by `exterior` and `interiors`",
+        "type": "object",
+        "required": [
+          "exterior",
+          "interiors"
+        ],
+        "properties": {
+          "exterior": {
+            "$ref": "#/components/schemas/GeoLineString"
+          },
+          "interiors": {
+            "description": "Interior lines (if present) bound holes within the surface each GeoLineString must consist of a minimum of 4 points, and the first and last points must be the same.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoLineString"
+            }
+          }
+        }
+      },
+      "GeoLineString": {
+        "description": "Ordered sequence of GeoPoints representing the line",
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoPoint"
+            }
           }
         }
       },
