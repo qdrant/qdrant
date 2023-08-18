@@ -19,6 +19,8 @@ pub struct GpuVectorStorage {
     pub params_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
+    pub dim: usize,
+    pub count: usize,
 }
 
 impl GpuVectorStorage {
@@ -143,6 +145,8 @@ impl GpuVectorStorage {
             params_buffer,
             descriptor_set_layout,
             descriptor_set,
+            dim,
+            count,
         })
     }
 

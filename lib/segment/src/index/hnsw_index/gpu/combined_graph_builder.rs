@@ -1,14 +1,10 @@
 use std::collections::BinaryHeap;
-use std::sync::Arc;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use num_traits::float::FloatCore;
 use rand::Rng;
 
-use super::gpu_builder_context::GpuBuilderContext;
-use super::gpu_links::GpuLinks;
-use super::gpu_search_context::GpuSearchContext;
-use super::gpu_vector_storage::GpuVectorStorage;
+use super::gpu_graph_builder::GpuGraphBuilder;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
 use crate::types::{PointOffsetType, ScoreType};
@@ -16,8 +12,6 @@ use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageEnum};
 
 pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 8;
 pub const CANDIDATES_CAPACITY_DIV: usize = 8;
-
-pub const USE_HELPER_PIPELINE: bool = false;
 
 pub struct CombinedGraphBuilder<'a> {
     pub graph_layers_builder: GraphLayersBuilder,
@@ -29,15 +23,7 @@ pub struct CombinedGraphBuilder<'a> {
     pub point_levels: Vec<usize>,
     pub requests: Vec<Option<PointOffsetType>>,
 
-    pub gpu_instance: Arc<gpu::Instance>,
-    pub gpu_device: Arc<gpu::Device>,
-    pub gpu_context: gpu::Context,
-    pub gpu_vector_storage: GpuVectorStorage,
-    pub gpu_links: GpuLinks,
-    pub gpu_search_context: GpuSearchContext,
-    pub gpu_builder_context: GpuBuilderContext,
-    pub update_entry_pipeline: Arc<gpu::Pipeline>,
-    pub link_pipeline: Arc<gpu::Pipeline>,
+    pub gpu_builder: GpuGraphBuilder,
     pub gpu_threads: usize,
 }
 
@@ -93,63 +79,15 @@ impl<'a> CombinedGraphBuilder<'a> {
             }
         }
 
-        let gpu_init_timer = std::time::Instant::now();
-
-        let debug_messenger = gpu::PanicIfErrorMessenger {};
-        let gpu_instance =
-            Arc::new(gpu::Instance::new("qdrant", Some(&debug_messenger), false).unwrap());
-        let gpu_device = Arc::new(
-            gpu::Device::new(gpu_instance.clone(), gpu_instance.vk_physical_devices[0]).unwrap(),
-        );
-        let mut gpu_context = gpu::Context::new(gpu_device.clone());
-        let gpu_vector_storage = GpuVectorStorage::new(gpu_device.clone(), vector_storage).unwrap();
-        let gpu_links =
-            GpuLinks::new(gpu_device.clone(), m, ef_construct, m0, num_vectors).unwrap();
-
-        let candidates_capacity = num_vectors / CANDIDATES_CAPACITY_DIV;
-        let gpu_search_context = GpuSearchContext::new(
-            gpu_threads,
+        let gpu_builder = GpuGraphBuilder::new(
             num_vectors,
+            m,
             m0,
             ef_construct,
-            candidates_capacity,
-            gpu_device.clone(),
+            vector_storage,
+            point_levels.clone(),
+            gpu_threads,
         );
-        let gpu_builder_context =
-            GpuBuilderContext::new(gpu_device.clone(), num_vectors, gpu_threads);
-        let gpu_entries = requests
-            .iter()
-            .cloned()
-            .map(|entry| entry.unwrap_or(PointOffsetType::MAX))
-            .collect::<Vec<_>>();
-        gpu_builder_context.upload_entries(&mut gpu_context, &gpu_entries);
-
-        // init gpu pilelines
-        let update_entry_shader = Arc::new(gpu::Shader::new(
-            gpu_device.clone(),
-            include_bytes!("./shaders/update_entries.spv"),
-        ));
-        let update_entry_pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
-            .add_shader(update_entry_shader.clone())
-            .build(gpu_device.clone());
-
-        let link_shader = Arc::new(gpu::Shader::new(
-            gpu_device.clone(),
-            include_bytes!("./shaders/run_requests.spv"),
-        ));
-        let link_pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(2, gpu_search_context.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_builder_context.descriptor_set_layout.clone())
-            .add_shader(link_shader.clone())
-            .build(gpu_device.clone());
-
-        println!("Gpu init time {:?}", gpu_init_timer.elapsed());
 
         Self {
             graph_layers_builder,
@@ -160,25 +98,13 @@ impl<'a> CombinedGraphBuilder<'a> {
             points_scorer,
             point_levels,
             requests,
-            gpu_instance,
-            gpu_device,
-            gpu_context,
-            gpu_vector_storage,
-            gpu_links,
-            gpu_search_context,
-            gpu_builder_context,
-            update_entry_pipeline,
-            link_pipeline,
+            gpu_builder,
             gpu_threads,
         }
     }
 
     pub fn max_level(&self) -> usize {
         *self.point_levels.iter().max().unwrap()
-    }
-
-    pub fn clear_links(&mut self) {
-        self.gpu_links.clear(&mut self.gpu_context);
     }
 
     pub fn into_graph_layers_builder(self) -> GraphLayersBuilder {
@@ -202,14 +128,15 @@ impl<'a> CombinedGraphBuilder<'a> {
         let cpu_count =
             (self.gpu_threads * self.m * CPU_POINTS_COUNT_MULTIPLICATOR) as PointOffsetType;
         for level in (0..=max_level).rev() {
-            self.clear_links();
+            self.gpu_builder.clear_links();
 
             let timer = std::time::Instant::now();
             let gpu_start = self.build_level_cpu(level, cpu_count);
             println!("CPU level {} build time = {:?}", level, timer.elapsed());
 
             let timer = std::time::Instant::now();
-            self.build_level_gpu(level, gpu_start);
+            self.gpu_builder
+                .build_level(self.requests.clone(), level, gpu_start);
             println!("GPU level {} build time = {:?}", level, timer.elapsed());
 
             self.finish_graph_layers_builder_level(level);
@@ -231,123 +158,6 @@ impl<'a> CombinedGraphBuilder<'a> {
         let entry_point = self.requests[point_id as usize].clone().unwrap();
         let new_entry_point = self.link(point_id, level_m, entry_point);
         self.requests[point_id as usize] = Some(new_entry_point);
-    }
-
-    fn run_gpu(
-        &mut self,
-        update_entry_points: &[PointOffsetType],
-        link_points: &[PointOffsetType],
-    ) {
-        self.gpu_context.wait_finish();
-
-        self.gpu_builder_context.upload_process_points(
-            &mut self.gpu_context,
-            update_entry_points,
-            link_points,
-        );
-
-        debug_assert!(update_entry_points.len() <= self.gpu_threads);
-        debug_assert!(link_points.len() <= self.gpu_threads);
-        if update_entry_points.len() == 0 && link_points.len() == 0 {
-            return;
-        }
-
-        if link_points.len() > 0 {
-            self.gpu_search_context.clear(&mut self.gpu_context);
-        }
-
-        if update_entry_points.len() > 0 {
-            self.gpu_context.bind_pipeline(
-                self.update_entry_pipeline.clone(),
-                &[
-                    self.gpu_vector_storage.descriptor_set.clone(),
-                    self.gpu_links.descriptor_set.clone(),
-                    self.gpu_search_context.descriptor_set.clone(),
-                    self.gpu_builder_context.descriptor_set.clone(),
-                ],
-            );
-            self.gpu_context.dispatch(update_entry_points.len(), 1, 1);
-        }
-
-        if link_points.len() > 0 {
-            self.gpu_context.bind_pipeline(
-                self.link_pipeline.clone(),
-                &[
-                    self.gpu_vector_storage.descriptor_set.clone(),
-                    self.gpu_links.descriptor_set.clone(),
-                    self.gpu_search_context.descriptor_set.clone(),
-                    self.gpu_builder_context.descriptor_set.clone(),
-                ],
-            );
-            self.gpu_context.dispatch(link_points.len(), 1, 1);
-        }
-
-        self.gpu_context.run();
-    }
-
-    fn build_level_gpu(&mut self, level: usize, start_idx: PointOffsetType) {
-        if start_idx == self.num_vectors() as PointOffsetType {
-            return;
-        }
-
-        let upload_entries_count = if self.gpu_builder_context.has_been_runned() {
-            start_idx as usize
-        } else {
-            self.num_vectors()
-        };
-        let gpu_entries = self
-            .requests
-            .iter()
-            .take(upload_entries_count)
-            .cloned()
-            .map(|entry| entry.unwrap_or(PointOffsetType::MAX))
-            .collect::<Vec<_>>();
-        self.gpu_builder_context
-            .upload_entries(&mut self.gpu_context, &gpu_entries);
-
-        let level_m = self.get_m(level);
-        if level == 0 {
-            self.gpu_links
-                .update_params(&mut self.gpu_context, level_m, self.ef_construct);
-        }
-        self.gpu_links
-            .upload(&mut self.gpu_context, start_idx as usize);
-        let mut link_count = 0;
-        let mut update_entry_count = 0;
-        let mut update_entry_buffer = vec![];
-        let mut links_buffer = vec![];
-        for idx in start_idx..self.num_vectors() as PointOffsetType {
-            if let Some(entry_point) = self.requests[idx as usize].clone() {
-                let entry_level = self.get_point_level(entry_point);
-                let point_level = self.get_point_level(idx as PointOffsetType);
-                let link_level = std::cmp::min(entry_level, point_level);
-                if level > link_level && entry_level >= point_level {
-                    update_entry_count += 1;
-                    update_entry_buffer.push(idx as PointOffsetType);
-                    if update_entry_buffer.len() == self.gpu_threads {
-                        self.run_gpu(&update_entry_buffer, &[]);
-                        update_entry_buffer.clear();
-                    }
-                } else if link_level >= level {
-                    link_count += 1;
-                    links_buffer.push(idx as PointOffsetType);
-                    if links_buffer.len() == self.gpu_threads {
-                        self.run_gpu(&update_entry_buffer, &links_buffer);
-                        update_entry_buffer.clear();
-                        links_buffer.clear();
-                    }
-                }
-            }
-        }
-        self.run_gpu(&update_entry_buffer, &links_buffer);
-        self.gpu_context.wait_finish();
-
-        self.gpu_links.download(&mut self.gpu_context);
-
-        println!(
-            "GPU level {}, links {}, updates {}, start_idx {}",
-            level, link_count, update_entry_count, start_idx,
-        );
     }
 
     fn build_level_cpu(&mut self, level: usize, links_count: PointOffsetType) -> PointOffsetType {
@@ -549,11 +359,11 @@ impl<'a> CombinedGraphBuilder<'a> {
     }
 
     pub fn get_links(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
-        self.gpu_links.get_links(point_id)
+        self.gpu_builder.get_links(point_id)
     }
 
     pub fn set_links(&mut self, point_id: PointOffsetType, links: &[PointOffsetType]) {
-        self.gpu_links.set_links(point_id, links)
+        self.gpu_builder.set_links(point_id, links)
     }
 }
 

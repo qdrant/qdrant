@@ -141,6 +141,7 @@ impl GpuLinks {
     }
 
     pub fn download(&mut self, gpu_context: &mut gpu::Context) {
+        let timer = std::time::Instant::now();
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::GpuToCpu,
@@ -157,6 +158,11 @@ impl GpuLinks {
         gpu_context.wait_finish();
 
         staging_buffer.download_slice(&mut self.links, 0);
+        println!(
+            "Downloaded links in {:?}, {} MB",
+            timer.elapsed(),
+            self.links.len() * std::mem::size_of::<PointOffsetType>() / 1024 / 1024,
+        );
     }
 
     pub fn clear(&mut self, gpu_context: &mut gpu::Context) {
