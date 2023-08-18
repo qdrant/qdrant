@@ -111,7 +111,7 @@ impl<'a> CombinedGraphBuilder<'a> {
         self.graph_layers_builder
     }
 
-    fn finish_graph_layers_builder_level(&mut self, level: usize) {
+    fn download_links(&mut self, level: usize) {
         for idx in 0..self.num_vectors() {
             if level < self.graph_layers_builder.links_layers[idx].len() {
                 let mut links = vec![];
@@ -138,12 +138,14 @@ impl<'a> CombinedGraphBuilder<'a> {
             let gpu_start = self.build_level_cpu(level, cpu_count);
             println!("CPU level {} build time = {:?}", level, timer.elapsed());
 
-            let timer = std::time::Instant::now();
-            self.gpu_builder
-                .build_level(self.requests.clone(), level, gpu_start);
-            println!("GPU level {} build time = {:?}", level, timer.elapsed());
+            if gpu_start < self.num_vectors() as u32 {
+                let timer = std::time::Instant::now();
+                self.gpu_builder
+                    .build_level(self.requests.clone(), level, gpu_start);
+                println!("GPU level {} build time = {:?}", level, timer.elapsed());
+            }
 
-            self.finish_graph_layers_builder_level(level);
+            self.download_links(level);
         }
         println!("GPU+CPU total build time = {:?}", timer.elapsed());
     }
