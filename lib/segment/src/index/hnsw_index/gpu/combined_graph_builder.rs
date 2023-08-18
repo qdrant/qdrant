@@ -174,25 +174,41 @@ impl<'a> CombinedGraphBuilder<'a> {
     }
 
     fn build_level_cpu(&mut self, level: usize, links_count: PointOffsetType) -> PointOffsetType {
+        enum PointAction {
+            UpdateEntry(PointOffsetType),
+            Link(PointOffsetType),
+        }
+
         let level_m = self.get_m(level);
         let mut counter = 0;
+        let mut end_idx = 0;
+        let mut actions = vec![];
         for idx in 0..self.num_vectors() as PointOffsetType {
+            end_idx = idx;
             if let Some(entry_point) = self.requests[idx as usize].clone() {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
                 let link_level = std::cmp::min(entry_level, point_level);
                 if level > link_level && entry_level >= point_level {
-                    self.update_entry(level, idx);
+                    actions.push(PointAction::UpdateEntry(idx));
                 } else if link_level >= level {
                     counter += 1;
                     if counter == links_count {
-                        return idx;
+                        break;
                     }
-                    self.link_point(level, idx, level_m);
+                    actions.push(PointAction::Link(idx));
                 }
             }
         }
-        self.num_vectors() as PointOffsetType
+
+        for action in actions {
+            match action {
+                PointAction::UpdateEntry(idx) => self.update_entry(level, idx),
+                PointAction::Link(idx) => self.link_point(level, idx, level_m),
+            }
+        }
+
+        end_idx
     }
 
     fn link(
