@@ -11,6 +11,7 @@ pub const CANDIDATES_CAPACITY_DIV: usize = 8;
 
 pub struct CombinedGraphBuilder<'a> {
     pub cpu_builder: CpuGraphBuilder<'a>,
+    pub cpu_threads: usize,
     pub gpu_builder: GpuGraphBuilder,
     pub gpu_threads: usize,
 }
@@ -25,6 +26,7 @@ impl<'a> CombinedGraphBuilder<'a> {
         points_scorer: Box<dyn RawScorer + 'a>,
         vector_storage: &VectorStorageEnum,
         rng: &mut R,
+        cpu_threads: usize,
         gpu_threads: usize,
     ) -> Self
     where
@@ -52,6 +54,7 @@ impl<'a> CombinedGraphBuilder<'a> {
 
         Self {
             cpu_builder,
+            cpu_threads,
             gpu_builder,
             gpu_threads,
         }
@@ -85,6 +88,12 @@ impl<'a> CombinedGraphBuilder<'a> {
 
     pub fn build(&mut self) {
         let timer = std::time::Instant::now();
+        let _pool = rayon::ThreadPoolBuilder::new()
+            .thread_name(|idx| format!("hnsw-build-{idx}"))
+            .num_threads(self.cpu_threads)
+            .build()
+            .unwrap();
+
         let max_level = self.cpu_builder.max_level();
         let cpu_count = (self.gpu_threads * self.cpu_builder.m * CPU_POINTS_COUNT_MULTIPLICATOR)
             as PointOffsetType;
@@ -136,6 +145,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
         let gpu_threads_count = 1;
+        let cpu_threads_count = 1;
 
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
@@ -162,6 +172,7 @@ mod tests {
             raw_scorer,
             &storage.borrow(),
             &mut rng,
+            cpu_threads_count,
             gpu_threads_count,
         );
         graph_layers_2.build();
@@ -206,6 +217,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
         let gpu_threads_count = 5;
+        let cpu_threads_count = 1;
 
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
@@ -232,6 +244,7 @@ mod tests {
             raw_scorer,
             &storage.borrow(),
             &mut rng,
+            cpu_threads_count,
             gpu_threads_count,
         );
         graph_layers_2.build();
