@@ -7,6 +7,7 @@ use rand::Rng;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use rayon::ThreadPool;
 
+use crate::index::hnsw_index::gpu::combined_graph_builder::CPU_POINTS_COUNT_MULTIPLICATOR;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
 use crate::types::{PointOffsetType, ScoreType};
@@ -134,11 +135,11 @@ where
         }
 
         let level_m = self.get_m(level);
-        let mut counter = 1;
+        let mut links_counter = 0;
         let mut end_idx = 0;
         let mut actions = vec![];
         for idx in 0..self.num_vectors() as PointOffsetType {
-            end_idx = idx;
+            end_idx += 1;
             if let Some(entry_point) = self.entries.lock()[idx as usize].clone() {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
@@ -150,34 +151,68 @@ where
                 if level > link_level && entry_level >= point_level {
                     actions.push(PointAction::UpdateEntry(idx));
                 } else if link_level >= level {
-                    counter += 1;
-                    if counter == links_count {
+                    links_counter += 1;
+                    actions.push(PointAction::Link(idx));
+                    if links_counter == links_count {
                         break;
                     }
-                    actions.push(PointAction::Link(idx));
                 }
             }
         }
 
-        pool.install(|| {
-            actions.into_par_iter().for_each(|action| {
-                let fabric = &self.scorer_fabric;
-                let scorer = fabric();
-                match action {
-                    PointAction::UpdateEntry(idx) => self.update_entry(&scorer, level, idx),
-                    PointAction::Link(idx) => self.link_point(&scorer, level, idx, level_m),
-                }
-            })
-        });
+        let single_count = pool.current_num_threads() * self.m * CPU_POINTS_COUNT_MULTIPLICATOR;
+        let mut start_parallel_index = 0;
+        let mut match_counter = 0;
+        for action in &actions {
+            start_parallel_index += 1;
+            match action {
+                PointAction::Link(_) => match_counter += 1,
+                _ => {}
+            }
+            if match_counter == single_count {
+                break;
+            }
+        }
 
-        /*
-                for action in actions {
+        println!(
+            "CPU single core links {}, updates {}, multithreaded actions {} with {} links, single links limit {}, total links limit {}",
+            match_counter,
+            start_parallel_index - match_counter,
+            actions.len() - start_parallel_index,
+            links_counter as usize - match_counter,
+            single_count,
+            links_count,
+        );
+
+        let timer = std::time::Instant::now();
+        for action in &actions[..start_parallel_index] {
+            let fabric = &self.scorer_fabric;
+            let scorer = fabric();
+            match action {
+                PointAction::UpdateEntry(idx) => self.update_entry(&scorer, level, *idx),
+                PointAction::Link(idx) => self.link_point(&scorer, level, *idx, level_m),
+            }
+        }
+        println!("Singlethreaded CPU time {:?}", timer.elapsed());
+
+        if start_parallel_index == actions.len() {
+            return end_idx;
+        }
+
+        let timer = std::time::Instant::now();
+        pool.install(|| {
+            actions[start_parallel_index..]
+                .into_par_iter()
+                .for_each(|action| {
+                    let fabric = &self.scorer_fabric;
+                    let scorer = fabric();
                     match action {
-                        PointAction::UpdateEntry(idx) => self.update_entry(level, idx),
-                        PointAction::Link(idx) => self.link_point(level, idx, level_m),
+                        PointAction::UpdateEntry(idx) => self.update_entry(&scorer, level, *idx),
+                        PointAction::Link(idx) => self.link_point(&scorer, level, *idx, level_m),
                     }
-                }
-        */
+                })
+        });
+        println!("Mutlithreaded CPU time {:?}", timer.elapsed());
 
         end_idx
     }

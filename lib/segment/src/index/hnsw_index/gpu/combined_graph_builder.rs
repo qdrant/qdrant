@@ -221,8 +221,8 @@ mod tests {
         let m0 = 16;
         let ef_construct = 16;
         let entry_points_num = 10;
-        let gpu_threads_count = 5;
-        let cpu_threads_count = 1;
+        let gpu_threads_count = 6;
+        let cpu_threads_count = 4;
 
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
