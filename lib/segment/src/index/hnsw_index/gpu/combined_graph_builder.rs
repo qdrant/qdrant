@@ -114,10 +114,14 @@ impl<'a> CombinedGraphBuilder<'a> {
     fn finish_graph_layers_builder_level(&mut self, level: usize) {
         for idx in 0..self.num_vectors() {
             if level < self.graph_layers_builder.links_layers[idx].len() {
-                let links = self.get_links(level, idx as PointOffsetType);
-                self.graph_layers_builder.links_layers[idx][level]
-                    .write()
-                    .extend_from_slice(links);
+                let mut links = vec![];
+                self.links_map(level, idx as PointOffsetType, |link| {
+                    links.push(link);
+                });
+
+                let mut l = self.graph_layers_builder.links_layers[idx][level].write();
+                l.clear();
+                l.extend_from_slice(&links);
             }
         }
     }
@@ -205,12 +209,10 @@ impl<'a> CombinedGraphBuilder<'a> {
         let links = self.select_with_heuristic(nearest_points, level_m);
         self.set_links(level, point_id, &links);
         for other_point in links {
-            let other_point_links = self.get_links(level, other_point);
-            if other_point_links.len() < level_m {
-                // If linked point is lack of neighbours
-                let mut other_point_links = other_point_links.to_vec();
-                other_point_links.push(point_id);
-                self.set_links(level, other_point, &other_point_links);
+            let other_point_links_count = self.get_links_count(level, other_point);
+            //self.get_links(level, other_point);
+            if other_point_links_count < level_m {
+                self.push_link(level, other_point, point_id);
             } else {
                 let mut candidates =
                     FixedLengthPriorityQueue::<ScoredPointOffset>::new(level_m + 1);
@@ -218,12 +220,12 @@ impl<'a> CombinedGraphBuilder<'a> {
                     idx: point_id,
                     score: self.score(point_id, other_point),
                 });
-                for other_point_link in other_point_links.iter().take(level_m).copied() {
+                self.links_map(level, other_point, |other_point_link| {
                     candidates.push(ScoredPointOffset {
                         idx: other_point_link,
                         score: self.score(other_point_link, other_point),
                     });
-                }
+                });
                 let selected_candidates = self.select_with_heuristic(candidates, level_m);
                 self.set_links(level, other_point, &selected_candidates);
             }
@@ -280,8 +282,7 @@ impl<'a> CombinedGraphBuilder<'a> {
                 break;
             }
 
-            let links = self.get_links(level, candidate.idx);
-            for &link in links.iter() {
+            self.links_map(level, candidate.idx, |link| {
                 if !visited_list.check_and_update_visited(link) {
                     let score = self.score(link, id);
                     Self::process_candidate(
@@ -290,10 +291,10 @@ impl<'a> CombinedGraphBuilder<'a> {
                         ScoredPointOffset { idx: link, score },
                     )
                 }
-            }
+            });
         }
 
-        for &existing_link in self.get_links(level, id) {
+        self.links_map(level, id, |existing_link| {
             if !visited_list.check(existing_link) {
                 Self::process_candidate(
                     &mut nearest,
@@ -304,7 +305,7 @@ impl<'a> CombinedGraphBuilder<'a> {
                     },
                 );
             }
-        }
+        });
 
         self.visited_pool.return_back(visited_list);
         nearest
@@ -334,13 +335,13 @@ impl<'a> CombinedGraphBuilder<'a> {
         while changed {
             changed = false;
 
-            for &link in self.get_links(level, entry.idx) {
+            self.links_map(level, entry.idx, |link| {
                 let score = self.score(link, id);
                 if score > entry.score {
                     changed = true;
                     entry = ScoredPointOffset { idx: link, score };
                 }
-            }
+            });
         }
         entry
     }
@@ -365,8 +366,14 @@ impl<'a> CombinedGraphBuilder<'a> {
         self.point_levels.len()
     }
 
-    pub fn get_links(&self, _level: usize, point_id: PointOffsetType) -> &[PointOffsetType] {
-        self.gpu_builder.get_links(point_id)
+    fn links_map<F>(&self, _level: usize, point_id: PointOffsetType, mut f: F)
+    where
+        F: FnMut(PointOffsetType),
+    {
+        let links = self.gpu_builder.get_links(point_id);
+        for link in links {
+            f(*link);
+        }
     }
 
     pub fn set_links(
@@ -376,6 +383,16 @@ impl<'a> CombinedGraphBuilder<'a> {
         links: &[PointOffsetType],
     ) {
         self.gpu_builder.set_links(point_id, links)
+    }
+
+    pub fn push_link(&mut self, _level: usize, point_id: PointOffsetType, link: PointOffsetType) {
+        let mut links = self.gpu_builder.get_links(point_id).to_owned();
+        links.push(link);
+        self.gpu_builder.set_links(point_id, &links);
+    }
+
+    pub fn get_links_count(&mut self, _level: usize, point_id: PointOffsetType) -> usize {
+        self.gpu_builder.get_links(point_id).len()
     }
 }
 
