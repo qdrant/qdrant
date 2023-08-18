@@ -68,6 +68,55 @@ pub enum ShardTransferMethod {
     Snapshot,
 }
 
+pub async fn transfer_shard(
+    transfer_config: ShardTransfer,
+    shard_holder: Arc<LockedShardHolder>,
+    collection_id: CollectionId,
+    peer_id: PeerId,
+    channel_service: ChannelService,
+    stopped: Arc<AtomicBool>,
+) -> CollectionResult<()> {
+    let shard_id = transfer_config.shard_id;
+
+    // Initiate shard on a remote peer
+    let remote_shard = RemoteShard::new(shard_id, collection_id.clone(), peer_id, channel_service);
+
+    remote_shard.initiate_transfer().await?;
+    {
+        let shard_holder_guard = shard_holder.read().await;
+        let transferring_shard = shard_holder_guard.get_shard(&shard_id);
+        if let Some(replica_set) = transferring_shard {
+            match transfer_config.method {
+                Some(ShardTransferMethod::StreamRecords) | None => {
+                    replica_set.proxify_local(remote_shard).await?;
+                }
+                Some(ShardTransferMethod::Snapshot) => {
+                    // TODO: queue proxify
+                    todo!();
+                }
+            }
+        } else {
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be proxied because it does not exist"
+            )));
+        }
+    }
+
+    match transfer_config
+        .method
+        .expect("No shard transfer method selected")
+    {
+        // Transfer shard record in batches
+        ShardTransferMethod::StreamRecords => {
+            transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
+        }
+        // Transfer shard as snapshot
+        ShardTransferMethod::Snapshot => {
+            transfer_snapshot(shard_holder.clone(), shard_id, stopped.clone()).await
+        }
+    }
+}
+
 async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
@@ -115,6 +164,32 @@ async fn transfer_batches(
             )));
         }
     }
+    Ok(())
+}
+
+async fn transfer_snapshot(
+    _shard_holder: Arc<LockedShardHolder>,
+    _shard_id: ShardId,
+    _stopped: Arc<AtomicBool>,
+) -> CollectionResult<()> {
+    // TODO: create shard snapshot
+    todo!();
+
+    // TODO: debug assert we have configured queue proxy
+
+    // TODO: instruct remote to download/recover this snapshot
+    todo!();
+
+    // TODO: switch remote to partial state
+    todo!();
+
+    // We must keep partial state for 10 seconds to allow all nodes to catch up
+    // TODO: or confirm all nodes have reached a specific commit
+    sleep(Duration::from_secs(10)).await;
+
+    // TODO: queue-proxy to forward proxy?
+    todo!();
+
     Ok(())
 }
 
@@ -201,39 +276,6 @@ pub async fn handle_transferred_shard_proxy(
     }
 
     Ok(true)
-}
-
-pub async fn transfer_shard(
-    shard_holder: Arc<LockedShardHolder>,
-    shard_id: ShardId,
-    collection_id: CollectionId,
-    peer_id: PeerId,
-    channel_service: ChannelService,
-    stopped: Arc<AtomicBool>,
-) -> CollectionResult<()> {
-    // Initiate shard on a remote peer
-    let remote_shard = RemoteShard::new(shard_id, collection_id.clone(), peer_id, channel_service);
-
-    // ToDo: Initial fast file-based transfer (optional)
-    // * Create shard snapshot - save the latest version of point updates in the snapshot
-    // * Initiate shard, use snapshot link for initialization
-    // * Transfer difference between snapshot and current shard state
-
-    remote_shard.initiate_transfer().await?;
-    {
-        let shard_holder_guard = shard_holder.read().await;
-        let transferring_shard = shard_holder_guard.get_shard(&shard_id);
-        if let Some(replica_set) = transferring_shard {
-            replica_set.proxify_local(remote_shard).await?;
-        } else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be proxied because it does not exist"
-            )));
-        }
-    }
-
-    // Transfer contents batch by batch
-    transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
 }
 
 pub fn validate_transfer_exists(
@@ -477,8 +519,8 @@ where
         let mut finished = false;
         while !finished && tries > 0 {
             let transfer_result = transfer_shard(
+                transfer.clone(),
                 shards_holder.clone(),
-                transfer.shard_id,
                 collection_id.clone(),
                 transfer.to,
                 channel_service.clone(),
