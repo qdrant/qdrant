@@ -209,6 +209,9 @@ impl CollectionParams {
                     QuantizationConfigDiff::Product(product) => {
                         Some(QuantizationConfig::Product(product))
                     }
+                    QuantizationConfigDiff::Binary(binary) => {
+                        Some(QuantizationConfig::Binary(binary))
+                    }
                     QuantizationConfigDiff::Disabled(_) => None,
                 }
             }

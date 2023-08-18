@@ -1204,6 +1204,11 @@ impl Collection {
                         .quantization_config
                         .replace(QuantizationConfig::Product(product));
                 }
+                QuantizationConfigDiff::Binary(binary) => {
+                    config
+                        .quantization_config
+                        .replace(QuantizationConfig::Binary(binary));
+                }
                 QuantizationConfigDiff::Disabled(_) => {
                     config.quantization_config = None;
                 }

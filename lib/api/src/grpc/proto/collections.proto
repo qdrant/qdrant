@@ -208,10 +208,15 @@ message ProductQuantization {
   optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
+message BinaryQuantization {
+  optional bool always_ram = 1; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+}
+
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
     ProductQuantization product = 2;
+    BinaryQuantization binary = 3;
   }
 }
 
@@ -224,6 +229,7 @@ message QuantizationConfigDiff {
     ScalarQuantization scalar = 1;
     ProductQuantization product = 2;
     Disabled disabled = 3;
+    BinaryQuantization binary = 4;
   }
 }
 

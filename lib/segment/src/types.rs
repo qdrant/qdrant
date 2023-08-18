@@ -498,12 +498,26 @@ impl std::hash::Hash for ScalarQuantizationConfig {
 
 impl Eq for ScalarQuantizationConfig {}
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct BinaryQuantizationConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+pub struct BinaryQuantization {
+    #[validate]
+    pub binary: BinaryQuantizationConfig,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
+    Binary(BinaryQuantization),
 }
 
 impl QuantizationConfig {
@@ -522,6 +536,7 @@ impl Validate for QuantizationConfig {
         match self {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
             QuantizationConfig::Product(product) => product.validate(),
+            QuantizationConfig::Binary(binary) => binary.validate(),
         }
     }
 }

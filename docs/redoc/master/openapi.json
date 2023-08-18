@@ -4390,6 +4390,9 @@
           },
           {
             "$ref": "#/components/schemas/ProductQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/BinaryQuantization"
           }
         ]
       },
@@ -4469,6 +4472,26 @@
           "x32",
           "x64"
         ]
+      },
+      "BinaryQuantization": {
+        "type": "object",
+        "required": [
+          "binary"
+        ],
+        "properties": {
+          "binary": {
+            "$ref": "#/components/schemas/BinaryQuantizationConfig"
+          }
+        }
+      },
+      "BinaryQuantizationConfig": {
+        "type": "object",
+        "properties": {
+          "always_ram": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -6053,6 +6076,9 @@
           },
           {
             "$ref": "#/components/schemas/ProductQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/BinaryQuantization"
           },
           {
             "$ref": "#/components/schemas/Disabled"
