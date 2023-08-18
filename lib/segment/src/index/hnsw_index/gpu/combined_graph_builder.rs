@@ -114,14 +114,21 @@ impl<'a> CombinedGraphBuilder<'a> {
     fn download_links(&mut self, level: usize) {
         for idx in 0..self.num_vectors() {
             if level < self.graph_layers_builder.links_layers[idx].len() {
-                let mut links = vec![];
-                self.links_map(level, idx as PointOffsetType, |link| {
-                    links.push(link);
-                });
+                let links = self.gpu_builder.get_links(idx as PointOffsetType);
 
                 let mut l = self.graph_layers_builder.links_layers[idx][level].write();
                 l.clear();
                 l.extend_from_slice(&links);
+            }
+        }
+    }
+
+    fn upload_links(&mut self, level: usize, count: usize) {
+        self.gpu_builder.clear_links();
+        for idx in 0..count {
+            if level < self.graph_layers_builder.links_layers[idx].len() {
+                let links = self.graph_layers_builder.links_layers[idx][level].read();
+                self.gpu_builder.set_links(idx as PointOffsetType, &links);
             }
         }
     }
@@ -140,12 +147,12 @@ impl<'a> CombinedGraphBuilder<'a> {
 
             if gpu_start < self.num_vectors() as u32 {
                 let timer = std::time::Instant::now();
+                self.upload_links(level, gpu_start as usize);
                 self.gpu_builder
                     .build_level(self.requests.clone(), level, gpu_start);
+                self.download_links(level);
                 println!("GPU level {} build time = {:?}", level, timer.elapsed());
             }
-
-            self.download_links(level);
         }
         println!("GPU+CPU total build time = {:?}", timer.elapsed());
     }
@@ -368,33 +375,39 @@ impl<'a> CombinedGraphBuilder<'a> {
         self.point_levels.len()
     }
 
-    fn links_map<F>(&self, _level: usize, point_id: PointOffsetType, mut f: F)
+    fn links_map<F>(&self, level: usize, point_id: PointOffsetType, mut f: F)
     where
         F: FnMut(PointOffsetType),
     {
-        let links = self.gpu_builder.get_links(point_id);
-        for link in links {
+        if level >= self.graph_layers_builder.links_layers[point_id as usize].len() {
+            return;
+        }
+        let links = self.graph_layers_builder.links_layers[point_id as usize][level].read();
+        for link in links.iter() {
             f(*link);
         }
     }
 
     pub fn set_links(
         &mut self,
-        _level: usize,
+        level: usize,
         point_id: PointOffsetType,
         links: &[PointOffsetType],
     ) {
-        self.gpu_builder.set_links(point_id, links)
+        let mut l = self.graph_layers_builder.links_layers[point_id as usize][level].write();
+        l.clear();
+        l.extend_from_slice(links);
     }
 
-    pub fn push_link(&mut self, _level: usize, point_id: PointOffsetType, link: PointOffsetType) {
-        let mut links = self.gpu_builder.get_links(point_id).to_owned();
-        links.push(link);
-        self.gpu_builder.set_links(point_id, &links);
+    pub fn push_link(&mut self, level: usize, point_id: PointOffsetType, link: PointOffsetType) {
+        let mut l = self.graph_layers_builder.links_layers[point_id as usize][level].write();
+        l.push(link);
     }
 
-    pub fn get_links_count(&mut self, _level: usize, point_id: PointOffsetType) -> usize {
-        self.gpu_builder.get_links(point_id).len()
+    pub fn get_links_count(&mut self, level: usize, point_id: PointOffsetType) -> usize {
+        self.graph_layers_builder.links_layers[point_id as usize][level]
+            .read()
+            .len()
     }
 }
 
