@@ -115,21 +115,20 @@ impl<'a> CombinedGraphBuilder<'a> {
         for idx in 0..self.num_vectors() {
             if level < self.graph_layers_builder.links_layers[idx].len() {
                 let links = self.gpu_builder.get_links(idx as PointOffsetType);
-
-                let mut l = self.graph_layers_builder.links_layers[idx][level].write();
-                l.clear();
-                l.extend_from_slice(&links);
+                self.set_links(level, idx as PointOffsetType, links);
             }
         }
     }
 
     fn upload_links(&mut self, level: usize, count: usize) {
+        let mut links = vec![];
         self.gpu_builder.clear_links();
         for idx in 0..count {
-            if level < self.graph_layers_builder.links_layers[idx].len() {
-                let links = self.graph_layers_builder.links_layers[idx][level].read();
-                self.gpu_builder.set_links(idx as PointOffsetType, &links);
-            }
+            links.clear();
+            self.links_map(level, idx as PointOffsetType, |link| {
+                links.push(link);
+            });
+            self.gpu_builder.set_links(idx as PointOffsetType, &links);
         }
     }
 
