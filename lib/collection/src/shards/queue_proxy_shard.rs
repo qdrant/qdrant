@@ -10,6 +10,7 @@ use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
+use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
     SearchRequestBatch, UpdateResult,
@@ -129,7 +130,9 @@ impl QueueProxyShard {
     ) -> CollectionResult<()> {
         // TODO: naive transfer approach, transfer batch of points instead
         for (_idx, operation) in batch {
-            remote_shard.update(operation.clone(), true).await?;
+            remote_shard
+                .forward_update(operation.clone(), true, WriteOrdering::Weak)
+                .await?;
         }
         Ok(())
     }
