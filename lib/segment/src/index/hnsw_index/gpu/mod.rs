@@ -1,4 +1,5 @@
 pub mod combined_graph_builder;
+pub mod cpu_graph_builder;
 pub mod gpu_builder_context;
 pub mod gpu_graph_builder;
 pub mod gpu_links;
