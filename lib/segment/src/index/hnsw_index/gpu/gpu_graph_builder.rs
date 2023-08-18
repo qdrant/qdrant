@@ -153,6 +153,10 @@ impl GpuGraphBuilder {
             if let Some(entry_point) = entries[idx as usize].clone() {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
+                if level > entry_level && level > point_level {
+                    continue;
+                }
+
                 let link_level = std::cmp::min(entry_level, point_level);
                 if level > link_level && entry_level >= point_level {
                     update_entry_count += 1;

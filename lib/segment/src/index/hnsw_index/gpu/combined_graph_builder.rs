@@ -9,21 +9,27 @@ use crate::vector_storage::{RawScorer, VectorStorageEnum};
 pub const CPU_POINTS_COUNT_MULTIPLICATOR: usize = 8;
 pub const CANDIDATES_CAPACITY_DIV: usize = 8;
 
-pub struct CombinedGraphBuilder<'a> {
-    pub cpu_builder: CpuGraphBuilder<'a>,
+pub struct CombinedGraphBuilder<'a, TFabric>
+where
+    TFabric: Fn() -> Box<dyn RawScorer + 'a> + Send + Sync + 'a,
+{
+    pub cpu_builder: CpuGraphBuilder<'a, TFabric>,
     pub cpu_threads: usize,
     pub gpu_builder: GpuGraphBuilder,
     pub gpu_threads: usize,
 }
 
-impl<'a> CombinedGraphBuilder<'a> {
+impl<'a, TFabric> CombinedGraphBuilder<'a, TFabric>
+where
+    TFabric: Fn() -> Box<dyn RawScorer + 'a> + Send + Sync + 'a,
+{
     pub fn new<R>(
         num_vectors: usize,
         m: usize,
         m0: usize,
         ef_construct: usize,
         entry_points_num: usize,
-        points_scorer: Box<dyn RawScorer + 'a>,
+        scorer_fabric: TFabric,
         vector_storage: &VectorStorageEnum,
         rng: &mut R,
         cpu_threads: usize,
@@ -38,7 +44,7 @@ impl<'a> CombinedGraphBuilder<'a> {
             m0,
             ef_construct,
             entry_points_num,
-            points_scorer,
+            scorer_fabric,
             rng,
         );
 
@@ -88,7 +94,7 @@ impl<'a> CombinedGraphBuilder<'a> {
 
     pub fn build(&mut self) {
         let timer = std::time::Instant::now();
-        let _pool = rayon::ThreadPoolBuilder::new()
+        let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
             .num_threads(self.cpu_threads)
             .build()
@@ -101,14 +107,14 @@ impl<'a> CombinedGraphBuilder<'a> {
             self.gpu_builder.clear_links();
 
             let timer = std::time::Instant::now();
-            let gpu_start = self.cpu_builder.build_level(level, cpu_count);
+            let gpu_start = self.cpu_builder.build_level(&pool, level, cpu_count);
             println!("CPU level {} build time = {:?}", level, timer.elapsed());
 
             if gpu_start < self.cpu_builder.num_vectors() as u32 {
                 let timer = std::time::Instant::now();
                 self.upload_links(level, gpu_start as usize);
-                self.gpu_builder
-                    .build_level(self.cpu_builder.requests.clone(), level, gpu_start);
+                let entries = self.cpu_builder.entries.lock().clone();
+                self.gpu_builder.build_level(entries, level, gpu_start);
                 self.download_links(level);
                 println!("GPU level {} build time = {:?}", level, timer.elapsed());
             }
@@ -162,14 +168,13 @@ mod tests {
         }
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
         let mut graph_layers_2 = CombinedGraphBuilder::new(
             num_vectors,
             m,
             m0,
             ef_construct,
             entry_points_num,
-            raw_scorer,
+            || vector_holder.get_raw_scorer(added_vector.clone()),
             &storage.borrow(),
             &mut rng,
             cpu_threads_count,
@@ -234,14 +239,13 @@ mod tests {
         }
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
         let mut graph_layers_2 = CombinedGraphBuilder::new(
             num_vectors,
             m,
             m0,
             ef_construct,
             entry_points_num,
-            raw_scorer,
+            || vector_holder.get_raw_scorer(added_vector.clone()),
             &storage.borrow(),
             &mut rng,
             cpu_threads_count,

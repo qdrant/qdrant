@@ -797,16 +797,17 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 debug!("finish main graph in time {:?}", timer.elapsed());
             } else {
-                let raw_scorer = if let Some(quantized_storage) = vector_storage.quantized_storage()
-                {
-                    quantized_storage.raw_scorer(
-                        &vec![],
-                        id_tracker.deleted_point_bitslice(),
-                        vector_storage.deleted_vector_bitslice(),
-                        stopped,
-                    )
-                } else {
-                    new_raw_scorer(vec![], &vector_storage, id_tracker.deleted_point_bitslice())
+                let raw_scorer_fabric = || {
+                    if let Some(quantized_storage) = vector_storage.quantized_storage() {
+                        quantized_storage.raw_scorer(
+                            &vec![],
+                            id_tracker.deleted_point_bitslice(),
+                            vector_storage.deleted_vector_bitslice(),
+                            stopped,
+                        )
+                    } else {
+                        new_raw_scorer(vec![], &vector_storage, id_tracker.deleted_point_bitslice())
+                    }
                 };
                 let mut gpu_graph_builder = CombinedGraphBuilder::new(
                     total_vector_count,
@@ -814,7 +815,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     self.config.m0,
                     self.config.ef_construct,
                     entry_points_num,
-                    raw_scorer,
+                    raw_scorer_fabric,
                     &vector_storage,
                     &mut rng,
                     threads_count,

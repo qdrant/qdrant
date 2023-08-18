@@ -2,32 +2,41 @@ use std::collections::BinaryHeap;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use num_traits::float::FloatCore;
+use parking_lot::Mutex;
 use rand::Rng;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use rayon::ThreadPool;
 
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
-pub struct CpuGraphBuilder<'a> {
+pub struct CpuGraphBuilder<'a, TFabric>
+where
+    TFabric: Fn() -> Box<dyn RawScorer + 'a> + Send + Sync + 'a,
+{
     pub graph_layers_builder: GraphLayersBuilder,
     pub m: usize,
     pub m0: usize,
     pub ef_construct: usize,
     pub visited_pool: VisitedPool,
-    pub points_scorer: Box<dyn RawScorer + 'a>,
+    pub scorer_fabric: TFabric,
     pub point_levels: Vec<usize>,
-    pub requests: Vec<Option<PointOffsetType>>,
+    pub entries: Mutex<Vec<Option<PointOffsetType>>>,
 }
 
-impl<'a> CpuGraphBuilder<'a> {
+impl<'a, TFabric> CpuGraphBuilder<'a, TFabric>
+where
+    TFabric: Fn() -> Box<dyn RawScorer + 'a> + Send + Sync + 'a,
+{
     pub fn new<R>(
         num_vectors: usize,
         m: usize,
         m0: usize,
         ef_construct: usize,
         entry_points_num: usize,
-        points_scorer: Box<dyn RawScorer + 'a>,
+        scorer_fabric: TFabric,
         rng: &mut R,
     ) -> Self
     where
@@ -59,16 +68,12 @@ impl<'a> CpuGraphBuilder<'a> {
                 |_| true,
             );
             if let Some(entry_point) = entry_point {
-                let entry = ScoredPointOffset {
-                    idx: entry_point.point_id,
-                    score: points_scorer
-                        .score_internal(idx as PointOffsetType, entry_point.point_id),
-                };
-                requests.push(Some(entry.idx))
+                requests.push(Some(entry_point.point_id))
             } else {
                 requests.push(None);
             }
         }
+        let requests = Mutex::new(requests);
 
         Self {
             graph_layers_builder,
@@ -76,9 +81,9 @@ impl<'a> CpuGraphBuilder<'a> {
             m0,
             ef_construct,
             visited_pool: VisitedPool::new(),
-            points_scorer,
+            scorer_fabric,
             point_levels,
-            requests,
+            entries: requests,
         }
     }
 
@@ -90,37 +95,57 @@ impl<'a> CpuGraphBuilder<'a> {
         self.graph_layers_builder
     }
 
-    pub fn update_entry(&mut self, level: usize, point_id: PointOffsetType) {
-        let entry_point = self.requests[point_id as usize].clone().unwrap();
+    pub fn update_entry(
+        &self,
+        scorer: &Box<dyn RawScorer + 'a>,
+        level: usize,
+        point_id: PointOffsetType,
+    ) {
+        let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
         let scored_entry = ScoredPointOffset {
             idx: entry_point,
-            score: self.score(point_id, entry_point),
+            score: self.score(scorer, point_id, entry_point),
         };
-        let new_entry = self.search_entry(level, point_id, scored_entry).idx;
-        self.requests[point_id as usize] = Some(new_entry);
+        let new_entry = self.search_entry(scorer, level, point_id, scored_entry).idx;
+        self.entries.lock()[point_id as usize] = Some(new_entry);
     }
 
-    pub fn link_point(&mut self, level: usize, point_id: PointOffsetType, level_m: usize) {
-        let entry_point = self.requests[point_id as usize].clone().unwrap();
-        let new_entry_point = self.link(level, point_id, level_m, entry_point);
-        self.requests[point_id as usize] = Some(new_entry_point);
+    pub fn link_point(
+        &self,
+        scorer: &Box<dyn RawScorer + 'a>,
+        level: usize,
+        point_id: PointOffsetType,
+        level_m: usize,
+    ) {
+        let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
+        let new_entry_point = self.link(scorer, level, point_id, level_m, entry_point);
+        self.entries.lock()[point_id as usize] = Some(new_entry_point);
     }
 
-    pub fn build_level(&mut self, level: usize, links_count: PointOffsetType) -> PointOffsetType {
+    pub fn build_level(
+        &mut self,
+        pool: &ThreadPool,
+        level: usize,
+        links_count: PointOffsetType,
+    ) -> PointOffsetType {
         enum PointAction {
             UpdateEntry(PointOffsetType),
             Link(PointOffsetType),
         }
 
         let level_m = self.get_m(level);
-        let mut counter = 0;
+        let mut counter = 1;
         let mut end_idx = 0;
         let mut actions = vec![];
         for idx in 0..self.num_vectors() as PointOffsetType {
             end_idx = idx;
-            if let Some(entry_point) = self.requests[idx as usize].clone() {
+            if let Some(entry_point) = self.entries.lock()[idx as usize].clone() {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
+                if level > entry_level && level > point_level {
+                    continue;
+                }
+
                 let link_level = std::cmp::min(entry_level, point_level);
                 if level > link_level && entry_level >= point_level {
                     actions.push(PointAction::UpdateEntry(idx));
@@ -134,18 +159,32 @@ impl<'a> CpuGraphBuilder<'a> {
             }
         }
 
-        for action in actions {
-            match action {
-                PointAction::UpdateEntry(idx) => self.update_entry(level, idx),
-                PointAction::Link(idx) => self.link_point(level, idx, level_m),
-            }
-        }
+        pool.install(|| {
+            actions.into_par_iter().for_each(|action| {
+                let fabric = &self.scorer_fabric;
+                let scorer = fabric();
+                match action {
+                    PointAction::UpdateEntry(idx) => self.update_entry(&scorer, level, idx),
+                    PointAction::Link(idx) => self.link_point(&scorer, level, idx, level_m),
+                }
+            })
+        });
+
+        /*
+                for action in actions {
+                    match action {
+                        PointAction::UpdateEntry(idx) => self.update_entry(level, idx),
+                        PointAction::Link(idx) => self.link_point(level, idx, level_m),
+                    }
+                }
+        */
 
         end_idx
     }
 
     fn link(
         &self,
+        scorer: &Box<dyn RawScorer + 'a>,
         level: usize,
         point_id: PointOffsetType,
         level_m: usize,
@@ -153,9 +192,9 @@ impl<'a> CpuGraphBuilder<'a> {
     ) -> PointOffsetType {
         let entry = ScoredPointOffset {
             idx: entry_point,
-            score: self.score(point_id, entry_point),
+            score: self.score(scorer, point_id, entry_point),
         };
-        let nearest_points = self.search(level, point_id, entry);
+        let nearest_points = self.search(scorer, level, point_id, entry);
 
         let new_entry_point = nearest_points
             .iter()
@@ -164,7 +203,7 @@ impl<'a> CpuGraphBuilder<'a> {
             .map(|s| s.idx)
             .unwrap_or(entry_point);
 
-        let links = self.select_with_heuristic(nearest_points, level_m);
+        let links = self.select_with_heuristic(scorer, nearest_points, level_m);
         self.set_links(level, point_id, &links);
         for other_point in links {
             let other_point_links_count = self.get_links_count(level, other_point);
@@ -176,15 +215,15 @@ impl<'a> CpuGraphBuilder<'a> {
                     FixedLengthPriorityQueue::<ScoredPointOffset>::new(level_m + 1);
                 candidates.push(ScoredPointOffset {
                     idx: point_id,
-                    score: self.score(point_id, other_point),
+                    score: self.score(scorer, point_id, other_point),
                 });
                 self.links_map(level, other_point, |other_point_link| {
                     candidates.push(ScoredPointOffset {
                         idx: other_point_link,
-                        score: self.score(other_point_link, other_point),
+                        score: self.score(scorer, other_point_link, other_point),
                     });
                 });
-                let selected_candidates = self.select_with_heuristic(candidates, level_m);
+                let selected_candidates = self.select_with_heuristic(scorer, candidates, level_m);
                 self.set_links(level, other_point, &selected_candidates);
             }
         }
@@ -193,6 +232,7 @@ impl<'a> CpuGraphBuilder<'a> {
 
     fn select_with_heuristic(
         &self,
+        scorer: &Box<dyn RawScorer + 'a>,
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
     ) -> Vec<PointOffsetType> {
@@ -204,7 +244,8 @@ impl<'a> CpuGraphBuilder<'a> {
             }
             let mut is_good = true;
             for &selected_point in &result_list {
-                let dist_to_already_selected = self.score(current_closest.idx, selected_point);
+                let dist_to_already_selected =
+                    self.score(scorer, current_closest.idx, selected_point);
                 if dist_to_already_selected > current_closest.score {
                     is_good = false;
                     break;
@@ -220,6 +261,7 @@ impl<'a> CpuGraphBuilder<'a> {
 
     fn search(
         &self,
+        scorer: &Box<dyn RawScorer + 'a>,
         level: usize,
         id: PointOffsetType,
         level_entry: ScoredPointOffset,
@@ -242,7 +284,7 @@ impl<'a> CpuGraphBuilder<'a> {
 
             self.links_map(level, candidate.idx, |link| {
                 if !visited_list.check_and_update_visited(link) {
-                    let score = self.score(link, id);
+                    let score = self.score(scorer, link, id);
                     Self::process_candidate(
                         &mut nearest,
                         &mut candidates,
@@ -259,7 +301,7 @@ impl<'a> CpuGraphBuilder<'a> {
                     &mut candidates,
                     ScoredPointOffset {
                         idx: existing_link,
-                        score: self.score(id, existing_link),
+                        score: self.score(scorer, id, existing_link),
                     },
                 );
             }
@@ -285,6 +327,7 @@ impl<'a> CpuGraphBuilder<'a> {
 
     fn search_entry(
         &self,
+        scorer: &Box<dyn RawScorer + 'a>,
         level: usize,
         id: PointOffsetType,
         mut entry: ScoredPointOffset,
@@ -294,7 +337,7 @@ impl<'a> CpuGraphBuilder<'a> {
             changed = false;
 
             self.links_map(level, entry.idx, |link| {
-                let score = self.score(link, id);
+                let score = self.score(scorer, link, id);
                 if score > entry.score {
                     changed = true;
                     entry = ScoredPointOffset { idx: link, score };
@@ -316,8 +359,13 @@ impl<'a> CpuGraphBuilder<'a> {
         self.point_levels[point_id as usize]
     }
 
-    fn score(&self, a: PointOffsetType, b: PointOffsetType) -> ScoreType {
-        self.points_scorer.score_internal(a, b)
+    fn score(
+        &self,
+        scorer: &Box<dyn RawScorer + 'a>,
+        a: PointOffsetType,
+        b: PointOffsetType,
+    ) -> ScoreType {
+        scorer.score_internal(a, b)
     }
 
     pub fn num_vectors(&self) -> usize {
