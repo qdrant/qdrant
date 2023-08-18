@@ -15,30 +15,50 @@ declare BFB="${BFB-}"
 declare FILESERVER_ADDR="${FILESERVER_ADDR:-127.0.0.1}"
 declare FILESERVER_PORT="${FILESERVER_PORT:-8080}"
 
-# When running Qdrant in Docker on macOS, use `host.docker.internal` to access *macOS* localhost from inside the container
-declare FILESERVER_URL="${FILESEVER_URL:-http://localhost:8080}"
+# When running Qdrant in Docker on macOS, use `http://host.docker.internal:8080`
+# to access *macOS* localhost from inside the container
+declare FILESERVER_URL="${FILESERVER_URL:-http://localhost:8080}"
+
+
+declare CLUSTER="${CLUSTER-}"
+declare REPLICATION_FACTOR="${REPLICATION_FACTOR:-2}"
 
 
 declare COLLECTION_CREATED=0
 declare POINTS_UPSERTED=0
 
 declare SNAPSHOT=''
+declare SNAPSHOT_POINTS=0
 
 declare DOWNLOADED_SNAPSHOT=''
+declare DOWNLOADED_SNAPSHOT_POINTS=0
 
 declare FILESERVER_PID=''
 
 
 function main {
-	load-collection-status
+	load-qdrant-status
 	trap cleanup EXIT
 	"$@"
 }
 
-function load-collection-status {
-	declare POINTS_COUNT
+function load-qdrant-status {
+	if [[ ! $CLUSTER ]]
+	then
+		declare STATUS ; STATUS="$(curl-ok "http://$QDRANT_HOST:$QDRANT_HTTP_PORT/cluster" | jq -r .result.status)"
 
-	if POINTS_COUNT="$(curl-ok "$(url)" | jq .result.points_count)"
+		case "$STATUS" in
+			enabled) CLUSTER=1 ;;
+			disabled) CLUSTER=0 ;;
+
+			*)
+				echo "load-qdrant-status: invalid cluster status $STATUS" >&2
+				return 1
+			;;
+		esac
+	fi
+
+	if POINTS_COUNT="$(points-count)"
 	then
 		COLLECTION_CREATED=1
 
@@ -61,6 +81,7 @@ function cleanup {
 }
 
 function kill-jobs {
+	# shellcheck disable=SC2046
 	kill $(jobs -p) &>/dev/null || :
 }
 
@@ -76,19 +97,25 @@ declare TESTS=(
 	create-invalid-shard
 
 	recover-local
+	${CLUSTER:+recover-local-priority-snapshot}
 	recover-local-concurrent
+	${CLUSTER:+recover-local-concurrent-priority-snapshot}
 	recover-local-invalid-collection
 	recover-local-invalid-shard
 	recover-local-invalid-snapshot
 
 	recover-remote
+	${CLUSTER:+recover-remote-priority-snapshot}
 	recover-remote-concurrent
+	${CLUSTER:+recover-remote-concurrent-priority-snapshot}
 	recover-remote-invalid-collection
 	recover-remote-invalid-shard
 	recover-remote-invalid-snapshot
 
 	upload
+	${CLUSTER:+upload-priority-snapshot}
 	upload-concurrent
+	${CLUSTER:+upload-concurrent-priority-snapshot}
 	upload-invalid-collection
 	upload-invalid-shard
 
@@ -103,7 +130,7 @@ declare TESTS=(
 	delete-invalid-snapshot
 )
 
-function all {
+function test-all {
 	for TEST in "${TESTS[@]}"
 	do
 		echo "Running $TEST..."
@@ -123,7 +150,7 @@ function list-invalid-collection {
 
 function list-invalid-shard {
 	fixture-with-collection
-	curl-status 404 "$(url - 1)"
+	curl-status 404 "$(url - 99)"
 }
 
 
@@ -133,6 +160,8 @@ function create {
 	declare RESPONSE ; RESPONSE="$(curl-ok -X POST "$(url - -)")"
 	SNAPSHOT="$(echo "$RESPONSE" | jq -r .result.name)"
 	echo "$RESPONSE" | jq
+
+	SNAPSHOT_POINTS="$(points-count)"
 }
 
 function create-concurrent {
@@ -146,7 +175,18 @@ function create-invalid-collection {
 
 function create-invalid-shard {
 	fixture-with-collection
-	curl-status 404 -X POST "$(url - 1)"
+	curl-status 404 -X POST "$(url - 99)"
+}
+
+
+function do-recover {
+	declare LOCATION="$1"
+	declare PRIORITY="${2:-replica}"
+
+	curl-ok \
+		-X PUT "$(url - -)"/recover \
+		-H 'Content-Type: application/json' \
+		--data-raw "$(json --arg location "$LOCATION" --arg priority "$PRIORITY")"
 }
 
 
@@ -154,22 +194,24 @@ function recover-local {
 	fixture-with-snapshot
 	fixture-with-empty-collection
 
-	curl-ok \
-		-X PUT "$(url - -)"/recover \
-		-H 'Content-Type: application/json' \
-		--data-raw "{ \"location\": \"$SNAPSHOT\" }"
+	do-recover "$SNAPSHOT" "$@"
+	check-recovered - "$SNAPSHOT_POINTS" "$@"
+}
 
-	# TODO: Check that shard was successfully restored!
-	POINTS_UPSERTED=1
+function recover-local-priority-snapshot {
+	recover-local snapshot
 }
 
 function recover-local-concurrent {
 	fixture-with-snapshot
 	fixture-with-empty-collection
 
-	concurrent - recover-local
-	# TODO: Check that shard was successfully restored!
-	POINTS_UPSERTED=1
+	concurrent - do-recover "$SNAPSHOT" "$@"
+	check-recovered - "$SNAPSHOT_POINTS" "$@"
+}
+
+function recocover-local-concurrent-priority-snapshot {
+	recover-local-concurrent snapshot
 }
 
 function recover-local-invalid-collection {
@@ -183,7 +225,7 @@ function recover-local-invalid-shard {
 	fixture-with-collection
 
 	curl-status 404 \
-		-X PUT "$(url - 1)"/recover \
+		-X PUT "$(url - 99)"/recover \
 		-H 'Content-Type: application/json' \
 		--data-raw '{ "location": "invalid.snapshot" }'
 }
@@ -202,22 +244,24 @@ function recover-remote {
 	fixture-with-remote-snapshot
 	fixture-with-empty-collection
 
-	curl-ok \
-		-X PUT "$(url - -)/recover" \
-		-H 'Content-Type: application/json' \
-		--data-raw "{ \"location\": \"$FILESERVER_URL/$DOWNLOADED_SNAPSHOT\" }"
+	do-recover "$FILESERVER_URL/$DOWNLOADED_SNAPSHOT" "$@"
+	check-recovered - "$DOWNLOADED_SNAPSHOT_POINTS" "$@"
+}
 
-	# TODO: Check that shard was successfully restored!
-	POINTS_UPSERTED=1
+function recover-remote-priority-snapshot {
+	recover-remote snapshot
 }
 
 function recover-remote-concurrent {
 	fixture-with-remote-snapshot
 	fixture-with-empty-collection
 
-	concurrent - recover-remote
-	# TODO: Check that shard was successfully restored!
-	POINTS_UPSERTED=1
+	concurrent - do-recover "$FILESERVER_URL/$DOWNLOADED_SNAPSHOT" "$@"
+	check-recovered - "$DOWNLOADED_SNAPSHOT_POINTS" "$@"
+}
+
+function recover-remote-concurrent-priority-snapshot {
+	recover-remote-concurrent snapshot
 }
 
 function recover-remote-invalid-collection {
@@ -231,7 +275,7 @@ function recover-remote-invalid-shard {
 	fixture-with-collection
 
 	curl-status 404 \
-		-X PUT "$(url - 1)"/recover \
+		-X PUT "$(url - 99)"/recover \
 		-H 'Content-Type: application/json' \
 		--data-raw '{ "location": "http://localhost:8080/invalid.snapshot" }'
 }
@@ -240,37 +284,49 @@ function recover-remote-invalid-snapshot {
 	fixture-with-collection
 
 	curl-status 404 \
-		-X PUT "$(url - 1)"/recover \
+		-X PUT "$(url - 99)"/recover \
 		-H 'Content-Type: application/json' \
 		--data-raw '{ "location": "http://localhost:8080/invalid.snapshot" }'
 }
 
 
+function do-upload {
+	declare PRIORITY="${1:-replica}"
+
+	curl-ok -X POST "$(url - -)/upload?priority=$PRIORITY" -F snapshot=@"$DOWNLOADED_SNAPSHOT"
+}
+
 function upload {
 	fixture-with-downloaded-snapshot
 	fixture-with-empty-collection
 
-	curl-ok -X POST "$(url - -)/upload" -F snapshot=@"$DOWNLOADED_SNAPSHOT"
-	# TODO: Check that shard was successfully restored!
-	POINTS_UPSERTED=1
+	do-upload "$@"
+	check-recovered - "$DOWNLOADED_SNAPSHOT_POINTS" "$@"
+}
+
+function upload-priority-snapshot {
+	upload snapshot
 }
 
 function upload-concurrent {
 	fixture-with-downloaded-snapshot
 	fixture-with-empty-collection
 
-	concurrent - upload
-	# TODO: Check that shard was successfully restored!
-	POINTS_UPSERTED=1
+	concurrent - do-upload "$@"
+	check-recovered - "$DOWNLOADED_SNAPSHOT_POINTS" "$@"
+}
+
+function upload-concurrent-priority-snapshot {
+	upload-concurrent snapshot
 }
 
 function upload-invalid-collection {
-	curl-status 404 -X POST "$(url invalid-collection -)/upload" -F snapshot=invalid-snapshot-data
+	curl-status 404 -X POST "$(url invalid-collection -)"/upload -F snapshot=invalid-snapshot-data
 }
 
 function upload-invalid-shard {
 	fixture-with-collection
-	curl-status 404 -X POST "$(url - 1)/upload" -F snapshot=invalid-snapshot-data
+	curl-status 404 -X POST "$(url - 99)"/upload -F snapshot=invalid-snapshot-data
 }
 
 
@@ -280,6 +336,8 @@ function download {
 
 	DOWNLOADED_SNAPSHOT=downloaded.snapshot
 	curl-ok "$(url - - -)" -o "$DOWNLOADED_SNAPSHOT"
+
+	DOWNLOADED_SNAPSHOT_POINTS="$SNAPSHOT_POINTS"
 }
 
 function download-invalid-collection {
@@ -288,7 +346,7 @@ function download-invalid-collection {
 
 function download-invalid-shard {
 	fixture-with-collection
-	curl-status 404 "$(url - 1 invalid.snapshot)"
+	curl-status 404 "$(url - 99 invalid.snapshot)"
 }
 
 function download-invalid-snapshot {
@@ -302,8 +360,11 @@ function delete {
 	fixture-with-snapshot
 
 	curl-ok -X DELETE "$(url - - -)"
+
 	# TODO: Check that snapshot was successfully deleted!
+
 	SNAPSHOT=''
+	SNAPSHOT_POINTS=0
 }
 
 function delete-invalid-collection {
@@ -312,7 +373,7 @@ function delete-invalid-collection {
 
 function delete-invalid-shard {
 	fixture-with-collection
-	curl-status 404 -X DELETE "$(url - 1 invalid.snapshot)"
+	curl-status 404 -X DELETE "$(url - 99 invalid.snapshot)"
 }
 
 function delete-invalid-snapshot {
@@ -324,15 +385,25 @@ function delete-invalid-snapshot {
 function fixture-with-collection {
 	if (( ! COLLECTION_CREATED ))
 	then
+		if [[ $BFB ]]
+		then
+			declare DIM=128
+		else
+			declare DIM=4
+		fi
+
+		declare JSON=(
+			--argjson vectors "$(json --argjson size $DIM --arg distance Cosine)"
+		)
+
+		(( CLUSTER )) && JSON+=(
+			--argjson replication_factor "$REPLICATION_FACTOR"
+		)
+
 		curl-ok \
 			-X PUT "$(url)" \
 			-H 'Content-Type: application/json' \
-			--data-raw '{
-				"vectors": {
-					"size": 4,
-					"distance": "Cosine"
-				}
-			}'
+			--data-raw "$(json "${JSON[@]}")"
 
 		COLLECTION_CREATED=1
 	fi
@@ -343,17 +414,27 @@ function fixture-with-points {
 
 	if (( ! POINTS_UPSERTED ))
 	then
-		curl-ok \
-			-X PUT "$(url)/points" \
-			-H 'Content-Type: application/json' \
-			--data-raw '{
-				"points": [
-					{ "id": 1, "vector": [0.1, 0.1, 0.1, 0.1] },
-					{ "id": 2, "vector": [0.2, 0.2, 0.2, 0.2] },
-					{ "id": 3, "vector": [0.3, 0.3, 0.3, 0.3] },
-					{ "id": 4, "vector": [0.4, 0.4, 0.4, 0.4] }
-				]
-			}'
+		if [[ $BFB ]]
+		then
+			"$BFB" \
+				--uri "http://$QDRANT_HOST:$QDRANT_GRPC_PORT" \
+				--collection-name "$(basename "$(url)")" \
+				--dim 128 \
+				--num-vectors 10000 \
+				--skip-create
+		else
+			curl-ok \
+				-X PUT "$(url)"/points \
+				-H 'Content-Type: application/json' \
+				--data-raw '{
+					"points": [
+						{ "id": 1, "vector": [0.1, 0.1, 0.1, 0.1] },
+						{ "id": 2, "vector": [0.2, 0.2, 0.2, 0.2] },
+						{ "id": 3, "vector": [0.3, 0.3, 0.3, 0.3] },
+						{ "id": 4, "vector": [0.4, 0.4, 0.4, 0.4] }
+					]
+				}'
+		fi
 
 		POINTS_UPSERTED=1
 	fi
@@ -363,6 +444,7 @@ function fixture-with-snapshot {
 	if [[ ! $SNAPSHOT ]]
 	then
 		create
+		SNAPSHOT_POINTS="$(points-count)"
 	fi
 }
 
@@ -404,51 +486,46 @@ function fixture-with-remote-snapshot {
 }
 
 
-function curl-ok {
-	if [[ -t 1 ]]
+function check-recovered {
+	declare POINTS ; POINTS="$(or-default "$1" 0)"
+	declare SNAPSHOT_POINTS="$2"
+	declare PRIORITY="${3:-replica}"
+
+
+	(( CLUSTER )) && sleep 5
+
+
+	if (( CLUSTER )) && [[ $PRIORITY == replica ]]
 	then
-		curl -sS --fail-with-body "$@" | jq
+		declare EXPECTED="$POINTS"
 	else
-		curl -sS --fail-with-body "$@"
+		declare EXPECTED="$SNAPSHOT_POINTS"
 	fi
-}
 
-function curl-status {
-	declare EXPECTED="$1"
-	declare ARGS=( "${@:2}" )
+	[[ "$(points-count)" == "$EXPECTED" ]]
+	POINTS_UPSERTED=$(( EXPECTED > 0 ))
 
-	declare STATUS ; STATUS="$(curl -sS -w '%{http_code}' -o /dev/null "${ARGS[@]}")"
-	[[ $STATUS == "$EXPECTED" ]]
-}
 
-function concurrent {
-	declare PARALLEL ; PARALLEL="$(or-default "$1" 2)"
-	declare CMD=( "${@:2}" )
+	(( CLUSTER )) || return 0
 
-	declare -A JOBS
+	case "$PRIORITY" in
+		snapshot)
+			:
+		;;
 
-	for _ in $(seq "$PARALLEL")
-	do
-		"${CMD[@]}" &
-		JOBS[$!]=$!
-	done
+		replica)
+			:
+		;;
 
-	declare JOB
-
-	for _ in $(seq "$PARALLEL")
-	do
-		wait -n -p JOB "${JOBS[@]}"
-		unset JOBS[$JOB]
-	done
+		*)
+			echo "check-recovered: invalid snapshot priority $PRIORITY" >&2
+			return 1
+		;;
+	esac
 }
 
 
 function url {
-	declare QDRANT_PORT="${PORT:-$QDRANT_HTTP_PORT}"
-
-	declare URL="$QDRANT_HOST:$QDRANT_PORT"
-
-
 	declare COLLECTION=test-collection
 	declare SHARD=0
 	declare SNAPSHOT="${SNAPSHOT-}"
@@ -469,6 +546,8 @@ function url {
 	fi
 
 
+	declare URL="$QDRANT_HOST:$QDRANT_HTTP_PORT"
+
 	if (( $# <= 1 ))
 	then
 		echo "$URL/collections/$COLLECTION"
@@ -479,9 +558,57 @@ function url {
 	then
 		echo "$URL/collections/$COLLECTION/shards/$SHARD/snapshots/$SNAPSHOT"
 	else
-		echo "url: expected no more than 3 arguments (collection, shard, snapshot), but received $# (${*:4})" >&2
+		echo "url: expected no more than 3 arguments (collection, shard, snapshot), but received $# (${*})" >&2
 		return 1
 	fi
+}
+
+function curl-ok {
+	if [[ -t 1 ]]
+	then
+		curl -sS --fail-with-body "$@" | jq
+	else
+		curl -sS --fail-with-body "$@"
+	fi
+}
+
+function curl-status {
+	declare EXPECTED="$1"
+	declare ARGS=( "${@:2}" )
+
+	declare STATUS ; STATUS="$(curl -sS -w '%{http_code}' -o /dev/null "${ARGS[@]}")"
+	[[ $STATUS == "$EXPECTED" ]]
+}
+
+function json {
+	jq -nc '$ARGS.named' "$@"
+}
+
+function points-count {
+	curl-ok "$(url)" | jq .result.points_count
+}
+
+function concurrent {
+	declare PARALLEL ; PARALLEL="$(or-default "$1" 2)"
+	declare CMD=( "${@:2}" )
+
+	declare -A JOBS
+
+	for _ in $(seq "$PARALLEL")
+	do
+		"${CMD[@]}" &
+		JOBS[$!]=$!
+	done
+
+	declare JOB
+
+	for _ in $(seq "$PARALLEL")
+	do
+		wait -n -p JOB "${JOBS[@]}"
+
+		# shellcheck disable=SC2184
+		unset JOBS[$JOB]
+	done
 }
 
 function or-default {
