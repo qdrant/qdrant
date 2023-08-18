@@ -114,7 +114,7 @@ impl<'a> CombinedGraphBuilder<'a> {
     fn finish_graph_layers_builder_level(&mut self, level: usize) {
         for idx in 0..self.num_vectors() {
             if level < self.graph_layers_builder.links_layers[idx].len() {
-                let links = self.get_links(idx as PointOffsetType);
+                let links = self.get_links(level, idx as PointOffsetType);
                 self.graph_layers_builder.links_layers[idx][level]
                     .write()
                     .extend_from_slice(links);
@@ -144,19 +144,19 @@ impl<'a> CombinedGraphBuilder<'a> {
         println!("GPU+CPU total build time = {:?}", timer.elapsed());
     }
 
-    pub fn update_entry(&mut self, point_id: PointOffsetType) {
+    pub fn update_entry(&mut self, level: usize, point_id: PointOffsetType) {
         let entry_point = self.requests[point_id as usize].clone().unwrap();
         let scored_entry = ScoredPointOffset {
             idx: entry_point,
             score: self.score(point_id, entry_point),
         };
-        let new_entry = self.search_entry(point_id, scored_entry).idx;
+        let new_entry = self.search_entry(level, point_id, scored_entry).idx;
         self.requests[point_id as usize] = Some(new_entry);
     }
 
-    pub fn link_point(&mut self, point_id: PointOffsetType, level_m: usize) {
+    pub fn link_point(&mut self, level: usize, point_id: PointOffsetType, level_m: usize) {
         let entry_point = self.requests[point_id as usize].clone().unwrap();
-        let new_entry_point = self.link(point_id, level_m, entry_point);
+        let new_entry_point = self.link(level, point_id, level_m, entry_point);
         self.requests[point_id as usize] = Some(new_entry_point);
     }
 
@@ -169,13 +169,13 @@ impl<'a> CombinedGraphBuilder<'a> {
                 let point_level = self.get_point_level(idx as PointOffsetType);
                 let link_level = std::cmp::min(entry_level, point_level);
                 if level > link_level && entry_level >= point_level {
-                    self.update_entry(idx);
+                    self.update_entry(level, idx);
                 } else if link_level >= level {
                     counter += 1;
                     if counter == links_count {
                         return idx;
                     }
-                    self.link_point(idx, level_m);
+                    self.link_point(level, idx, level_m);
                 }
             }
         }
@@ -184,6 +184,7 @@ impl<'a> CombinedGraphBuilder<'a> {
 
     fn link(
         &mut self,
+        level: usize,
         point_id: PointOffsetType,
         level_m: usize,
         entry_point: PointOffsetType,
@@ -192,7 +193,7 @@ impl<'a> CombinedGraphBuilder<'a> {
             idx: entry_point,
             score: self.score(point_id, entry_point),
         };
-        let nearest_points = self.search(point_id, entry);
+        let nearest_points = self.search(level, point_id, entry);
 
         let new_entry_point = nearest_points
             .iter()
@@ -202,14 +203,14 @@ impl<'a> CombinedGraphBuilder<'a> {
             .unwrap_or(entry_point);
 
         let links = self.select_with_heuristic(nearest_points, level_m);
-        self.set_links(point_id, &links);
+        self.set_links(level, point_id, &links);
         for other_point in links {
-            let other_point_links = self.get_links(other_point);
+            let other_point_links = self.get_links(level, other_point);
             if other_point_links.len() < level_m {
                 // If linked point is lack of neighbours
                 let mut other_point_links = other_point_links.to_vec();
                 other_point_links.push(point_id);
-                self.set_links(other_point, &other_point_links);
+                self.set_links(level, other_point, &other_point_links);
             } else {
                 let mut candidates =
                     FixedLengthPriorityQueue::<ScoredPointOffset>::new(level_m + 1);
@@ -224,7 +225,7 @@ impl<'a> CombinedGraphBuilder<'a> {
                     });
                 }
                 let selected_candidates = self.select_with_heuristic(candidates, level_m);
-                self.set_links(other_point, &selected_candidates);
+                self.set_links(level, other_point, &selected_candidates);
             }
         }
         new_entry_point
@@ -259,6 +260,7 @@ impl<'a> CombinedGraphBuilder<'a> {
 
     fn search(
         &self,
+        level: usize,
         id: PointOffsetType,
         level_entry: ScoredPointOffset,
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
@@ -278,7 +280,7 @@ impl<'a> CombinedGraphBuilder<'a> {
                 break;
             }
 
-            let links = self.get_links(candidate.idx);
+            let links = self.get_links(level, candidate.idx);
             for &link in links.iter() {
                 if !visited_list.check_and_update_visited(link) {
                     let score = self.score(link, id);
@@ -291,7 +293,7 @@ impl<'a> CombinedGraphBuilder<'a> {
             }
         }
 
-        for &existing_link in self.get_links(id) {
+        for &existing_link in self.get_links(level, id) {
             if !visited_list.check(existing_link) {
                 Self::process_candidate(
                     &mut nearest,
@@ -322,12 +324,17 @@ impl<'a> CombinedGraphBuilder<'a> {
         }
     }
 
-    fn search_entry(&self, id: PointOffsetType, mut entry: ScoredPointOffset) -> ScoredPointOffset {
+    fn search_entry(
+        &self,
+        level: usize,
+        id: PointOffsetType,
+        mut entry: ScoredPointOffset,
+    ) -> ScoredPointOffset {
         let mut changed = true;
         while changed {
             changed = false;
 
-            for &link in self.get_links(entry.idx) {
+            for &link in self.get_links(level, entry.idx) {
                 let score = self.score(link, id);
                 if score > entry.score {
                     changed = true;
@@ -358,11 +365,16 @@ impl<'a> CombinedGraphBuilder<'a> {
         self.point_levels.len()
     }
 
-    pub fn get_links(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
+    pub fn get_links(&self, _level: usize, point_id: PointOffsetType) -> &[PointOffsetType] {
         self.gpu_builder.get_links(point_id)
     }
 
-    pub fn set_links(&mut self, point_id: PointOffsetType, links: &[PointOffsetType]) {
+    pub fn set_links(
+        &mut self,
+        _level: usize,
+        point_id: PointOffsetType,
+        links: &[PointOffsetType],
+    ) {
         self.gpu_builder.set_links(point_id, links)
     }
 }
