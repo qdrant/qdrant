@@ -257,30 +257,34 @@ impl TableOfContent {
 
                 shard_transfer::validate_transfer(&transfer, &all_peers, shard_state, &transfers)?;
 
-                let collection_id_clone = collection_id.clone();
-                let transfer_clone = transfer.clone();
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let transfer = transfer.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation =
+                            ConsensusOperations::finish_transfer(collection_id, transfer);
 
-                let on_finish_sender = proposal_sender.clone();
-                let on_finish = async move {
-                    let operation =
-                        ConsensusOperations::finish_transfer(collection_id_clone, transfer_clone);
-
-                    if let Err(error) = on_finish_sender.send(operation) {
-                        log::error!("Can't report transfer progress to consensus: {}", error)
-                    };
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {}", error)
+                        };
+                    }
                 };
 
-                let collection_id_clone = collection_id.clone();
-                let transfer_clone = transfer.clone();
-
-                let on_failure = async move {
-                    if let Err(error) = proposal_sender.send(ConsensusOperations::abort_transfer(
-                        collection_id_clone,
-                        transfer_clone,
-                        "transmission failed",
-                    )) {
-                        log::error!("Can't report transfer progress to consensus: {}", error)
-                    };
+                let on_failure = {
+                    let collection_id = collection_id.clone();
+                    let transfer = transfer.clone();
+                    async move {
+                        if let Err(error) =
+                            proposal_sender.send(ConsensusOperations::abort_transfer(
+                                collection_id,
+                                transfer,
+                                "transmission failed",
+                            ))
+                        {
+                            log::error!("Can't report transfer progress to consensus: {}", error)
+                        };
+                    }
                 };
 
                 collection
