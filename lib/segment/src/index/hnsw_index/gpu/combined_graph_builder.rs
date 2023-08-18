@@ -196,7 +196,7 @@ impl<'a> CombinedGraphBuilder<'a> {
     }
 
     fn link(
-        &mut self,
+        &self,
         level: usize,
         point_id: PointOffsetType,
         level_m: usize,
@@ -388,23 +388,18 @@ impl<'a> CombinedGraphBuilder<'a> {
         }
     }
 
-    pub fn set_links(
-        &mut self,
-        level: usize,
-        point_id: PointOffsetType,
-        links: &[PointOffsetType],
-    ) {
+    pub fn set_links(&self, level: usize, point_id: PointOffsetType, links: &[PointOffsetType]) {
         let mut l = self.graph_layers_builder.links_layers[point_id as usize][level].write();
         l.clear();
         l.extend_from_slice(links);
     }
 
-    pub fn push_link(&mut self, level: usize, point_id: PointOffsetType, link: PointOffsetType) {
+    pub fn push_link(&self, level: usize, point_id: PointOffsetType, link: PointOffsetType) {
         let mut l = self.graph_layers_builder.links_layers[point_id as usize][level].write();
         l.push(link);
     }
 
-    pub fn get_links_count(&mut self, level: usize, point_id: PointOffsetType) -> usize {
+    pub fn get_links_count(&self, level: usize, point_id: PointOffsetType) -> usize {
         self.graph_layers_builder.links_layers[point_id as usize][level]
             .read()
             .len()
