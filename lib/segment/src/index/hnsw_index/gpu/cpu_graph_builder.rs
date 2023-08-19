@@ -160,7 +160,8 @@ where
             }
         }
 
-        let single_count = pool.current_num_threads() * self.m * CPU_POINTS_COUNT_MULTIPLICATOR;
+        let single_count =
+            64 * pool.current_num_threads() * self.m * CPU_POINTS_COUNT_MULTIPLICATOR;
         let mut start_parallel_index = 0;
         let mut match_counter = 0;
         for action in &actions {
@@ -241,10 +242,10 @@ where
         let links = self.select_with_heuristic(scorer, nearest_points, level_m);
         self.set_links(level, point_id, &links);
         for other_point in links {
-            let other_point_links_count = self.get_links_count(level, other_point);
-            //self.get_links(level, other_point);
-            if other_point_links_count < level_m {
-                self.push_link(level, other_point, point_id);
+            let mut other_point_links =
+                self.graph_layers_builder.links_layers[other_point as usize][level].write();
+            if other_point_links.len() < level_m {
+                other_point_links.push(point_id);
             } else {
                 let mut candidates =
                     FixedLengthPriorityQueue::<ScoredPointOffset>::new(level_m + 1);
@@ -252,14 +253,16 @@ where
                     idx: point_id,
                     score: self.score(scorer, point_id, other_point),
                 });
-                self.links_map(level, other_point, |other_point_link| {
+                for &other_point_link in other_point_links.iter() {
                     candidates.push(ScoredPointOffset {
                         idx: other_point_link,
                         score: self.score(scorer, other_point_link, other_point),
                     });
-                });
+                }
                 let selected_candidates = self.select_with_heuristic(scorer, candidates, level_m);
-                self.set_links(level, other_point, &selected_candidates);
+
+                other_point_links.clear();
+                other_point_links.extend_from_slice(&selected_candidates);
             }
         }
         new_entry_point
