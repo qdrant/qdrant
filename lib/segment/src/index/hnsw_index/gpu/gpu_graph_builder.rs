@@ -26,6 +26,9 @@ pub struct GpuGraphBuilder {
     pub gpu_threads: usize,
 }
 
+unsafe impl Send for GpuGraphBuilder {}
+unsafe impl Sync for GpuGraphBuilder {}
+
 impl GpuGraphBuilder {
     pub fn new(
         num_vectors: usize,
