@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use parking_lot::Mutex;
 use rand::Rng;
 
@@ -14,9 +16,9 @@ pub struct CombinedGraphBuilder<'a, TFabric>
 where
     TFabric: Fn() -> Box<dyn RawScorer + 'a> + Send + Sync + 'a,
 {
-    pub cpu_builder: CpuGraphBuilder<'a, TFabric>,
+    pub cpu_builder: Arc<CpuGraphBuilder<'a, TFabric>>,
     pub cpu_threads: usize,
-    pub gpu_builder: GpuGraphBuilder,
+    pub gpu_builder: Arc<Mutex<GpuGraphBuilder>>,
     pub gpu_threads: usize,
 }
 
@@ -39,7 +41,7 @@ where
     where
         R: Rng + ?Sized,
     {
-        let cpu_builder = CpuGraphBuilder::new(
+        let cpu_builder = Arc::new(CpuGraphBuilder::new(
             num_vectors,
             m,
             m0,
@@ -47,9 +49,9 @@ where
             entry_points_num,
             scorer_fabric,
             rng,
-        );
+        ));
 
-        let gpu_builder = GpuGraphBuilder::new(
+        let gpu_builder = Arc::new(Mutex::new(GpuGraphBuilder::new(
             num_vectors,
             m,
             m0,
@@ -57,7 +59,7 @@ where
             vector_storage,
             cpu_builder.point_levels.clone(),
             gpu_threads,
-        );
+        )));
 
         Self {
             cpu_builder,
@@ -101,29 +103,31 @@ where
         }
     }
 
-    fn download_links(&mut self, level: usize) {
+    fn download_links(&self, level: usize) {
+        let gpu_builder = self.gpu_builder.lock();
         for idx in 0..self.cpu_builder.num_vectors() as PointOffsetType {
             if level <= self.cpu_builder.get_point_level(idx) {
-                let links = self.gpu_builder.get_links(idx);
+                let links = gpu_builder.get_links(idx);
                 self.cpu_builder.set_links(level, idx, links);
             }
         }
     }
 
-    fn upload_links(&mut self, level: usize, count: usize) {
+    fn upload_links(&self, level: usize, count: usize) {
+        let mut gpu_builder = self.gpu_builder.lock();
         let mut links = vec![];
-        self.gpu_builder.clear_links();
+        gpu_builder.clear_links();
         for idx in 0..count {
             links.clear();
             self.cpu_builder
                 .links_map(level, idx as PointOffsetType, |link| {
                     links.push(link);
                 });
-            self.gpu_builder.set_links(idx as PointOffsetType, &links);
+            gpu_builder.set_links(idx as PointOffsetType, &links);
         }
     }
 
-    pub fn build(&mut self) {
+    pub fn build(&self) {
         let timer = std::time::Instant::now();
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
@@ -135,8 +139,6 @@ where
         let cpu_count = (self.gpu_threads * self.cpu_builder.m * CPU_POINTS_COUNT_MULTIPLICATOR)
             as PointOffsetType;
         for level in (0..=max_level).rev() {
-            self.gpu_builder.clear_links();
-
             let timer = std::time::Instant::now();
             let gpu_start = self.cpu_builder.build_level(&pool, level, cpu_count);
             println!("CPU level {} build time = {:?}", level, timer.elapsed());
@@ -145,7 +147,9 @@ where
                 let timer = std::time::Instant::now();
                 self.upload_links(level, gpu_start as usize);
                 let entries = self.cpu_builder.entries.lock().clone();
-                self.gpu_builder.build_level(entries, level, gpu_start);
+                self.gpu_builder
+                    .lock()
+                    .build_level(entries, level, gpu_start);
                 self.download_links(level);
                 println!("GPU level {} build time = {:?}", level, timer.elapsed());
             }
@@ -199,7 +203,7 @@ mod tests {
         }
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
-        let mut graph_layers_2 = CombinedGraphBuilder::new(
+        let graph_layers_2 = CombinedGraphBuilder::new(
             num_vectors,
             m,
             m0,
@@ -270,7 +274,7 @@ mod tests {
         }
 
         let added_vector = vector_holder.vectors.get(0).to_vec();
-        let mut graph_layers_2 = CombinedGraphBuilder::new(
+        let graph_layers_2 = CombinedGraphBuilder::new(
             num_vectors,
             m,
             m0,
