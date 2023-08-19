@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 use rand::Rng;
 
 use super::cpu_graph_builder::CpuGraphBuilder;
@@ -67,7 +68,37 @@ where
     }
 
     pub fn into_graph_layers_builder(self) -> GraphLayersBuilder {
-        self.cpu_builder.graph_layers_builder
+        let mut links_layers = vec![];
+        for point_levels in &self.cpu_builder.graph_layers_builder.links_layers {
+            let mut layers = vec![];
+            for level in point_levels {
+                let links = level.read().clone();
+                layers.push(parking_lot::RwLock::new(links));
+            }
+            links_layers.push(layers);
+        }
+        GraphLayersBuilder {
+            max_level: std::sync::atomic::AtomicUsize::new(
+                self.cpu_builder
+                    .graph_layers_builder
+                    .max_level
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            m: self.cpu_builder.graph_layers_builder.m,
+            m0: self.cpu_builder.graph_layers_builder.m0,
+            ef_construct: self.cpu_builder.graph_layers_builder.ef_construct,
+            level_factor: self.cpu_builder.graph_layers_builder.level_factor,
+            use_heuristic: self.cpu_builder.graph_layers_builder.use_heuristic,
+            links_layers,
+            entry_points: Mutex::new(
+                self.cpu_builder
+                    .graph_layers_builder
+                    .entry_points
+                    .lock()
+                    .clone(),
+            ),
+            visited_pool: crate::index::visited_pool::VisitedPool::new(),
+        }
     }
 
     fn download_links(&mut self, level: usize) {
