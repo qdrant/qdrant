@@ -124,7 +124,7 @@ where
     }
 
     pub fn build_level(
-        &mut self,
+        &self,
         pool: &ThreadPool,
         level: usize,
         links_count: PointOffsetType,
