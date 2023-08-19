@@ -25,16 +25,16 @@ pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 /// Same as `GraphLayers`,  but allows to build in parallel
 /// Convertible to `GraphLayers`
 pub struct GraphLayersBuilder {
-    max_level: AtomicUsize,
-    m: usize,
-    m0: usize,
-    ef_construct: usize,
+    pub max_level: AtomicUsize,
+    pub m: usize,
+    pub m0: usize,
+    pub ef_construct: usize,
     // Factor of level probability
-    level_factor: f64,
+    pub level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
-    use_heuristic: bool,
-    pub(crate) links_layers: Vec<LockedLayersContainer>,
-    entry_points: Mutex<EntryPoints>,
+    pub use_heuristic: bool,
+    pub links_layers: Vec<LockedLayersContainer>,
+    pub entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
