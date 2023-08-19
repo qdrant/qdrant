@@ -809,7 +809,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         new_raw_scorer(vec![], &vector_storage, id_tracker.deleted_point_bitslice())
                     }
                 };
-                let mut gpu_graph_builder = CombinedGraphBuilder::new(
+                let gpu_graph_builder = CombinedGraphBuilder::new(
                     total_vector_count,
                     self.config.m,
                     self.config.m0,

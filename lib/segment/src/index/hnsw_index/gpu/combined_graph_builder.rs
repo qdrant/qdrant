@@ -139,6 +139,8 @@ where
         let cpu_count = (self.gpu_threads * self.cpu_builder.m * CPU_POINTS_COUNT_MULTIPLICATOR)
             as PointOffsetType;
         for level in (0..=max_level).rev() {
+            self.gpu_builder.lock().clear_links();
+
             let timer = std::time::Instant::now();
             let gpu_start = self.cpu_builder.build_level(&pool, level, cpu_count);
             println!("CPU level {} build time = {:?}", level, timer.elapsed());
