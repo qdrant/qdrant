@@ -104,31 +104,45 @@ where
         }
     }
 
-    fn download_links(&self, level: usize) {
-        let gpu_builder = self.gpu_builder.lock();
-        for idx in 0..self.cpu_builder.num_vectors() as PointOffsetType {
-            if level <= self.cpu_builder.get_point_level(idx) {
+    fn download_links(
+        cpu_builder: Arc<CpuGraphBuilder<'a, TFabric>>,
+        gpu_builder: Arc<Mutex<GpuGraphBuilder>>,
+        level: usize,
+    ) {
+        let gpu_builder = gpu_builder.lock();
+        for idx in 0..cpu_builder.num_vectors() as PointOffsetType {
+            if level <= cpu_builder.get_point_level(idx) {
                 let links = gpu_builder.get_links(idx);
-                self.cpu_builder.set_links(level, idx, links);
+                cpu_builder.set_links(level, idx, links);
             }
         }
     }
 
-    fn upload_links(&self, level: usize, count: usize) {
-        let mut gpu_builder = self.gpu_builder.lock();
+    fn upload_links(
+        cpu_builder: Arc<CpuGraphBuilder<'a, TFabric>>,
+        gpu_builder: Arc<Mutex<GpuGraphBuilder>>,
+        level: usize,
+        count: usize,
+    ) {
+        let mut gpu_builder = gpu_builder.lock();
         let mut links = vec![];
         gpu_builder.clear_links();
         for idx in 0..count {
             links.clear();
-            self.cpu_builder
-                .links_map(level, idx as PointOffsetType, |link| {
-                    links.push(link);
-                });
+            cpu_builder.links_map(level, idx as PointOffsetType, |link| {
+                links.push(link);
+            });
             gpu_builder.set_links(idx as PointOffsetType, &links);
         }
     }
 
     pub fn build(&self) {
+        struct GpuStartData {
+            level: usize,
+            start_idx: PointOffsetType,
+            entries: Vec<Option<u32>>,
+        }
+
         let timer = std::time::Instant::now();
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
@@ -139,22 +153,51 @@ where
         let max_level = self.cpu_builder.max_level();
         let cpu_count = (self.gpu_threads * self.cpu_builder.m * CPU_POINTS_COUNT_MULTIPLICATOR)
             as PointOffsetType;
-        for level in (0..=max_level).rev() {
-            let timer = std::time::Instant::now();
-            let gpu_start = self.cpu_builder.build_level(&pool, level, cpu_count);
-            println!("CPU level {} build time = {:?}", level, timer.elapsed());
 
-            if gpu_start < self.cpu_builder.num_vectors() as u32 {
-                let timer = std::time::Instant::now();
-                self.upload_links(level, gpu_start as usize);
-                let entries = self.cpu_builder.entries.lock().clone();
-                self.gpu_builder
-                    .lock()
-                    .build_level(entries, level, gpu_start);
-                self.download_links(level);
-                println!("GPU level {} build time = {:?}", level, timer.elapsed());
-            }
-        }
+        let (sender, receiver) = std::sync::mpsc::channel::<GpuStartData>();
+        rayon::scope(|s| {
+            // spawn CPU thread
+            s.spawn(move |_| {
+                for level in (0..=max_level).rev() {
+                    let timer = std::time::Instant::now();
+                    let gpu_start = self.cpu_builder.build_level(&pool, level, cpu_count);
+                    println!("CPU level {} build time = {:?}", level, timer.elapsed());
+
+                    if gpu_start < self.cpu_builder.num_vectors() as u32 {
+                        let entries = self.cpu_builder.entries.lock().clone();
+                        sender
+                            .send(GpuStartData {
+                                level,
+                                start_idx: gpu_start,
+                                entries,
+                            })
+                            .unwrap();
+                    }
+                }
+            });
+
+            // spawn GPU thread
+            s.spawn(move |_| {
+                while let Ok(m) = receiver.recv() {
+                    let timer = std::time::Instant::now();
+                    Self::upload_links(
+                        self.cpu_builder.clone(),
+                        self.gpu_builder.clone(),
+                        m.level,
+                        m.start_idx as usize,
+                    );
+                    self.gpu_builder
+                        .lock()
+                        .build_level(m.entries, m.level, m.start_idx);
+                    Self::download_links(
+                        self.cpu_builder.clone(),
+                        self.gpu_builder.clone(),
+                        m.level,
+                    );
+                    println!("GPU level {} build time = {:?}", m.level, timer.elapsed());
+                }
+            });
+        });
         println!("GPU+CPU total build time = {:?}", timer.elapsed());
     }
 }
