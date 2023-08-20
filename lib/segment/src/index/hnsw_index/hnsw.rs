@@ -824,6 +824,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 gpu_graph_builder.build();
                 graph_layers_builder = gpu_graph_builder.into_graph_layers_builder();
             }
+
+            debug!("finish main graph in time {:?}", timer.elapsed());
         } else {
             debug!("skip building main HNSW graph");
         }
