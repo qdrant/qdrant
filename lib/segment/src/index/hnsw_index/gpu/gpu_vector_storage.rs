@@ -42,7 +42,7 @@ impl GpuVectorStorage {
                 Arc::new(gpu::Buffer::new(
                     device.clone(),
                     gpu::BufferType::Storage,
-                    points_in_storage_count + capacity * std::mem::size_of::<f32>(),
+                    points_in_storage_count * capacity * std::mem::size_of::<f32>(),
                 ))
             })
             .collect::<Vec<_>>();
@@ -57,9 +57,12 @@ impl GpuVectorStorage {
         let staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
-            upload_points_count * capacity * std::mem::size_of::<f32>() / STORAGES_COUNT,
+            upload_points_count * capacity * std::mem::size_of::<f32>(),
         ));
-        println!("Staging buffer size {}", staging_buffer.size);
+        println!(
+            "Staging buffer size {}, upload_points_count = {}",
+            staging_buffer.size, upload_points_count
+        );
 
         let params = GpuVectorParamsBuffer {
             dim: capacity as u32,
@@ -81,12 +84,12 @@ impl GpuVectorStorage {
             let mut upload_size = 0;
             let mut upload_points = 0;
             let mut extended_vector = vec![0.0f32; capacity];
-            for i in 0..count {
-                if i % STORAGES_COUNT != storage_index {
+            for point_id in 0..count {
+                if point_id % STORAGES_COUNT != storage_index {
                     continue;
                 }
 
-                let vector = vector_storage.get_vector(i as PointOffsetType);
+                let vector = vector_storage.get_vector(point_id as PointOffsetType);
                 extended_vector[..vector.len()].copy_from_slice(vector);
                 staging_buffer.upload_slice(
                     &extended_vector,
