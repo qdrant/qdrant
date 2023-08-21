@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::slice::BitSlice;
+use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +11,8 @@ use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{
-    CompressionRatio, Distance, ProductQuantization, QuantizationConfig, ScalarQuantization,
+    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
+    ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
 };
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
@@ -34,6 +36,8 @@ pub enum QuantizedVectorStorage {
     ScalarMmap(EncodedVectorsU8<QuantizedMmapStorage>),
     PQRam(EncodedVectorsPQ<ChunkedVectors<u8>>),
     PQMmap(EncodedVectorsPQ<QuantizedMmapStorage>),
+    BinaryRam(EncodedVectorsBin<ChunkedVectors<u8>>),
+    BinaryMmap(EncodedVectorsBin<QuantizedMmapStorage>),
 }
 
 pub struct QuantizedVectors {
@@ -80,6 +84,18 @@ impl QuantizedVectors {
                     QuantizedQueryScorer::new(query, encoded_query, storage, self.distance);
                 raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
+            QuantizedVectorStorage::BinaryRam(storage) => {
+                let encoded_query = storage.encode_query(&query);
+                let quant_scorer =
+                    QuantizedQueryScorer::new(query, encoded_query, storage, self.distance);
+                raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
+            }
+            QuantizedVectorStorage::BinaryMmap(storage) => {
+                let encoded_query = storage.encode_query(&query);
+                let quant_scorer =
+                    QuantizedQueryScorer::new(query, encoded_query, storage, self.distance);
+                raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
+            }
         }
     }
 
@@ -91,6 +107,8 @@ impl QuantizedVectors {
             QuantizedVectorStorage::ScalarMmap(storage) => storage.save(&data_path, &meta_path)?,
             QuantizedVectorStorage::PQRam(storage) => storage.save(&data_path, &meta_path)?,
             QuantizedVectorStorage::PQMmap(storage) => storage.save(&data_path, &meta_path)?,
+            QuantizedVectorStorage::BinaryRam(storage) => storage.save(&data_path, &meta_path)?,
+            QuantizedVectorStorage::BinaryMmap(storage) => storage.save(&data_path, &meta_path)?,
         };
         Ok(())
     }
@@ -108,7 +126,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     pub fn create<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
         quantization_config: &QuantizationConfig,
         distance: Distance,
         dim: usize,
@@ -123,7 +141,7 @@ impl QuantizedVectors {
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: scalar_config,
-            }) => Self::crate_scalar(
+            }) => Self::create_scalar(
                 vectors,
                 &vector_parameters,
                 scalar_config,
@@ -132,7 +150,7 @@ impl QuantizedVectors {
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
-                Self::crate_pq(
+                Self::create_pq(
                     vectors,
                     &vector_parameters,
                     pq_config,
@@ -142,6 +160,16 @@ impl QuantizedVectors {
                     stopped,
                 )?
             }
+            QuantizationConfig::Binary(BinaryQuantization {
+                binary: binary_config,
+            }) => Self::create_binary(
+                vectors,
+                &vector_parameters,
+                binary_config,
+                path,
+                on_disk_vector_storage,
+                stopped,
+            )?,
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -207,6 +235,25 @@ impl QuantizedVectors {
                     )?)
                 }
             }
+            QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+                if Self::is_ram(binary.always_ram, on_disk_vector_storage) {
+                    QuantizedVectorStorage::BinaryRam(
+                        EncodedVectorsBin::<ChunkedVectors<u8>>::load(
+                            &data_path,
+                            &meta_path,
+                            &config.vector_parameters,
+                        )?,
+                    )
+                } else {
+                    QuantizedVectorStorage::BinaryMmap(
+                        EncodedVectorsBin::<QuantizedMmapStorage>::load(
+                            &data_path,
+                            &meta_path,
+                            &config.vector_parameters,
+                        )?,
+                    )
+                }
+            }
         };
 
         Ok(QuantizedVectors {
@@ -217,10 +264,10 @@ impl QuantizedVectors {
         })
     }
 
-    fn crate_scalar<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone,
+    fn create_scalar<'a>(
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
         vector_parameters: &quantization::VectorParameters,
-        scalar_config: &crate::types::ScalarQuantizationConfig,
+        scalar_config: &ScalarQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
@@ -257,10 +304,10 @@ impl QuantizedVectors {
         }
     }
 
-    fn crate_pq<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
+    fn create_pq<'a>(
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
-        pq_config: &crate::types::ProductQuantizationConfig,
+        pq_config: &ProductQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
@@ -299,6 +346,42 @@ impl QuantizedVectors {
                 max_threads,
                 || stopped.load(Ordering::Relaxed),
             )?))
+        }
+    }
+
+    fn create_binary<'a>(
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
+        vector_parameters: &quantization::VectorParameters,
+        binary_config: &BinaryQuantizationConfig,
+        path: &Path,
+        on_disk_vector_storage: bool,
+        stopped: &AtomicBool,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let quantized_vector_size =
+            EncodedVectorsBin::<QuantizedMmapStorage>::get_quantized_vector_size_from_params(
+                vector_parameters,
+            );
+        let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
+        if in_ram {
+            let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            Ok(QuantizedVectorStorage::BinaryRam(
+                EncodedVectorsBin::encode(vectors, storage_builder, vector_parameters, || {
+                    stopped.load(Ordering::Relaxed)
+                })?,
+            ))
+        } else {
+            let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
+            let storage_builder = QuantizedMmapStorageBuilder::new(
+                mmap_data_path.as_path(),
+                vector_parameters.count,
+                quantized_vector_size,
+            )?;
+            Ok(QuantizedVectorStorage::BinaryMmap(
+                EncodedVectorsBin::encode(vectors, storage_builder, vector_parameters, || {
+                    stopped.load(Ordering::Relaxed)
+                })?,
+            ))
         }
     }
 

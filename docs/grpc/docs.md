@@ -6,6 +6,7 @@
 - [collections.proto](#collections-proto)
     - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
+    - [BinaryQuantization](#qdrant-BinaryQuantization)
     - [ChangeAliases](#qdrant-ChangeAliases)
     - [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest)
     - [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse)
@@ -235,6 +236,21 @@
 | create_alias | [CreateAlias](#qdrant-CreateAlias) |  |  |
 | rename_alias | [RenameAlias](#qdrant-RenameAlias) |  |  |
 | delete_alias | [DeleteAlias](#qdrant-DeleteAlias) |  |  |
+
+
+
+
+
+
+<a name="qdrant-BinaryQuantization"></a>
+
+### BinaryQuantization
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
 
 
 
@@ -764,6 +780,7 @@ Note: 1kB = 1 vector of size 256. |
 | ----- | ---- | ----- | ----------- |
 | scalar | [ScalarQuantization](#qdrant-ScalarQuantization) |  |  |
 | product | [ProductQuantization](#qdrant-ProductQuantization) |  |  |
+| binary | [BinaryQuantization](#qdrant-BinaryQuantization) |  |  |
 
 
 
@@ -781,6 +798,7 @@ Note: 1kB = 1 vector of size 256. |
 | scalar | [ScalarQuantization](#qdrant-ScalarQuantization) |  |  |
 | product | [ProductQuantization](#qdrant-ProductQuantization) |  |  |
 | disabled | [Disabled](#qdrant-Disabled) |  |  |
+| binary | [BinaryQuantization](#qdrant-BinaryQuantization) |  |  |
 
 
 
