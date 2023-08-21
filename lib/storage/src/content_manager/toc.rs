@@ -1673,11 +1673,15 @@ impl TableOfContent {
 
     /// Wait until the given peer reaches the given commit
     ///
+    /// # Warning
+    ///
+    /// This has no timeout and therefore may run indefinitely.
+    ///
     /// # Errors
     ///
     /// This errors if the given peer has a diverged commit/term and the specified commit can never
     /// be reached. Also errors if the peer cannot be reached.
-    pub async fn await_commit_on_peer(
+    async fn await_commit_on_peer(
         &self,
         peer_id: PeerId,
         commit: u64,
