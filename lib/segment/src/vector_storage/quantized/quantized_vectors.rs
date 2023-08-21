@@ -126,7 +126,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     pub fn create<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
         quantization_config: &QuantizationConfig,
         distance: Distance,
         dim: usize,
@@ -265,7 +265,7 @@ impl QuantizedVectors {
     }
 
     fn create_scalar<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone,
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
         vector_parameters: &quantization::VectorParameters,
         scalar_config: &ScalarQuantizationConfig,
         path: &Path,
@@ -305,7 +305,7 @@ impl QuantizedVectors {
     }
 
     fn create_pq<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
         pq_config: &ProductQuantizationConfig,
         path: &Path,
@@ -350,7 +350,7 @@ impl QuantizedVectors {
     }
 
     fn create_binary<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone,
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
         vector_parameters: &quantization::VectorParameters,
         binary_config: &BinaryQuantizationConfig,
         path: &Path,
