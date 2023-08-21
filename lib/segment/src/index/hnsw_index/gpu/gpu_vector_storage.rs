@@ -36,16 +36,17 @@ impl GpuVectorStorage {
         let upload_points_count = UPLOAD_CHUNK_SIZE / (capacity * std::mem::size_of::<f32>());
 
         let count = vector_storage.total_vector_count();
-        let points_in_storage_count = Self::get_points_in_storage_count(dim, count);
+        let points_in_storage_count = Self::get_points_in_storage_count(count);
         let vectors_buffer = (0..STORAGES_COUNT)
             .map(|_| {
                 Arc::new(gpu::Buffer::new(
                     device.clone(),
                     gpu::BufferType::Storage,
-                    points_in_storage_count * std::mem::size_of::<f32>(),
+                    points_in_storage_count + capacity * std::mem::size_of::<f32>(),
                 ))
             })
             .collect::<Vec<_>>();
+        println!("Storage buffer size {}", vectors_buffer[0].size);
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Uniform,
@@ -58,6 +59,7 @@ impl GpuVectorStorage {
             gpu::BufferType::CpuToGpu,
             upload_points_count * capacity * std::mem::size_of::<f32>() / STORAGES_COUNT,
         ));
+        println!("Staging buffer size {}", staging_buffer.size);
 
         let params = GpuVectorParamsBuffer {
             dim: capacity as u32,
@@ -137,7 +139,9 @@ impl GpuVectorStorage {
         println!(
             "Upload vector data to GPU time = {:?}, vector data size {} MB",
             timer.elapsed(),
-            STORAGES_COUNT * points_in_storage_count * std::mem::size_of::<f32>() / 1024 / 1024
+            STORAGES_COUNT * points_in_storage_count * capacity * std::mem::size_of::<f32>()
+                / 1024
+                / 1024
         );
 
         let mut descriptor_set_layout_builder =
@@ -171,10 +175,8 @@ impl GpuVectorStorage {
         dim + (ALIGNMENT - dim % ALIGNMENT) % ALIGNMENT
     }
 
-    pub fn get_points_in_storage_count(dim: usize, num_vectors: usize) -> usize {
-        let vetors_per_storage =
-            num_vectors + (STORAGES_COUNT - num_vectors % STORAGES_COUNT) % STORAGES_COUNT;
-        Self::get_capacity(dim) * vetors_per_storage
+    pub fn get_points_in_storage_count(num_vectors: usize) -> usize {
+        num_vectors + (STORAGES_COUNT - num_vectors % STORAGES_COUNT) % STORAGES_COUNT
     }
 }
 
