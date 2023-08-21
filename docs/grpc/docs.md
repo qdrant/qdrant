@@ -3042,6 +3042,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | commit | [int64](#int64) |  | Raft commit as u64 |
 | term | [int64](#int64) |  | Raft term as u64 |
+| timeout | [int64](#int64) |  | Timeout in seconds |
 
 
 
@@ -3056,7 +3057,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| ok | [bool](#bool) |  | False if commit/term is diverged and never reached. |
+| ok | [bool](#bool) |  | False if commit/term is diverged and never reached or if timed out. |
 
 
 
