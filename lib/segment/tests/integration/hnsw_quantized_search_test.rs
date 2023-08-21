@@ -11,8 +11,8 @@ use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig, QuantizationConfig,
-    ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
-    VectorStorageType,
+    QuantizationSearchParams, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
+    VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::{ScoredPointOffset, VectorStorage};
 use tempfile::Builder;
@@ -77,7 +77,7 @@ fn hnsw_quantized_search_test(
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold: usize::MAX,
+        full_scan_threshold: 0,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
@@ -121,6 +121,43 @@ fn hnsw_quantized_search_test(
     let acc = 100.0 * sames as f64 / (attempts * top) as f64;
     println!("sames = {sames}, attempts = {attempts}, top = {top}, acc = {acc}");
     assert!(acc > 40.0);
+
+    // check oversampling
+    for _i in 0..attempts {
+        let ef_oversamling = ef / 4;
+        let oversampling_query = random_vector(&mut rnd, dim);
+
+        let oversampling_1_result = hnsw_index.search(
+            &[&oversampling_query],
+            None,
+            top,
+            Some(&SearchParams {
+                hnsw_ef: Some(ef_oversamling),
+                ..Default::default()
+            }),
+            &false.into(),
+        );
+        let best_1 = oversampling_1_result[0][0];
+
+        let oversampling_2_result = hnsw_index.search(
+            &[&oversampling_query],
+            None,
+            top,
+            Some(&SearchParams {
+                hnsw_ef: Some(ef_oversamling),
+                quantization: Some(QuantizationSearchParams {
+                    oversampling: Some(2.0),
+                    rescore: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            &false.into(),
+        );
+        let best_2 = oversampling_2_result[0][0];
+
+        assert!(best_2.idx == best_1.idx || best_2 >= best_1);
+    }
 }
 
 #[test]
