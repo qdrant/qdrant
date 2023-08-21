@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
@@ -38,17 +37,6 @@ pub struct LocalShardTelemetry {
 pub struct OptimizerTelemetry {
     pub status: OptimizersStatus,
     pub optimizations: OperationDurationStatistics,
-}
-
-impl std::ops::Add for OptimizerTelemetry {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self {
-            status: max(self.status, other.status),
-            optimizations: self.optimizations + other.optimizations,
-        }
-    }
 }
 
 impl Anonymize for OptimizerTelemetry {
