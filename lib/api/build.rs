@@ -1,6 +1,11 @@
+use std::env;
+use std::path::PathBuf;
+
 use tonic_build::Builder;
 
 fn main() -> std::io::Result<()> {
+    let build_out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
     // Build gRPC bits from proto file
     tonic_build::configure()
         // Because we want to attach all validation rules to the generated gRPC types, we must do
@@ -8,6 +13,7 @@ fn main() -> std::io::Result<()> {
         // `Validation` for all these types and seems to be the best approach. The line below
         // configures all attributes.
         .configure_validation()
+        .file_descriptor_set_path(build_out_dir.join("qdrant_descriptor.bin"))
         .out_dir("src/grpc/") // saves generated structures at this location
         .compile(
             &["src/grpc/proto/qdrant.proto"], // proto entry point

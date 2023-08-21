@@ -18,6 +18,7 @@ use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{
     HealthCheckReply, HealthCheckRequest, HttpPortRequest, HttpPortResponse,
 };
+use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -26,6 +27,7 @@ use tokio::signal;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
+use tonic_reflection;
 
 use crate::common::helpers;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
@@ -106,6 +108,10 @@ pub fn init(
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.toc().clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(QDRANT_DESCRIPTOR_SET)
+            .build()
+            .unwrap();
 
         log::info!("Qdrant gRPC listening on {}", grpc_port);
 
@@ -139,6 +145,7 @@ pub fn init(
 
         server
             .layer(middleware_layer)
+            .add_service(reflection_service)
             .add_service(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)

@@ -11,3 +11,5 @@ pub mod validate;
 pub const fn api_crate_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
+
+pub const QDRANT_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("qdrant_descriptor");
