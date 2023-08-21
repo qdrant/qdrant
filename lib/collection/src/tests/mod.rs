@@ -46,14 +46,23 @@ async fn test_optimization_process() {
     let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
 
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
-    let handles = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone(), |_| {});
+    let handles = UpdateHandler::launch_optimization(
+        optimizers.clone(),
+        Default::default(),
+        segments.clone(),
+        |_| {},
+    );
 
     assert_eq!(handles.len(), 2);
 
     let join_res = join_all(handles.into_iter().map(|x| x.join_handle).collect_vec()).await;
 
-    let handles_2 =
-        UpdateHandler::launch_optimization(optimizers.clone(), segments.clone(), |_| {});
+    let handles_2 = UpdateHandler::launch_optimization(
+        optimizers.clone(),
+        Default::default(),
+        segments.clone(),
+        |_| {},
+    );
 
     assert_eq!(handles_2.len(), 0);
 
@@ -91,7 +100,12 @@ async fn test_cancel_optimization() {
     let now = Instant::now();
 
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
-    let handles = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone(), |_| {});
+    let handles = UpdateHandler::launch_optimization(
+        optimizers.clone(),
+        Default::default(),
+        segments.clone(),
+        |_| {},
+    );
 
     sleep(Duration::from_millis(100)).await;
 
