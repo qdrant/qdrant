@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use futures::future::join_all;
 use itertools::Itertools;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tempfile::Builder;
 use tokio::time::{sleep, Instant};
 
@@ -15,6 +15,7 @@ use crate::collection_manager::fixtures::{
     get_indexing_optimizer, get_merge_optimizer, random_segment,
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
+use crate::collection_manager::optimizers::TrackerStatus;
 use crate::update_handler::{Optimizer, UpdateHandler};
 
 #[tokio::test]
@@ -45,10 +46,11 @@ async fn test_optimization_process() {
 
     let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
 
+    let optimizers_log = Arc::new(Mutex::new(Default::default()));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
-        Default::default(),
+        optimizers_log.clone(),
         segments.clone(),
         |_| {},
     );
@@ -57,9 +59,19 @@ async fn test_optimization_process() {
 
     let join_res = join_all(handles.into_iter().map(|x| x.join_handle).collect_vec()).await;
 
+    // Assert optimizer statuses are tracked properly
+    {
+        let log = optimizers_log.lock().to_telemetry();
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[0].name, "indexing optimizer");
+        assert_eq!(log[0].status, TrackerStatus::Done);
+        assert_eq!(log[1].name, "merge optimizer");
+        assert_eq!(log[1].status, TrackerStatus::Done);
+    }
+
     let handles_2 = UpdateHandler::launch_optimization(
         optimizers.clone(),
-        Default::default(),
+        optimizers_log.clone(),
         segments.clone(),
         |_| {},
     );
@@ -99,10 +111,11 @@ async fn test_cancel_optimization() {
 
     let now = Instant::now();
 
+    let optimizers_log = Arc::new(Mutex::new(Default::default()));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
-        Default::default(),
+        optimizers_log.clone(),
         segments.clone(),
         |_| {},
     );
@@ -119,6 +132,16 @@ async fn test_cancel_optimization() {
     for res in optimization_res {
         let was_finished = res.expect("Should be no errors during optimization");
         assert_ne!(was_finished, Some(true));
+    }
+
+    // Assert optimizer statuses are tracked properly
+    {
+        let log = optimizers_log.lock().to_telemetry();
+        assert_eq!(log.len(), 3);
+        for status in log {
+            assert_eq!(status.name, "indexing optimizer");
+            assert!(matches!(status.status, TrackerStatus::Cancelled(_)));
+        }
     }
 
     for (_idx, segment) in segments.read().iter() {
