@@ -16,7 +16,7 @@ pub mod vacuum_optimizer;
 
 /// Number of last trackers to keep in tracker log
 ///
-/// Will never remove older trackers for unsuccesful or still ongoing optimizations.
+/// Will never remove older trackers for failed or still ongoing optimizations.
 const KEEP_LAST_TRACKERS: usize = 16;
 
 /// A log of optimizer trackers holding their status
@@ -32,9 +32,9 @@ impl TrackerLog {
         self.truncate();
     }
 
-    /// Truncate and forget old trackers for succesful optimizations
+    /// Truncate and forget old trackers for succesful/cancelled optimizations
     ///
-    /// Will never remove older trackers for unsuccesful or still ongoing optimizations.
+    /// Will never remove older trackers with failed or still ongoing optimizations.
     ///
     /// Always keeps the last `KEEP_TRACKERS` trackers.
     fn truncate(&mut self) {
@@ -46,7 +46,10 @@ impl TrackerLog {
             .iter()
             .enumerate()
             .take(truncate_range)
-            .filter(|(_, tracker)| tracker.state.lock().status == TrackerStatus::Done)
+            .filter(|(_, tracker)| match tracker.state.lock().status {
+                TrackerStatus::Optimizing | TrackerStatus::Error(_) => false,
+                TrackerStatus::Done | TrackerStatus::Cancelled(_) => true,
+            })
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         truncate.into_iter().rev().for_each(|index| {
