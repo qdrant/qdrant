@@ -11,6 +11,7 @@
 1. [ ] Does your submission pass tests?
 2. [ ] Have you formatted your code locally using `cargo +nightly fmt --all` command prior to submission?
 3. [ ] Have you checked your code using `cargo clippy --all --all-features` command?
+3. [ ] Have you checked your code using `pre-commit` command?
 
 ### Changes to Core Features:
 

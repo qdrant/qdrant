@@ -44,6 +44,9 @@ The project uses [rustfmt](https://github.com/rust-lang/rustfmt) formatter. Plea
 ```cargo +nightly fmt --all``` command. The project also use [clippy](https://github.com/rust-lang/rust-clippy) lint collection,
 so please ensure running ``cargo clippy --all --all-features`` before submitting the PR.
 
+This project uses git hooks to run python code formatters.
+Install `pre-commit` with `pip3 install pre-commit` and set up hooks with `pre-commit install`.
+> pre-commit requires python>=3.8
+
 ## License
 By contributing, you agree that your contributions will be licensed under its Apache License 2.0.
-
