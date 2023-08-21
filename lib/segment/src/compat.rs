@@ -294,6 +294,9 @@ mod tests {
                 QuantizationConfig::Product(_) => {
                     panic!("expected scalar quantization")
                 }
+                QuantizationConfig::Binary(_) => {
+                    panic!("expected scalar quantization")
+                }
             },
             _ => {
                 panic!("expected quantization")

@@ -125,6 +125,7 @@ fn configure_validation(builder: Builder) -> Builder {
             "CollectionClusterInfoRequest",
             "UpdateCollectionClusterSetupRequest",
             "ProductQuantization",
+            "BinaryQuantization",
             "Disabled",
             "QuantizationConfigDiff",
             "quantization_config_diff::Quantization"
