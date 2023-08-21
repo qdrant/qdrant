@@ -358,7 +358,7 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let quantized_vector_size =
-            EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
+            EncodedVectorsBin::<QuantizedMmapStorage>::get_quantized_vector_size_from_params(vector_parameters);
         let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
