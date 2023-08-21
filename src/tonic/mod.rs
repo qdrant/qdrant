@@ -86,10 +86,11 @@ impl QdrantInternal for QdrantInternalService {
         let request = request.into_inner();
         let commit = request.commit as u64;
         let term = request.term as u64;
+        let timeout = Duration::from_secs(request.timeout as u64);
         let consensus_tick = Duration::from_millis(self.settings.cluster.consensus.tick_period_ms);
         let ok = self
             .consensus_state
-            .wait_for_consensus_commit(commit, term, consensus_tick)
+            .wait_for_consensus_commit(commit, term, consensus_tick, timeout)
             .await;
         Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
     }

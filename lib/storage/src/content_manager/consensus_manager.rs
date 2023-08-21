@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
 use chrono::Utc;
@@ -597,9 +597,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         commit: u64,
         term: u64,
         consensus_tick: Duration,
+        timeout: Duration,
     ) -> bool {
+        let start = Instant::now();
+
         // TODO: naive approach with spinlock for waiting on commit/term, find better way
-        loop {
+        while start.elapsed() < timeout {
             let state = &self.hard_state();
 
             // Okay if we're on a newer term, or if commit is reached within same term
@@ -616,6 +619,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
             tokio::time::sleep(consensus_tick).await
         }
+
+        // Fail on timeout
+        false
     }
 
     /// Send operation to the consensus thread and listen for the result.

@@ -1658,7 +1658,10 @@ impl TableOfContent {
             .peer_address_by_id()
             .keys()
             .filter(|id| **id != self.this_peer_id)
-            .map(|peer_id| self.await_commit_on_peer(*peer_id, commit, term))
+            // The collective timeout at the bottom of this function handles actually timing out.
+            // Since an explicit timeout must be given here as well, it is multiplied by two to
+            // give the collective timeout some space.
+            .map(|peer_id| self.await_commit_on_peer(*peer_id, commit, term, timeout * 2))
             .collect::<Vec<_>>();
         let responses = try_join_all(requests);
 
@@ -1673,10 +1676,6 @@ impl TableOfContent {
 
     /// Wait until the given peer reaches the given commit
     ///
-    /// # Warning
-    ///
-    /// This has no timeout and therefore may run indefinitely.
-    ///
     /// # Errors
     ///
     /// This errors if the given peer has a diverged commit/term and the specified commit can never
@@ -1686,12 +1685,14 @@ impl TableOfContent {
         peer_id: PeerId,
         commit: u64,
         term: u64,
+        timeout: Duration,
     ) -> Result<(), StorageError> {
         let response = self
             .with_qdrant_client(peer_id, |mut client| async move {
                 let request = WaitOnConsensusCommitRequest {
                     commit: commit as i64,
                     term: term as i64,
+                    timeout: timeout.as_secs() as i64,
                 };
                 client
                     .wait_on_consensus_commit(tonic::Request::new(request))
@@ -1708,7 +1709,7 @@ impl TableOfContent {
         // Create error if wait request failed
         if !response.ok {
             return Err(StorageError::service_error(format!(
-                "Failed to wait for consensus commit on peer {peer_id}, has diverged commit/term."
+                "Failed to wait for consensus commit on peer {peer_id}, has diverged commit/term or timed out."
             )));
         }
         Ok(())

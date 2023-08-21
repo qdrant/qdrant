@@ -7600,12 +7600,15 @@ pub struct WaitOnConsensusCommitRequest {
     /// Raft term as u64
     #[prost(int64, tag = "2")]
     pub term: i64,
+    /// Timeout in seconds
+    #[prost(int64, tag = "3")]
+    pub timeout: i64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitOnConsensusCommitResponse {
-    /// False if commit/term is diverged and never reached.
+    /// False if commit/term is diverged and never reached or if timed out.
     #[prost(bool, tag = "1")]
     pub ok: bool,
 }
