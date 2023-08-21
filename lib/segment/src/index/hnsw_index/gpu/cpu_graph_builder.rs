@@ -123,6 +123,36 @@ where
         self.entries.lock()[point_id as usize] = Some(new_entry_point);
     }
 
+    pub fn build(&self, pool: &ThreadPool, links_count: usize) {
+        let ids = (0..links_count as PointOffsetType).collect::<Vec<_>>();
+        let timer = std::time::Instant::now();
+        pool.install(|| {
+            ids.into_par_iter().for_each(|idx| {
+                let entry = self.entries.lock()[idx as usize].clone();
+                let start_entry = match entry {
+                    Some(entry) => entry,
+                    None => return,
+                };
+
+                let fabric = &self.scorer_fabric;
+                let scorer = fabric();
+
+                let top_level = self.point_levels[start_entry as usize];
+                let target_level = self.point_levels[idx as usize];
+                for level in crate::common::utils::rev_range(top_level, target_level) {
+                    self.update_entry(&scorer, level, idx);
+                }
+
+                // minimal common level for entry points
+                let linking_level = std::cmp::min(target_level, top_level);
+                for level in (0..=linking_level).rev() {
+                    self.link_point(&scorer, level, idx, self.get_m(level));
+                }
+            })
+        });
+        println!("CPU TRUE BUILD build time {:?}", timer.elapsed());
+    }
+
     pub fn build_level(
         &self,
         pool: &ThreadPool,
