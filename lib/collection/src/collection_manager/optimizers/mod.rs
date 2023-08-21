@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use super::holders::segment_holder::SegmentId;
 
@@ -22,6 +24,16 @@ impl TrackerLog {
     /// Register a new optimizer tracker
     pub fn register(&mut self, description: Tracker) {
         self.descriptions.push_back(description);
+    }
+
+    /// Convert log into list of objects usable in telemetry
+    pub fn to_telemetry(&self) -> Vec<TrackerTelemetry> {
+        self.descriptions
+            .iter()
+            // Show latest items first
+            .rev()
+            .map(Tracker::to_telemetry)
+            .collect()
     }
 }
 
@@ -53,6 +65,33 @@ impl Tracker {
     pub fn handle(&self) -> TrackerHandle {
         self.state.clone().into()
     }
+
+    /// Convert into object used in telemetry
+    pub fn to_telemetry(&self) -> TrackerTelemetry {
+        let state = self.state.lock();
+        TrackerTelemetry {
+            name: self.name.clone(),
+            segment_ids: self.segment_ids.clone(),
+            status: state.status.clone(),
+            start_at: self.start_at,
+            end_at: state.end_at,
+        }
+    }
+}
+
+/// Tracker object used in telemetry
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct TrackerTelemetry {
+    /// Name of the optimizer
+    pub name: String,
+    /// Segment IDs being optimized
+    pub segment_ids: Vec<SegmentId>,
+    /// Latest status of the optimizer
+    pub status: TrackerStatus,
+    /// Start time of the optimizer
+    pub start_at: DateTime<Utc>,
+    /// End time of the optimizer
+    pub end_at: Option<DateTime<Utc>>,
 }
 
 /// Handle to an optimizer tracker, allows updating its state

@@ -699,6 +699,7 @@ impl LocalShard {
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
                 optimizations,
+                log: self.optimizers_log.lock().to_telemetry(),
             },
         }
     }

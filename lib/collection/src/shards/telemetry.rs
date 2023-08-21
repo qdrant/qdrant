@@ -6,6 +6,7 @@ use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::SegmentTelemetry;
 use serde::{Deserialize, Serialize};
 
+use crate::collection_manager::optimizers::TrackerTelemetry;
 use crate::operations::types::OptimizersStatus;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -37,6 +38,7 @@ pub struct LocalShardTelemetry {
 pub struct OptimizerTelemetry {
     pub status: OptimizersStatus,
     pub optimizations: OperationDurationStatistics,
+    pub log: Vec<TrackerTelemetry>,
 }
 
 impl Anonymize for OptimizerTelemetry {
@@ -44,6 +46,7 @@ impl Anonymize for OptimizerTelemetry {
         Self {
             status: self.status.clone(),
             optimizations: self.optimizations.anonymize(),
+            log: self.log.anonymize(),
         }
     }
 }
@@ -54,6 +57,18 @@ impl Anonymize for LocalShardTelemetry {
             variant_name: self.variant_name.clone(),
             segments: self.segments.anonymize(),
             optimizations: self.optimizations.anonymize(),
+        }
+    }
+}
+
+impl Anonymize for TrackerTelemetry {
+    fn anonymize(&self) -> Self {
+        TrackerTelemetry {
+            name: self.name.clone(),
+            segment_ids: self.segment_ids.anonymize(),
+            status: self.status.clone(),
+            start_at: self.start_at.anonymize(),
+            end_at: self.end_at.anonymize(),
         }
     }
 }
