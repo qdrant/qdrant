@@ -54,7 +54,7 @@ serde_json = "~1.0"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.11"
-anyhow = "1.0.74"
+anyhow = "1.0.75"
 futures = "0.3.28"
 futures-util = "0.3.27"
 clap = { version = "4.3.22", features = ["derive"] }
