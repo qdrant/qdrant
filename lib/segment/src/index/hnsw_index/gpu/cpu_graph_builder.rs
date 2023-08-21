@@ -351,7 +351,7 @@ where
             }
 
             self.links_map(level, candidate.idx, |link| {
-                if !visited_list.check_and_update_visited(link) {
+                if link <= id && !visited_list.check_and_update_visited(link) {
                     let score = self.score(scorer, link, id);
                     Self::process_candidate(
                         &mut nearest,
@@ -405,6 +405,9 @@ where
             changed = false;
 
             self.links_map(level, entry.idx, |link| {
+                if link > id {
+                    return;
+                }
                 let score = self.score(scorer, link, id);
                 if score > entry.score {
                     changed = true;
