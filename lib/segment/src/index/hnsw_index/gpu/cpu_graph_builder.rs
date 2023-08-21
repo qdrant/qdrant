@@ -1,4 +1,4 @@
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, VecDeque};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use num_traits::float::FloatCore;
@@ -7,7 +7,6 @@ use rand::Rng;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use rayon::ThreadPool;
 
-use crate::index::hnsw_index::gpu::combined_graph_builder::CPU_POINTS_COUNT_MULTIPLICATOR;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
 use crate::types::{PointOffsetType, ScoreType};
@@ -25,6 +24,18 @@ where
     pub scorer_fabric: TFabric,
     pub point_levels: Vec<usize>,
     pub entries: Mutex<Vec<Option<PointOffsetType>>>,
+}
+
+pub struct LinksPatch {
+    id: PointOffsetType,
+    links: Vec<PointOffsetType>,
+}
+
+pub struct LinkResponse {
+    id: PointOffsetType,
+    level: usize,
+    new_entry: PointOffsetType,
+    patches: Vec<LinksPatch>,
 }
 
 impl<'a, TFabric> CpuGraphBuilder<'a, TFabric>
@@ -111,7 +122,7 @@ where
         self.entries.lock()[point_id as usize] = Some(new_entry);
     }
 
-    pub fn link_point(
+    fn link_point(
         &self,
         scorer: &Box<dyn RawScorer + 'a>,
         level: usize,
@@ -119,8 +130,8 @@ where
         level_m: usize,
     ) {
         let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
-        let new_entry_point = self.link(scorer, level, point_id, level_m, entry_point);
-        self.entries.lock()[point_id as usize] = Some(new_entry_point);
+        let response = self.link(scorer, level, point_id, level_m, entry_point);
+        self.apply_link_response(&response);
     }
 
     pub fn build(&self, pool: &ThreadPool, links_count: usize) {
@@ -153,6 +164,41 @@ where
         println!("CPU TRUE BUILD build time {:?}", timer.elapsed());
     }
 
+    pub fn link_batched(&self, level: usize, point_ids: &[PointOffsetType]) {
+        let level_m = self.get_m(level);
+        let mut point_ids = point_ids.to_vec();
+        while !point_ids.is_empty() {
+            let mut responses = point_ids
+                .clone()
+                .into_par_iter()
+                .map(|point_id| {
+                    let fabric = &self.scorer_fabric;
+                    let scorer = fabric();
+                    let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
+                    self.link(&scorer, level, point_id, level_m, entry_point)
+                })
+                .collect::<Vec<_>>();
+            responses.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+
+            let mut visited = self.visited_pool.get(self.num_vectors());
+            for response in responses.into_iter() {
+                let mut can_apply = true;
+                for patch in &response.patches {
+                    if visited.check_and_update_visited(patch.id) {
+                        can_apply = false;
+                        break;
+                    }
+                }
+                if can_apply {
+                    self.apply_link_response(&response);
+                    let index = point_ids.iter().position(|x| *x == response.id).unwrap();
+                    point_ids.remove(index);
+                }
+            }
+            self.visited_pool.return_back(visited);
+        }
+    }
+
     pub fn build_level(
         &self,
         pool: &ThreadPool,
@@ -164,10 +210,9 @@ where
             Link(PointOffsetType),
         }
 
-        let level_m = self.get_m(level);
         let mut links_counter = 0;
         let mut end_idx = 0;
-        let mut actions = vec![];
+        let mut actions = VecDeque::new();
         for idx in 0..self.num_vectors() as PointOffsetType {
             end_idx += 1;
             if let Some(entry_point) = self.entries.lock()[idx as usize].clone() {
@@ -179,10 +224,10 @@ where
 
                 let link_level = std::cmp::min(entry_level, point_level);
                 if level > link_level && entry_level >= point_level {
-                    actions.push(PointAction::UpdateEntry(idx));
+                    actions.push_back(PointAction::UpdateEntry(idx));
                 } else if link_level >= level {
                     links_counter += 1;
-                    actions.push(PointAction::Link(idx));
+                    actions.push_back(PointAction::Link(idx));
                     if links_counter == links_count {
                         break;
                     }
@@ -190,62 +235,36 @@ where
             }
         }
 
-        let single_count =
-            64 * pool.current_num_threads() * self.m * CPU_POINTS_COUNT_MULTIPLICATOR;
-        let mut start_parallel_index = 0;
-        let mut match_counter = 0;
-        for action in &actions {
-            start_parallel_index += 1;
-            match action {
-                PointAction::Link(_) => match_counter += 1,
-                _ => {}
-            }
-            if match_counter == single_count {
-                break;
-            }
-        }
-
-        println!(
-            "CPU single core links {}, updates {}, multithreaded actions {} with {} links, single links limit {}, total links limit {}",
-            match_counter,
-            start_parallel_index - match_counter,
-            actions.len() - start_parallel_index,
-            links_counter as usize - match_counter,
-            single_count,
-            links_count,
-        );
-
-        let timer = std::time::Instant::now();
-        for action in &actions[..start_parallel_index] {
-            let fabric = &self.scorer_fabric;
-            let scorer = fabric();
-            match action {
-                PointAction::UpdateEntry(idx) => self.update_entry(&scorer, level, *idx),
-                PointAction::Link(idx) => self.link_point(&scorer, level, *idx, level_m),
-            }
-        }
-        println!("Singlethreaded CPU time {:?}", timer.elapsed());
-
-        if start_parallel_index == actions.len() {
-            return end_idx;
-        }
-
-        let timer = std::time::Instant::now();
+        let threads_count = pool.current_num_threads();
         pool.install(|| {
-            actions[start_parallel_index..]
-                .into_par_iter()
-                .for_each(|action| {
-                    let fabric = &self.scorer_fabric;
-                    let scorer = fabric();
-                    match action {
-                        PointAction::UpdateEntry(idx) => self.update_entry(&scorer, level, *idx),
-                        PointAction::Link(idx) => self.link_point(&scorer, level, *idx, level_m),
+            let mut batched_links = vec![];
+            while !actions.is_empty() {
+                let action = actions.pop_front().unwrap();
+                match action {
+                    PointAction::Link(idx) => batched_links.push(idx),
+                    PointAction::UpdateEntry(idx) => {
+                        let fabric = &self.scorer_fabric;
+                        let scorer = fabric();
+                        self.update_entry(&scorer, level, idx)
                     }
-                })
+                }
+
+                if batched_links.len() == threads_count {
+                    self.link_batched(level, &batched_links);
+                    batched_links.clear();
+                }
+            }
+            self.link_batched(level, &batched_links);
         });
-        println!("Mutlithreaded CPU time {:?}", timer.elapsed());
 
         end_idx
+    }
+
+    fn apply_link_response(&self, response: &LinkResponse) {
+        for patch in &response.patches {
+            self.set_links(response.level, patch.id, &patch.links);
+        }
+        self.entries.lock()[response.id as usize] = Some(response.new_entry);
     }
 
     fn link(
@@ -255,7 +274,7 @@ where
         point_id: PointOffsetType,
         level_m: usize,
         entry_point: PointOffsetType,
-    ) -> PointOffsetType {
+    ) -> LinkResponse {
         let entry = ScoredPointOffset {
             idx: entry_point,
             score: self.score(scorer, point_id, entry_point),
@@ -268,12 +287,24 @@ where
             .max()
             .map(|s| s.idx)
             .unwrap_or(entry_point);
+        let mut response = LinkResponse {
+            id: point_id,
+            level,
+            new_entry: new_entry_point,
+            patches: vec![],
+        };
 
         let links = self.select_with_heuristic(scorer, nearest_points, level_m);
-        self.set_links(level, point_id, &links);
+        response.patches.push(LinksPatch {
+            id: point_id,
+            links: links.clone(),
+        });
         for other_point in links {
-            let mut other_point_links =
-                self.graph_layers_builder.links_layers[other_point as usize][level].write();
+            let mut other_point_links = vec![];
+            self.links_map(level, other_point, |other_link| {
+                other_point_links.push(other_link);
+            });
+
             if other_point_links.len() < level_m {
                 other_point_links.push(point_id);
             } else {
@@ -289,13 +320,15 @@ where
                         score: self.score(scorer, other_point_link, other_point),
                     });
                 }
-                let selected_candidates = self.select_with_heuristic(scorer, candidates, level_m);
-
-                other_point_links.clear();
-                other_point_links.extend_from_slice(&selected_candidates);
+                other_point_links = self.select_with_heuristic(scorer, candidates, level_m);
             }
+
+            response.patches.push(LinksPatch {
+                id: other_point,
+                links: other_point_links,
+            });
         }
-        new_entry_point
+        response
     }
 
     fn select_with_heuristic(
