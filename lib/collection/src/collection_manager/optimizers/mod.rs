@@ -14,6 +14,11 @@ pub mod merge_optimizer;
 pub mod segment_optimizer;
 pub mod vacuum_optimizer;
 
+/// Number of last trackers to keep in tracker log
+///
+/// Will never remove older trackers for unsuccesful or still ongoing optimizations.
+const KEEP_LAST_TRACKERS: usize = 16;
+
 /// A log of optimizer trackers holding their status
 #[derive(Default, Clone, Debug)]
 pub struct TrackerLog {
@@ -24,6 +29,29 @@ impl TrackerLog {
     /// Register a new optimizer tracker
     pub fn register(&mut self, description: Tracker) {
         self.descriptions.push_back(description);
+        self.truncate();
+    }
+
+    /// Truncate and forget old trackers for succesful optimizations
+    ///
+    /// Will never remove older trackers for unsuccesful or still ongoing optimizations.
+    ///
+    /// Always keeps the last `KEEP_TRACKERS` trackers.
+    fn truncate(&mut self) {
+        let truncate_range = self.descriptions.len().saturating_sub(KEEP_LAST_TRACKERS);
+
+        // Find items to truncate, start removing from the back
+        let truncate = self
+            .descriptions
+            .iter()
+            .enumerate()
+            .take(truncate_range)
+            .filter(|(_, tracker)| tracker.state.lock().status == TrackerStatus::Done)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        truncate.into_iter().rev().for_each(|index| {
+            self.descriptions.remove(index);
+        });
     }
 
     /// Convert log into list of objects usable in telemetry
