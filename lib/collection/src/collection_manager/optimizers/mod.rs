@@ -32,7 +32,7 @@ impl TrackerLog {
         self.truncate();
     }
 
-    /// Truncate and forget old trackers for succesful/cancelled optimizations
+    /// Truncate and forget old trackers for successful/cancelled optimizations
     ///
     /// Will never remove older trackers with failed or still ongoing optimizations.
     ///
