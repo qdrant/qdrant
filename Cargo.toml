@@ -123,7 +123,7 @@ bench = false
 
 [workspace]
 members = ["lib/*"]
-exclude = ["benches/search-points"]
+exclude = ["benches/search-points", "examples/scorer-playground"]
 
 [profile.release]
 lto = "fat"

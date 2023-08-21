@@ -2,12 +2,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
+use super::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::VectorElementType;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+use crate::vector_storage::query_scorer::reco_query_scorer::RecoQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
 
 /// RawScorer            QueryScorer        Metric
@@ -75,6 +77,54 @@ pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer> {
     /// This flag indicates that the search process is stopped externally,
     /// the search result is no longer needed and the search process should be stopped as soon as possible.
     pub is_stopped: &'a AtomicBool,
+}
+
+pub fn new_experimental_scorer<'a>(
+    positives: Vec<Vec<VectorElementType>>,
+    negatives: Vec<Vec<VectorElementType>>,
+    vector_storage: &'a VectorStorageEnum,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> Box<dyn RawScorer + 'a> {
+    let vector_storage = match vector_storage {
+        VectorStorageEnum::Simple(_) => unimplemented!("simple vector storage not yet implemented"),
+        VectorStorageEnum::AppendableMemmap(vs) => vs,
+        VectorStorageEnum::Memmap(_) => unimplemented!("memmap not supported yet"),
+    };
+
+    let vec_deleted = vector_storage.deleted_vector_bitslice();
+    match vector_storage.distance() {
+        Distance::Cosine => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<CosineMetric, AppendableMmapVectorStorage>::new(
+                positives,
+                negatives,
+                vector_storage,
+            ),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+        Distance::Euclid => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<EuclidMetric, AppendableMmapVectorStorage>::new(
+                positives,
+                negatives,
+                vector_storage,
+            ),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+        Distance::Dot => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<DotProductMetric, AppendableMmapVectorStorage>::new(
+                positives,
+                negatives,
+                vector_storage,
+            ),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+    }
 }
 
 pub fn new_stoppable_raw_scorer<'a>(

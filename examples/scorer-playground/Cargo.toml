@@ -1,0 +1,17 @@
+[package]
+name = "scorer-playground"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+atomic_refcell = "0.1.11"
+bitvec = "1.0.1"
+clap = { version = "4.3.22", features = ["derive"] }
+segment = { version = "0.6.0", path = "../../lib/segment" }
+serde_json = "1.0.105"
+
+[workspace]
+
+

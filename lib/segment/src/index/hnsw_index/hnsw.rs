@@ -34,11 +34,12 @@ use crate::types::Condition::Field;
 #[cfg(debug_assertions)]
 use crate::types::PointOffsetType;
 use crate::types::{
-    default_quantization_ignore_value, FieldCondition, Filter, HnswConfig,
+    default_quantization_ignore_value, FieldCondition, Filter, HnswConfig, PointIdType,
     QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{
-    new_raw_scorer, new_stoppable_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum,
+    new_experimental_scorer, new_raw_scorer, new_stoppable_raw_scorer, ScoredPointOffset,
+    VectorStorage, VectorStorageEnum,
 };
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -296,6 +297,52 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         } else {
             graph.search(top, ef, points_scorer)
         }
+    }
+
+    pub fn custom_search_with_graph(
+        &self,
+        positives: &[PointIdType],
+        negatives: &[PointIdType],
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        let ef = self.config.ef;
+
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+
+        // Fetch vectors from storage using external ids
+        let positives = positives
+            .iter()
+            .map(|&point_id| {
+                let internal = id_tracker.internal_id(point_id).unwrap();
+                vector_storage.get_vector(internal).to_vec()
+            })
+            .collect::<Vec<_>>();
+
+        let negatives = negatives
+            .iter()
+            .map(|&point_id| {
+                let internal = id_tracker.internal_id(point_id).unwrap();
+                vector_storage.get_vector(internal).to_vec()
+            })
+            .collect::<Vec<_>>();
+
+        let raw_scorer = new_experimental_scorer(
+            positives,
+            negatives,
+            &vector_storage,
+            id_tracker.deleted_point_bitslice(),
+            is_stopped,
+        );
+
+        let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+
+        let Some(graph) = &self.graph else {
+            return Vec::new();
+        };
+
+        graph.search(top, ef, points_scorer)
     }
 
     fn search_vectors_with_graph(
