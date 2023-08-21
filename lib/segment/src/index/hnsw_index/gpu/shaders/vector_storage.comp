@@ -5,32 +5,115 @@
 #error "VECTOR_STORAGE_LAYOUT_SET not defined"
 #endif
 
+#include "common.comp"
+
 layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 0)
 readonly uniform VectorStorageParams {
     uint dim;
     uint count;
+    uint chunk_size;
 } vector_storage_params;
-
-layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1)
-readonly buffer Vectors {
-    mat4 data[];
-} vectors;
 
 #define COUNT vector_storage_params.count
 
 #define DIM vector_storage_params.dim
 
+#define STORAGES_COUNT 4
+
+#define VECTOR_STORAGE_DEFINE(STORAGE_INDEX) \
+    layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1 + STORAGE_INDEX) \
+    readonly buffer CONCAT(Vectors, STORAGE_INDEX) { \
+        mat4 data[]; \
+    } CONCAT(vectors, STORAGE_INDEX);
+
+VECTOR_STORAGE_DEFINE(0)
+VECTOR_STORAGE_DEFINE(1)
+VECTOR_STORAGE_DEFINE(2)
+VECTOR_STORAGE_DEFINE(3)
+
+#define VECTOR_STORAGE_SCORE(STORAGE_INDEX_A, STORAGE_INDEX_B) \
+    for (uint i = 0; i < d; i++) { \
+        result += matrixCompMult( \
+            CONCAT(vectors, STORAGE_INDEX_A).data[aId + i], \
+            CONCAT(vectors, STORAGE_INDEX_B).data[bId + i] \
+        ); \
+    }
+
 float similarity(uint a, uint b) {
     mat4 result = mat4(0.0);
     uint d = DIM / 16;
-    uint aId = a * d;
-    uint bId = b * d;
-    for (uint i = 0; i < d; i++) {
-        result += matrixCompMult(
-            vectors.data[aId + i],
-            vectors.data[bId + i]
-        );
+    uint aId = (a / STORAGES_COUNT) * d;
+    uint bId = (b / STORAGES_COUNT) * d;
+    uint storage_index_a = a % STORAGES_COUNT;
+    uint storage_index_b = b % STORAGES_COUNT;
+
+    switch (storage_index_a) {
+    case 0:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE(0, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE(0, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE(0, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE(0, 3);
+            break;
+        }
+        break;
+    case 1:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE(1, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE(1, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE(1, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE(1, 3);
+            break;
+        }
+        break;
+    case 2:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE(2, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE(2, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE(2, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE(2, 3);
+            break;
+        }
+        break;
+    case 3:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE(3, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE(3, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE(3, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE(3, 3);
+            break;
+        }
+        break;
     }
+
     vec4 v1 = result[0];
     vec4 v2 = result[1];
     vec4 v3 = result[2];
