@@ -42,6 +42,7 @@ where
     V: Validate,
 {
     #[inline]
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         let errors = self
             .iter()
@@ -59,6 +60,7 @@ where
     V: Validate,
 {
     #[inline]
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         let errors = self
             .values()
