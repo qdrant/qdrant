@@ -478,7 +478,7 @@ fn execute_batch_search(
         .map(|p| p.indexed_only)
         .unwrap_or(false);
     if ignore_plain_index
-        && check_is_indexed_condition(
+        && !is_search_optimized(
             read_segment.deref(),
             indexing_threshold_kb,
             search_params.vector_name,
@@ -507,7 +507,7 @@ fn execute_batch_search(
 }
 
 /// Check if the segment is indexed enough to be searched with `indexed_only` parameter
-fn check_is_indexed_condition(
+fn is_search_optimized(
     segment: &dyn SegmentEntry,
     indexing_threshold_kb: usize,
     vector_name: &str,
@@ -538,6 +538,18 @@ fn check_is_indexed_condition(
 
     let indexing_threshold_bytes = indexing_threshold_kb * BYTES_IN_KB;
 
+    // Examples:
+    // Threshold = 20_000 Kb
+    // Indexed vectors: 100000
+    // Total vectors: 100010
+    // unindexed_volume = 100010 - 100000 = 10
+    // Result: true
+
+    // Threshold = 20_000 Kb
+    // Indexed vectors: 0
+    // Total vectors: 100000
+    // unindexed_volume = 100000
+    // Result: false
     Ok(unindexed_volume < indexing_threshold_bytes)
 }
 
@@ -558,12 +570,44 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &str) -> Option<us
 #[cfg(test)]
 mod tests {
     use segment::fixtures::index_fixtures::random_vector;
+    use segment::types::SegmentType;
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{build_test_holder, random_segment};
+    use crate::collection_manager::fixtures::{
+        build_test_holder, optimize_segment, random_segment,
+    };
     use crate::operations::types::SearchRequest;
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
+
+    #[test]
+    fn test_is_indexed_enough_condition() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segment1 = random_segment(dir.path(), 10, 200, 256);
+
+        let res_1 = is_search_optimized(&segment1, 25, "").unwrap();
+
+        assert!(!res_1);
+
+        let res_2 = is_search_optimized(&segment1, 225, "").unwrap();
+
+        assert!(res_2);
+
+        let indexed_segment = optimize_segment(segment1);
+
+        let indexed_segment_get = indexed_segment.get();
+        let indexed_segment_read = indexed_segment_get.read();
+
+        assert_eq!(
+            indexed_segment_read.info().segment_type,
+            SegmentType::Indexed
+        );
+
+        let res_3 = is_search_optimized(indexed_segment_read.deref(), 25, "").unwrap();
+
+        assert!(res_3);
+    }
 
     #[tokio::test]
     async fn test_segments_search() {
