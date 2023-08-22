@@ -63,7 +63,7 @@ smol_str = "0.2.0"
 
 sysinfo = "0.29"
 futures = "0.3.28"
-charabia = { version = "0.8.2", default-features = false, features = ["greek", "hebrew", "thai"] }
+charabia = { version = "0.8.3", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 common = {path = "../common"}
 
