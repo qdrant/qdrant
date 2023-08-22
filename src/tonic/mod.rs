@@ -27,7 +27,6 @@ use tokio::signal;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
-use tonic_reflection;
 
 use crate::common::helpers;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
