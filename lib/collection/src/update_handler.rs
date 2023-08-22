@@ -322,6 +322,33 @@ impl UpdateHandler {
         handles.retain(|h| !h.is_finished())
     }
 
+    /// Cleanup finalized optimization task handles
+    ///
+    /// This finds and removes completed tasks from our list of optimization handles.
+    /// It also propagates any panics (and unknown errors) so we properly handle them if desired.
+    ///
+    /// It is essential to call this every once in a while for handling panics in time.
+    async fn cleanup_optimization_handles(
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+    ) {
+        // Remove finished handles
+        let finished_handles: Vec<_> = {
+            let mut handles = optimization_handles.lock().await;
+            (0..handles.len())
+                .filter(|i| handles[*i].is_finished())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .map(|i| handles.remove(i))
+                .collect()
+        };
+
+        // Finalize all finished handles to propagate panics
+        for handle in finished_handles {
+            handle.join_and_handle_panic().await;
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
