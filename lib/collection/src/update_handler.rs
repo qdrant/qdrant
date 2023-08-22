@@ -17,7 +17,9 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
-use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
+use crate::common::stoppable_task::{
+    panic_payload_into_string, spawn_stoppable, StoppableTaskHandle,
+};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
@@ -255,7 +257,8 @@ impl UpdateHandler {
                                 Err(error) => match error {
                                     CollectionError::Cancelled { description } => {
                                         log::debug!("Optimization cancelled - {}", description);
-                                        tracker_handle.update(TrackerStatus::Cancelled(description));
+                                        tracker_handle
+                                            .update(TrackerStatus::Cancelled(description));
                                         false
                                     }
                                     _ => {
@@ -267,7 +270,8 @@ impl UpdateHandler {
                                         // optimization thread and log the error
                                         log::error!("Optimization error: {}", error);
 
-                                        tracker_handle.update(TrackerStatus::Error(error.to_string()));
+                                        tracker_handle
+                                            .update(TrackerStatus::Error(error.to_string()));
 
                                         panic!("Optimization error: {error}");
                                     }
@@ -276,8 +280,8 @@ impl UpdateHandler {
                         }
                     },
                     // Panic handler
-                    Some(Box::new(move |_panic_payload| {
-                        let panic_msg = "panic occurred".to_string();
+                    Some(Box::new(move |panic_payload| {
+                        let panic_msg = panic_payload_into_string(panic_payload);
                         log::warn!(
                             "Optimization task paniced, collection may be in unstable state: {panic_msg}"
                         );
