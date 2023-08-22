@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
-use rand::thread_rng;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -39,7 +40,7 @@ fn hnsw_quantized_search_test(
     let ef = 64;
     let ef_construct = 64;
 
-    let mut rnd = thread_rng();
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -156,7 +157,9 @@ fn hnsw_quantized_search_test(
         );
         let best_2 = oversampling_2_result[0][0];
 
-        assert!(best_2.idx == best_1.idx || best_2 >= best_1);
+        let acceptable_range = (best_1.score - oversampling_1_result[0][1].score).abs();
+        let low_bound = best_1.score - acceptable_range;
+        assert!(best_2.score > low_bound);
     }
 }
 
