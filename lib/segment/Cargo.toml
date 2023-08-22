@@ -14,7 +14,7 @@ multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 
 [dev-dependencies]
-tempfile = "3.7.1"
+tempfile = "3.8.0"
 criterion = "0.5"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
