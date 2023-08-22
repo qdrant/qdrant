@@ -38,7 +38,8 @@ impl<T> StoppableTaskHandle<T> {
     /// Any panics are propagated through the configured panic handler. If no handler is
     /// configured, nothing happens.
     ///
-    /// The task must be finished.
+    /// To call this, the task must already be finished. Otherwise it panics in development, or
+    /// blocks in release.
     pub async fn join_and_handle_panic(self) {
         debug_assert!(
             self.join_handle.is_finished(),
@@ -56,7 +57,7 @@ impl<T> StoppableTaskHandle<T> {
                 panic_handler(panic);
             }
             Err(err) if err.is_panic() => {
-                log::debug!("Stoppable task paniced without panic handler");
+                log::debug!("Stoppable task panicked without panic handler");
             }
             // Log error on unknown error
             Err(err) => {
@@ -68,7 +69,7 @@ impl<T> StoppableTaskHandle<T> {
 
 /// Spawn stoppable task `f`
 ///
-/// An optional `panic_handler` may be given, eventually called if the task paniced.
+/// An optional `panic_handler` may be given, eventually called if the task panicked.
 pub fn spawn_stoppable<F, T>(
     f: F,
     panic_handler: Option<Box<dyn Fn(PanicPayload) + Sync + Send>>,

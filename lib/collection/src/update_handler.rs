@@ -28,7 +28,7 @@ use crate::wal::WalError;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
-/// The longer the duration, the longer it  takes for paniced tasks to be reported.
+/// The longer the duration, the longer it  takes for panicked tasks to be reported.
 const OPTIMIZER_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
@@ -235,9 +235,7 @@ impl UpdateHandler {
                 let optimizers_log = optimizers_log.clone();
                 let segments = segments.clone();
                 let nsi = nonoptimal_segment_ids.clone();
-                for sid in &nsi {
-                    scheduled_segment_ids.insert(*sid);
-                }
+                scheduled_segment_ids.extend(&nsi);
                 let callback = callback.clone();
 
                 let handle = spawn_stoppable(
@@ -288,12 +286,12 @@ impl UpdateHandler {
                     Some(Box::new(move |panic_payload| {
                         let panic_msg = panic_payload_into_string(panic_payload);
                         log::warn!(
-                            "Optimization task paniced, collection may be in unstable state: {panic_msg}"
+                            "Optimization task panicked, collection may be in unstable state: {panic_msg}"
                         );
                         segments
                             .write()
                             .report_optimizer_error(CollectionError::service_error(format!(
-                                "Optimization task paniced: {panic_msg}"
+                                "Optimization task panicked: {panic_msg}"
                             )));
                     })),
                 );
