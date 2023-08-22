@@ -479,6 +479,8 @@ impl<'s> SegmentHolder {
     }
 
     pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
+        // Save only the first error
+        // If is more likely to be the real cause of all further problems
         if self.optimizer_errors.is_none() {
             self.optimizer_errors = Some(error.into());
         }

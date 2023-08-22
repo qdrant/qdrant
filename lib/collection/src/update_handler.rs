@@ -222,54 +222,73 @@ impl UpdateHandler {
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
                     break;
-                } else {
-                    let optim = optimizer.clone();
-                    let optimizers_log = optimizers_log.clone();
-                    let segs = segments.clone();
-                    let nsi = nonoptimal_segment_ids.clone();
-                    for sid in &nsi {
-                        scheduled_segment_ids.insert(*sid);
-                    }
-                    let callback = callback.clone();
-
-                    handles.push(spawn_stoppable(move |stopped| {
-                        // Track optimizer status
-                        let tracker = Tracker::start(optim.as_ref().name(), nsi.clone());
-                        let tracker_handle = tracker.handle();
-                        optimizers_log.lock().register(tracker);
-
-                        // Optimize and handle result
-                        match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
-                            Ok(result) => {
-                                tracker_handle.update(TrackerStatus::Done);
-                                callback(result); // Perform some actions when optimization if finished
-                                result
-                            }
-                            Err(error) => match error {
-                                CollectionError::Cancelled { description } => {
-                                    log::debug!("Optimization cancelled - {}", description);
-                                    tracker_handle.update(TrackerStatus::Cancelled(description));
-                                    false
-                                }
-                                _ => {
-                                    // Save only the first error
-                                    // If is more likely to be the real cause of all further problems
-                                    segs.write().report_optimizer_error(error.clone());
-
-                                    // Error of the optimization can not be handled by API user
-                                    // It is only possible to fix after full restart,
-                                    // so the best available action here is to stop whole
-                                    // optimization thread and log the error
-                                    log::error!("Optimization error: {}", error);
-
-                                    tracker_handle.update(TrackerStatus::Error(error.to_string()));
-
-                                    panic!("Optimization error: {error}");
-                                }
-                            },
-                        }
-                    }));
                 }
+
+                let optimizer = optimizer.clone();
+                let optimizers_log = optimizers_log.clone();
+                let segments = segments.clone();
+                let nsi = nonoptimal_segment_ids.clone();
+                for sid in &nsi {
+                    scheduled_segment_ids.insert(*sid);
+                }
+                let callback = callback.clone();
+
+                let handle = spawn_stoppable(
+                    // Stoppable task
+                    {
+                        let segments = segments.clone();
+                        move |stopped| {
+                            // Track optimizer status
+                            let tracker = Tracker::start(optimizer.as_ref().name(), nsi.clone());
+                            let tracker_handle = tracker.handle();
+                            optimizers_log.lock().register(tracker);
+
+                            // Optimize and handle result
+                            match optimizer.as_ref().optimize(segments.clone(), nsi, stopped) {
+                                // Perform some actions when optimization if finished
+                                Ok(result) => {
+                                    tracker_handle.update(TrackerStatus::Done);
+                                    callback(result);
+                                    result
+                                }
+                                // Handle and report errors
+                                Err(error) => match error {
+                                    CollectionError::Cancelled { description } => {
+                                        log::debug!("Optimization cancelled - {}", description);
+                                        tracker_handle.update(TrackerStatus::Cancelled(description));
+                                        false
+                                    }
+                                    _ => {
+                                        segments.write().report_optimizer_error(error.clone());
+
+                                        // Error of the optimization can not be handled by API user
+                                        // It is only possible to fix after full restart,
+                                        // so the best available action here is to stop whole
+                                        // optimization thread and log the error
+                                        log::error!("Optimization error: {}", error);
+
+                                        tracker_handle.update(TrackerStatus::Error(error.to_string()));
+
+                                        panic!("Optimization error: {error}");
+                                    }
+                                },
+                            }
+                        }
+                    },
+                    // Panic handler
+                    Some(Box::new(move |_panic_payload| {
+                        let panic_msg = "panic occurred".to_string();
+                        log::warn!(
+                            "Optimization task paniced, collection may be in unstable state: {panic_msg}"
+                        );
+                        segments
+                            .write()
+                            .report_optimizer_error(CollectionError::service_error(format!(
+                                "Optimization task paniced: {panic_msg}"
+                            )));
+                    })),
+                );
+                handles.push(handle);
             }
         }
         handles
