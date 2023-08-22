@@ -570,8 +570,8 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &str) -> Option<us
 #[cfg(test)]
 mod tests {
     use segment::fixtures::index_fixtures::random_vector;
-    use tempfile::Builder;
     use segment::types::SegmentType;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{
@@ -599,7 +599,10 @@ mod tests {
         let indexed_segment_get = indexed_segment.get();
         let indexed_segment_read = indexed_segment_get.read();
 
-        assert_eq!(indexed_segment_read.info().segment_type, SegmentType::Indexed);
+        assert_eq!(
+            indexed_segment_read.info().segment_type,
+            SegmentType::Indexed
+        );
 
         let res_3 = is_search_optimized(indexed_segment_read.deref(), 25, "").unwrap();
 
