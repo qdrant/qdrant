@@ -168,10 +168,13 @@ $docker_grpcurl -d '{
 # use the reflection service to inspect the full API
 $docker_grpcurl $QDRANT_HOST describe
 
-# use the reflection service to list RPCs in the Collections service
+# use the reflection service to inspect each advertised service
 $docker_grpcurl $QDRANT_HOST describe qdrant.Collections
+$docker_grpcurl $QDRANT_HOST describe qdrant.Points
+$docker_grpcurl $QDRANT_HOST describe qdrant.Snapshots
+$docker_grpcurl $QDRANT_HOST describe qdrant.Qdrant
 
-# use the reflection service to get the shape of the UpsertPoints message
+# use the reflection service to get the shape of a specific message
 $docker_grpcurl $QDRANT_HOST describe qdrant.UpsertPoints
 
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')

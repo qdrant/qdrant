@@ -108,8 +108,15 @@ pub fn init(
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.toc().clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
+
+        // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET
+        // will be advertised, so explicitly list the services to be included.
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(QDRANT_DESCRIPTOR_SET)
+            .with_service_name("qdrant.Collections")
+            .with_service_name("qdrant.Points")
+            .with_service_name("qdrant.Snapshots")
+            .with_service_name("qdrant.Qdrant")
             .build()
             .unwrap();
 
