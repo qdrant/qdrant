@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rand::rngs::ThreadRng;
@@ -14,11 +16,14 @@ use segment::segment_constructor::simple_segment_constructor::{
 };
 use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
 use serde_json::json;
+use tempfile::Builder;
 
-use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, SegmentOptimizer,
+};
 use crate::config::CollectionParams;
 use crate::operations::types::{VectorParams, VectorsConfig};
 
@@ -253,4 +258,36 @@ pub(crate) fn get_indexing_optimizer(
         Default::default(),
         Default::default(),
     )
+}
+
+pub fn optimize_segment(segment: Segment) -> LockedSegment {
+    let dir = Builder::new().prefix("segment_dir_tmp").tempdir().unwrap();
+
+    let segments_dir = segment.current_path.parent().unwrap().to_owned();
+
+    let dim = segment.segment_config.vector_data.get("").unwrap().size;
+
+    let mut holder = SegmentHolder::default();
+
+    let segment_id = holder.add(segment);
+
+    let optimizer = get_indexing_optimizer(&segments_dir, dir.path(), dim);
+
+    let locked_holder: Arc<parking_lot::lock_api::RwLock<_, _>> = Arc::new(RwLock::new(holder));
+
+    optimizer
+        .optimize(
+            locked_holder.clone(),
+            vec![segment_id],
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+    let mut holder = locked_holder.write();
+
+    let segment_id = *holder.non_appendable_segments().first().unwrap();
+
+    let mut segments = holder.remove(&[segment_id]);
+
+    segments.pop().unwrap()
 }
