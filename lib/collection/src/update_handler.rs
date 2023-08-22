@@ -11,7 +11,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
-use tokio::time::Duration;
+use tokio::time::{timeout, Duration};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
@@ -25,6 +25,11 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
+
+/// Interval at which the optimizer worker cleans up old optimization handles
+///
+/// The longer the duration, the longer it  takes for paniced tasks to be reported.
+const OPTIMIZER_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -319,7 +324,6 @@ impl UpdateHandler {
         );
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
-        handles.retain(|h| !h.is_finished())
     }
 
     /// Cleanup finalized optimization task handles
@@ -360,18 +364,27 @@ impl UpdateHandler {
         optimizers_log: Arc<Mutex<TrackerLog>>,
         max_handles: usize,
     ) {
-        while let Some(signal) = receiver.recv().await {
-            match signal {
-                OptimizerSignal::Nop | OptimizerSignal::Operation(_) => {
+        loop {
+            let receiver = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv());
+            let result = receiver.await;
+
+            // Always clean up on any signal
+            Self::cleanup_optimization_handles(optimization_handles.clone()).await;
+
+            match result {
+                // Channel closed or stop signal
+                Ok(None | Some(OptimizerSignal::Stop)) => break,
+                // Clean up interval
+                Err(_) => continue,
+                // Optimizer signal
+                Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
+                    // If not forcing with Nop, wait on next signal if we have too many handles
                     if signal != OptimizerSignal::Nop
                         && optimization_handles.lock().await.len() >= max_handles
                     {
-                        let mut handles = optimization_handles.lock().await;
-                        handles.retain(|h| !h.is_finished());
                         continue;
                     }
-                    // We skip the check for number of optimization handles here
-                    // Because `Nop` usually means that we need to force the optimization
+
                     if Self::try_recover(segments.clone(), wal.clone())
                         .await
                         .is_err()
@@ -387,8 +400,6 @@ impl UpdateHandler {
                     )
                     .await;
                 }
-
-                OptimizerSignal::Stop => break,
             }
         }
     }
