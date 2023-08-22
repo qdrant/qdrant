@@ -5,41 +5,42 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use clap::{arg, Parser};
-use segment::entry::entry_point::OperationResult;
+use segment::entry::entry_point::{OperationResult, OperationError};
 use segment::index::VectorIndexEnum;
 use segment::segment_constructor::load_segment;
-use segment::types::{ExtendedPointId, PointIdType};
+use segment::types::{ExtendedPointId, PointIdType, ScoredPoint};
 use segment::vector_storage::ScoredPointOffset;
 use segment::{self};
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(short, long)]
-    positive: Vec<u64>,
+    #[arg(short, long, value_delimiter = ',')]
+    positives: Vec<u64>,
 
-    #[arg(short, long)]
-    negative: Vec<u64>,
+    #[arg(short, long, value_delimiter = ',')]
+    negatives: Vec<u64>,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let positive = args
-        .positive
-        .iter()
-        .map(|id| ExtendedPointId::NumId(*id))
-        .collect::<Vec<_>>();
-    let negative = args
-        .negative
-        .iter()
-        .map(|id| ExtendedPointId::NumId(*id))
-        .collect::<Vec<_>>();
+    let positives: Vec<_> = args
+        .positives
+        .into_iter()
+        .map(ExtendedPointId::NumId)
+        .collect();
+    let negatives: Vec<_> = args
+        .negatives
+        .into_iter()
+        .map(ExtendedPointId::NumId)
+        .collect();
 
-    let result = custom_search(&positive, &negative);
+    let result = custom_search(&positives, &negatives);
 
     match result {
         Ok(result) => {
-            println!("Result: {:?}", result);
+            serde_json::to_writer_pretty(std::io::stdout(), &result).unwrap();
+            // println!("Result: {:?}", result);
         }
         Err(err) => {
             println!("Error: {:?}", err);
@@ -50,8 +51,8 @@ fn main() {
 fn custom_search(
     positives: &[PointIdType],
     negatives: &[PointIdType],
-) -> OperationResult<Vec<ScoredPointOffset>> {
-    let segment_path = dbg!(get_hnsw_segment_path());
+) -> OperationResult<Vec<ScoredPoint>> {
+    let segment_path = get_hnsw_segment_path();
 
     let segment = load_segment(&segment_path)
         .expect("Should not fail loading")
@@ -66,9 +67,11 @@ fn custom_search(
         _ => unimplemented!("Only RAM HNSW is supported for now"),
     };
 
-    let result = hnsw.custom_search_with_graph(positives, negatives, 10, &is_stopped);
+    let offsets = hnsw.custom_search_with_graph(positives, negatives, 10, &is_stopped);
 
-    Ok(result)
+    let results = segment.process_search_result(&offsets, &true.into(), &false.into())?;
+
+    Ok(results)
 }
 
 #[allow(dead_code)]

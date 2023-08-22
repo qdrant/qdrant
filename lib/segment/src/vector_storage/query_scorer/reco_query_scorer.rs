@@ -59,7 +59,7 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
             .iter()
             .map(|negative| TMetric::similarity(negative, v2));
 
-        // get max similarity to positives and negatives
+        // get max similarity to positives and max to negatives
         let max_positive = positive_similarities
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0);

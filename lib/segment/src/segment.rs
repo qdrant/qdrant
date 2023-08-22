@@ -534,7 +534,7 @@ impl Segment {
     }
 
     /// Converts raw ScoredPointOffset search result into ScoredPoint result
-    fn process_search_result(
+    pub fn process_search_result(
         &self,
         internal_result: &[ScoredPointOffset],
         with_payload: &WithPayload,
