@@ -112,9 +112,9 @@ uint BHEAP(BHEAP_NAME, into_array)() {
 void BHEAP(BHEAP_NAME, init)(BHEAP_TYPE none_value, uint capacity, uint offset) {
     BHEAP(BHEAP_NAME, offset) = offset;
     BHEAP(BHEAP_NAME, capacity) = capacity;
-    for (uint i = 0; i < capacity; i++) {
-        BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i] = none_value;
-    }
+    //for (uint i = 0; i < capacity; i++) {
+    //    BHEAP_DATA[BHEAP(BHEAP_NAME, offset) + i] = none_value;
+    //}
 }
 
 #undef BHEAP_NAME
