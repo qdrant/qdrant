@@ -164,39 +164,43 @@ where
         println!("CPU TRUE BUILD build time {:?}", timer.elapsed());
     }
 
-    pub fn link_batched(&self, level: usize, point_ids: &[PointOffsetType]) {
+    pub fn link_batched(
+        &self,
+        level: usize,
+        mut point_ids: Vec<PointOffsetType>,
+    ) -> Vec<PointOffsetType> {
         let level_m = self.get_m(level);
-        let mut point_ids = point_ids.to_vec();
-        while !point_ids.is_empty() {
-            let mut responses = point_ids
-                .clone()
-                .into_par_iter()
-                .map(|point_id| {
-                    let fabric = &self.scorer_fabric;
-                    let scorer = fabric();
-                    let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
-                    self.link(&scorer, level, point_id, level_m, entry_point)
-                })
-                .collect::<Vec<_>>();
-            responses.sort_unstable_by(|a, b| a.id.cmp(&b.id));
 
-            let mut visited = self.visited_pool.get(self.num_vectors());
-            for response in responses.into_iter() {
-                let mut can_apply = true;
-                for patch in &response.patches {
-                    if visited.check_and_update_visited(patch.id) {
-                        can_apply = false;
-                        break;
-                    }
-                }
-                if can_apply {
-                    self.apply_link_response(&response);
-                    let index = point_ids.iter().position(|x| *x == response.id).unwrap();
-                    point_ids.remove(index);
+        let mut responses = point_ids
+            .clone()
+            .into_par_iter()
+            .map(|point_id| {
+                let fabric = &self.scorer_fabric;
+                let scorer = fabric();
+                let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
+                self.link(&scorer, level, point_id, level_m, entry_point)
+            })
+            .collect::<Vec<_>>();
+        responses.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+
+        let mut visited = self.visited_pool.get(self.num_vectors());
+        for response in responses.into_iter() {
+            let mut can_apply = true;
+            for patch in &response.patches {
+                if visited.check_and_update_visited(patch.id) {
+                    can_apply = false;
+                    break;
                 }
             }
-            self.visited_pool.return_back(visited);
+            if can_apply {
+                self.apply_link_response(&response);
+                let index = point_ids.iter().position(|x| *x == response.id).unwrap();
+                point_ids.remove(index);
+            }
         }
+        self.visited_pool.return_back(visited);
+
+        point_ids
     }
 
     pub fn build_level(
@@ -250,11 +254,12 @@ where
                 }
 
                 if batched_links.len() == threads_count {
-                    self.link_batched(level, &batched_links);
-                    batched_links.clear();
+                    batched_links = self.link_batched(level, batched_links);
                 }
             }
-            self.link_batched(level, &batched_links);
+            while !batched_links.is_empty() {
+                batched_links = self.link_batched(level, batched_links);
+            }
         });
 
         end_idx
