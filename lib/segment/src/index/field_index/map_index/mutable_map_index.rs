@@ -14,12 +14,12 @@ use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
 
 pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
-    pub(crate) map: HashMap<N, BTreeSet<PointOffsetType>>,
-    pub(crate) point_to_values: Vec<Vec<N>>,
+    pub(super) map: HashMap<N, BTreeSet<PointOffsetType>>,
+    pub(super) point_to_values: Vec<Vec<N>>,
     /// Amount of point which have at least one indexed payload value
-    pub(crate) indexed_points: usize,
-    pub(crate) values_count: usize,
-    pub(crate) db_wrapper: DatabaseColumnWrapper,
+    pub(super) indexed_points: usize,
+    pub(super) values_count: usize,
+    pub(super) db_wrapper: DatabaseColumnWrapper,
 }
 
 impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
