@@ -118,6 +118,7 @@ pub(crate) fn panic_payload_into_string(payload: PanicPayload) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -194,5 +195,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_task_panic() {
+        let panic_payload = Arc::new(Mutex::new(String::new()));
+        let handle = spawn_stoppable(
+            |_| {
+                thread::sleep(STEP * 50);
+                panic!("stoppable task panicked");
+            },
+            Some(Box::new({
+                let panic_payload = panic_payload.clone();
+                move |payload| {
+                    *panic_payload.lock().unwrap() = panic_payload_into_string(payload);
+                }
+            })),
+        );
+
+        sleep(STEP * 20).await;
+        assert!(!handle.is_finished());
+        sleep(STEP * 100).await;
+        assert!(handle.is_finished());
+
+        // Join handle to call back panic
+        handle.join_and_handle_panic().await;
+
+        assert_eq!(*panic_payload.lock().unwrap(), "stoppable task panicked");
     }
 }
