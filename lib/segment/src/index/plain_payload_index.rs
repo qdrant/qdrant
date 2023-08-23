@@ -24,9 +24,12 @@ use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType, SearchParams,
+    PointIdType, PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{new_stoppable_raw_scorer, ScoredPointOffset, VectorStorageEnum};
+use crate::vector_storage::{
+    new_experimental_scorer, new_stoppable_raw_scorer, ScoredPointOffset, VectorStorage,
+    VectorStorageEnum,
+};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -220,6 +223,43 @@ impl PlainIndex {
             filtered_searches_telemetry: OperationDurationsAggregator::new(),
             unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
         }
+    }
+
+    pub fn custom_search(
+        &self,
+        positives: &[PointIdType],
+        negatives: &[PointIdType],
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        let vector_storage = self.vector_storage.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        let positives = positives
+            .iter()
+            .map(|&point_id| {
+                let internal = id_tracker.internal_id(point_id).unwrap();
+                vector_storage.get_vector(internal).to_vec()
+            })
+            .collect::<Vec<_>>();
+
+        let negatives = negatives
+            .iter()
+            .map(|&point_id| {
+                let internal = id_tracker.internal_id(point_id).unwrap();
+                vector_storage.get_vector(internal).to_vec()
+            })
+            .collect::<Vec<_>>();
+
+        let scorer = new_experimental_scorer(
+            positives.to_vec(),
+            negatives.to_vec(),
+            &vector_storage,
+            id_tracker.deleted_point_bitslice(),
+            is_stopped,
+        );
+
+        scorer.peek_top_all(top)
     }
 }
 
