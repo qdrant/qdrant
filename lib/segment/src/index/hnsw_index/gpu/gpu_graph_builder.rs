@@ -24,6 +24,7 @@ pub struct GpuGraphBuilder {
     pub update_entry_pipeline: Arc<gpu::Pipeline>,
     pub link_pipeline: Arc<gpu::Pipeline>,
     pub gpu_threads: usize,
+    pub timer: Option<std::time::Instant>,
 }
 
 unsafe impl Send for GpuGraphBuilder {}
@@ -102,6 +103,7 @@ impl GpuGraphBuilder {
             update_entry_pipeline,
             link_pipeline,
             gpu_threads,
+            timer: None,
         }
     }
 
@@ -192,6 +194,16 @@ impl GpuGraphBuilder {
 
     fn run(&mut self, update_entry_points: &[PointOffsetType], link_points: &[PointOffsetType]) {
         self.gpu_context.wait_finish();
+        let visited = self
+            .gpu_search_context
+            .get_visited_count(&mut self.gpu_context);
+        println!(
+            "Visited {}, point id = {}, time = {:?}",
+            visited,
+            link_points.get(0).cloned().unwrap_or_default(),
+            self.timer.map(|t| t.elapsed()).unwrap_or_default()
+        );
+        self.timer = Some(std::time::Instant::now());
 
         self.gpu_builder_context.upload_process_points(
             &mut self.gpu_context,
