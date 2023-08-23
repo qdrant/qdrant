@@ -23,7 +23,7 @@ readonly uniform VectorStorageParams {
 #define VECTOR_STORAGE_DEFINE(STORAGE_INDEX) \
     layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1 + STORAGE_INDEX) \
     readonly buffer CONCAT(Vectors, STORAGE_INDEX) { \
-        mat4 data[]; \
+        vec4 data[]; \
     } CONCAT(vectors, STORAGE_INDEX);
 
 VECTOR_STORAGE_DEFINE(0)
@@ -33,7 +33,7 @@ VECTOR_STORAGE_DEFINE(3)
 
 #define VECTOR_STORAGE_SCORE(STORAGE_INDEX_A, STORAGE_INDEX_B) \
     for (uint i = 0; i < d; i++) { \
-        result += matrixCompMult( \
+        result += dot( \
             CONCAT(vectors, STORAGE_INDEX_A).data[aId + i], \
             CONCAT(vectors, STORAGE_INDEX_B).data[bId + i] \
         ); \
@@ -41,7 +41,7 @@ VECTOR_STORAGE_DEFINE(3)
 
 float similarity(uint a, uint b) {
     mat4 result = mat4(0.0);
-    uint d = DIM / 16;
+    uint d = DIM / 4;
     uint aId = (a / STORAGES_COUNT) * d;
     uint bId = (b / STORAGES_COUNT) * d;
     uint storage_index_a = a % STORAGES_COUNT;
