@@ -8420,104 +8420,120 @@
         }
       },
       "UpdateOperation": {
-        "oneOf": [
+        "anyOf": [
           {
-            "type": "object",
-            "required": [
-              "upsert"
-            ],
-            "properties": {
-              "upsert": {
-                "$ref": "#/components/schemas/PointInsertOperations"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/UpsertOperation"
           },
           {
-            "type": "object",
-            "required": [
-              "delete"
-            ],
-            "properties": {
-              "delete": {
-                "$ref": "#/components/schemas/PointsSelector"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/DeleteOperation"
           },
           {
-            "type": "object",
-            "required": [
-              "set_payload"
-            ],
-            "properties": {
-              "set_payload": {
-                "$ref": "#/components/schemas/SetPayload"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/SetPayloadOperation"
           },
           {
-            "type": "object",
-            "required": [
-              "overwrite_payload"
-            ],
-            "properties": {
-              "overwrite_payload": {
-                "$ref": "#/components/schemas/SetPayload"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/OverwritePayloadOperation"
           },
           {
-            "type": "object",
-            "required": [
-              "delete_payload"
-            ],
-            "properties": {
-              "delete_payload": {
-                "$ref": "#/components/schemas/DeletePayload"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/DeletePayloadOperation"
           },
           {
-            "type": "object",
-            "required": [
-              "clear_payload"
-            ],
-            "properties": {
-              "clear_payload": {
-                "$ref": "#/components/schemas/PointsSelector"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/ClearPayloadOperation"
           },
           {
-            "type": "object",
-            "required": [
-              "update_vectors"
-            ],
-            "properties": {
-              "update_vectors": {
-                "$ref": "#/components/schemas/UpdateVectors"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/UpdateVectorsOperation"
           },
           {
-            "type": "object",
-            "required": [
-              "delete_vectors"
-            ],
-            "properties": {
-              "delete_vectors": {
-                "$ref": "#/components/schemas/DeleteVectors"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/DeleteVectorsOperation"
           }
         ]
+      },
+      "UpsertOperation": {
+        "type": "object",
+        "required": [
+          "upsert"
+        ],
+        "properties": {
+          "upsert": {
+            "$ref": "#/components/schemas/PointInsertOperations"
+          }
+        }
+      },
+      "DeleteOperation": {
+        "type": "object",
+        "required": [
+          "delete"
+        ],
+        "properties": {
+          "delete": {
+            "$ref": "#/components/schemas/PointsSelector"
+          }
+        }
+      },
+      "SetPayloadOperation": {
+        "type": "object",
+        "required": [
+          "set_payload"
+        ],
+        "properties": {
+          "set_payload": {
+            "$ref": "#/components/schemas/SetPayload"
+          }
+        }
+      },
+      "OverwritePayloadOperation": {
+        "type": "object",
+        "required": [
+          "overwrite_payload"
+        ],
+        "properties": {
+          "overwrite_payload": {
+            "$ref": "#/components/schemas/SetPayload"
+          }
+        }
+      },
+      "DeletePayloadOperation": {
+        "type": "object",
+        "required": [
+          "delete_payload"
+        ],
+        "properties": {
+          "delete_payload": {
+            "$ref": "#/components/schemas/DeletePayload"
+          }
+        }
+      },
+      "ClearPayloadOperation": {
+        "type": "object",
+        "required": [
+          "clear_payload"
+        ],
+        "properties": {
+          "clear_payload": {
+            "$ref": "#/components/schemas/PointsSelector"
+          }
+        }
+      },
+      "UpdateVectorsOperation": {
+        "type": "object",
+        "required": [
+          "update_vectors"
+        ],
+        "properties": {
+          "update_vectors": {
+            "$ref": "#/components/schemas/UpdateVectors"
+          }
+        }
+      },
+      "DeleteVectorsOperation": {
+        "type": "object",
+        "required": [
+          "delete_vectors"
+        ],
+        "properties": {
+          "delete_vectors": {
+            "$ref": "#/components/schemas/DeleteVectors"
+          }
+        }
       }
     }
   }
