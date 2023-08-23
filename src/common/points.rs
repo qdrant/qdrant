@@ -25,17 +25,66 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct UpsertOperation {
+    #[validate]
+    upsert: PointInsertOperations,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct DeleteOperation {
+    #[validate]
+    delete: PointsSelector,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct SetPayloadOperation {
+    #[validate]
+    set_payload: SetPayload,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct OverwritePayloadOperation {
+    #[validate]
+    overwrite_payload: SetPayload,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct DeletePayloadOperation {
+    #[validate]
+    delete_payload: DeletePayload,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct ClearPayloadOperation {
+    #[validate]
+    clear_payload: PointsSelector,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct UpdateVectorsOperation {
+    #[validate]
+    update_vectors: UpdateVectors,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct DeleteVectorsOperation {
+    #[validate]
+    delete_vectors: DeleteVectors,
+}
+
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum UpdateOperation {
-    Upsert(PointInsertOperations),
-    Delete(PointsSelector),
-    SetPayload(SetPayload),
-    OverwritePayload(SetPayload),
-    DeletePayload(DeletePayload),
-    ClearPayload(PointsSelector),
-    UpdateVectors(UpdateVectors),
-    DeleteVectors(DeleteVectors),
+    Upsert(UpsertOperation),
+    Delete(DeleteOperation),
+    SetPayload(SetPayloadOperation),
+    OverwritePayload(OverwritePayloadOperation),
+    DeletePayload(DeletePayloadOperation),
+    ClearPayload(ClearPayloadOperation),
+    UpdateVectors(UpdateVectorsOperation),
+    DeleteVectors(DeleteVectorsOperation),
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
@@ -275,7 +324,7 @@ pub async fn do_batch_update_points(
                 do_upsert_points(
                     toc,
                     collection_name,
-                    operation,
+                    operation.upsert,
                     shard_selection,
                     wait,
                     ordering,
@@ -286,7 +335,7 @@ pub async fn do_batch_update_points(
                 do_delete_points(
                     toc,
                     collection_name,
-                    operation,
+                    operation.delete,
                     shard_selection,
                     wait,
                     ordering,
@@ -297,7 +346,7 @@ pub async fn do_batch_update_points(
                 do_set_payload(
                     toc,
                     collection_name,
-                    operation,
+                    operation.set_payload,
                     shard_selection,
                     wait,
                     ordering,
@@ -308,7 +357,7 @@ pub async fn do_batch_update_points(
                 do_overwrite_payload(
                     toc,
                     collection_name,
-                    operation,
+                    operation.overwrite_payload,
                     shard_selection,
                     wait,
                     ordering,
@@ -319,7 +368,7 @@ pub async fn do_batch_update_points(
                 do_delete_payload(
                     toc,
                     collection_name,
-                    operation,
+                    operation.delete_payload,
                     shard_selection,
                     wait,
                     ordering,
@@ -330,7 +379,7 @@ pub async fn do_batch_update_points(
                 do_clear_payload(
                     toc,
                     collection_name,
-                    operation,
+                    operation.clear_payload,
                     shard_selection,
                     wait,
                     ordering,
@@ -341,7 +390,7 @@ pub async fn do_batch_update_points(
                 do_update_vectors(
                     toc,
                     collection_name,
-                    operation,
+                    operation.update_vectors,
                     shard_selection,
                     wait,
                     ordering,
@@ -352,7 +401,7 @@ pub async fn do_batch_update_points(
                 do_delete_vectors(
                     toc,
                     collection_name,
-                    operation,
+                    operation.delete_vectors,
                     shard_selection,
                     wait,
                     ordering,
