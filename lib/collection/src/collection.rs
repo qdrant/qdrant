@@ -1548,9 +1548,21 @@ impl Collection {
                 create_dir_all(&shard_snapshot_path).await?;
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
-                replica_set
+                let snapshot_creation = replica_set
                     .create_snapshot(temp_dir, &shard_snapshot_path, save_wal)
-                    .await?;
+                    .await;
+                // cleanup temporary snapshot data if creation failed
+                match snapshot_creation {
+                    Ok(_) => continue,
+                    Err(err) => {
+                        log::debug!(
+                            "Failed to create snapshot - deleting temporary data for {:?}",
+                            snapshot_path_with_tmp_extension
+                        );
+                        remove_dir_all(&snapshot_path_with_tmp_extension).await?;
+                        return Err(err);
+                    }
+                }
             }
         }
 
@@ -1573,10 +1585,21 @@ impl Collection {
             Ok::<_, CollectionError>(())
         });
 
-        archiving.await??;
-
-        // remove temporary snapshot directory
+        // always remove temporary snapshot directory
         remove_dir_all(&snapshot_path_with_tmp_extension).await?;
+
+        // cleanup temporary archive data if archiving failed
+        match archiving.await? {
+            Ok(_) => {}
+            Err(err) => {
+                log::debug!(
+                    "Failed to archive snapshot - deleting temporary archive data {:?}",
+                    snapshot_path_with_arc_extension
+                );
+                remove_dir_all(&snapshot_path_with_arc_extension).await?;
+                return Err(err);
+            }
+        }
 
         // move snapshot to permanent location
         // We can't move right away, because snapshot folder can be on another mounting point.
