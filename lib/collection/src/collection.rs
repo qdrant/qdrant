@@ -1583,18 +1583,20 @@ impl Collection {
             builder.append_dir_all(".", &snapshot_path_with_tmp_extension_clone)?;
             builder.finish()?;
             Ok::<_, CollectionError>(())
-        });
+        })
+        .await?;
 
         // always remove temporary snapshot directory
         remove_dir_all(&snapshot_path_with_tmp_extension).await?;
 
         // cleanup temporary archive data if archiving failed
-        match archiving.await? {
+        match archiving {
             Ok(_) => {}
             Err(err) => {
                 log::debug!(
-                    "Failed to archive snapshot - deleting temporary archive data {:?}",
-                    snapshot_path_with_arc_extension
+                    "Failed to archive snapshot - deleting temporary archive data {:?} {}",
+                    snapshot_path_with_arc_extension,
+                    err
                 );
                 remove_dir_all(&snapshot_path_with_arc_extension).await?;
                 return Err(err);
