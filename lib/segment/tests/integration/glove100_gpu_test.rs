@@ -1,26 +1,20 @@
-use std::collections::BTreeSet;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::Read;
 use std::sync::atomic::AtomicBool;
 
-use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::data_types::vectors::only_default_vector;
+use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::VectorIndex;
 use segment::index::hnsw_index::gpu::set_gpu_indexing;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
-use segment::types::HnswConfig;
-use segment::types::Indexes;
-use segment::types::SegmentConfig;
-use segment::types::SeqNumberType;
-use segment::types::VectorDataConfig;
-use segment::types::VectorStorageType;
+use segment::types::{
+    HnswConfig, Indexes, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
+};
 use segment::vector_storage::ScoredPointOffset;
-use serde::Serialize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 struct Data {
@@ -50,8 +44,14 @@ fn test_filterable_hnsw() {
     println!("load data: {:?}", timer.elapsed());
 
     let stopped = AtomicBool::new(false);
-    let dir = tempfile::Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hnsw_dir = tempfile::Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+    let hnsw_dir = tempfile::Builder::new()
+        .prefix("hnsw_dir")
+        .tempdir()
+        .unwrap();
 
     let config = SegmentConfig {
         vector_data: HashMap::from([(
