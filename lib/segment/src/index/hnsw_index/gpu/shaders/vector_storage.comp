@@ -39,7 +39,11 @@ VECTOR_STORAGE_DEFINE(3)
         ); \
     }
 
+uint similarity_counter = 0;
+
 float similarity(uint a, uint b) {
+    similarity_counter += 1;
+
     mat4 result = mat4(0.0);
     uint d = DIM / 4;
     uint aId = (a / STORAGES_COUNT) * d;

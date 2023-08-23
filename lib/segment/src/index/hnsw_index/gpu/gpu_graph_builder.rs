@@ -198,7 +198,7 @@ impl GpuGraphBuilder {
             .gpu_search_context
             .get_visited_count(&mut self.gpu_context);
         println!(
-            "Visited {}, point id = {}, time = {:?}",
+            "Visited {:?}, point id = {:?}, time = {:?}",
             visited,
             link_points.get(0).cloned().unwrap_or_default(),
             self.timer.map(|t| t.elapsed()).unwrap_or_default()

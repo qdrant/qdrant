@@ -153,7 +153,7 @@ impl GpuSearchContext {
         gpu_context.wait_finish();
     }
 
-    pub fn get_visited_count(&self, gpu_context: &mut gpu::Context) -> usize {
+    pub fn get_visited_count(&self, gpu_context: &mut gpu::Context) -> (usize, usize, usize) {
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::GpuToCpu,
@@ -172,7 +172,11 @@ impl GpuSearchContext {
 
         let mut downloaded = vec![(0u32, 0.0f32); self.nearest_buffer.size / 8];
         staging_buffer.download_slice(&mut downloaded, 0);
-        downloaded[0].0 as usize
+        (
+            downloaded[0].0 as usize,
+            downloaded[1].0 as usize,
+            downloaded[2].0 as usize,
+        )
     }
 }
 

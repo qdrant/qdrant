@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_equal() {
-        let num_vectors = 1000;
+        let num_vectors = 10_000;
         let dim = 16;
         let m = 8;
         let m0 = 16;
