@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
-use rand::thread_rng;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -39,7 +40,7 @@ fn hnsw_quantized_search_test(
     let ef = 64;
     let ef_construct = 64;
 
-    let mut rnd = thread_rng();
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -124,7 +125,7 @@ fn hnsw_quantized_search_test(
 
     // check oversampling
     for _i in 0..attempts {
-        let ef_oversamling = ef / 4;
+        let ef_oversamling = ef / 8;
         let oversampling_query = random_vector(&mut rnd, dim);
 
         let oversampling_1_result = hnsw_index.search(
@@ -133,11 +134,16 @@ fn hnsw_quantized_search_test(
             top,
             Some(&SearchParams {
                 hnsw_ef: Some(ef_oversamling),
+                quantization: Some(QuantizationSearchParams {
+                    rescore: true,
+                    ..Default::default()
+                }),
                 ..Default::default()
             }),
             &false.into(),
         );
         let best_1 = oversampling_1_result[0][0];
+        let worst_1 = oversampling_1_result[0][top - 1];
 
         let oversampling_2_result = hnsw_index.search(
             &[&oversampling_query],
@@ -146,7 +152,7 @@ fn hnsw_quantized_search_test(
             Some(&SearchParams {
                 hnsw_ef: Some(ef_oversamling),
                 quantization: Some(QuantizationSearchParams {
-                    oversampling: Some(2.0),
+                    oversampling: Some(4.0),
                     rescore: true,
                     ..Default::default()
                 }),
@@ -155,8 +161,15 @@ fn hnsw_quantized_search_test(
             &false.into(),
         );
         let best_2 = oversampling_2_result[0][0];
+        let worst_2 = oversampling_2_result[0][top - 1];
 
-        assert!(best_2.idx == best_1.idx || best_2 >= best_1);
+        if best_2.score < best_1.score {
+            println!("oversampling_1_result = {:?}", oversampling_1_result);
+            println!("oversampling_2_result = {:?}", oversampling_2_result);
+        }
+
+        assert!(best_2.score >= best_1.score);
+        assert!(worst_2.score >= worst_1.score);
     }
 }
 
