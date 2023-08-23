@@ -28,49 +28,49 @@ pub struct CreateFieldIndex {
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpsertOperation {
     #[validate]
-    upsert: PointInsertOperations
+    upsert: PointInsertOperations,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeleteOperation {
     #[validate]
-    delete: PointsSelector
+    delete: PointsSelector,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SetPayloadOperation {
     #[validate]
-    set_payload: SetPayload
+    set_payload: SetPayload,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct OverwritePayloadOperation {
     #[validate]
-    overwrite_payload: SetPayload
+    overwrite_payload: SetPayload,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeletePayloadOperation {
     #[validate]
-    delete_payload: DeletePayload
+    delete_payload: DeletePayload,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct ClearPayloadOperation {
     #[validate]
-    clear_payload: PointsSelector
+    clear_payload: PointsSelector,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpdateVectorsOperation {
     #[validate]
-    update_vectors: UpdateVectors
+    update_vectors: UpdateVectors,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeleteVectorsOperation {
     #[validate]
-    delete_vectors: DeleteVectors
+    delete_vectors: DeleteVectors,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
