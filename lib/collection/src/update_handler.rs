@@ -11,6 +11,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
+use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
@@ -373,7 +374,7 @@ impl UpdateHandler {
                 // Channel closed or stop signal
                 Ok(None | Some(OptimizerSignal::Stop)) => break,
                 // Clean up interval
-                Err(_) => continue,
+                Err(Elapsed { .. }) => continue,
                 // Optimizer signal
                 Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
                     // If not forcing with Nop, wait on next signal if we have too many handles
