@@ -795,19 +795,13 @@ impl Collection {
             join_all(shard_requests).await
         };
 
-        let with_error = results
-            .iter()
-            .filter(|result| matches!(result, Err(_)))
-            .count();
+        let with_error = results.iter().filter(|result| result.is_err()).count();
 
         // one request per shard
         let result_len = results.len();
 
         if with_error > 0 {
-            let first_err = results
-                .into_iter()
-                .find(|result| matches!(result, Err(_)))
-                .unwrap();
+            let first_err = results.into_iter().find(|result| result.is_err()).unwrap();
             // inconsistent if only a subset of the requests fail - one request per shard.
             if with_error < result_len {
                 first_err.map_err(|err| {

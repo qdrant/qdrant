@@ -961,6 +961,7 @@ impl Anonymize for VectorsConfig {
 }
 
 impl Validate for VectorsConfig {
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             VectorsConfig::Single(single) => single.validate(),
@@ -1035,6 +1036,7 @@ impl VectorsConfigDiff {
 }
 
 impl Validate for VectorsConfigDiff {
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         let errors = self
             .0
