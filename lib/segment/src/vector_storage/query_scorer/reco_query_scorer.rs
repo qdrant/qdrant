@@ -68,7 +68,11 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0);
 
-        max_positive - max_negative
+        if max_positive > max_negative {
+            max_positive
+        } else {
+            -(max_negative * max_negative)
+        }
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
