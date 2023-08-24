@@ -429,7 +429,7 @@ impl<'s> SegmentHolder {
 
         appendable_segments
             .into_iter()
-            .chain(non_appendable_segments.into_iter())
+            .chain(non_appendable_segments)
     }
 
     /// Flushes all segments and returns maximum version to persist

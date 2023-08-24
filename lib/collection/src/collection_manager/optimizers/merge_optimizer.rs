@@ -175,7 +175,7 @@ mod tests {
         let mut holder = SegmentHolder::default();
         let dim = 256;
 
-        let _segments_to_merge = vec![
+        let _segments_to_merge = [
             holder.add(random_segment(dir.path(), 100, 40, dim)),
             holder.add(random_segment(dir.path(), 100, 50, dim)),
             holder.add(random_segment(dir.path(), 100, 60, dim)),
@@ -209,14 +209,14 @@ mod tests {
         let mut holder = SegmentHolder::default();
         let dim = 256;
 
-        let segments_to_merge = vec![
+        let segments_to_merge = [
             holder.add(random_segment(dir.path(), 100, 3, dim)),
             holder.add(random_segment(dir.path(), 100, 3, dim)),
             holder.add(random_segment(dir.path(), 100, 3, dim)),
             holder.add(random_segment(dir.path(), 100, 10, dim)),
         ];
 
-        let other_segment_ids: Vec<SegmentId> = vec![
+        let other_segment_ids = [
             holder.add(random_segment(dir.path(), 100, 20, dim)),
             holder.add(random_segment(dir.path(), 100, 20, dim)),
             holder.add(random_segment(dir.path(), 100, 20, dim)),
