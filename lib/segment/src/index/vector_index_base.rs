@@ -9,8 +9,10 @@ use crate::entry::entry_point::OperationResult;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::ScoredPointOffset;
+use enum_dispatch::enum_dispatch;
 
 /// Trait for vector searching
+#[enum_dispatch]
 pub trait VectorIndex {
     /// Return list of Ids with fitting
     fn search(
@@ -33,6 +35,7 @@ pub trait VectorIndex {
     fn indexed_vector_count(&self) -> usize;
 }
 
+#[enum_dispatch(VectorIndex)]
 pub enum VectorIndexEnum {
     Plain(PlainIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),
@@ -45,59 +48,6 @@ impl VectorIndexEnum {
             Self::Plain(_) => false,
             Self::HnswRam(_) => true,
             Self::HnswMmap(_) => true,
-        }
-    }
-}
-
-impl VectorIndex for VectorIndexEnum {
-    fn search(
-        &self,
-        vectors: &[&QueryVector],
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-    ) -> Vec<Vec<ScoredPointOffset>> {
-        match self {
-            VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params, is_stopped),
-            VectorIndexEnum::HnswRam(index) => {
-                index.search(vectors, filter, top, params, is_stopped)
-            }
-            VectorIndexEnum::HnswMmap(index) => {
-                index.search(vectors, filter, top, params, is_stopped)
-            }
-        }
-    }
-
-    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
-        match self {
-            VectorIndexEnum::Plain(index) => index.build_index(stopped),
-            VectorIndexEnum::HnswRam(index) => index.build_index(stopped),
-            VectorIndexEnum::HnswMmap(index) => index.build_index(stopped),
-        }
-    }
-
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
-        match self {
-            VectorIndexEnum::Plain(index) => index.get_telemetry_data(),
-            VectorIndexEnum::HnswRam(index) => index.get_telemetry_data(),
-            VectorIndexEnum::HnswMmap(index) => index.get_telemetry_data(),
-        }
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        match self {
-            VectorIndexEnum::Plain(index) => index.files(),
-            VectorIndexEnum::HnswRam(index) => index.files(),
-            VectorIndexEnum::HnswMmap(index) => index.files(),
-        }
-    }
-
-    fn indexed_vector_count(&self) -> usize {
-        match self {
-            Self::Plain(index) => index.indexed_vector_count(),
-            Self::HnswRam(index) => index.indexed_vector_count(),
-            Self::HnswMmap(index) => index.indexed_vector_count(),
         }
     }
 }
