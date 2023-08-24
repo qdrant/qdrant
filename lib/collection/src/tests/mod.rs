@@ -63,9 +63,9 @@ async fn test_optimization_process() {
     {
         let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), 2);
-        assert_eq!(log[0].name, "indexing optimizer");
+        assert_eq!(log[0].name, "indexing");
         assert_eq!(log[0].status, TrackerStatus::Done);
-        assert_eq!(log[1].name, "merge optimizer");
+        assert_eq!(log[1].name, "merge");
         assert_eq!(log[1].status, TrackerStatus::Done);
     }
 
@@ -139,7 +139,7 @@ async fn test_cancel_optimization() {
         let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), 3);
         for status in log {
-            assert_eq!(status.name, "indexing optimizer");
+            assert_eq!(status.name, "indexing");
             assert!(matches!(status.status, TrackerStatus::Cancelled(_)));
         }
     }

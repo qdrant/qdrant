@@ -192,7 +192,7 @@ impl ConfigMismatchOptimizer {
 
 impl SegmentOptimizer for ConfigMismatchOptimizer {
     fn name(&self) -> &str {
-        "config mismatch optimizer"
+        "config mismatch"
     }
 
     fn collection_path(&self) -> &Path {

@@ -166,7 +166,7 @@ impl VacuumOptimizer {
 
 impl SegmentOptimizer for VacuumOptimizer {
     fn name(&self) -> &str {
-        "vacuum optimizer"
+        "vacuum"
     }
 
     fn collection_path(&self) -> &Path {

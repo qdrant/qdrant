@@ -192,7 +192,7 @@ impl IndexingOptimizer {
 
 impl SegmentOptimizer for IndexingOptimizer {
     fn name(&self) -> &str {
-        "indexing optimizer"
+        "indexing"
     }
 
     fn collection_path(&self) -> &Path {
