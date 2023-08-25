@@ -3672,6 +3672,7 @@ dependencies = [
  "tikv-jemallocator",
  "tokio",
  "tonic",
+ "tonic-reflection",
  "tower",
  "tower-layer",
  "tracing",
@@ -5141,6 +5142,19 @@ dependencies = [
  "prost-build",
  "quote",
  "syn 1.0.107",
+]
+
+[[package]]
+name = "tonic-reflection"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0543d7092032041fbeac1f2c84304537553421a11a623c2301b12ef0264862c7"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tokio",
+ "tokio-stream",
+ "tonic",
 ]
 
 [[package]]
