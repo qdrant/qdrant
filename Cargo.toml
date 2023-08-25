@@ -84,7 +84,7 @@ actix-web-validator = "5.0.1"
 
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
-slog = "2.7.0"
+slog = { version="2.7.0", features = ["max_level_trace", "release_max_level_debug"] }
 slog-stdlog = "4.1.1"
 prost = "0.11.9"
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
