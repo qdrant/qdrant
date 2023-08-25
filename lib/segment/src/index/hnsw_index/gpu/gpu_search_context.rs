@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use itertools::Itertools;
+
 #[repr(C)]
 pub struct GpuSearchContextParamsBuffer {
     nearest_capacity: u32,
@@ -18,6 +20,9 @@ pub struct GpuSearchContext {
     pub descriptor_set: Arc<gpu::DescriptorSet>,
     pub params: GpuSearchContextParamsBuffer,
     pub params_staging_buffer: Arc<gpu::Buffer>,
+    pub calls_count: usize,
+    pub search_effeciency: f32,
+    pub link_effeciency: f32,
 }
 
 impl GpuSearchContext {
@@ -127,6 +132,9 @@ impl GpuSearchContext {
             descriptor_set,
             params,
             params_staging_buffer,
+            calls_count: 0,
+            search_effeciency: 0.0,
+            link_effeciency: 0.0,
         }
     }
 
@@ -153,7 +161,7 @@ impl GpuSearchContext {
         gpu_context.wait_finish();
     }
 
-    pub fn get_visited_count(&self, gpu_context: &mut gpu::Context) -> (usize, usize, usize) {
+    pub fn get_visited_count(&mut self, gpu_context: &mut gpu::Context) -> (usize, usize, usize) {
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::GpuToCpu,
@@ -172,10 +180,40 @@ impl GpuSearchContext {
 
         let mut downloaded = vec![(0u32, 0.0f32); self.nearest_buffer.size / 8];
         staging_buffer.download_slice(&mut downloaded, 0);
+        let downloaded = downloaded.iter().map(|(count, _)| *count).collect_vec();
+
+        self.calls_count += 1;
+
+        let search_scores = downloaded[1..]
+            .iter()
+            .step_by(self.params.nearest_capacity as usize)
+            .cloned()
+            .collect::<Vec<_>>();
+        let search_max = search_scores.iter().max().cloned().unwrap();
+        let mut usage = 0.0f32;
+        for count in search_scores.iter().cloned() {
+            usage += count as f32 / search_max as f32;
+        }
+        self.search_effeciency += usage / search_scores.len() as f32;
+
+        let link_scores = downloaded[2..]
+            .iter()
+            .step_by(self.params.nearest_capacity as usize)
+            .cloned()
+            .collect::<Vec<_>>();
+        let link_max = link_scores.iter().max().cloned().unwrap();
+        let mut usage = 0.0f32;
+        for count in link_scores.iter().cloned() {
+            usage += count as f32 / link_max as f32;
+        }
+        self.link_effeciency += usage / link_scores.len() as f32;
+
+        println!("Max searches {}, max links {}", search_max, link_max);
+
         (
-            downloaded[0].0 as usize,
-            downloaded[1].0 as usize,
-            downloaded[2].0 as usize,
+            downloaded[0] as usize,
+            downloaded[1] as usize,
+            downloaded[2] as usize,
         )
     }
 }

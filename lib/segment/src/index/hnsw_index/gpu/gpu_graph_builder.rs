@@ -187,6 +187,15 @@ impl GpuGraphBuilder {
         self.gpu_links.download(&mut self.gpu_context);
 
         println!(
+            "Search GPU usage: {}, Link GPU usage {}",
+            self.gpu_search_context.search_effeciency / self.gpu_search_context.calls_count as f32,
+            self.gpu_search_context.link_effeciency / self.gpu_search_context.calls_count as f32,
+        );
+        self.gpu_search_context.calls_count = 0;
+        self.gpu_search_context.search_effeciency = 0.0;
+        self.gpu_search_context.link_effeciency = 0.0;
+
+        println!(
             "GPU level {}, links {}, updates {}, start_idx {}",
             level, link_count, update_entry_count, start_idx,
         );
