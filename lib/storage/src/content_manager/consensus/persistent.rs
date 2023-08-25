@@ -197,7 +197,7 @@ impl Persistent {
         Ok(state)
     }
 
-    pub fn load(path: PathBuf) -> Result<Self, StorageError> {
+    fn load(path: PathBuf) -> Result<Self, StorageError> {
         let file = File::open(&path)?;
         let mut state: Self = serde_cbor::from_reader(&file)?;
         state.path = path;
