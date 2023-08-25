@@ -190,11 +190,11 @@ impl GpuSearchContext {
             .cloned()
             .collect::<Vec<_>>();
         let search_max = search_scores.iter().max().cloned().unwrap();
-        let mut usage = 0.0f32;
+        let mut search_usage = 0.0f32;
         for count in search_scores.iter().cloned() {
-            usage += count as f32 / search_max as f32;
+            search_usage += count as f32 / search_max as f32;
         }
-        self.search_effeciency += usage / search_scores.len() as f32;
+        self.search_effeciency += search_usage / search_scores.len() as f32;
 
         let link_scores = downloaded[2..]
             .iter()
@@ -202,13 +202,19 @@ impl GpuSearchContext {
             .cloned()
             .collect::<Vec<_>>();
         let link_max = link_scores.iter().max().cloned().unwrap();
-        let mut usage = 0.0f32;
+        let mut links_usage = 0.0f32;
         for count in link_scores.iter().cloned() {
-            usage += count as f32 / link_max as f32;
+            links_usage += count as f32 / link_max as f32;
         }
-        self.link_effeciency += usage / link_scores.len() as f32;
+        self.link_effeciency += links_usage / link_scores.len() as f32;
 
-        println!("Max searches {}, max links {}", search_max, link_max);
+        println!(
+            "Searches {}, max {}, Links {}, max {}",
+            search_max,
+            search_usage / search_scores.len() as f32,
+            link_max,
+            links_usage / link_scores.len() as f32,
+        );
 
         (
             downloaded[0] as usize,
