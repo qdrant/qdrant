@@ -28,6 +28,7 @@ use wal::{Wal, WalOptions};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::optimizers::TrackerLog;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
@@ -58,6 +59,7 @@ pub struct LocalShard {
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
+    pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     update_runtime: Handle,
 }
 
@@ -110,10 +112,12 @@ impl LocalShard {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
+        let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             optimizers.clone(),
+            optimizers_log.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
@@ -137,6 +141,7 @@ impl LocalShard {
             path: shard_path.to_owned(),
             update_runtime,
             optimizers,
+            optimizers_log,
         }
     }
 
@@ -694,6 +699,7 @@ impl LocalShard {
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
                 optimizations,
+                log: self.optimizers_log.lock().to_telemetry(),
             },
         }
     }

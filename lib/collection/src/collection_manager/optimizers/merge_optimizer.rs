@@ -59,6 +59,10 @@ impl MergeOptimizer {
 }
 
 impl SegmentOptimizer for MergeOptimizer {
+    fn name(&self) -> &str {
+        "merge"
+    }
+
     fn collection_path(&self) -> &Path {
         self.segments_path.as_path()
     }

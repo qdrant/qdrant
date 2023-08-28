@@ -7532,6 +7532,7 @@
       "OptimizerTelemetry": {
         "type": "object",
         "required": [
+          "log",
           "optimizations",
           "status"
         ],
@@ -7541,8 +7542,89 @@
           },
           "optimizations": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrackerTelemetry"
+            }
           }
         }
+      },
+      "TrackerTelemetry": {
+        "description": "Tracker object used in telemetry",
+        "type": "object",
+        "required": [
+          "name",
+          "segment_ids",
+          "start_at",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name of the optimizer",
+            "type": "string"
+          },
+          "segment_ids": {
+            "description": "Segment IDs being optimized",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrackerStatus"
+          },
+          "start_at": {
+            "description": "Start time of the optimizer",
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_at": {
+            "description": "End time of the optimizer",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TrackerStatus": {
+        "description": "Represents the current state of the optimizer being tracked",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "optimizing",
+              "done"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "cancelled"
+            ],
+            "properties": {
+              "cancelled": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "RemoteShardTelemetry": {
         "type": "object",
