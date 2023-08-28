@@ -824,11 +824,17 @@ impl SegmentEntry for Segment {
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
 
-                    // Propagate point deletion to all its vectors
-                    for vector_data in segment.vector_data.values() {
-                        let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                        vector_storage.delete_vector(internal_id)?;
-                    }
+                    // Before, we propagated point deletions to also delete its vectors. This turns
+                    // out to be problematic because this sometimes makes us loose vector data
+                    // because we cannot control the order of segment flushes.
+                    // Disabled until we properly fix it or find a better way to clean up old
+                    // vectors.
+                    //
+                    // // Propagate point deletion to all its vectors
+                    // for vector_data in segment.vector_data.values() {
+                    //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    //     vector_storage.delete_vector(internal_id)?;
+                    // }
 
                     Ok((true, Some(internal_id)))
                 })
