@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
+use parking_lot::Mutex;
 use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
@@ -15,6 +16,7 @@ use tokio::time::Duration;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -66,6 +68,8 @@ pub struct UpdateHandler {
     shared_storage_config: Arc<SharedStorageConfig>,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
+    /// Log of optimizer statuses
+    optimizers_log: Arc<Mutex<TrackerLog>>,
     /// How frequent can we flush data
     pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
@@ -85,9 +89,11 @@ pub struct UpdateHandler {
 }
 
 impl UpdateHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         shared_storage_config: Arc<SharedStorageConfig>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: LockedWal,
@@ -100,6 +106,7 @@ impl UpdateHandler {
             segments,
             update_worker: None,
             optimizer_worker: None,
+            optimizers_log,
             flush_worker: None,
             flush_stop: None,
             runtime_handle,
@@ -119,6 +126,7 @@ impl UpdateHandler {
             self.segments.clone(),
             self.wal.clone(),
             self.optimization_handles.clone(),
+            self.optimizers_log.clone(),
             self.max_optimization_threads,
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
@@ -197,6 +205,7 @@ impl UpdateHandler {
     /// Returns handles for started tasks
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         segments: LockedSegmentHolder,
         callback: F,
     ) -> Vec<StoppableTaskHandle<bool>>
@@ -215,22 +224,31 @@ impl UpdateHandler {
                     break;
                 } else {
                     let optim = optimizer.clone();
+                    let optimizers_log = optimizers_log.clone();
                     let segs = segments.clone();
                     let nsi = nonoptimal_segment_ids.clone();
                     for sid in &nsi {
                         scheduled_segment_ids.insert(*sid);
                     }
-                    let callback_cloned = callback.clone();
+                    let callback = callback.clone();
 
                     handles.push(spawn_stoppable(move |stopped| {
+                        // Track optimizer status
+                        let tracker = Tracker::start(optim.as_ref().name(), nsi.clone());
+                        let tracker_handle = tracker.handle();
+                        optimizers_log.lock().register(tracker);
+
+                        // Optimize and handle result
                         match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
                             Ok(result) => {
-                                callback_cloned(result); // Perform some actions when optimization if finished
+                                tracker_handle.update(TrackerStatus::Done);
+                                callback(result); // Perform some actions when optimization if finished
                                 result
                             }
                             Err(error) => match error {
                                 CollectionError::Cancelled { description } => {
                                     log::debug!("Optimization cancelled - {}", description);
+                                    tracker_handle.update(TrackerStatus::Cancelled(description));
                                     false
                                 }
                                 _ => {
@@ -243,6 +261,9 @@ impl UpdateHandler {
                                     // so the best available action here is to stop whole
                                     // optimization thread and log the error
                                     log::error!("Optimization error: {}", error);
+
+                                    tracker_handle.update(TrackerStatus::Error(error.to_string()));
+
                                     panic!("Optimization error: {error}");
                                 }
                             },
@@ -258,10 +279,12 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         sender: Sender<OptimizerSignal>,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
+            optimizers_log,
             segments.clone(),
             move |_optimization_result| {
                 // After optimization is finished, we still need to check if there are
@@ -276,6 +299,7 @@ impl UpdateHandler {
         handles.retain(|h| !h.is_finished())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         sender: Sender<OptimizerSignal>,
@@ -283,6 +307,7 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         max_handles: usize,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -307,6 +332,7 @@ impl UpdateHandler {
                         optimizers.clone(),
                         segments.clone(),
                         optimization_handles.clone(),
+                        optimizers_log.clone(),
                         sender.clone(),
                     )
                     .await;
