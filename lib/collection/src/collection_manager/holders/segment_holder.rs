@@ -434,17 +434,51 @@ impl<'s> SegmentHolder {
 
     /// Flushes all segments and returns maximum version to persist
     ///
+    /// Before flushing, this read-locks all segments. It prevents writes to all not-yet-flushed
+    /// segments during flushing. All locked segments are flushed and released one-by-one.
+    ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool) -> OperationResult<SeqNumberType> {
+        // Grab all locked segments to flush, in correct order
+        let segments = self
+            .segment_flush_ordering()
+            .map(|segment_id| self.segments.get(&segment_id).unwrap().get())
+            .collect::<Vec<_>>();
+
+        // Read-lock all segments at once before flushing, must prevent any writes to any segment
+        // That is to prevent any copy-on-write operation on two segments from occurring in between
+        // flushing the two segments. If that would happen, segments could end up in an
+        // inconsistent state on disk that is not recoverable after a crash.
+        //
+        // E.g.: we have a point on an immutable segment. If we use a set-payload operation, we do
+        // copy-on-write. The point from immutable segment A is deleted, the updated point is
+        // stored on appendable segment B.
+        // Because of flush ordering segment B (appendable) is flushed before segment A
+        // (not-appendable). If the copy-on-write operation happens in between, the point is
+        // deleted from A but the new point in B is not persisted. We cannot recover this by
+        // replaying the WAL in case of a crash because the point in A does not exist anymore,
+        // making copy-on-write impossible.
+        // Locking all segments prevents copy-on-write operations from occurring in between
+        // flushes.
+        let segment_reads = segments
+            .iter()
+            // Reverse so we lock from last to first
+            // Must lock non-appendable first to prevent deadlock with apply_points_to_appendable
+            .rev()
+            .map(|segment_lock| segment_lock.read())
+            .collect::<Vec<_>>();
+
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
 
-        for segment_id in self.segment_flush_ordering() {
-            let segment = self.segments.get(&segment_id).unwrap();
-            let segment_lock = segment.get();
-            let read_segment = segment_lock.read();
+        // Flush and release each segment
+        for read_segment in segment_reads
+            .into_iter()
+            // Reverse again so we flush and unlock in original order, from first to last
+            .rev()
+        {
             let segment_version = read_segment.version();
             let segment_persisted_version = read_segment.flush(sync)?;
 
@@ -453,8 +487,12 @@ impl<'s> SegmentHolder {
                 min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
             }
 
-            max_persisted_version = max(max_persisted_version, segment_persisted_version)
+            max_persisted_version = max(max_persisted_version, segment_persisted_version);
+
+            // Release read-lock immediately after flush, explicit to make this more clear
+            drop(read_segment);
         }
+
         if has_unsaved {
             Ok(min_unsaved_version)
         } else {
