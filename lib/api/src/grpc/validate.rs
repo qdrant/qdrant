@@ -42,6 +42,7 @@ where
     V: Validate,
 {
     #[inline]
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         let errors = self
             .iter()
@@ -59,6 +60,7 @@ where
     V: Validate,
 {
     #[inline]
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         let errors = self
             .values()
@@ -97,6 +99,7 @@ impl Validate for crate::grpc::qdrant::quantization_config::Quantization {
         match self {
             Quantization::Scalar(scalar) => scalar.validate(),
             Quantization::Product(product) => product.validate(),
+            Quantization::Binary(binary) => binary.validate(),
         }
     }
 }
@@ -107,6 +110,7 @@ impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
         match self {
             Quantization::Scalar(scalar) => scalar.validate(),
             Quantization::Product(product) => product.validate(),
+            Quantization::Binary(binary) => binary.validate(),
             Quantization::Disabled(_) => Ok(()),
         }
     }

@@ -14,6 +14,7 @@ wget -O dist-qdrant.zip $DOWNLOAD_LINK
 
 rm -rf "${STATIC_DIR}/"*
 unzip -o dist-qdrant.zip -d "${STATIC_DIR}"
+rm dist-qdrant.zip
 cp -r "${STATIC_DIR}/dist/"* "${STATIC_DIR}"
 rm -rf "${STATIC_DIR}/dist"
 

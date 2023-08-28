@@ -114,8 +114,6 @@ pub struct TlsConfig {
 
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct Settings {
-    #[serde(default = "default_debug")]
-    pub debug: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
     #[validate]
@@ -182,10 +180,6 @@ const fn default_telemetry_disabled() -> bool {
 
 const fn default_cors() -> bool {
     true
-}
-
-const fn default_debug() -> bool {
-    false
 }
 
 fn default_log_level() -> String {

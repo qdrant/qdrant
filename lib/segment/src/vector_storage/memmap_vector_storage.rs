@@ -334,7 +334,7 @@ mod tests {
 
         assert_ne!(res[0].idx, 2);
 
-        let res = raw_scorer.peek_top_iter(&mut vec![0, 1, 2, 3, 4].iter().cloned(), 2);
+        let res = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);

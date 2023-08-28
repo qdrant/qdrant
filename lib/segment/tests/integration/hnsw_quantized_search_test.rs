@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
-use rand::thread_rng;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -11,8 +12,8 @@ use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig, QuantizationConfig,
-    ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
-    VectorStorageType,
+    QuantizationSearchParams, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
+    VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::{ScoredPointOffset, VectorStorage};
 use tempfile::Builder;
@@ -39,7 +40,7 @@ fn hnsw_quantized_search_test(
     let ef = 64;
     let ef_construct = 64;
 
-    let mut rnd = thread_rng();
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -77,7 +78,7 @@ fn hnsw_quantized_search_test(
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold: usize::MAX,
+        full_scan_threshold: 0,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
@@ -121,6 +122,55 @@ fn hnsw_quantized_search_test(
     let acc = 100.0 * sames as f64 / (attempts * top) as f64;
     println!("sames = {sames}, attempts = {attempts}, top = {top}, acc = {acc}");
     assert!(acc > 40.0);
+
+    // check oversampling
+    for _i in 0..attempts {
+        let ef_oversamling = ef / 8;
+        let oversampling_query = random_vector(&mut rnd, dim);
+
+        let oversampling_1_result = hnsw_index.search(
+            &[&oversampling_query],
+            None,
+            top,
+            Some(&SearchParams {
+                hnsw_ef: Some(ef_oversamling),
+                quantization: Some(QuantizationSearchParams {
+                    rescore: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            &false.into(),
+        );
+        let best_1 = oversampling_1_result[0][0];
+        let worst_1 = oversampling_1_result[0][top - 1];
+
+        let oversampling_2_result = hnsw_index.search(
+            &[&oversampling_query],
+            None,
+            top,
+            Some(&SearchParams {
+                hnsw_ef: Some(ef_oversamling),
+                quantization: Some(QuantizationSearchParams {
+                    oversampling: Some(4.0),
+                    rescore: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            &false.into(),
+        );
+        let best_2 = oversampling_2_result[0][0];
+        let worst_2 = oversampling_2_result[0][top - 1];
+
+        if best_2.score < best_1.score {
+            println!("oversampling_1_result = {:?}", oversampling_1_result);
+            println!("oversampling_2_result = {:?}", oversampling_2_result);
+        }
+
+        assert!(best_2.score >= best_1.score);
+        assert!(worst_2.score >= worst_1.score);
+    }
 }
 
 #[test]

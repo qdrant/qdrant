@@ -8,7 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{CompressionRatio, GroupId};
+use super::qdrant::{BinaryQuantization, CompressionRatio, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -600,6 +600,27 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
     }
 }
 
+impl From<segment::types::BinaryQuantization> for BinaryQuantization {
+    fn from(value: segment::types::BinaryQuantization) -> Self {
+        let config = value.binary;
+        BinaryQuantization {
+            always_ram: config.always_ram,
+        }
+    }
+}
+
+impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
+    type Error = Status;
+
+    fn try_from(value: BinaryQuantization) -> Result<Self, Self::Error> {
+        Ok(segment::types::BinaryQuantization {
+            binary: segment::types::BinaryQuantizationConfig {
+                always_ram: value.always_ram,
+            },
+        })
+    }
+}
+
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
@@ -611,6 +632,11 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
             segment::types::QuantizationConfig::Product(product) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Product(
                     product.into(),
+                )),
+            },
+            segment::types::QuantizationConfig::Binary(binary) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Binary(
+                    binary.into(),
                 )),
             },
         }
@@ -630,6 +656,9 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             ),
             super::qdrant::quantization_config::Quantization::Product(config) => Ok(
                 segment::types::QuantizationConfig::Product(config.try_into()?),
+            ),
+            super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
+                segment::types::QuantizationConfig::Binary(config.try_into()?),
             ),
         }
     }

@@ -18,6 +18,7 @@ use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{
     HealthCheckReply, HealthCheckRequest, HttpPortRequest, HttpPortResponse,
 };
+use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -107,6 +108,17 @@ pub fn init(
         let points_service = PointsService::new(dispatcher.toc().clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
 
+        // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET
+        // will be advertised, so explicitly list the services to be included.
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(QDRANT_DESCRIPTOR_SET)
+            .with_service_name("qdrant.Collections")
+            .with_service_name("qdrant.Points")
+            .with_service_name("qdrant.Snapshots")
+            .with_service_name("qdrant.Qdrant")
+            .build()
+            .unwrap();
+
         log::info!("Qdrant gRPC listening on {}", grpc_port);
 
         let mut server = Server::builder();
@@ -139,6 +151,7 @@ pub fn init(
 
         server
             .layer(middleware_layer)
+            .add_service(reflection_service)
             .add_service(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)

@@ -15,6 +15,7 @@ fn paint(text: &str, true_color: bool) -> ColoredString {
 
 /// Prints welcome message
 #[rustfmt::skip]
+#[allow(clippy::needless_raw_string_hashes)]
 pub fn welcome(settings: &Settings) {
     if !atty::is(Stream::Stdout) {
         colored::control::set_override(false);
