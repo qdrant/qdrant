@@ -163,6 +163,7 @@ async fn upload_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
+        false,
     )
     .await;
     match response {
@@ -188,6 +189,7 @@ async fn recover_from_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
+        true,
     )
     .await;
     match response {

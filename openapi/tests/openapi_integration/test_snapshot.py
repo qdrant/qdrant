@@ -262,3 +262,15 @@ def test_snapshot_invalid_file_uri():
     )
     assert response.status_code == 400
     assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
+
+    # Path must be inside snapshots directory
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file:///etc/shadow",
+        }
+    )
+    assert response.status_code == 403
+    assert response.json()["status"]["error"] == "Forbidden: Snapshot file \"/etc/shadow\" must be inside snapshots dir"

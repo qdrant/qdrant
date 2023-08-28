@@ -18,6 +18,7 @@ pub fn storage_into_actix_error(err: StorageError) -> Error {
         StorageError::NotFound { .. } => error::ErrorNotFound(format!("{err}")),
         StorageError::ServiceError { .. } => error::ErrorInternalServerError(format!("{err}")),
         StorageError::BadRequest { .. } => error::ErrorBadRequest(format!("{err}")),
+        StorageError::Forbidden { .. } => error::ErrorForbidden(format!("{err}")),
         StorageError::Locked { .. } => error::ErrorForbidden(format!("{err}")),
         StorageError::Timeout { .. } => error::ErrorRequestTimeout(format!("{err}")),
     }
@@ -58,6 +59,7 @@ where
                     HttpResponse::InternalServerError()
                 }
                 StorageError::BadRequest { .. } => HttpResponse::BadRequest(),
+                StorageError::Forbidden { .. } => HttpResponse::Forbidden(),
                 StorageError::Locked { .. } => HttpResponse::Forbidden(),
                 StorageError::Timeout { .. } => HttpResponse::RequestTimeout(),
             };
