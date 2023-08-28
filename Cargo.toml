@@ -36,7 +36,7 @@ stacktrace = ["rstack-self"]
 serde_urlencoded = "0.7"
 sealed_test = "1.0.0"
 
-tempfile = "3.7.1"
+tempfile = "3.8.0"
 rusty-hook = "^0.11.2"
 
 
@@ -54,10 +54,10 @@ serde_json = "~1.0"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.11"
-anyhow = "1.0.74"
+anyhow = "1.0.75"
 futures = "0.3.28"
 futures-util = "0.3.27"
-clap = { version = "4.3.22", features = ["derive"] }
+clap = { version = "4.3.23", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
 uuid = { version = "1.4", features = ["v4", "serde"] }
 sys-info = "0.9.1"
@@ -71,6 +71,7 @@ actix-web = { version = "4.3.1", optional = true, features = ["rustls", "actix-t
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
 tonic = { version = "0.9.2", features = ["gzip", "tls"] }
+tonic-reflection = "0.9.2"
 tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.16"
@@ -84,7 +85,7 @@ actix-web-validator = "5.0.1"
 
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
-slog = "2.7.0"
+slog = { version="2.7.0", features = ["max_level_trace", "release_max_level_debug"] }
 slog-stdlog = "4.1.1"
 prost = "0.11.9"
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }

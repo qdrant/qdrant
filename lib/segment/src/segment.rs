@@ -1899,10 +1899,7 @@ mod tests {
         assert_eq!(search_result[0].id, 6.into());
         assert_eq!(search_result[1].id, 4.into());
 
-        assert!(matches!(
-            segment.vector(DEFAULT_VECTOR_NAME, 6.into()),
-            Ok(_)
-        ));
+        assert!(segment.vector(DEFAULT_VECTOR_NAME, 6.into()).is_ok());
 
         let internal_id = segment.lookup_internal_id(6.into()).unwrap();
 

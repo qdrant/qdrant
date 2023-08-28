@@ -44,6 +44,9 @@ pub struct OptimizerThresholds {
 /// The selection of the candidates for optimization and the configuration
 /// of resulting segment are up to concrete implementations.
 pub trait SegmentOptimizer {
+    /// Get name describing this optimizer
+    fn name(&self) -> &str;
+
     /// Get path of the whole collection
     fn collection_path(&self) -> &Path;
 

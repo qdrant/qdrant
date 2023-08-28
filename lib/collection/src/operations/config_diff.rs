@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use merge::Merge;
 use schemars::JsonSchema;
-use segment::types::{HnswConfig, ProductQuantization, ScalarQuantization};
+use segment::types::{BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -297,6 +297,7 @@ pub enum Disabled {
 pub enum QuantizationConfigDiff {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
+    Binary(BinaryQuantization),
     Disabled(Disabled),
 }
 
@@ -311,6 +312,7 @@ impl Validate for QuantizationConfigDiff {
         match self {
             QuantizationConfigDiff::Scalar(scalar) => scalar.validate(),
             QuantizationConfigDiff::Product(product) => product.validate(),
+            QuantizationConfigDiff::Binary(binary) => binary.validate(),
             QuantizationConfigDiff::Disabled(_) => Ok(()),
         }
     }

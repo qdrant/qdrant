@@ -31,7 +31,7 @@ COPY --from=xx / /
 # so, please, don't reorder them without prior consideration. 🥲
 
 RUN apt-get update \
-    && apt-get install -y clang lld cmake protobuf-compiler jq libunwind-dev \
+    && apt-get install -y clang lld cmake protobuf-compiler jq \
     && rustup component add rustfmt
 
 # `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
@@ -62,7 +62,7 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-RUN xx-apt-get install -y gcc g++ libc6-dev
+RUN xx-apt-get install -y gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
 ARG PROFILE=release
@@ -77,12 +77,22 @@ ARG RUSTFLAGS
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
-RUN PATH="$PATH:/opt/mold/bin" \
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+#
+# https://github.com/tonistiigi/xx/issues/107
+# https://github.com/tonistiigi/xx/pull/108
+RUN PKG_CONFIG="$(xx-info)-pkg-config" \
+    PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
 
 COPY . .
-RUN PATH="$PATH:/opt/mold/bin" \
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+#
+# https://github.com/tonistiigi/xx/issues/107
+# https://github.com/tonistiigi/xx/pull/108
+RUN PKG_CONFIG="$(xx-info)-pkg-config" \
+    PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
     xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --bin qdrant \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \

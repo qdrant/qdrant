@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn test_peek_top_rev() {
         let data = vec![10, 20, 40, 5, 100, 33, 84, 65, 20, 43, 44, 42];
-        let res = peek_top_smallest_iterable(data.into_iter(), 3);
+        let res = peek_top_smallest_iterable(data, 3);
         assert_eq!(res, vec![5, 10, 20]);
     }
 }

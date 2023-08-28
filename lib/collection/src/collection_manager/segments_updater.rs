@@ -406,7 +406,7 @@ pub(crate) fn process_point_operation(
             let points: Vec<_> = match operation {
                 PointInsertOperations::PointsBatch(batch) => {
                     let all_vectors = batch.vectors.into_all_vectors(batch.ids.len());
-                    let vectors_iter = batch.ids.into_iter().zip(all_vectors.into_iter());
+                    let vectors_iter = batch.ids.into_iter().zip(all_vectors);
                     match batch.payloads {
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
@@ -416,7 +416,7 @@ pub(crate) fn process_point_operation(
                             })
                             .collect(),
                         Some(payloads) => vectors_iter
-                            .zip(payloads.into_iter())
+                            .zip(payloads)
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
                                 vector: vectors.into(),

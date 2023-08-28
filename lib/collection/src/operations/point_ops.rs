@@ -484,20 +484,20 @@ mod tests {
             vectors: vec![].into(),
             payloads: None,
         });
-        assert!(matches!(batch.validate(), Err(_)));
+        assert!(batch.validate().is_err());
 
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
             vectors: vec![vec![0.1]].into(),
             payloads: None,
         });
-        assert!(matches!(batch.validate(), Ok(())));
+        assert!(batch.validate().is_ok());
 
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
             vectors: vec![vec![0.1]].into(),
             payloads: Some(vec![]),
         });
-        assert!(matches!(batch.validate(), Err(_)));
+        assert!(batch.validate().is_err());
     }
 }
