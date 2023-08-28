@@ -16,6 +16,7 @@ use crate::operations::types::CollectionResult;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPriority {
+    LocalOnly,
     Snapshot,
     #[default]
     Replica,
