@@ -33,6 +33,10 @@ pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
     Arc::new(move |_transfer| {})
 }
 
+fn init_logger() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
+
 async fn _test_snapshot_collection(node_type: NodeType) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
@@ -155,6 +159,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_collection() {
+    init_logger();
     _test_snapshot_collection(NodeType::Normal).await;
     _test_snapshot_collection(NodeType::Listener).await;
 }
