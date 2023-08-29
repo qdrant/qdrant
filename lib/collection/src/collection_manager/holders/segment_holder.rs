@@ -508,7 +508,7 @@ impl<'s> SegmentHolder {
 
     /// Read-lock all given segments
     ///
-    /// Uses an exponential backoff and keeps trying if read-locking some segments fails.
+    /// Uses an exponential timeout and keeps trying if read-locking some segments fails.
     ///
     /// Read-lock guards are returned in the `segment` order once all have been read-locked.
     fn read_all<'a>(
@@ -523,10 +523,10 @@ impl<'s> SegmentHolder {
             .take(segments.len())
             .collect::<Vec<_>>();
 
-        // Keep trying to read-lock all segments with exponential backoff
-        let mut interval = Duration::from_nanos(100);
+        // Keep trying to read-lock all segments with exponential timeout
+        let mut timeout = Duration::ZERO;
         while {
-            indices.retain(|i| match segments[*i].try_read() {
+            indices.retain(|i| match segments[*i].try_read_for(timeout) {
                 Some(read) => {
                     reads[*i].replace(read);
                     false
@@ -535,9 +535,8 @@ impl<'s> SegmentHolder {
             });
             !indices.is_empty()
         } {
-            sleep(interval);
-            interval = interval.saturating_mul(2);
-            if interval.as_secs() >= 10 {
+            timeout = timeout.max(Duration::from_millis(100)).saturating_mul(2);
+            if timeout.as_secs() >= 10 {
                 log::warn!("Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.");
             }
         }
