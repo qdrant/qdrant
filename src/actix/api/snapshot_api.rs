@@ -326,25 +326,40 @@ async fn recover_shard_snapshot(
     let future = async move {
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-
-        let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
-        tokio::fs::create_dir_all(&snapshot_download_path).await?;
+        collection.assert_shard_exists(shard).await?;
 
         // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!?
 
-        let snapshot_path = match request.location {
+        let (snapshot_path, move_after_recovery) = match request.location {
             ShardSnapshotLocation::Url(url) => {
                 if !matches!(url.scheme(), "http" | "https") {
                     return Err(StorageError::bad_input("TODO").into());
                 }
 
-                snapshots::download::download_snapshot(url, &snapshot_download_path).await?
+                let downloaded_snapshots_dir = downloaded_snapshots_dir(toc.snapshots_path());
+                tokio::fs::create_dir_all(&downloaded_snapshots_dir).await?;
+
+                let downloaded_snapshot_path =
+                    snapshots::download::download_snapshot(url, &downloaded_snapshots_dir).await?;
+
+                if collection.is_shard_local(&shard).await.unwrap_or(false) {
+                    let snapshot_path = move_downloaded_shard_snapshot(
+                        &collection,
+                        shard,
+                        &downloaded_snapshot_path,
+                    )
+                    .await?;
+
+                    (snapshot_path, false)
+                } else {
+                    (downloaded_snapshot_path, true)
+                }
             }
 
             ShardSnapshotLocation::Path(path) => {
                 let snapshot_path = collection.get_shard_snapshot_path(shard, path).await?;
                 check_shard_snapshot_file_exists(&snapshot_path)?;
-                snapshot_path
+                (snapshot_path, false)
             }
         };
 
@@ -356,6 +371,10 @@ async fn recover_shard_snapshot(
             request.priority.unwrap_or_default(),
         )
         .await?;
+
+        if move_after_recovery {
+            move_downloaded_shard_snapshot(&collection, shard, &snapshot_path).await?;
+        }
 
         Ok(())
     };
@@ -376,23 +395,29 @@ async fn upload_shard_snapshot(
     let future = async move {
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
-
-        if !snapshots_dir.exists() {
-            std::fs::create_dir_all(&snapshots_dir)?;
-        }
+        collection.assert_shard_exists(shard).await?;
 
         let snapshot_file_name = form
             .snapshot
             .file_name
             .unwrap_or_else(|| format!("{}.snapshot", Uuid::new_v4()));
 
-        let snapshot_path = snapshots_dir.join(snapshot_file_name);
+        let (uploaded_snapshot_file, snapshot_path) =
+            if collection.is_shard_local(&shard).await.unwrap_or(false) {
+                let snapshot_path = collection
+                    .get_shard_snapshot_path(shard, &snapshot_file_name)
+                    .await?;
 
-        form.snapshot
-            .file
-            .persist(&snapshot_path)
-            .map_err(io::Error::from)?;
+                form.snapshot
+                    .file
+                    .persist(&snapshot_path)
+                    .map_err(io::Error::from)?;
+
+                (None, snapshot_path)
+            } else {
+                let uploaded_snapshot_path = form.snapshot.file.path().to_path_buf();
+                (Some(form.snapshot.file), uploaded_snapshot_path)
+            };
 
         recover_shard_snapshot_impl(
             &toc,
@@ -402,6 +427,16 @@ async fn upload_shard_snapshot(
             priority.unwrap_or_default(),
         )
         .await?;
+
+        if let Some(uploaded_snapshot_file) = uploaded_snapshot_file {
+            let snapshot_path = collection
+                .get_shard_snapshot_path(shard, &snapshot_file_name)
+                .await?;
+
+            uploaded_snapshot_file
+                .persist(snapshot_path)
+                .map_err(io::Error::from)?;
+        }
 
         Ok(())
     };
@@ -458,6 +493,36 @@ fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageE
     } else {
         Ok(())
     }
+}
+
+async fn move_downloaded_shard_snapshot(
+    collection: &Collection,
+    shard: ShardId,
+    downloaded_snapshot_path: &Path,
+) -> Result<PathBuf, StorageError> {
+    let snapshot_path = collection
+        .get_shard_snapshot_path(shard, downloaded_snapshot_path.file_name().unwrap())
+        .await?;
+
+    if let Err(err) = tokio::fs::rename(downloaded_snapshot_path, &snapshot_path).await {
+        log::error!(
+            "Failed to rename downloaded snapshot file {} to {}: {err}",
+            downloaded_snapshot_path.display(),
+            snapshot_path.display(),
+        );
+
+        tokio::fs::copy(&downloaded_snapshot_path, &snapshot_path).await?;
+
+        if let Err(err) = tokio::fs::remove_file(&downloaded_snapshot_path).await {
+            log::error!(
+                "Failed to remove downloaded snapshot file {} (after copying it to {}): {err}",
+                downloaded_snapshot_path.display(),
+                snapshot_path.display(),
+            );
+        }
+    }
+
+    Ok(snapshot_path)
 }
 
 async fn recover_shard_snapshot_impl(

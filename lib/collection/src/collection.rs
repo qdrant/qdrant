@@ -318,12 +318,9 @@ impl Collection {
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
-        let replica_set =
-            shard_holder
-                .get_shard(&shard_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {shard_id}"),
-                })?;
+        let replica_set = shard_holder
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         log::debug!(
             "Changing shard {}:{shard_id} replica state from {:?} to {state:?}",
@@ -1591,7 +1588,7 @@ impl Collection {
         &self,
         shard_id: ShardId,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
-        self.assert_is_shard_local(shard_id).await?;
+        self.assert_shard_is_local(shard_id).await?;
 
         let snapshots_path = self.snapshots_path_for_shard_unchecked(shard_id);
 
@@ -1608,12 +1605,9 @@ impl Collection {
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
         let shards_holder = self.shards_holder.read().await;
-        let shard =
-            shards_holder
-                .get_shard(&shard_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {shard_id}"),
-                })?;
+        let shard = shards_holder
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         if !shard.is_local().await {
             return Err(CollectionError::bad_input(format!(
@@ -1691,11 +1685,18 @@ impl Collection {
         get_snapshot_description(&snapshot_path).await
     }
 
+    pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
+        match self.shards_holder.read().await.get_shard(&shard_id) {
+            Some(_) => Ok(()),
+            None => Err(shard_not_found_error(shard_id)),
+        }
+    }
+
     pub async fn get_snapshots_path_for_shard(
         &self,
         shard_id: ShardId,
     ) -> CollectionResult<PathBuf> {
-        self.assert_is_shard_local(shard_id).await?;
+        self.assert_shard_is_local(shard_id).await?;
         Ok(self.snapshots_path_for_shard_unchecked(shard_id))
     }
 
@@ -1704,7 +1705,7 @@ impl Collection {
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
-        self.assert_is_shard_local(shard_id).await?;
+        self.assert_shard_is_local(shard_id).await?;
         self.shard_snapshot_path_unchecked(shard_id, snapshot_file_name)
     }
 
@@ -1717,9 +1718,7 @@ impl Collection {
         temp_dir: &Path,
     ) -> CollectionResult<()> {
         if !self.contains_shard(shard_id).await {
-            return Err(CollectionError::NotFound {
-                what: format!("Shard {shard_id}"),
-            });
+            return Err(shard_not_found_error(shard_id));
         }
 
         let snapshot = std::fs::File::open(snapshot_path)?;
@@ -1771,15 +1770,13 @@ impl Collection {
         Ok(())
     }
 
-    async fn assert_is_shard_local(&self, shard_id: ShardId) -> CollectionResult<()> {
-        let is_shard_local =
-            self.is_shard_local(&shard_id)
-                .await
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {shard_id}"),
-                })?;
+    async fn assert_shard_is_local(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let is_local_shard = self
+            .is_shard_local(&shard_id)
+            .await
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        if is_shard_local {
+        if is_local_shard {
             Ok(())
         } else {
             Err(CollectionError::bad_input(format!(
@@ -1819,12 +1816,9 @@ impl Collection {
         shard_id: ShardId,
     ) -> CollectionResult<bool> {
         let shard_holder = self.shards_holder.read().await;
-        let replica_set =
-            shard_holder
-                .get_shard(&shard_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {shard_id}"),
-                })?;
+        let replica_set = shard_holder
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         replica_set
             .restore_local_replica_from(snapshot_shard_path)
@@ -1999,5 +1993,11 @@ impl Collection {
 
     pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
         self.updates_lock.write().await
+    }
+}
+
+fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
+    CollectionError::NotFound {
+        what: format!("shard {shard_id}"),
     }
 }
