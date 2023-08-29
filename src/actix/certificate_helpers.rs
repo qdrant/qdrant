@@ -144,7 +144,7 @@ pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
         let mut root_cert_store = RootCertStore::empty();
         let ca_certs: Vec<Vec<u8>> = with_buf_read(&tls_config.ca_cert, rustls_pemfile::certs)?;
         root_cert_store.add_parsable_certificates(&ca_certs[..]);
-        config.with_client_cert_verifier(AllowAnyAuthenticatedClient::new(root_cert_store))
+        config.with_client_cert_verifier(AllowAnyAuthenticatedClient::new(root_cert_store).boxed())
     } else {
         config.with_no_client_auth()
     };
