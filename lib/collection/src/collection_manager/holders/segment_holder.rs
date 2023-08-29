@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
-use std::ops::{Deref, Mul};
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -345,7 +345,7 @@ impl<'s> SegmentHolder {
             let opt_segment_guard = segment_lock.try_write_for(timeout);
 
             match opt_segment_guard {
-                None => timeout = timeout.mul(2), // Wait longer next time
+                None => timeout = timeout.saturating_mul(2), // Wait longer next time
                 Some(mut lock) => {
                     return apply(*segment_id, &mut lock);
                 }
@@ -435,18 +435,15 @@ impl<'s> SegmentHolder {
     /// Flushes all segments and returns maximum version to persist
     ///
     /// Before flushing, this read-locks all segments. It prevents writes to all not-yet-flushed
-    /// segments during flushing. All locked segments are flushed and released one-by-one.
+    /// segments during flushing. All locked segments are flushed and released one by one.
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool) -> OperationResult<SeqNumberType> {
-        // Grab all locked segments to flush, in correct order
-        let segments = self
-            .segment_flush_ordering()
-            .map(|segment_id| self.segments.get(&segment_id).unwrap().get())
-            .collect::<Vec<_>>();
+        // Grab and keep to segment RwLock's until the end of this function
+        let segments = self.segment_locks(self.segment_flush_ordering());
 
-        // Read-lock all segments at once before flushing, must prevent any writes to any segment
+        // Read-lock all segments before flushing any, must prevent any writes to any segment
         // That is to prevent any copy-on-write operation on two segments from occurring in between
         // flushing the two segments. If that would happen, segments could end up in an
         // inconsistent state on disk that is not recoverable after a crash.
@@ -461,24 +458,22 @@ impl<'s> SegmentHolder {
         // making copy-on-write impossible.
         // Locking all segments prevents copy-on-write operations from occurring in between
         // flushes.
-        let segment_reads = segments
-            .iter()
-            // Reverse so we lock from last to first
-            // Must lock non-appendable first to prevent deadlock with apply_points_to_appendable
-            .rev()
-            .map(|segment_lock| segment_lock.read())
-            .collect::<Vec<_>>();
+        let segment_reads = self.read_all(&segments);
+
+        // Assert we flush appendable segments first
+        debug_assert!(
+            segment_reads
+                .windows(2)
+                .all(|s| s[0].is_appendable() || !s[1].is_appendable()),
+            "Must flush appendable segments first",
+        );
 
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
 
         // Flush and release each segment
-        for read_segment in segment_reads
-            .into_iter()
-            // Reverse again so we flush and unlock in original order, from first to last
-            .rev()
-        {
+        for read_segment in segment_reads {
             let segment_version = read_segment.version();
             let segment_persisted_version = read_segment.flush(sync)?;
 
@@ -498,6 +493,56 @@ impl<'s> SegmentHolder {
         } else {
             Ok(max_persisted_version)
         }
+    }
+
+    /// Grab the RwLock's for all the given segment IDs.
+    fn segment_locks(
+        &self,
+        segment_ids: impl IntoIterator<Item = SegmentId>,
+    ) -> Vec<Arc<RwLock<dyn SegmentEntry>>> {
+        segment_ids
+            .into_iter()
+            .map(|segment_id| self.segments.get(&segment_id).unwrap().get())
+            .collect()
+    }
+
+    /// Read-lock all given segments
+    ///
+    /// Uses an exponential backoff and keeps trying if read-locking some segments fails.
+    ///
+    /// Read-lock guards are returned in the `segment` order once all have been read-locked.
+    fn read_all<'a>(
+        &'a self,
+        segments: &'a [Arc<RwLock<dyn SegmentEntry>>],
+    ) -> Vec<RwLockReadGuard<dyn SegmentEntry>> {
+        // List of segment indices yet to read-lock
+        let mut indices = (0..segments.len()).collect::<Vec<_>>();
+
+        // List for resulting read-lock guards for all segments
+        let mut reads = std::iter::repeat_with(|| None)
+            .take(segments.len())
+            .collect::<Vec<_>>();
+
+        // Keep trying to read-lock all segments with exponential backoff
+        let mut interval = Duration::from_nanos(100);
+        while {
+            indices.retain(|i| match segments[*i].try_read() {
+                Some(read) => {
+                    reads[*i].replace(read);
+                    false
+                }
+                None => true,
+            });
+            !indices.is_empty()
+        } {
+            sleep(interval);
+            interval = interval.saturating_mul(2);
+            if interval.as_secs() >= 10 {
+                log::warn!("Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.");
+            }
+        }
+
+        reads.into_iter().map(Option::unwrap).collect()
     }
 
     /// Take a snapshot of all segments into `snapshot_dir_path`
