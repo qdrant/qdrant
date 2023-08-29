@@ -304,6 +304,25 @@ impl<'s> SegmentHolder {
         Ok(applied_points)
     }
 
+    /// Try to acquire read lock over the given segment with increasing wait time.
+    /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
+    fn aloha_lock_segment_read<'a>(
+        &'a self,
+        segment: &'a Arc<RwLock<dyn SegmentEntry>>,
+    ) -> RwLockReadGuard<dyn SegmentEntry> {
+        let mut interval = Duration::from_nanos(100);
+        loop {
+            if let Some(guard) = segment.try_read_for(interval) {
+                return guard;
+            }
+
+            interval = interval.saturating_mul(2);
+            if interval.as_secs() >= 10 {
+                log::warn!("Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.");
+            }
+        }
+    }
+
     /// Try to acquire write lock over random segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     pub fn aloha_random_write<F>(
@@ -458,7 +477,10 @@ impl<'s> SegmentHolder {
         // making copy-on-write impossible.
         // Locking all segments prevents copy-on-write operations from occurring in between
         // flushes.
-        let segment_reads = self.read_all(&segments);
+        let segment_reads: Vec<_> = segments
+            .iter()
+            .map(|segment| self.aloha_lock_segment_read(segment))
+            .collect();
 
         // Assert we flush appendable segments first
         debug_assert!(
@@ -504,44 +526,6 @@ impl<'s> SegmentHolder {
             .into_iter()
             .map(|segment_id| self.segments.get(&segment_id).unwrap().get())
             .collect()
-    }
-
-    /// Read-lock all given segments
-    ///
-    /// Uses an exponential timeout and keeps trying if read-locking some segments fails.
-    ///
-    /// Read-lock guards are returned in the `segment` order once all have been read-locked.
-    fn read_all<'a>(
-        &'a self,
-        segments: &'a [Arc<RwLock<dyn SegmentEntry>>],
-    ) -> Vec<RwLockReadGuard<dyn SegmentEntry>> {
-        // List of segment indices yet to read-lock
-        let mut indices = (0..segments.len()).collect::<Vec<_>>();
-
-        // List for resulting read-lock guards for all segments
-        let mut reads = std::iter::repeat_with(|| None)
-            .take(segments.len())
-            .collect::<Vec<_>>();
-
-        // Keep trying to read-lock all segments with exponential timeout
-        let mut timeout = Duration::ZERO;
-        while {
-            indices.retain(|i| match segments[*i].try_read_for(timeout) {
-                Some(read) => {
-                    reads[*i].replace(read);
-                    false
-                }
-                None => true,
-            });
-            !indices.is_empty()
-        } {
-            timeout = timeout.max(Duration::from_millis(100)).saturating_mul(2);
-            if timeout.as_secs() >= 10 {
-                log::warn!("Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.");
-            }
-        }
-
-        reads.into_iter().map(Option::unwrap).collect()
     }
 
     /// Take a snapshot of all segments into `snapshot_dir_path`
