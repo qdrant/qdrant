@@ -1146,6 +1146,7 @@ impl ShardReplicaSet {
         match &*local_write {
             // Expected state, continue
             Some(Local(_)) => {}
+            Some(ForwardProxy(proxy)) if proxy.remote_shard.peer_id == remote_shard.peer_id => {}
             // Unexpected states, error
             Some(QueueProxy(_)) => {
                 return Err(CollectionError::service_error(format!(
@@ -1154,14 +1155,10 @@ impl ShardReplicaSet {
                 )));
             }
             Some(ForwardProxy(proxy)) => {
-                return if proxy.remote_shard.peer_id == remote_shard.peer_id {
-                    Ok(())
-                } else {
-                    Err(CollectionError::service_error(format!(
-                        "Cannot queue proxify local shard {} to peer {} because it is already proxified to peer {}",
-                        self.shard_id, remote_shard.peer_id, proxy.remote_shard.peer_id
-                    )))
-                };
+                return Err(CollectionError::service_error(format!(
+                    "Cannot queue proxify local shard {} to peer {} because it is already proxified to peer {}",
+                    self.shard_id, remote_shard.peer_id, proxy.remote_shard.peer_id
+                )));
             }
             Some(shard) => {
                 return Err(CollectionError::service_error(format!(
