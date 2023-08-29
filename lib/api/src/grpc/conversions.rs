@@ -158,24 +158,24 @@ impl From<SearchPoints> for CoreSearchPoints {
 impl TryFrom<CoreSearchPoints> for SearchPoints {
     type Error = Status;
 
-    fn try_from(internal: CoreSearchPoints) -> Result<Self, Self::Error> {
-        let QueryVector::Nearest(vector) = internal
+    fn try_from(search: CoreSearchPoints) -> Result<Self, Self::Error> {
+        let QueryVector::Nearest(vector) = search
             .query_vector
             .ok_or_else(|| Status::invalid_argument("Query vector is not \"single\" variant"))?;
         let vector = vector.data;
 
         Ok(Self {
             vector,
-            filter: internal.filter,
-            params: internal.params,
-            limit: internal.limit,
-            offset: internal.offset,
-            with_payload: internal.with_payload,
-            with_vectors: internal.with_vectors,
-            score_threshold: internal.score_threshold,
-            collection_name: internal.collection_name,
-            vector_name: internal.vector_name,
-            read_consistency: internal.read_consistency,
+            filter: search.filter,
+            params: search.params,
+            limit: search.limit,
+            offset: search.offset,
+            with_payload: search.with_payload,
+            with_vectors: search.with_vectors,
+            score_threshold: search.score_threshold,
+            collection_name: search.collection_name,
+            vector_name: search.vector_name,
+            read_consistency: search.read_consistency,
         })
     }
 }
