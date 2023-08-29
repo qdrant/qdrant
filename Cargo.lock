@@ -3651,7 +3651,7 @@ dependencies = [
  "raft-proto",
  "reqwest",
  "rstack-self",
- "rustls 0.20.7",
+ "rustls 0.21.6",
  "rustls-pemfile",
  "rusty-hook",
  "schemars",
@@ -4190,9 +4190,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.20.7"
+version = "0.20.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "539a2bfe908f471bfa933876bd1eb6a19cf2176d375f82ef7f99530a40e48c2c"
+checksum = "1b80e3dec595989ea8510028f30c408a4630db12c9cbb8de34203b89d6577e99"
 dependencies = [
  "log",
  "ring",
@@ -5050,7 +5050,7 @@ version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
 dependencies = [
- "rustls 0.20.7",
+ "rustls 0.20.9",
  "tokio",
  "webpki",
 ]
