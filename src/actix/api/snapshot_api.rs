@@ -15,6 +15,7 @@ use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::snapshots::download::downloaded_snapshots_dir;
 use storage::content_manager::snapshots::recover::{activate_shard, do_recover_from_snapshot};
 use storage::content_manager::snapshots::{
     self, do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
@@ -25,7 +26,6 @@ use storage::dispatcher::Dispatcher;
 use tokio::sync::RwLockReadGuard;
 use uuid::Uuid;
 use validator::Validate;
-use storage::content_manager::snapshots::download::downloaded_snapshots_dir;
 
 use super::CollectionPath;
 use crate::actix::helpers;
