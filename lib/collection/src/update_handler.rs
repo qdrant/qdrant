@@ -84,6 +84,10 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: LockedWal,
+    /// Maximum version to acknowledge to WAL to prevent truncating too early
+    /// This is used when another part still relies on part of the WAL, such as the queue proxy
+    /// shard.
+    pub(super) max_ack_version: Arc<TokioMutex<Option<u64>>>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
 }
@@ -111,6 +115,7 @@ impl UpdateHandler {
             flush_stop: None,
             runtime_handle,
             wal,
+            max_ack_version: Default::default(),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
@@ -139,6 +144,7 @@ impl UpdateHandler {
         self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
             self.segments.clone(),
             self.wal.clone(),
+            self.max_ack_version.clone(),
             self.flush_interval_sec,
             flush_rx,
         )));
@@ -421,6 +427,7 @@ impl UpdateHandler {
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,
+        max_ack: Arc<TokioMutex<Option<u64>>>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
     ) {
@@ -457,7 +464,20 @@ impl UpdateHandler {
                     continue;
                 }
             };
-            if let Err(err) = wal.lock().ack(confirmed_version) {
+
+            // Acknowledge confirmed version in WAL, but don't exceed specified maximum
+            // This is to prevent truncating WAL entries that may still be used by other things
+            // such as the queue proxy shard.
+            let max_ack_version = match *max_ack.lock().await {
+                Some(max_id) => {
+                    if confirmed_version > max_id {
+                        log::trace!("Acknowledging message {max_id} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
+                    }
+                    confirmed_version.min(max_id)
+                }
+                None => confirmed_version,
+            };
+            if let Err(err) = wal.lock().ack(max_ack_version) {
                 segments.write().report_optimizer_error(err);
             }
         }
