@@ -124,7 +124,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     match vector {
-        QueryVector::Single(vector) => {
+        QueryVector::Nearest(vector) => {
             new_metric_scorer(vector.to_vec(), vector_storage, point_deleted, is_stopped)
         }
     }

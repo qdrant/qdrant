@@ -260,7 +260,7 @@ pub struct SearchRequestBatch {
 
 #[derive(Debug, Clone)]
 pub enum QueryEnum {
-    SingleVector(NamedVectorStruct),
+    Nearest(NamedVectorStruct),
     // PositiveNegative {
     //     positive: Vec<PointIdType>,
     //     negative: Vec<PointIdType>,
@@ -271,33 +271,32 @@ pub enum QueryEnum {
 impl QueryEnum {
     pub fn get_vector_name(&self) -> &str {
         match self {
-            QueryEnum::SingleVector(vector) => vector.get_name(),
+            QueryEnum::Nearest(vector) => vector.get_name(),
             // QueryEnum::PositiveNegative { using: UsingVector::Name(name), .. } => name
         }
     }
 
     pub fn from_grpc(
-        query: api::grpc::qdrant::internal_search_points::QueryVector,
+        query: api::grpc::qdrant::core_search_points::QueryVector,
         name: Option<String>,
     ) -> Self {
         match (query, name) {
-            (api::grpc::qdrant::internal_search_points::QueryVector::Single(vector), None) => {
-                Self::SingleVector(vector.data.into())
+            (api::grpc::qdrant::core_search_points::QueryVector::Nearest(vector), None) => {
+                Self::Nearest(vector.data.into())
             }
-            (
-                api::grpc::qdrant::internal_search_points::QueryVector::Single(vector),
-                Some(name),
-            ) => Self::SingleVector(NamedVectorStruct::Named(NamedVector {
-                name,
-                vector: vector.data,
-            })),
+            (api::grpc::qdrant::core_search_points::QueryVector::Nearest(vector), Some(name)) => {
+                Self::Nearest(NamedVectorStruct::Named(NamedVector {
+                    name,
+                    vector: vector.data,
+                }))
+            }
         }
     }
 }
 
 impl From<Vec<VectorElementType>> for QueryEnum {
     fn from(vector: Vec<VectorElementType>) -> Self {
-        QueryEnum::SingleVector(NamedVectorStruct::Default(vector))
+        QueryEnum::Nearest(NamedVectorStruct::Default(vector))
     }
 }
 
@@ -308,7 +307,7 @@ impl AsRef<QueryEnum> for QueryEnum {
 }
 
 #[derive(Debug, Clone)]
-pub struct InternalSearchRequest {
+pub struct CoreSearchRequest {
     /// Every kind of query that can be performed on segment level
     pub query: QueryEnum,
     /// Look only for points which satisfies this conditions
@@ -329,8 +328,8 @@ pub struct InternalSearchRequest {
 }
 
 #[derive(Debug, Clone)]
-pub struct InternalSearchRequestBatch {
-    pub searches: Vec<InternalSearchRequest>,
+pub struct CoreSearchRequestBatch {
+    pub searches: Vec<CoreSearchRequest>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -1185,22 +1184,22 @@ pub struct BaseGroupRequest {
     pub with_lookup: Option<WithLookupInterface>,
 }
 
-impl From<SearchRequestBatch> for InternalSearchRequestBatch {
+impl From<SearchRequestBatch> for CoreSearchRequestBatch {
     fn from(batch: SearchRequestBatch) -> Self {
-        InternalSearchRequestBatch {
+        CoreSearchRequestBatch {
             searches: batch
                 .searches
                 .into_iter()
-                .map(InternalSearchRequest::from)
+                .map(CoreSearchRequest::from)
                 .collect(),
         }
     }
 }
 
-impl From<SearchRequest> for InternalSearchRequest {
+impl From<SearchRequest> for CoreSearchRequest {
     fn from(request: SearchRequest) -> Self {
         Self {
-            query: QueryEnum::SingleVector(request.vector),
+            query: QueryEnum::Nearest(request.vector),
             filter: request.filter,
             params: request.params,
             limit: request.limit,
@@ -1215,7 +1214,7 @@ impl From<SearchRequest> for InternalSearchRequest {
 impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
-            QueryEnum::SingleVector(named_vector) => QueryVector::Single(named_vector.to_vector()),
+            QueryEnum::Nearest(named_vector) => QueryVector::Nearest(named_vector.to_vector()),
         }
     }
 }

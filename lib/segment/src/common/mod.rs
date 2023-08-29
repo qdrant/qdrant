@@ -39,7 +39,7 @@ pub fn check_vector(
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
     match vector {
-        QueryVector::Single(vector) => check_vector_against_config(vector, vector_config)?,
+        QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
     }
 
     Ok(())
@@ -56,7 +56,7 @@ pub fn check_vectors(
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
     for vector in vectors {
         match vector {
-            QueryVector::Single(vector) => check_vector_against_config(vector, vector_config)?,
+            QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
         }
     }
     Ok(())

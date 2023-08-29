@@ -212,7 +212,7 @@ impl BatchVectorStruct {
 
 #[derive(Debug, Clone)]
 pub enum QueryVector {
-    Single(VectorType),
+    Nearest(VectorType),
     // having an enum will allow other inputs like:
     // PositiveNegative {
     //     positives: Vec<Vec<VectorElementType>>,
@@ -223,30 +223,25 @@ pub enum QueryVector {
 impl QueryVector {
     pub fn as_single(&self) -> Option<&[VectorElementType]> {
         match self {
-            QueryVector::Single(v) => Some(v),
+            QueryVector::Nearest(v) => Some(v),
         }
     }
 }
 
 impl From<VectorType> for QueryVector {
     fn from(vec: VectorType) -> Self {
-        Self::Single(vec)
+        Self::Nearest(vec)
     }
 }
 
 impl<'a> From<&'a [VectorElementType]> for QueryVector {
     fn from(vec: &'a [VectorElementType]) -> Self {
-        Self::Single(vec.to_vec())
+        Self::Nearest(vec.to_vec())
     }
 }
 
 impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
     fn from(vec: [VectorElementType; N]) -> Self {
-        Self::Single(vec.to_vec())
+        Self::Nearest(vec.to_vec())
     }
 }
-
-// #[derive(Debug, Clone, Copy)]
-// pub enum QueryVectorRef<'a> {
-//     Single(&'a [VectorElementType]),
-// }

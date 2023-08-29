@@ -26,10 +26,10 @@ service PointsInternal {
   rpc Get (GetPointsInternal) returns (GetResponse) {}
 }
 
-message InternalSearchPoints {
+message CoreSearchPoints {
   string collection_name = 1; // name of the collection
   oneof query_vector {  // vector(s) part of the query
-    Vector single = 2;  // only one vector
+    Vector nearest = 2;  // only one vector, for searching nearest neighbors
   }
   Filter filter = 3; // Filter conditions - return only those points that satisfy the specified conditions
   uint64 limit = 4; // Max number of result
@@ -103,13 +103,13 @@ message DeleteFieldIndexCollectionInternal {
 }
 
 message SearchPointsInternal {
-  InternalSearchPoints search_points = 1;
+  CoreSearchPoints search_points = 1;
   optional uint32 shard_id = 2;
 }
 
 message SearchBatchPointsInternal {
-  string collection_name = 1;
-  repeated InternalSearchPoints search_points = 2;
+string collection_name = 1;
+  repeated CoreSearchPoints search_points = 2;
   optional uint32 shard_id = 3;
 }
 

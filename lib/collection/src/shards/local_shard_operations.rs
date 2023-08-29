@@ -12,8 +12,8 @@ use tokio::sync::oneshot;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult,
-    InternalSearchRequestBatch, PointRequest, Record, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
+    CountResult, PointRequest, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
@@ -118,7 +118,7 @@ impl ShardOperation for LocalShard {
 
     async fn search(
         &self,
-        request: Arc<InternalSearchRequestBatch>,
+        request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let (collection_params, indexing_threshold_kb) = {

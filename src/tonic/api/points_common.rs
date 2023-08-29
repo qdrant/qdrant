@@ -3,15 +3,14 @@ use std::time::Instant;
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
-    points_update_operation, BatchResult, ClearPayloadPoints, CountPoints, CountResponse,
-    CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
-    DeletePointVectors, DeletePoints, FieldType, GetPoints, GetResponse, InternalSearchPoints,
-    PayloadIndexParams, PointsOperationResponse, PointsSelector,
-    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
-    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
-    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
-    UpsertPoints,
+    points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
+    CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
+    DeletePointVectors, DeletePoints, FieldType, GetPoints, GetResponse, PayloadIndexParams,
+    PointsOperationResponse, PointsSelector, ReadConsistency as ReadConsistencyGrpc,
+    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
+    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints,
+    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -20,13 +19,13 @@ use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation,
 };
 use collection::operations::types::{
-    default_exact_count, PointRequest, RecommendRequestBatch,
-    ScrollRequest, SearchRequest, SearchRequestBatch,
+    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
+    SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
-use segment::data_types::vectors::{NamedVector};
+use segment::data_types::vectors::NamedVector;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -660,10 +659,10 @@ pub async fn delete_field_index(
 
 pub async fn search(
     toc: &TableOfContent,
-    search_points: InternalSearchPoints,
+    search_points: CoreSearchPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<SearchResponse>, Status> {
-    let InternalSearchPoints {
+    let CoreSearchPoints {
         collection_name,
         query_vector,
         filter,
@@ -685,7 +684,7 @@ pub async fn search(
 
     let timing;
     let scored_points = match query {
-        api::grpc::qdrant::internal_search_points::QueryVector::Single(vector) => {
+        api::grpc::qdrant::core_search_points::QueryVector::Nearest(vector) => {
             let vector = vector.data;
             let search_request = SearchRequest {
                 vector: match vector_name {

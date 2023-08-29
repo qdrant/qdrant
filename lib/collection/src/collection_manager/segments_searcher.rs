@@ -22,7 +22,7 @@ use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentH
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::operations::types::{
-    CollectionError, CollectionResult, InternalSearchRequestBatch, QueryEnum, Record,
+    CollectionError, CollectionResult, CoreSearchRequestBatch, QueryEnum, Record,
 };
 
 type BatchOffset = usize;
@@ -151,7 +151,7 @@ impl SegmentsSearcher {
 
     pub async fn search(
         segments: &RwLock<SegmentHolder>,
-        batch_request: Arc<InternalSearchRequestBatch>,
+        batch_request: Arc<CoreSearchRequestBatch>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
         is_stopped: Arc<AtomicBool>,
@@ -230,7 +230,7 @@ impl SegmentsSearcher {
                 let mut res = vec![];
                 for (segment_id, batch_ids) in searches_to_rerun.iter() {
                     let segment = locked_segments[*segment_id].clone();
-                    let partial_batch_request = Arc::new(InternalSearchRequestBatch {
+                    let partial_batch_request = Arc::new(CoreSearchRequestBatch {
                         searches: batch_ids
                             .iter()
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
@@ -334,7 +334,7 @@ pub enum SearchType {
 impl From<&QueryEnum> for SearchType {
     fn from(query: &QueryEnum) -> Self {
         match query {
-            QueryEnum::SingleVector(_) => Self::Nearest,
+            QueryEnum::Nearest(_) => Self::Nearest,
             // QueryEnum::PositiveNegative { .. } => Self::Recommend,
         }
     }
@@ -396,7 +396,7 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 /// * Vector of boolean indicating if the segment have further points to search
 fn search_in_segment(
     segment: LockedSegment,
-    request: Arc<InternalSearchRequestBatch>,
+    request: Arc<CoreSearchRequestBatch>,
     total_points: usize,
     use_sampling: bool,
     is_stopped: &AtomicBool,
@@ -601,7 +601,7 @@ mod tests {
     use crate::collection_manager::fixtures::{
         build_test_holder, optimize_segment, random_segment,
     };
-    use crate::operations::types::{InternalSearchRequest, SearchRequest};
+    use crate::operations::types::{CoreSearchRequest, SearchRequest};
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
     #[test]
@@ -641,7 +641,7 @@ mod tests {
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
-        let req = InternalSearchRequest {
+        let req = CoreSearchRequest {
             query: query.into(),
             with_payload: None,
             with_vector: None,
@@ -652,7 +652,7 @@ mod tests {
             offset: 0,
         };
 
-        let batch_request = InternalSearchRequestBatch {
+        let batch_request = CoreSearchRequestBatch {
             searches: vec![req],
         };
 
@@ -716,7 +716,7 @@ mod tests {
                 score_threshold: None,
             };
 
-            let batch_request = InternalSearchRequestBatch {
+            let batch_request = CoreSearchRequestBatch {
                 searches: vec![req1.into(), req2.into()],
             };
 

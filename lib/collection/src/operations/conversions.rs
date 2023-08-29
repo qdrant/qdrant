@@ -37,7 +37,7 @@ use crate::operations::types::{
     SearchRequest, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shards::remote_shard::{CollectionSearchRequest, InternalCollectionSearchRequest};
+use crate::shards::remote_shard::CollectionSearchRequest;
 
 pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
     api::grpc::qdrant::WriteOrdering {
@@ -715,11 +715,11 @@ impl From<CountResult> for api::grpc::qdrant::CountResult {
     }
 }
 
-impl From<QueryEnum> for api::grpc::qdrant::internal_search_points::QueryVector {
+impl From<QueryEnum> for api::grpc::qdrant::core_search_points::QueryVector {
     fn from(value: QueryEnum) -> Self {
         match value {
-            QueryEnum::SingleVector(vector) => {
-                api::grpc::qdrant::internal_search_points::QueryVector::Single(
+            QueryEnum::Nearest(vector) => {
+                api::grpc::qdrant::core_search_points::QueryVector::Nearest(
                     vector.get_vector().clone().into(),
                 )
             }
@@ -728,8 +728,8 @@ impl From<QueryEnum> for api::grpc::qdrant::internal_search_points::QueryVector 
 }
 
 // Use wrapper type to bundle CollectionId & SearchRequest
-impl<'a> From<InternalCollectionSearchRequest<'a>> for api::grpc::qdrant::InternalSearchPoints {
-    fn from(value: InternalCollectionSearchRequest<'a>) -> Self {
+impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::CoreSearchPoints {
+    fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
 
         Self {
@@ -743,30 +743,6 @@ impl<'a> From<InternalCollectionSearchRequest<'a>> for api::grpc::qdrant::Intern
             score_threshold: request.score_threshold,
             offset: Some(request.offset as u64),
             vector_name: match request.query.get_vector_name() {
-                DEFAULT_VECTOR_NAME => None,
-                vector_name => Some(vector_name.to_string()),
-            },
-            read_consistency: None,
-        }
-    }
-}
-
-// Use wrapper type to bundle CollectionId & SearchRequest
-impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
-    fn from(value: CollectionSearchRequest<'a>) -> Self {
-        let (collection_id, request) = value.0;
-
-        api::grpc::qdrant::SearchPoints {
-            collection_name: collection_id,
-            vector: request.vector.get_vector().clone(),
-            filter: request.filter.clone().map(|f| f.into()),
-            limit: request.limit as u64,
-            with_vectors: request.with_vector.clone().map(|wv| wv.into()),
-            with_payload: request.with_payload.clone().map(|wp| wp.into()),
-            params: request.params.map(|sp| sp.into()),
-            score_threshold: request.score_threshold,
-            offset: Some(request.offset as u64),
-            vector_name: match request.vector.get_name() {
                 DEFAULT_VECTOR_NAME => None,
                 vector_name => Some(vector_name.to_string()),
             },

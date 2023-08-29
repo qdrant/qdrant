@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use api::grpc::qdrant::internal_search_points::QueryVector;
+use api::grpc::qdrant::core_search_points::QueryVector;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CountPointsInternal, CountResponse,
@@ -11,7 +11,6 @@ use api::grpc::qdrant::{
     SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
     UpdateVectorsInternal, UpsertPointsInternal,
 };
-
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
@@ -215,19 +214,19 @@ impl PointsInternal for PointsInternalService {
         let mut search_points = Vec::default();
         for search in internal_search_points {
             match search.query_vector {
-                Some(QueryVector::Single(_)) => search_points.push(search.try_into()?),
+                Some(QueryVector::Nearest(_)) => search_points.push(search.try_into()?),
                 None => return Err(Status::invalid_argument("Query vector is missing")),
             }
         }
 
         search_batch(
-                self.toc.as_ref(),
-                collection_name,
-                search_points,
-                None, // *Have* to be `None`!
-                shard_id,
-            )
-            .await
+            self.toc.as_ref(),
+            collection_name,
+            search_points,
+            None, // *Have* to be `None`!
+            shard_id,
+        )
+        .await
     }
 
     async fn recommend(

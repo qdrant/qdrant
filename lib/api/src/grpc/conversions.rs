@@ -8,9 +8,9 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::internal_search_points::QueryVector;
+use super::qdrant::core_search_points::QueryVector;
 use super::qdrant::{
-    BinaryQuantization, CompressionRatio, GroupId, InternalSearchPoints, SearchPoints,
+    BinaryQuantization, CompressionRatio, CoreSearchPoints, GroupId, SearchPoints,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -137,11 +137,11 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
     }
 }
 
-impl From<SearchPoints> for InternalSearchPoints {
+impl From<SearchPoints> for CoreSearchPoints {
     fn from(value: SearchPoints) -> Self {
         Self {
             collection_name: value.collection_name,
-            query_vector: Some(QueryVector::Single(value.vector.into())),
+            query_vector: Some(QueryVector::Nearest(value.vector.into())),
             filter: value.filter,
             limit: value.limit,
             with_payload: value.with_payload,
@@ -155,11 +155,11 @@ impl From<SearchPoints> for InternalSearchPoints {
     }
 }
 
-impl TryFrom<InternalSearchPoints> for SearchPoints {
+impl TryFrom<CoreSearchPoints> for SearchPoints {
     type Error = Status;
 
-    fn try_from(internal: InternalSearchPoints) -> Result<Self, Self::Error> {
-        let QueryVector::Single(vector) = internal
+    fn try_from(internal: CoreSearchPoints) -> Result<Self, Self::Error> {
+        let QueryVector::Nearest(vector) = internal
             .query_vector
             .ok_or_else(|| Status::invalid_argument("Query vector is not \"single\" variant"))?;
         let vector = vector.data;
@@ -173,13 +173,12 @@ impl TryFrom<InternalSearchPoints> for SearchPoints {
             with_payload: internal.with_payload,
             with_vectors: internal.with_vectors,
             score_threshold: internal.score_threshold,
-            collection_name:internal.collection_name,
+            collection_name: internal.collection_name,
             vector_name: internal.vector_name,
             read_consistency: internal.read_consistency,
         })
     }
 }
-
 
 impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
     fn from(tokenizer_type: segment::data_types::text_index::TokenizerType) -> Self {

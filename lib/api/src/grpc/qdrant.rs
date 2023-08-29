@@ -5731,7 +5731,7 @@ pub mod points_server {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InternalSearchPoints {
+pub struct CoreSearchPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
@@ -5767,19 +5767,19 @@ pub struct InternalSearchPoints {
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// vector(s) part of the query
-    #[prost(oneof = "internal_search_points::QueryVector", tags = "2")]
-    pub query_vector: ::core::option::Option<internal_search_points::QueryVector>,
+    #[prost(oneof = "core_search_points::QueryVector", tags = "2")]
+    pub query_vector: ::core::option::Option<core_search_points::QueryVector>,
 }
-/// Nested message and enum types in `InternalSearchPoints`.
-pub mod internal_search_points {
+/// Nested message and enum types in `CoreSearchPoints`.
+pub mod core_search_points {
     /// vector(s) part of the query
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum QueryVector {
-        /// only one vector
+        /// only one vector, for searching nearest neighbors
         #[prost(message, tag = "2")]
-        Single(super::Vector),
+        Nearest(super::Vector),
     }
 }
 #[derive(serde::Serialize)]
@@ -5926,7 +5926,7 @@ pub struct DeleteFieldIndexCollectionInternal {
 pub struct SearchPointsInternal {
     #[prost(message, optional, tag = "1")]
     #[validate]
-    pub search_points: ::core::option::Option<InternalSearchPoints>,
+    pub search_points: ::core::option::Option<CoreSearchPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
@@ -5940,7 +5940,7 @@ pub struct SearchBatchPointsInternal {
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     #[validate]
-    pub search_points: ::prost::alloc::vec::Vec<InternalSearchPoints>,
+    pub search_points: ::prost::alloc::vec::Vec<CoreSearchPoints>,
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
 }
