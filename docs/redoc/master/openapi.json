@@ -8038,9 +8038,10 @@
         }
       },
       "SnapshotPriority": {
-        "description": "Defines source of truth for snapshot recovery `Snapshot` means - prefer snapshot data over the current state `Replica` means - prefer existing data over the snapshot",
+        "description": "Defines source of truth for snapshot recovery `LocalOnly` means - restore snapshot without *any* additional synchronization `Snapshot` means - prefer snapshot data over the current state `Replica` means - prefer existing data over the snapshot",
         "type": "string",
         "enum": [
+          "local_only",
           "snapshot",
           "replica"
         ]
