@@ -225,6 +225,10 @@ async fn _do_recover_from_snapshot(
                 activate_shard(toc, &collection, this_peer_id, shard_id).await?;
             } else {
                 match priority {
+                    SnapshotPriority::LocalOnly => {
+                        activate_shard(toc, &collection, this_peer_id, shard_id).await?;
+                    }
+
                     SnapshotPriority::Snapshot => {
                         // Snapshot is the source of truth, we need to remove all other replicas
                         activate_shard(toc, &collection, this_peer_id, shard_id).await?;
