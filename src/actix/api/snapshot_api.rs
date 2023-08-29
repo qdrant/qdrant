@@ -326,7 +326,9 @@ async fn recover_shard_snapshot(
     let future = async move {
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
+
+        let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
+        tokio::fs::create_dir_all(&snapshot_download_path).await?;
 
         // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!?
 
@@ -336,19 +338,7 @@ async fn recover_shard_snapshot(
                     return Err(StorageError::bad_input("TODO").into());
                 }
 
-                let downloaded_snapshots_dir = downloaded_snapshots_dir(toc.snapshots_path());
-                tokio::fs::create_dir_all(&downloaded_snapshots_dir).await?;
-
-                let downloaded_snapshot_path =
-                    snapshots::download::download_snapshot(url, &downloaded_snapshots_dir).await?;
-
-                let snapshot_path =
-                    snapshots_dir.join(downloaded_snapshot_path.file_name().unwrap());
-
-                tokio::fs::create_dir_all(&snapshots_dir).await?;
-                tokio::fs::rename(&downloaded_snapshot_path, &snapshot_path).await?;
-
-                snapshot_path
+                snapshots::download::download_snapshot(url, &snapshot_download_path).await?
             }
 
             ShardSnapshotLocation::Path(path) => {
