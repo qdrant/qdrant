@@ -133,7 +133,7 @@ impl Points for PointsService {
         request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
-        search(self.toc.as_ref(), request.into_inner(), None).await
+        search(self.toc.as_ref(), request.into_inner().into(), None).await
     }
 
     async fn search_batch(

@@ -101,8 +101,7 @@ fn hnsw_quantized_search_test(
     let attempts = 10;
     let mut sames: usize = 0;
     for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim);
-
+        let query = random_vector(&mut rnd, dim).into();
         let index_result = hnsw_index.search(
             &[&query],
             None,
@@ -126,7 +125,7 @@ fn hnsw_quantized_search_test(
     // check oversampling
     for _i in 0..attempts {
         let ef_oversamling = ef / 8;
-        let oversampling_query = random_vector(&mut rnd, dim);
+        let oversampling_query = random_vector(&mut rnd, dim).into();
 
         let oversampling_1_result = hnsw_index.search(
             &[&oversampling_query],

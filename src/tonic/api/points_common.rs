@@ -5,12 +5,13 @@ use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
     points_update_operation, BatchResult, ClearPayloadPoints, CountPoints, CountResponse,
     CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
-    DeletePointVectors, DeletePoints, FieldType, GetPoints, GetResponse, PayloadIndexParams,
-    PointsOperationResponse, PointsSelector, ReadConsistency as ReadConsistencyGrpc,
-    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
-    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints,
-    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    DeletePointVectors, DeletePoints, FieldType, GetPoints, GetResponse, InternalSearchPoints,
+    PayloadIndexParams, PointsOperationResponse, PointsSelector,
+    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
+    SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
+    UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -19,13 +20,13 @@ use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation,
 };
 use collection::operations::types::{
-    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
-    SearchRequestBatch,
+    default_exact_count, PointRequest, RecommendRequestBatch,
+    ScrollRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
-use segment::data_types::vectors::NamedVector;
+use segment::data_types::vectors::{NamedVector};
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -659,12 +660,12 @@ pub async fn delete_field_index(
 
 pub async fn search(
     toc: &TableOfContent,
-    search_points: SearchPoints,
+    search_points: InternalSearchPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<SearchResponse>, Status> {
-    let SearchPoints {
+    let InternalSearchPoints {
         collection_name,
-        vector,
+        query_vector,
         filter,
         limit,
         offset,
@@ -676,36 +677,46 @@ pub async fn search(
         read_consistency,
     } = search_points;
 
-    let search_request = SearchRequest {
-        vector: match vector_name {
-            None => vector.into(),
-            Some(name) => NamedVector { name, vector }.into(),
-        },
-        filter: filter.map(|f| f.try_into()).transpose()?,
-        params: params.map(|p| p.into()),
-        limit: limit as usize,
-        offset: offset.unwrap_or_default() as usize,
-        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: Some(
-            with_vectors
-                .map(|selector| selector.into())
-                .unwrap_or_default(),
-        ),
-        score_threshold,
+    let Some(query) = query_vector else {
+        return Err(Status::invalid_argument("query vector is required"));
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let timing = Instant::now();
-    let scored_points = do_search_points(
-        toc,
-        &collection_name,
-        search_request,
-        read_consistency,
-        shard_selection,
-    )
-    .await
-    .map_err(error_to_status)?;
+    let timing;
+    let scored_points = match query {
+        api::grpc::qdrant::internal_search_points::QueryVector::Single(vector) => {
+            let vector = vector.data;
+            let search_request = SearchRequest {
+                vector: match vector_name {
+                    Some(name) => NamedVector { vector, name }.into(),
+                    None => vector.into(),
+                },
+                filter: filter.map(|f| f.try_into()).transpose()?,
+                params: params.map(|p| p.into()),
+                limit: limit as usize,
+                offset: offset.unwrap_or_default() as usize,
+                with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+                with_vector: Some(
+                    with_vectors
+                        .map(|selector| selector.into())
+                        .unwrap_or_default(),
+                ),
+                score_threshold,
+            };
+
+            timing = Instant::now();
+            do_search_points(
+                toc,
+                &collection_name,
+                search_request,
+                read_consistency,
+                shard_selection,
+            )
+            .await
+            .map_err(error_to_status)?
+        }
+    };
 
     let response = SearchResponse {
         result: scored_points

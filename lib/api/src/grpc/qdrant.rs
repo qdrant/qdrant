@@ -5731,6 +5731,61 @@ pub mod points_server {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InternalSearchPoints {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
+    #[prost(uint64, tag = "4")]
+    #[validate(range(min = 1))]
+    pub limit: u64,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "7")]
+    #[validate]
+    pub params: ::core::option::Option<SearchParams>,
+    /// If provided - cut off results with worse scores
+    #[prost(float, optional, tag = "8")]
+    pub score_threshold: ::core::option::Option<f32>,
+    /// Offset of the result
+    #[prost(uint64, optional, tag = "9")]
+    pub offset: ::core::option::Option<u64>,
+    /// Which vector to use for search, if not specified - use default vector
+    #[prost(string, optional, tag = "10")]
+    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "11")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "12")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// vector(s) part of the query
+    #[prost(oneof = "internal_search_points::QueryVector", tags = "2")]
+    pub query_vector: ::core::option::Option<internal_search_points::QueryVector>,
+}
+/// Nested message and enum types in `InternalSearchPoints`.
+pub mod internal_search_points {
+    /// vector(s) part of the query
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum QueryVector {
+        /// only one vector
+        #[prost(message, tag = "2")]
+        Single(super::Vector),
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
@@ -5871,7 +5926,7 @@ pub struct DeleteFieldIndexCollectionInternal {
 pub struct SearchPointsInternal {
     #[prost(message, optional, tag = "1")]
     #[validate]
-    pub search_points: ::core::option::Option<SearchPoints>,
+    pub search_points: ::core::option::Option<InternalSearchPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
@@ -5885,7 +5940,7 @@ pub struct SearchBatchPointsInternal {
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     #[validate]
-    pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
+    pub search_points: ::prost::alloc::vec::Vec<InternalSearchPoints>,
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
 }

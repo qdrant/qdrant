@@ -12,7 +12,7 @@ use thiserror::Error;
 use crate::common::file_operations::FileStorageError;
 use crate::common::mmap_type::Error as MmapError;
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -212,7 +212,7 @@ pub trait SegmentEntry {
     fn search(
         &self,
         vector_name: &str,
-        vector: &[VectorElementType],
+        vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
@@ -225,7 +225,7 @@ pub trait SegmentEntry {
     fn search_batch(
         &self,
         vector_name: &str,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,

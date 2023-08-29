@@ -10,8 +10,8 @@ use segment::types::{Distance, QuantizationConfig};
 use tonic::Status;
 
 use super::types::{
-    BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
-    VectorParamsDiff, VectorsConfigDiff,
+    BaseGroupRequest, GroupsResult, PointGroup, QueryEnum, RecommendGroupsRequest,
+    SearchGroupsRequest, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -37,7 +37,7 @@ use crate::operations::types::{
     SearchRequest, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shards::remote_shard::CollectionSearchRequest;
+use crate::shards::remote_shard::{CollectionSearchRequest, InternalCollectionSearchRequest};
 
 pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
     api::grpc::qdrant::WriteOrdering {
@@ -711,6 +711,42 @@ impl From<CountResult> for api::grpc::qdrant::CountResult {
     fn from(value: CountResult) -> Self {
         Self {
             count: value.count as u64,
+        }
+    }
+}
+
+impl From<QueryEnum> for api::grpc::qdrant::internal_search_points::QueryVector {
+    fn from(value: QueryEnum) -> Self {
+        match value {
+            QueryEnum::SingleVector(vector) => {
+                api::grpc::qdrant::internal_search_points::QueryVector::Single(
+                    vector.get_vector().clone().into(),
+                )
+            }
+        }
+    }
+}
+
+// Use wrapper type to bundle CollectionId & SearchRequest
+impl<'a> From<InternalCollectionSearchRequest<'a>> for api::grpc::qdrant::InternalSearchPoints {
+    fn from(value: InternalCollectionSearchRequest<'a>) -> Self {
+        let (collection_id, request) = value.0;
+
+        Self {
+            collection_name: collection_id,
+            query_vector: Some(request.query.clone().into()),
+            filter: request.filter.clone().map(|f| f.into()),
+            limit: request.limit as u64,
+            with_vectors: request.with_vector.clone().map(|wv| wv.into()),
+            with_payload: request.with_payload.clone().map(|wp| wp.into()),
+            params: request.params.map(|sp| sp.into()),
+            score_threshold: request.score_threshold,
+            offset: Some(request.offset as u64),
+            vector_name: match request.query.get_vector_name() {
+                DEFAULT_VECTOR_NAME => None,
+                vector_name => Some(vector_name.to_string()),
+            },
+            read_consistency: None,
         }
     }
 }

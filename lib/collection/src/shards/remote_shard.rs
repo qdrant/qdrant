@@ -28,8 +28,8 @@ use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequest, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult,
+    InternalSearchRequest, InternalSearchRequestBatch, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
@@ -406,6 +406,10 @@ impl RemoteShard {
 // New-type to own the type in the crate for conversions via From
 pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequest));
 
+pub struct InternalCollectionSearchRequest<'a>(
+    pub(crate) (CollectionId, &'a InternalSearchRequest),
+);
+
 #[async_trait]
 #[allow(unused_variables)]
 impl ShardOperation for RemoteShard {
@@ -480,7 +484,7 @@ impl ShardOperation for RemoteShard {
 
     async fn search(
         &self,
-        batch_request: Arc<SearchRequestBatch>,
+        batch_request: Arc<InternalSearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -489,7 +493,7 @@ impl ShardOperation for RemoteShard {
         let search_points = batch_request
             .searches
             .iter()
-            .map(|s| CollectionSearchRequest((self.collection_id.clone(), s)).into())
+            .map(|s| InternalCollectionSearchRequest((self.collection_id.clone(), s)).into())
             .collect();
 
         let request = &SearchBatchPointsInternal {

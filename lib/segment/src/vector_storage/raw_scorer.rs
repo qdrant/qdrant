@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use bitvec::prelude::BitSlice;
 
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
@@ -78,7 +78,7 @@ pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer> {
 }
 
 pub fn new_stoppable_raw_scorer<'a>(
-    vector: Vec<VectorElementType>,
+    vector: QueryVector,
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
@@ -110,7 +110,7 @@ pub fn new_stoppable_raw_scorer<'a>(
 pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
 
 pub fn new_raw_scorer<'a>(
-    vector: Vec<VectorElementType>,
+    vector: QueryVector,
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
 ) -> Box<dyn RawScorer + 'a> {
@@ -118,6 +118,19 @@ pub fn new_raw_scorer<'a>(
 }
 
 pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
+    vector: QueryVector,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> Box<dyn RawScorer + 'a> {
+    match vector {
+        QueryVector::Single(vector) => {
+            new_metric_scorer(vector.to_vec(), vector_storage, point_deleted, is_stopped)
+        }
+    }
+}
+
+pub fn new_metric_scorer<'a, TVectorStorage: VectorStorage>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,

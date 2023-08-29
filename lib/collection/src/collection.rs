@@ -37,8 +37,9 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
-    CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
-    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, VectorsConfigDiff,
+    CountResult, InternalSearchRequestBatch, LocalShardInfo, NodeType, PointRequest, Record,
+    RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
+    VectorsConfigDiff,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
@@ -822,7 +823,7 @@ impl Collection {
 
     pub async fn search_batch(
         &self,
-        request: SearchRequestBatch,
+        request: InternalSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -872,7 +873,7 @@ impl Collection {
                 without_payload_request.with_vector = None;
                 without_payload_requests.push(without_payload_request);
             }
-            let without_payload_batch = SearchRequestBatch {
+            let without_payload_batch = InternalSearchRequestBatch {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
@@ -901,7 +902,7 @@ impl Collection {
 
     pub async fn _search_batch(
         &self,
-        request: SearchRequestBatch,
+        request: InternalSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -931,7 +932,7 @@ impl Collection {
             .zip(request.searches.iter())
             .map(|(res, request)| {
                 let distance = collection_params
-                    .get_vector_params(request.vector.get_name())?
+                    .get_vector_params(request.query.get_vector_name())?
                     .distance;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
@@ -1022,7 +1023,7 @@ impl Collection {
             searches: vec![request],
         };
         let results = self
-            ._search_batch(request_batch, read_consistency, shard_selection)
+            ._search_batch(request_batch.into(), read_consistency, shard_selection)
             .await?;
         Ok(results.into_iter().next().unwrap())
     }

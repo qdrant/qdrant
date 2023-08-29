@@ -8,7 +8,10 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{BinaryQuantization, CompressionRatio, GroupId};
+use super::qdrant::internal_search_points::QueryVector;
+use super::qdrant::{
+    BinaryQuantization, CompressionRatio, GroupId, InternalSearchPoints, SearchPoints,
+};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -133,6 +136,50 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
         }
     }
 }
+
+impl From<SearchPoints> for InternalSearchPoints {
+    fn from(value: SearchPoints) -> Self {
+        Self {
+            collection_name: value.collection_name,
+            query_vector: Some(QueryVector::Single(value.vector.into())),
+            filter: value.filter,
+            limit: value.limit,
+            with_payload: value.with_payload,
+            params: value.params,
+            score_threshold: value.score_threshold,
+            offset: value.offset,
+            vector_name: value.vector_name,
+            with_vectors: value.with_vectors,
+            read_consistency: value.read_consistency,
+        }
+    }
+}
+
+impl TryFrom<InternalSearchPoints> for SearchPoints {
+    type Error = Status;
+
+    fn try_from(internal: InternalSearchPoints) -> Result<Self, Self::Error> {
+        let QueryVector::Single(vector) = internal
+            .query_vector
+            .ok_or_else(|| Status::invalid_argument("Query vector is not \"single\" variant"))?;
+        let vector = vector.data;
+
+        Ok(Self {
+            vector,
+            filter: internal.filter,
+            params: internal.params,
+            limit: internal.limit,
+            offset: internal.offset,
+            with_payload: internal.with_payload,
+            with_vectors: internal.with_vectors,
+            score_threshold: internal.score_threshold,
+            collection_name:internal.collection_name,
+            vector_name: internal.vector_name,
+            read_consistency: internal.read_consistency,
+        })
+    }
+}
+
 
 impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
     fn from(tokenizer_type: segment::data_types::text_index::TokenizerType) -> Self {

@@ -15,7 +15,8 @@ use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
+    NamedVector, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct, VectorType,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
@@ -255,6 +256,81 @@ pub struct SearchRequest {
 pub struct SearchRequestBatch {
     #[validate]
     pub searches: Vec<SearchRequest>,
+}
+
+#[derive(Debug, Clone)]
+pub enum QueryEnum {
+    SingleVector(NamedVectorStruct),
+    // PositiveNegative {
+    //     positive: Vec<PointIdType>,
+    //     negative: Vec<PointIdType>,
+    //     using: UsingVector,
+    // },
+}
+
+impl QueryEnum {
+    pub fn get_vector_name(&self) -> &str {
+        match self {
+            QueryEnum::SingleVector(vector) => vector.get_name(),
+            // QueryEnum::PositiveNegative { using: UsingVector::Name(name), .. } => name
+        }
+    }
+
+    pub fn from_grpc(
+        query: api::grpc::qdrant::internal_search_points::QueryVector,
+        name: Option<String>,
+    ) -> Self {
+        match (query, name) {
+            (api::grpc::qdrant::internal_search_points::QueryVector::Single(vector), None) => {
+                Self::SingleVector(vector.data.into())
+            }
+            (
+                api::grpc::qdrant::internal_search_points::QueryVector::Single(vector),
+                Some(name),
+            ) => Self::SingleVector(NamedVectorStruct::Named(NamedVector {
+                name,
+                vector: vector.data,
+            })),
+        }
+    }
+}
+
+impl From<Vec<VectorElementType>> for QueryEnum {
+    fn from(vector: Vec<VectorElementType>) -> Self {
+        QueryEnum::SingleVector(NamedVectorStruct::Default(vector))
+    }
+}
+
+impl AsRef<QueryEnum> for QueryEnum {
+    fn as_ref(&self) -> &QueryEnum {
+        self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InternalSearchRequest {
+    /// Every kind of query that can be performed on segment level
+    pub query: QueryEnum,
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+    /// Additional search params
+    pub params: Option<SearchParams>,
+    /// Max number of result to return
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    pub offset: usize,
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    pub with_vector: Option<WithVector>,
+    pub score_threshold: Option<ScoreType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InternalSearchRequestBatch {
+    pub searches: Vec<InternalSearchRequest>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -1107,4 +1183,39 @@ pub struct BaseGroupRequest {
 
     /// Look for points in another collection using the group ids
     pub with_lookup: Option<WithLookupInterface>,
+}
+
+impl From<SearchRequestBatch> for InternalSearchRequestBatch {
+    fn from(batch: SearchRequestBatch) -> Self {
+        InternalSearchRequestBatch {
+            searches: batch
+                .searches
+                .into_iter()
+                .map(InternalSearchRequest::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<SearchRequest> for InternalSearchRequest {
+    fn from(request: SearchRequest) -> Self {
+        Self {
+            query: QueryEnum::SingleVector(request.vector),
+            filter: request.filter,
+            params: request.params,
+            limit: request.limit,
+            offset: request.offset,
+            with_payload: request.with_payload,
+            with_vector: request.with_vector,
+            score_threshold: request.score_threshold,
+        }
+    }
+}
+
+impl From<QueryEnum> for QueryVector {
+    fn from(query: QueryEnum) -> Self {
+        match query {
+            QueryEnum::SingleVector(named_vector) => QueryVector::Single(named_vector.to_vector()),
+        }
+    }
 }

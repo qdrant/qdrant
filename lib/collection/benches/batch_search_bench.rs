@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
-use collection::operations::types::{SearchRequest, SearchRequestBatch, VectorParams};
+use collection::operations::types::{
+    InternalSearchRequest, InternalSearchRequestBatch, SearchRequest,
+    VectorParams,
+};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
@@ -146,8 +149,8 @@ fn batch_search_bench(c: &mut Criterion) {
                         };
                         let result = shard
                             .search(
-                                Arc::new(SearchRequestBatch {
-                                    searches: vec![search_query],
+                                Arc::new(InternalSearchRequestBatch {
+                                    searches: vec![search_query.into()],
                                 }),
                                 search_runtime_handle,
                             )
@@ -166,8 +169,8 @@ fn batch_search_bench(c: &mut Criterion) {
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        let search_query = SearchRequest {
-                            vector: query.into(),
+                        let search_query = InternalSearchRequest {
+                            query: query.into(),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,
@@ -179,7 +182,7 @@ fn batch_search_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let search_query = SearchRequestBatch { searches };
+                    let search_query = InternalSearchRequestBatch { searches };
                     let result = shard
                         .search(Arc::new(search_query), search_runtime_handle)
                         .await

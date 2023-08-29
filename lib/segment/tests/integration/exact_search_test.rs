@@ -137,7 +137,7 @@ fn exact_search_test() {
     let top = 3;
     let attempts = 50;
     for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim);
+        let query = random_vector(&mut rnd, dim).into();
 
         let index_result = hnsw_index.search(
             &[&query],

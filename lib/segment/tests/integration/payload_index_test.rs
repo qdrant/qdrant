@@ -260,7 +260,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
 fn validate_geo_filter(query_filter: Filter) {
     let mut rnd = rand::thread_rng();
-    let query_vector = random_vector(&mut rnd, DIM);
+    let query = random_vector(&mut rnd, DIM).into();
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
     let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
     let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
@@ -269,7 +269,7 @@ fn validate_geo_filter(query_filter: Filter) {
         let plain_result = plain_segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &query_vector,
+                &query,
                 &WithPayload::default(),
                 &false.into(),
                 Some(&query_filter),
@@ -294,7 +294,7 @@ fn validate_geo_filter(query_filter: Filter) {
         let struct_result = struct_segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &query_vector,
+                &query,
                 &WithPayload::default(),
                 &false.into(),
                 Some(&query_filter),
@@ -536,7 +536,7 @@ fn test_struct_payload_index() {
     let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
 
     for _i in 0..ATTEMPTS {
-        let query_vector = random_vector(&mut rnd, DIM);
+        let query_vector = random_vector(&mut rnd, DIM).into();
         let query_filter = random_filter(&mut rnd, 3);
 
         let plain_result = plain_segment
@@ -681,7 +681,7 @@ fn test_struct_payload_index_nested_fields() {
 
     let attempts = 100;
     for _i in 0..attempts {
-        let query_vector = random_vector(&mut rnd, DIM);
+        let query_vector = random_vector(&mut rnd, DIM).into();
         let query_filter = random_nested_filter(&mut rnd);
         let plain_result = plain_segment
             .search(
