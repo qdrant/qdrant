@@ -87,10 +87,11 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
-    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, dir.path()).unwrap();
+    let mut index =
+        StructPayloadIndex::open(payload_storage, id_tracker, dir.path(), true).unwrap();
 
     index
-        .set_indexed(BOOL_KEY, PayloadSchemaType::Keyword.into())
+        .set_indexed(BOOL_KEY, PayloadSchemaType::Keyword.into(), true)
         .unwrap();
 
     let mut group = c.benchmark_group("boolean-query-points");

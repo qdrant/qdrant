@@ -86,6 +86,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
+        _is_appendable: bool,
     ) -> OperationResult<()> {
         if let Some(prev_schema) = self
             .config
@@ -175,7 +176,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn wipe(&mut self, _is_appendable: bool) -> OperationResult<()> {
         unreachable!()
     }
 

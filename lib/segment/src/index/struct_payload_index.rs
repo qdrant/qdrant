@@ -102,11 +102,11 @@ impl StructPayloadIndex {
         self.config.save(&config_path)
     }
 
-    fn load_all_fields(&mut self) -> OperationResult<()> {
+    fn load_all_fields(&mut self, is_appendable: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
         for (field, payload_schema) in &self.config.indexed_fields {
-            let field_index = self.load_from_db(field, payload_schema.to_owned())?;
+            let field_index = self.load_from_db(field, payload_schema.to_owned(), is_appendable)?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -117,8 +117,9 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
+        is_appendable: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let mut indexes = index_selector(field, &payload_schema, self.db.clone());
+        let mut indexes = index_selector(field, &payload_schema, self.db.clone(), is_appendable);
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
@@ -129,7 +130,7 @@ impl StructPayloadIndex {
         }
         if !is_loaded {
             debug!("Index for `{field}` was not loaded. Building...");
-            indexes = self.build_field_indexes(field, payload_schema)?;
+            indexes = self.build_field_indexes(field, payload_schema, is_appendable)?;
         }
 
         Ok(indexes)
@@ -139,6 +140,7 @@ impl StructPayloadIndex {
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
+        is_appendable: bool,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -166,7 +168,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields()?;
+        index.load_all_fields(is_appendable)?;
 
         Ok(index)
     }
@@ -175,9 +177,11 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
+        is_appendable: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut field_indexes = index_selector(field, &payload_schema, self.db.clone());
+        let mut field_indexes =
+            index_selector(field, &payload_schema, self.db.clone(), is_appendable);
         for index in &field_indexes {
             index.recreate()?;
         }
@@ -196,8 +200,9 @@ impl StructPayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
+        is_appendable: bool,
     ) -> OperationResult<()> {
-        let field_indexes = self.build_field_indexes(field, payload_schema)?;
+        let field_indexes = self.build_field_indexes(field, payload_schema, is_appendable)?;
         self.field_indexes.insert(field.into(), field_indexes);
         Ok(())
     }
@@ -343,6 +348,7 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
+        is_appendable: bool,
     ) -> OperationResult<()> {
         if let Some(prev_schema) = self
             .config
@@ -355,7 +361,7 @@ impl PayloadIndex for StructPayloadIndex {
                 return Ok(());
             }
         }
-        self.build_and_save(field, payload_schema)?;
+        self.build_and_save(field, payload_schema, is_appendable)?;
         self.save_config()?;
 
         Ok(())
@@ -513,14 +519,14 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow_mut().drop(point_id)
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn wipe(&mut self, is_appendable: bool) -> OperationResult<()> {
         self.payload.borrow_mut().wipe()?;
         for (_, field_indexes) in self.field_indexes.iter_mut() {
             for index in field_indexes.drain(..) {
                 index.clear()?;
             }
         }
-        self.load_all_fields()
+        self.load_all_fields(is_appendable)
     }
 
     fn flusher(&self) -> Flusher {

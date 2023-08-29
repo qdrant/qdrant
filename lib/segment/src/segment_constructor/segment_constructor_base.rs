@@ -81,11 +81,21 @@ fn create_segment(
 
     let id_tracker = sp(SimpleIdTracker::open(database.clone())?);
 
+    let is_appendaple_by_config = config
+        .vector_data
+        .values()
+        .map(|vector_config| match &vector_config.index {
+            Indexes::Plain {} => true,
+            Indexes::Hnsw(_) => false,
+        })
+        .all(|x| x);
+
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
         payload_storage,
         id_tracker.clone(),
         &payload_index_path,
+        is_appendaple_by_config,
     )?);
 
     let mut vector_data = HashMap::new();
@@ -178,6 +188,7 @@ fn create_segment(
         SegmentType::Plain
     };
     let appendable_flag = vector_data.values().all(VectorData::is_appendable);
+    assert_eq!(is_appendaple_by_config, appendable_flag);
 
     Ok(Segment {
         version,

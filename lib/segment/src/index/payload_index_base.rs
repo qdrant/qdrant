@@ -22,6 +22,7 @@ pub trait PayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
+        is_appendable: bool,
     ) -> OperationResult<()>;
 
     /// Remove index
@@ -81,7 +82,7 @@ pub trait PayloadIndex {
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
 
     /// Completely drop payload. Pufff!
-    fn wipe(&mut self) -> OperationResult<()>;
+    fn wipe(&mut self, is_appendable: bool) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

@@ -96,7 +96,7 @@ fn test_filterable_hnsw() {
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(int_key, PayloadSchemaType::Integer.into())
+        .set_indexed(int_key, PayloadSchemaType::Integer.into(), true)
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index

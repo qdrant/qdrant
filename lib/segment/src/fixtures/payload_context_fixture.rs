@@ -225,27 +225,27 @@ pub fn create_struct_payload_index(
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
-    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path).unwrap();
+    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path, true).unwrap();
 
     index
-        .set_indexed(STR_KEY, PayloadSchemaType::Keyword.into())
+        .set_indexed(STR_KEY, PayloadSchemaType::Keyword.into(), true)
         .unwrap();
     index
-        .set_indexed(INT_KEY, PayloadSchemaType::Integer.into())
+        .set_indexed(INT_KEY, PayloadSchemaType::Integer.into(), true)
         .unwrap();
     index
-        .set_indexed(FLT_KEY, PayloadSchemaType::Float.into())
+        .set_indexed(FLT_KEY, PayloadSchemaType::Float.into(), true)
         .unwrap();
     index
-        .set_indexed(GEO_KEY, PayloadSchemaType::Geo.into())
-        .unwrap();
-
-    index
-        .set_indexed(TEXT_KEY, PayloadSchemaType::Text.into())
+        .set_indexed(GEO_KEY, PayloadSchemaType::Geo.into(), true)
         .unwrap();
 
     index
-        .set_indexed(BOOL_KEY, PayloadSchemaType::Bool.into())
+        .set_indexed(TEXT_KEY, PayloadSchemaType::Text.into(), true)
+        .unwrap();
+
+    index
+        .set_indexed(BOOL_KEY, PayloadSchemaType::Bool.into(), true)
         .unwrap();
 
     index
