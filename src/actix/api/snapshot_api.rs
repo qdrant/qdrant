@@ -330,7 +330,7 @@ async fn recover_shard_snapshot(
 
         // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!?
 
-        let snapshot_path= match request.location {
+        let snapshot_path = match request.location {
             ShardSnapshotLocation::Url(url) => {
                 if !matches!(url.scheme(), "http" | "https") {
                     return Err(StorageError::bad_input("TODO").into());
