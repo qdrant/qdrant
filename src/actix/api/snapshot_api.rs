@@ -15,6 +15,7 @@ use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::snapshots::download::downloaded_snapshots_dir;
 use storage::content_manager::snapshots::recover::{activate_shard, do_recover_from_snapshot};
 use storage::content_manager::snapshots::{
     self, do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
@@ -325,7 +326,9 @@ async fn recover_shard_snapshot(
     let future = async move {
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
-        let snapshots_dir = collection.get_snapshots_path_for_shard(shard).await?;
+
+        let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
+        tokio::fs::create_dir_all(&snapshot_download_path).await?;
 
         // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!?
 
@@ -335,7 +338,7 @@ async fn recover_shard_snapshot(
                     return Err(StorageError::bad_input("TODO").into());
                 }
 
-                snapshots::download::download_snapshot(url, &snapshots_dir).await?
+                snapshots::download::download_snapshot(url, &snapshot_download_path).await?
             }
 
             ShardSnapshotLocation::Path(path) => {
