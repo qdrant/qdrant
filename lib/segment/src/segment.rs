@@ -1990,7 +1990,7 @@ mod tests {
         segment.delete_point(103, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 1);
-        assert_eq!(segment_info.num_vectors, 1);
+        assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
 
         // Delete vector of point 6, vector count should now be zero
         segment
@@ -1998,7 +1998,7 @@ mod tests {
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 1);
-        assert_eq!(segment_info.num_vectors, 0);
+        assert_eq!(segment_info.num_vectors, 1);
     }
 
     #[test]
@@ -2071,19 +2071,19 @@ mod tests {
         segment.delete_point(105, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 4);
+        assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
         // Delete vector 'a' of point 6, vector count should decrease by 1
         segment.delete_vector(106, 6.into(), "a").unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Deleting it again shouldn't chain anything
         segment.delete_vector(107, 6.into(), "a").unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Replace vector 'a' for point 8, counts should remain the same
         let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
@@ -2092,7 +2092,7 @@ mod tests {
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Replace both vectors for point 8, adding a new vector
         segment
@@ -2103,7 +2103,7 @@ mod tests {
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 4);
+        assert_eq!(segment_info.num_vectors, 6);
     }
 
     /// Tests segment functions to ensure invalid requests do error
