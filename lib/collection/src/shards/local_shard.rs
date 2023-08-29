@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::thread;
 
 use arc_swap::ArcSwap;
+use fs_extra::dir::CopyOptions;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
@@ -70,8 +71,39 @@ impl LocalShard {
         let wal_to = Self::wal_path(to);
         let segments_from = Self::segments_path(from);
         let segments_to = Self::segments_path(to);
-        tokio::fs::rename(wal_from, wal_to).await?;
-        tokio::fs::rename(segments_from, segments_to).await?;
+
+        // Try to rename first and fallback to copy to prevert TOCTOU
+        if let Err(_err) = tokio::fs::rename(&wal_from, &wal_to).await {
+            // If rename failed, try to copy WAL and segments
+            let task = tokio::task::spawn_blocking(move || {
+                let options = CopyOptions::new();
+                fs_extra::dir::move_dir(&wal_from, &wal_to, &options).map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Can't move WAL from {} to {} due to {}",
+                        wal_from.display(),
+                        wal_to.display(),
+                        err
+                    ))
+                })
+            });
+            task.await??;
+        }
+
+        if let Err(_err) = tokio::fs::rename(&segments_from, &segments_to).await {
+            // If rename failed, try to copy WAL and segments
+            let task = tokio::task::spawn_blocking(move || {
+                let options = CopyOptions::new();
+                fs_extra::dir::move_dir(&segments_from, &segments_to, &options).map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Can't move segments from {} to {} due to {}",
+                        segments_from.display(),
+                        segments_to.display(),
+                        err
+                    ))
+                })
+            });
+            task.await??;
+        }
         Ok(())
     }
 
