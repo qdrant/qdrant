@@ -767,7 +767,7 @@ fn test_update_payload_index_type() {
         StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
 
     // set field to Integer type
-    index.set_indexed("field", Integer.into(), true).unwrap();
+    index.set_indexed("field", Integer.into()).unwrap();
     assert_eq!(
         *index.indexed_fields().get("field").unwrap(),
         FieldType(Integer)
@@ -777,7 +777,7 @@ fn test_update_payload_index_type() {
     assert_eq!(field_index[1].count_indexed_points(), point_num);
 
     // update field to Keyword type
-    index.set_indexed("field", Keyword.into(), true).unwrap();
+    index.set_indexed("field", Keyword.into()).unwrap();
     assert_eq!(
         *index.indexed_fields().get("field").unwrap(),
         FieldType(Keyword)
@@ -786,7 +786,7 @@ fn test_update_payload_index_type() {
     assert_eq!(field_index[0].count_indexed_points(), 0); // only one field index for Keyword
 
     // set field to Integer type (again)
-    index.set_indexed("field", Integer.into(), true).unwrap();
+    index.set_indexed("field", Integer.into()).unwrap();
     assert_eq!(
         *index.indexed_fields().get("field").unwrap(),
         FieldType(Integer)

@@ -1323,14 +1323,13 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
         field_type: Option<&PayloadFieldSchema>,
     ) -> OperationResult<bool> {
-        let is_appendable = self.is_appendable();
         self.handle_version_and_failure(op_num, None, |segment| match field_type {
             Some(schema) => {
-                segment.payload_index.borrow_mut().set_indexed(
-                    key,
-                    schema.clone(),
-                    is_appendable,
-                )?;
+                // todo(ivan)
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .set_indexed(key, schema.clone())?;
                 Ok((true, None))
             }
             None => match segment.infer_from_payload_data(key)? {
@@ -1338,11 +1337,11 @@ impl SegmentEntry for Segment {
                     field_name: key.to_string(),
                 }),
                 Some(schema_type) => {
-                    segment.payload_index.borrow_mut().set_indexed(
-                        key,
-                        schema_type.into(),
-                        is_appendable,
-                    )?;
+                    // todo(ivan)
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .set_indexed(key, schema_type.into())?;
                     Ok((true, None))
                 }
             },

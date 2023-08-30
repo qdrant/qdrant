@@ -75,22 +75,22 @@ fn test_filtering_context_consistency() {
         StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
 
     index
-        .set_indexed("f", PayloadSchemaType::Integer.into(), true)
+        .set_indexed("f", PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].a", PayloadSchemaType::Integer.into(), true)
+        .set_indexed("arr1[].a", PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].b", PayloadSchemaType::Integer.into(), true)
+        .set_indexed("arr1[].b", PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].c", PayloadSchemaType::Integer.into(), true)
+        .set_indexed("arr1[].c", PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].d", PayloadSchemaType::Integer.into(), true)
+        .set_indexed("arr1[].d", PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].text", PayloadSchemaType::Text.into(), true)
+        .set_indexed("arr1[].text", PayloadSchemaType::Text.into())
         .unwrap();
 
     {

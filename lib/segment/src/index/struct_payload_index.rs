@@ -130,7 +130,8 @@ impl StructPayloadIndex {
         }
         if !is_loaded {
             debug!("Index for `{field}` was not loaded. Building...");
-            indexes = self.build_field_indexes(field, payload_schema, is_appendable)?;
+            // todo(ivan): decide what to do with indexes, which were not loaded
+            indexes = self.build_field_indexes(field, payload_schema)?;
         }
 
         Ok(indexes)
@@ -177,11 +178,9 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
-        is_appendable: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut field_indexes =
-            index_selector(field, &payload_schema, self.db.clone(), is_appendable);
+        let mut field_indexes = index_selector(field, &payload_schema, self.db.clone(), true);
         for index in &field_indexes {
             index.recreate()?;
         }
@@ -200,9 +199,8 @@ impl StructPayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
-        is_appendable: bool,
     ) -> OperationResult<()> {
-        let field_indexes = self.build_field_indexes(field, payload_schema, is_appendable)?;
+        let field_indexes = self.build_field_indexes(field, payload_schema)?;
         self.field_indexes.insert(field.into(), field_indexes);
         Ok(())
     }
@@ -348,7 +346,6 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
-        is_appendable: bool,
     ) -> OperationResult<()> {
         if let Some(prev_schema) = self
             .config
@@ -361,7 +358,7 @@ impl PayloadIndex for StructPayloadIndex {
                 return Ok(());
             }
         }
-        self.build_and_save(field, payload_schema, is_appendable)?;
+        self.build_and_save(field, payload_schema)?;
         self.save_config()?;
 
         Ok(())

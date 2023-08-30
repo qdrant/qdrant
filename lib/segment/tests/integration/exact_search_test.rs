@@ -96,7 +96,7 @@ fn exact_search_test() {
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(int_key, PayloadSchemaType::Integer.into(), true)
+        .set_indexed(int_key, PayloadSchemaType::Integer.into())
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
