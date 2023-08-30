@@ -232,7 +232,7 @@
     },
     "/healthz": {
       "get": {
-        "summary": "Kubernets healthz endpoint",
+        "summary": "Kubernetes healthz endpoint",
         "description": "An endpoint for health checking used in Kubernetes.",
         "operationId": "healthz",
         "tags": [
@@ -258,7 +258,7 @@
     },
     "/livez": {
       "get": {
-        "summary": "Kubernets livez endpoint",
+        "summary": "Kubernetes livez endpoint",
         "description": "An endpoint for health checking used in Kubernetes.",
         "operationId": "livez",
         "tags": [
@@ -284,7 +284,7 @@
     },
     "/readyz": {
       "get": {
-        "summary": "Kubernets readyz endpoint",
+        "summary": "Kubernetes readyz endpoint",
         "description": "An endpoint for health checking used in Kubernetes.",
         "operationId": "readyz",
         "tags": [
