@@ -15,13 +15,12 @@ use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
-use storage::content_manager::snapshots::download::downloaded_snapshots_dir;
 use storage::content_manager::snapshots::recover::{activate_shard, do_recover_from_snapshot};
 use storage::content_manager::snapshots::{
     self, do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots, get_full_snapshot_path,
 };
-use storage::content_manager::toc::{TableOfContent, SNAPSHOTS_TEMP_DIR};
+use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tokio::sync::RwLockReadGuard;
 use uuid::Uuid;
@@ -306,7 +305,7 @@ async fn create_shard_snapshot(
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
         let snapshot = collection
-            .create_shard_snapshot(shard, &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR))
+            .create_shard_snapshot(shard, &toc.optional_temp_or_snapshot_temp_path()?)
             .await?;
 
         Ok(snapshot)
@@ -328,7 +327,7 @@ async fn recover_shard_snapshot(
         let collection = toc.get_collection(&collection).await?;
         collection.assert_shard_exists(shard).await?;
 
-        // TODO: Handle cleanup on download failure (e.g., using `tempfile`)!?
+        let download_dir = toc.snapshots_download_tempdir()?;
 
         let snapshot_path = match request.location {
             ShardSnapshotLocation::Url(url) => {
@@ -340,11 +339,7 @@ async fn recover_shard_snapshot(
 
                     return Err(StorageError::bad_input(description).into());
                 }
-
-                let downloaded_snapshots_dir = downloaded_snapshots_dir(toc.snapshots_path());
-                tokio::fs::create_dir_all(&downloaded_snapshots_dir).await?;
-
-                snapshots::download::download_snapshot(url, &downloaded_snapshots_dir).await?
+                snapshots::download::download_snapshot(url, download_dir.path()).await?
             }
 
             ShardSnapshotLocation::Path(path) => {
@@ -498,7 +493,7 @@ async fn recover_shard_snapshot_impl(
             snapshot_path,
             toc.this_peer_id,
             toc.is_distributed(),
-            &toc.temp_snapshots_path().join(SNAPSHOTS_TEMP_DIR),
+            &toc.optional_temp_or_snapshot_temp_path()?,
         )
         .await?;
 
