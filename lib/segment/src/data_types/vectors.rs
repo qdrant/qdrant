@@ -213,17 +213,17 @@ impl BatchVectorStruct {
 #[derive(Debug, Clone)]
 pub enum QueryVector {
     Nearest(VectorType),
-    // having an enum will allow other inputs like:
-    // PositiveNegative {
-    //     positives: Vec<Vec<VectorElementType>>,
-    //     negatives: Vec<Vec<VectorElementType>>,
-    // }
+    PositiveNegative {
+        positives: Vec<Vec<VectorElementType>>,
+        negatives: Vec<Vec<VectorElementType>>,
+    },
 }
 
 impl QueryVector {
     pub fn as_single(&self) -> Option<&[VectorElementType]> {
         match self {
             QueryVector::Nearest(v) => Some(v),
+            _ => None,
         }
     }
 }

@@ -38,8 +38,27 @@ pub fn check_vector(
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
+    _check_vector(vector, vector_config)
+}
+
+fn _check_vector(
+    vector: &QueryVector,
+    vector_config: &VectorDataConfig,
+) -> OperationResult<()> {
     match vector {
         QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
+        QueryVector::PositiveNegative {
+            positives,
+            negatives,
+        } => {
+            positives
+                .iter()
+                .try_for_each(|vector| check_vector_against_config(vector, vector_config))?;
+
+            negatives
+                .iter()
+                .try_for_each(|vector| check_vector_against_config(vector, vector_config))?;
+        }
     }
 
     Ok(())
@@ -55,9 +74,7 @@ pub fn check_vectors(
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
     for vector in vectors {
-        match vector {
-            QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
-        }
+        _check_vector(vector, vector_config)?;
     }
     Ok(())
 }
