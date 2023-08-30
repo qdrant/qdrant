@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use api::grpc::qdrant::core_search_points::QueryVector;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CountPointsInternal, CountResponse,
@@ -201,7 +200,7 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
         let SearchBatchPointsInternal {
             collection_name,
-            search_points: internal_search_points,
+            search_points,
             shard_id,
         } = request.into_inner();
 
@@ -210,14 +209,6 @@ impl PointsInternal for PointsInternalService {
         // search_points
         //     .iter_mut()
         //     .for_each(|search_points| search_points.read_consistency = None);
-
-        let mut search_points = Vec::default();
-        for search in internal_search_points {
-            match search.query_vector {
-                Some(QueryVector::Nearest(_)) => search_points.push(search.try_into()?),
-                None => return Err(Status::invalid_argument("Query vector is missing")),
-            }
-        }
 
         search_batch(
             self.toc.as_ref(),

@@ -12,8 +12,8 @@ use tokio::sync::Mutex;
 use super::remote_shard::RemoteShard;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest, CountResult,
-    PointRequest, Record, UpdateResult,
+    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
+    SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -206,7 +206,7 @@ impl ShardOperation for QueueProxyShard {
     /// Forward read-only `search` to `wrapped_shard`
     async fn search(
         &self,
-        request: Arc<CoreSearchRequestBatch>,
+        request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;

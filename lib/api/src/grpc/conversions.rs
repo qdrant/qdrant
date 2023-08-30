@@ -8,10 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::core_search_points::QueryVector;
-use super::qdrant::{
-    BinaryQuantization, CompressionRatio, CoreSearchPoints, GroupId, SearchPoints,
-};
+use super::qdrant::{BinaryQuantization, CompressionRatio, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -134,49 +131,6 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
             collections,
             time: timing.elapsed().as_secs_f64(),
         }
-    }
-}
-
-impl From<SearchPoints> for CoreSearchPoints {
-    fn from(value: SearchPoints) -> Self {
-        Self {
-            collection_name: value.collection_name,
-            query_vector: Some(QueryVector::Nearest(value.vector.into())),
-            filter: value.filter,
-            limit: value.limit,
-            with_payload: value.with_payload,
-            params: value.params,
-            score_threshold: value.score_threshold,
-            offset: value.offset,
-            vector_name: value.vector_name,
-            with_vectors: value.with_vectors,
-            read_consistency: value.read_consistency,
-        }
-    }
-}
-
-impl TryFrom<CoreSearchPoints> for SearchPoints {
-    type Error = Status;
-
-    fn try_from(search: CoreSearchPoints) -> Result<Self, Self::Error> {
-        let QueryVector::Nearest(vector) = search
-            .query_vector
-            .ok_or_else(|| Status::invalid_argument("Query vector is not \"single\" variant"))?;
-        let vector = vector.data;
-
-        Ok(Self {
-            vector,
-            filter: search.filter,
-            params: search.params,
-            limit: search.limit,
-            offset: search.offset,
-            with_payload: search.with_payload,
-            with_vectors: search.with_vectors,
-            score_threshold: search.score_threshold,
-            collection_name: search.collection_name,
-            vector_name: search.vector_name,
-            read_consistency: search.read_consistency,
-        })
     }
 }
 

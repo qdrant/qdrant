@@ -15,7 +15,7 @@ use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    NamedVector, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct, VectorType,
+    NamedVectorStruct, QueryVector, VectorElementType, VectorStruct, VectorType,
     DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
@@ -273,23 +273,6 @@ impl QueryEnum {
         match self {
             QueryEnum::Nearest(vector) => vector.get_name(),
             // QueryEnum::PositiveNegative { using: UsingVector::Name(name), .. } => name
-        }
-    }
-
-    pub fn from_grpc(
-        query: api::grpc::qdrant::core_search_points::QueryVector,
-        name: Option<String>,
-    ) -> Self {
-        match (query, name) {
-            (api::grpc::qdrant::core_search_points::QueryVector::Nearest(vector), None) => {
-                Self::Nearest(vector.data.into())
-            }
-            (api::grpc::qdrant::core_search_points::QueryVector::Nearest(vector), Some(name)) => {
-                Self::Nearest(NamedVectorStruct::Named(NamedVector {
-                    name,
-                    vector: vector.data,
-                }))
-            }
         }
     }
 }

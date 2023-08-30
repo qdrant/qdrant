@@ -13,7 +13,7 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, Record, UpdateResult, UpdateStatus,
+    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
@@ -118,7 +118,7 @@ impl ShardOperation for LocalShard {
 
     async fn search(
         &self,
-        request: Arc<CoreSearchRequestBatch>,
+        request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let (collection_params, indexing_threshold_kb) = {
@@ -131,8 +131,11 @@ impl ShardOperation for LocalShard {
                     .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
             )
         };
+
+        let core_request = Arc::new(CoreSearchRequestBatch::from(request.as_ref().clone()));
+
         // check vector names existing
-        for req in &request.searches {
+        for req in &core_request.searches {
             collection_params.get_vector_params(req.query.get_vector_name())?;
         }
 
@@ -140,7 +143,7 @@ impl ShardOperation for LocalShard {
 
         let search_request = SegmentsSearcher::search(
             self.segments(),
-            request.clone(),
+            core_request.clone(),
             search_runtime_handle,
             true,
             is_stopped.get_is_stopped(),
@@ -158,7 +161,7 @@ impl ShardOperation for LocalShard {
 
         let top_results = res
             .into_iter()
-            .zip(request.searches.iter())
+            .zip(core_request.searches.iter())
             .map(|(vector_res, req)| {
                 let vector_name = req.query.get_vector_name();
                 let distance = collection_params

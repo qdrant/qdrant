@@ -309,6 +309,6 @@ where
     let search_batch_request = SearchRequestBatch { searches };
 
     collection
-        .search_batch(search_batch_request.into(), read_consistency, None)
+        .search_batch(search_batch_request, read_consistency, None)
         .await
 }

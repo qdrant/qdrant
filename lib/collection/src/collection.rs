@@ -36,10 +36,9 @@ use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
 use crate::operations::types::{
-    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult,
-    CoreSearchRequestBatch, CountRequest, CountResult, LocalShardInfo, NodeType, PointRequest,
-    Record, RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult, VectorsConfigDiff,
+    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
+    CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
+    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, VectorsConfigDiff,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
@@ -823,7 +822,7 @@ impl Collection {
 
     pub async fn search_batch(
         &self,
-        request: CoreSearchRequestBatch,
+        request: SearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -873,7 +872,7 @@ impl Collection {
                 without_payload_request.with_vector = None;
                 without_payload_requests.push(without_payload_request);
             }
-            let without_payload_batch = CoreSearchRequestBatch {
+            let without_payload_batch = SearchRequestBatch {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
@@ -902,15 +901,14 @@ impl Collection {
 
     pub async fn _search_batch(
         &self,
-        request: CoreSearchRequestBatch,
+        request: SearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let batch_size = request.searches.len();
         let request = Arc::new(request);
 
         // query all shards concurrently
-        let mut all_searches_res = {
+        let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards
@@ -918,6 +916,18 @@ impl Collection {
                 .map(|shard| shard.search(request.clone(), read_consistency));
             try_join_all(all_searches).await?
         };
+
+        self.merge_from_shards(all_searches_res, request, shard_selection)
+            .await
+    }
+
+    async fn merge_from_shards(
+        &self,
+        mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
+        request: Arc<SearchRequestBatch>,
+        shard_selection: Option<u32>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, CollectionError> {
+        let batch_size = request.searches.len();
 
         // merge results from shards in order
         let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
@@ -932,7 +942,7 @@ impl Collection {
             .zip(request.searches.iter())
             .map(|(res, request)| {
                 let distance = collection_params
-                    .get_vector_params(request.query.get_vector_name())?
+                    .get_vector_params(request.vector.get_name())?
                     .distance;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
@@ -1023,7 +1033,7 @@ impl Collection {
             searches: vec![request],
         };
         let results = self
-            ._search_batch(request_batch.into(), read_consistency, shard_selection)
+            ._search_batch(request_batch, read_consistency, shard_selection)
             .await?;
         Ok(results.into_iter().next().unwrap())
     }
