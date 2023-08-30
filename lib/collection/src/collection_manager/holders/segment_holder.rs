@@ -460,7 +460,7 @@ impl<'s> SegmentHolder {
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool) -> OperationResult<SeqNumberType> {
         // Grab and keep to segment RwLock's until the end of this function
-        let segments = self.segment_locks(self.segment_flush_ordering());
+        let segments = self.segment_locks(self.segment_flush_ordering())?;
 
         // Read-lock all segments before flushing any, must prevent any writes to any segment
         // That is to prevent any copy-on-write operation on two segments from occurring in between
@@ -521,10 +521,17 @@ impl<'s> SegmentHolder {
     fn segment_locks(
         &self,
         segment_ids: impl IntoIterator<Item = SegmentId>,
-    ) -> Vec<Arc<RwLock<dyn SegmentEntry>>> {
+    ) -> OperationResult<Vec<Arc<RwLock<dyn SegmentEntry>>>> {
         segment_ids
             .into_iter()
-            .map(|segment_id| self.segments.get(&segment_id).unwrap().get())
+            .map(|segment_id| {
+                self.segments
+                    .get(&segment_id)
+                    .ok_or_else(|| {
+                        OperationError::service_error(format!("No segment with ID {segment_id}"))
+                    })
+                    .map(LockedSegment::get)
+            })
             .collect()
     }
 
