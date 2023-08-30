@@ -76,7 +76,7 @@ impl LocalShard {
         if let Err(_err) = tokio::fs::rename(&wal_from, &wal_to).await {
             // If rename failed, try to copy WAL and segments
             let task = tokio::task::spawn_blocking(move || {
-                let options = CopyOptions::new();
+                let options = CopyOptions::new().copy_inside(true);
                 fs_extra::dir::move_dir(&wal_from, &wal_to, &options).map_err(|err| {
                     CollectionError::service_error(format!(
                         "Can't move WAL from {} to {} due to {}",
@@ -92,7 +92,7 @@ impl LocalShard {
         if let Err(_err) = tokio::fs::rename(&segments_from, &segments_to).await {
             // If rename failed, try to copy WAL and segments
             let task = tokio::task::spawn_blocking(move || {
-                let options = CopyOptions::new();
+                let options = CopyOptions::new().copy_inside(true);
                 fs_extra::dir::move_dir(&segments_from, &segments_to, &options).map_err(|err| {
                     CollectionError::service_error(format!(
                         "Can't move segments from {} to {} due to {}",
