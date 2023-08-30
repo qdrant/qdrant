@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::thread;
 
 use arc_swap::ArcSwap;
-use fs_extra::dir::CopyOptions;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
@@ -30,6 +29,7 @@ use wal::{Wal, WalOptions};
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::file_utils::move_dir;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
@@ -72,38 +72,9 @@ impl LocalShard {
         let segments_from = Self::segments_path(from);
         let segments_to = Self::segments_path(to);
 
-        // Try to rename first and fallback to copy to prevert TOCTOU
-        if let Err(_err) = tokio::fs::rename(&wal_from, &wal_to).await {
-            // If rename failed, try to copy WAL and segments
-            let task = tokio::task::spawn_blocking(move || {
-                let options = CopyOptions::new().copy_inside(true);
-                fs_extra::dir::move_dir(&wal_from, &wal_to, &options).map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Can't move WAL from {} to {} due to {}",
-                        wal_from.display(),
-                        wal_to.display(),
-                        err
-                    ))
-                })
-            });
-            task.await??;
-        }
+        move_dir(wal_from, wal_to).await?;
+        move_dir(segments_from, segments_to).await?;
 
-        if let Err(_err) = tokio::fs::rename(&segments_from, &segments_to).await {
-            // If rename failed, try to copy WAL and segments
-            let task = tokio::task::spawn_blocking(move || {
-                let options = CopyOptions::new().copy_inside(true);
-                fs_extra::dir::move_dir(&segments_from, &segments_to, &options).map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Can't move segments from {} to {} due to {}",
-                        segments_from.display(),
-                        segments_to.display(),
-                        err
-                    ))
-                })
-            });
-            task.await??;
-        }
         Ok(())
     }
 
