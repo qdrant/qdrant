@@ -143,14 +143,14 @@ async fn _do_recover_from_snapshot(
     // Check config compatibility
     // Check vectors config
     if snapshot_config.params.vectors != state.config.params.vectors {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Snapshot is not compatible with existing collection: Collection vectors: {:?} Snapshot Vectors: {:?}",
             state.config.params.vectors, snapshot_config.params.vectors
         )));
     }
     // Check shard number
     if snapshot_config.params.shard_number != state.config.params.shard_number {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Snapshot is not compatible with existing collection: Collection shard number: {:?} Snapshot shard number: {:?}",
             state.config.params.shard_number, snapshot_config.params.shard_number
         )));

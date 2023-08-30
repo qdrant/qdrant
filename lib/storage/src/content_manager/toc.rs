@@ -272,7 +272,7 @@ impl TableOfContent {
 
         if path.exists() {
             if CollectionConfig::check(&path) {
-                return Err(StorageError::bad_input(&format!(
+                return Err(StorageError::bad_input(format!(
                     "Can't create collection with name {collection_name}. Collection data already exists at {path}",
                     collection_name = collection_name,
                     path = path.display(),
@@ -366,7 +366,7 @@ impl TableOfContent {
             .await
             .check_alias_exists(collection_name)
         {
-            return Err(StorageError::bad_input(&format!(
+            return Err(StorageError::bad_input(format!(
                 "Can't create collection with name {collection_name}. Alias with the same name already exists",
             )));
         }
