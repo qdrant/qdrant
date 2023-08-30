@@ -318,12 +318,9 @@ impl Collection {
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
-        let replica_set =
-            shard_holder
-                .get_shard(&shard_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {shard_id}"),
-                })?;
+        let replica_set = shard_holder
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         log::debug!(
             "Changing shard {}:{shard_id} replica state from {:?} to {state:?}",
@@ -1587,18 +1584,241 @@ impl Collection {
         get_snapshot_description(&snapshot_path).await
     }
 
+    pub async fn list_shard_snapshots(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<Vec<SnapshotDescription>> {
+        self.assert_shard_is_local(shard_id).await?;
+
+        let snapshots_path = self.snapshots_path_for_shard_unchecked(shard_id);
+
+        if !snapshots_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        list_snapshots_in_directory(&snapshots_path).await
+    }
+
+    pub async fn create_shard_snapshot(
+        &self,
+        shard_id: ShardId,
+        temp_dir: &Path,
+    ) -> CollectionResult<SnapshotDescription> {
+        let shards_holder = self.shards_holder.read().await;
+        let shard = shards_holder
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        if !shard.is_local().await {
+            return Err(CollectionError::bad_input(format!(
+                "Shard {shard_id} is not a local shard"
+            )));
+        }
+
+        let snapshot_file_name = format!(
+            "{}-shard-{shard_id}-{}.snapshot",
+            self.name(),
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+        );
+
+        if !temp_dir.exists() {
+            std::fs::create_dir_all(temp_dir)?;
+        }
+
+        let snapshot_temp_dir = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_file_name}-temp-"))
+            .tempdir_in(temp_dir)?;
+
+        let snapshot_target_dir = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_file_name}-target-"))
+            .tempdir_in(temp_dir)?;
+
+        shard
+            .create_snapshot(snapshot_temp_dir.path(), snapshot_target_dir.path(), false)
+            .await?;
+
+        if let Err(err) = snapshot_temp_dir.close() {
+            log::error!("Failed to remove temporary directory: {err}");
+        }
+
+        let mut temp_file = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_file_name}-"))
+            .tempfile_in(temp_dir)?;
+
+        let task = {
+            let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
+
+            tokio::task::spawn_blocking(move || -> CollectionResult<_> {
+                let mut tar = TarBuilder::new(temp_file.as_file_mut());
+                tar.append_dir_all(".", &snapshot_target_dir)?;
+                tar.finish()?;
+                drop(tar);
+
+                Ok(temp_file)
+            })
+        };
+
+        let task_result = task.await;
+
+        if let Err(err) = snapshot_target_dir.close() {
+            log::error!("Failed to remove temporary directory: {err}");
+        }
+
+        let temp_file = task_result??;
+
+        let snapshot_path = self.shard_snapshot_path_unchecked(shard_id, snapshot_file_name)?;
+
+        if let Some(snapshot_dir) = snapshot_path.parent() {
+            if !snapshot_dir.exists() {
+                std::fs::create_dir_all(snapshot_dir)?;
+            }
+        }
+
+        let _ = temp_file.persist(&snapshot_path).map_err(|err| {
+            if let Err(err) = err.file.close() {
+                log::error!("Failed to remove temporary file: {err}");
+            }
+
+            CollectionError::service_error(err.error.to_string())
+        })?;
+
+        get_snapshot_description(&snapshot_path).await
+    }
+
+    pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
+        match self.shards_holder.read().await.get_shard(&shard_id) {
+            Some(_) => Ok(()),
+            None => Err(shard_not_found_error(shard_id)),
+        }
+    }
+
+    pub async fn get_snapshots_path_for_shard(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<PathBuf> {
+        self.assert_shard_is_local(shard_id).await?;
+        Ok(self.snapshots_path_for_shard_unchecked(shard_id))
+    }
+
+    pub async fn get_shard_snapshot_path(
+        &self,
+        shard_id: ShardId,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        self.assert_shard_is_local(shard_id).await?;
+        self.shard_snapshot_path_unchecked(shard_id, snapshot_file_name)
+    }
+
+    pub async fn restore_shard_snapshot(
+        &self,
+        shard_id: ShardId,
+        snapshot_path: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
+        temp_dir: &Path,
+    ) -> CollectionResult<()> {
+        if !self.contains_shard(shard_id).await {
+            return Err(shard_not_found_error(shard_id));
+        }
+
+        let snapshot = std::fs::File::open(snapshot_path)?;
+
+        if !temp_dir.exists() {
+            std::fs::create_dir_all(temp_dir)?;
+        }
+
+        let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
+
+        let snapshot_temp_dir = tempfile::Builder::new()
+            .prefix(&format!(
+                "{}-shard-{shard_id}-{}",
+                self.name(),
+                snapshot_file_name
+            ))
+            .tempdir_in(temp_dir)?;
+
+        let task = {
+            let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
+
+            tokio::task::spawn_blocking(move || -> CollectionResult<_> {
+                let mut tar = tar::Archive::new(snapshot);
+                tar.unpack(&snapshot_temp_dir)?;
+                drop(tar);
+
+                ReplicaSetShard::restore_snapshot(
+                    &snapshot_temp_dir,
+                    this_peer_id,
+                    is_distributed,
+                )?;
+
+                Ok(())
+            })
+        };
+
+        task.await??;
+
+        let recovered = self
+            .recover_local_shard_from(snapshot_temp_dir.path(), shard_id)
+            .await?;
+
+        if !recovered {
+            return Err(CollectionError::bad_request(format!(
+                "Invalid snapshot {snapshot_file_name}"
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn assert_shard_is_local(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let is_local_shard = self
+            .is_shard_local(&shard_id)
+            .await
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        if is_local_shard {
+            Ok(())
+        } else {
+            Err(CollectionError::bad_input(format!(
+                "Shard {shard_id} is not a local shard"
+            )))
+        }
+    }
+
+    fn snapshots_path_for_shard_unchecked(&self, shard_id: ShardId) -> PathBuf {
+        self.snapshots_path.join(format!("shards/{shard_id}"))
+    }
+
+    fn shard_snapshot_path_unchecked(
+        &self,
+        shard_id: ShardId,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        let snapshots_path = self.snapshots_path_for_shard_unchecked(shard_id);
+
+        let snapshot_file_name = snapshot_file_name.as_ref();
+
+        if snapshot_file_name.file_name() != Some(snapshot_file_name.as_os_str()) {
+            return Err(CollectionError::bad_input(format!(
+                "Invalid snapshot file name {}",
+                snapshot_file_name.display(),
+            )));
+        }
+
+        let snapshot_path = snapshots_path.join(snapshot_file_name);
+
+        Ok(snapshot_path)
+    }
+
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
     ) -> CollectionResult<bool> {
         let shard_holder = self.shards_holder.read().await;
-        let replica_set =
-            shard_holder
-                .get_shard(&shard_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {shard_id}"),
-                })?;
+        let replica_set = shard_holder
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         replica_set
             .restore_local_replica_from(snapshot_shard_path)
@@ -1773,5 +1993,11 @@ impl Collection {
 
     pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
         self.updates_lock.write().await
+    }
+}
+
+fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
+    CollectionError::NotFound {
+        what: format!("shard {shard_id}"),
     }
 }

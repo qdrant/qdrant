@@ -34,15 +34,15 @@ impl StorageError {
         }
     }
 
-    pub fn bad_request(description: &str) -> StorageError {
+    pub fn bad_request(description: impl Into<String>) -> StorageError {
         StorageError::BadRequest {
-            description: description.to_string(),
+            description: description.into(),
         }
     }
 
-    pub fn bad_input(description: &str) -> StorageError {
+    pub fn bad_input(description: impl Into<String>) -> StorageError {
         StorageError::BadInput {
-            description: description.to_string(),
+            description: description.into(),
         }
     }
 

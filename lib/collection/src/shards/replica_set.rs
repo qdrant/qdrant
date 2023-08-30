@@ -2,13 +2,12 @@ use std::cmp;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::future::Future;
-use std::ops::Deref;
+use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::{join, join_all};
+use futures::future::{join, join_all, BoxFuture};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
@@ -699,19 +698,16 @@ impl ShardReplicaSet {
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
     /// It does not report failing peer_ids to the consensus.
-    pub async fn execute_read_operation<'a, F, Fut, Res>(
-        &self,
-        read_operation: F,
-        local: &'a Option<Shard>,
-        remotes: &'a [RemoteShard],
-    ) -> CollectionResult<Res>
+    pub async fn execute_read_operation<F, Res>(&self, read_operation: F) -> CollectionResult<Res>
     where
-        F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
-        Fut: Future<Output = CollectionResult<Res>>,
+        F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
+        let remotes = self.remotes.read().await;
+        let local = self.local.read().await;
+
         let mut local_result = None;
         // 1 - prefer the local shard if it is active
-        if let Some(local) = local {
+        if let Some(local) = local.deref() {
             if self.peer_is_active(&self.this_peer_id()) {
                 let read_operation_res = read_operation(local.get()).await;
                 match &read_operation_res {
@@ -804,30 +800,31 @@ impl ShardReplicaSet {
         captured_error.expect("at this point `captured_error` must be defined by construction")
     }
 
-    pub async fn execute_and_resolve_read_operation<'a, F, Fut, Res>(
+    pub async fn execute_and_resolve_read_operation<F, Res>(
         &self,
         read_operation: F,
-        local: &'a Option<Shard>,
-        remotes: &'a [RemoteShard],
         read_consistency: ReadConsistency,
     ) -> CollectionResult<Res>
     where
-        F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
-        Fut: Future<Output = CollectionResult<Res>>,
+        F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
         Res: Resolve,
     {
-        let local_count = usize::from(local.is_some());
-        let remotes_count = remotes.len();
+        let remotes = self.remotes.read().await;
 
-        let active_local = local
-            .as_ref()
-            .filter(|_| self.peer_is_active(&self.this_peer_id()));
+        let (local, is_local_ready) = match self.local.try_read() {
+            Ok(local) => (futures::future::ready(local).left_future(), true),
+            Err(_) => (self.local.read().right_future(), false),
+        };
+
+        let local_count = usize::from(self.peer_state(&self.this_peer_id()).is_some());
+        let active_local_count = usize::from(self.peer_is_active(&self.this_peer_id()));
+
+        let remotes_count = remotes.len();
 
         let active_remotes_iter = remotes
             .iter()
             .filter(|remote| self.peer_is_active(&remote.peer_id));
 
-        let active_local_count = usize::from(active_local.is_some());
         let active_remotes_count = active_remotes_iter.clone().count();
 
         let total_count = local_count + remotes_count;
@@ -860,23 +857,44 @@ impl ShardReplicaSet {
         let mut active_remotes: Vec<_> = active_remotes_iter.collect();
         active_remotes.shuffle(&mut rand::thread_rng());
 
-        let local_operations = active_local
-            .into_iter()
-            .map(|local| read_operation(local.get()).left_future());
+        let local_operation = if active_local_count > 0 {
+            let local_operation = async {
+                let local = local.await;
+
+                let Some(local) = local.deref() else {
+                    return Err(CollectionError::service_error(format!(
+                        "Local shard {} not found",
+                        self.shard_id
+                    )));
+                };
+
+                read_operation(local.get()).await
+            };
+
+            Some(local_operation.left_future())
+        } else {
+            None
+        };
+
+        let local_operation = local_operation.into_iter();
 
         let remote_operations = active_remotes
             .into_iter()
             .map(|remote| read_operation(remote).right_future());
 
-        let mut operations = local_operations.chain(remote_operations);
+        let mut operations = local_operation.chain(remote_operations);
 
-        let required_reads = if active_local_count > 0 {
+        let mut required_reads = if active_local_count > 0 {
             // If there is a local shard, we can ignore fan-out `read_remote_replicas` param,
             // as we already know that the local peer is working.
             factor
         } else {
             max(factor, usize::try_from(self.read_remote_replicas).unwrap())
         };
+
+        if !is_local_ready {
+            required_reads += 1;
+        }
 
         let mut pending_operations: FuturesUnordered<_> =
             operations.by_ref().take(required_reads).collect();
@@ -1436,8 +1454,8 @@ impl ShardReplicaSet {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         let all_res: Vec<Result<_, _>> = {
-            let local = self.local.read().await;
             let remotes = self.remotes.read().await;
+            let local = self.local.read().await;
             let this_peer_id = self.this_peer_id();
 
             // target all remote peers that can receive updates
@@ -1581,32 +1599,38 @@ impl ShardReplicaSet {
         filter: Option<&Filter>,
         read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Vec<Record>> {
-        let local = self.local.read().await;
-        let remotes = self.remotes.read().await;
+        let with_payload_interface = Arc::new(with_payload_interface.clone());
+        let with_vector = Arc::new(with_vector.clone());
+        let filter = filter.map(|filter| Arc::new(filter.clone()));
 
         self.execute_and_resolve_read_operation(
             |shard| {
-                shard.scroll_by(
-                    offset,
-                    limit,
-                    with_payload_interface,
-                    with_vector,
-                    filter,
-                    &self.search_runtime,
-                )
+                let with_payload_interface = with_payload_interface.clone();
+                let with_vector = with_vector.clone();
+                let filter = filter.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                async move {
+                    shard
+                        .scroll_by(
+                            offset,
+                            limit,
+                            &with_payload_interface,
+                            &with_vector,
+                            filter.as_deref(),
+                            &search_runtime,
+                        )
+                        .await
+                }
+                .boxed()
             },
-            &local,
-            &remotes,
             read_consistency.unwrap_or_default(),
         )
         .await
     }
 
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let local = self.local.read().await;
-        let remotes = self.remotes.read().await;
-
-        self.execute_read_operation(|shard| shard.info(), &local, &remotes)
+        self.execute_read_operation(|shard| async move { shard.info().await }.boxed())
             .await
     }
 
@@ -1615,13 +1639,13 @@ impl ShardReplicaSet {
         request: Arc<SearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let local = self.local.read().await;
-        let remotes = self.remotes.read().await;
-
         self.execute_and_resolve_read_operation(
-            |shard| shard.search(request.clone(), &self.search_runtime),
-            &local,
-            &remotes,
+            |shard| {
+                let request = request.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                async move { shard.search(request, &search_runtime).await }.boxed()
+            },
             read_consistency.unwrap_or_default(),
         )
         .await
@@ -1639,11 +1663,11 @@ impl ShardReplicaSet {
     }
 
     pub async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
-        let local = self.local.read().await;
-        let remotes = self.remotes.read().await;
-
-        self.execute_read_operation(|shard| shard.count(request.clone()), &local, &remotes)
-            .await
+        self.execute_read_operation(|shard| {
+            let request = request.clone();
+            async move { shard.count(request).await }.boxed()
+        })
+        .await
     }
 
     pub async fn retrieve(
@@ -1653,13 +1677,17 @@ impl ShardReplicaSet {
         with_vector: &WithVector,
         read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Vec<Record>> {
-        let local = self.local.read().await;
-        let remotes = self.remotes.read().await;
+        let with_payload = Arc::new(with_payload.clone());
+        let with_vector = Arc::new(with_vector.clone());
 
         self.execute_and_resolve_read_operation(
-            |shard| shard.retrieve(request.clone(), with_payload, with_vector),
-            &local,
-            &remotes,
+            |shard| {
+                let request = request.clone();
+                let with_payload = with_payload.clone();
+                let with_vector = with_vector.clone();
+
+                async move { shard.retrieve(request, &with_payload, &with_vector).await }.boxed()
+            },
             read_consistency.unwrap_or_default(),
         )
         .await
