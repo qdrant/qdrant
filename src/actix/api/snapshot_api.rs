@@ -333,7 +333,12 @@ async fn recover_shard_snapshot(
         let snapshot_path = match request.location {
             ShardSnapshotLocation::Url(url) => {
                 if !matches!(url.scheme(), "http" | "https") {
-                    return Err(StorageError::bad_input("TODO").into());
+                    let description = format!(
+                        "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
+                        url.scheme(),
+                    );
+
+                    return Err(StorageError::bad_input(description).into());
                 }
 
                 let downloaded_snapshots_dir = downloaded_snapshots_dir(toc.snapshots_path());
