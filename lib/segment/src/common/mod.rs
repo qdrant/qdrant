@@ -41,10 +41,7 @@ pub fn check_vector(
     _check_vector(vector, vector_config)
 }
 
-fn _check_vector(
-    vector: &QueryVector,
-    vector_config: &VectorDataConfig,
-) -> OperationResult<()> {
+fn _check_vector(vector: &QueryVector, vector_config: &VectorDataConfig) -> OperationResult<()> {
     match vector {
         QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
         QueryVector::PositiveNegative {

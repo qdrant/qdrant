@@ -2,8 +2,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
+use super::query_scorer::reco_query_scorer::RecoQueryScorer;
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{QueryVector, VectorElementType, VectorType};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
@@ -137,6 +138,16 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
         QueryVector::Nearest(vector) => {
             new_metric_scorer(vector.to_vec(), vector_storage, point_deleted, is_stopped)
         }
+        QueryVector::PositiveNegative {
+            positives,
+            negatives,
+        } => new_reco_scorer(
+            positives,
+            negatives,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
     }
 }
 
@@ -162,6 +173,48 @@ pub fn new_metric_scorer<'a, TVectorStorage: VectorStorage>(
         ),
         Distance::Dot => raw_scorer_from_query_scorer(
             MetricQueryScorer::<DotProductMetric, TVectorStorage>::new(vector, vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+    }
+}
+
+pub fn new_reco_scorer<'a, TVectorStorage: VectorStorage>(
+    positives: Vec<VectorType>,
+    negatives: Vec<VectorType>,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> Box<dyn RawScorer + 'a> {
+    let vec_deleted = vector_storage.deleted_vector_bitslice();
+    match vector_storage.distance() {
+        Distance::Cosine => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<CosineMetric, TVectorStorage>::new(
+                positives,
+                negatives,
+                vector_storage,
+            ),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+        Distance::Euclid => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<EuclidMetric, TVectorStorage>::new(
+                positives,
+                negatives,
+                vector_storage,
+            ),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+        Distance::Dot => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<DotProductMetric, TVectorStorage>::new(
+                positives,
+                negatives,
+                vector_storage,
+            ),
             point_deleted,
             vec_deleted,
             is_stopped,

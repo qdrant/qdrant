@@ -1,3 +1,4 @@
 mod quantized_mmap_storage;
 mod quantized_query_scorer;
+mod quantized_reco_query_scorer;
 pub mod quantized_vectors;
