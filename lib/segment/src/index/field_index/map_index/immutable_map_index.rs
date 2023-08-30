@@ -46,26 +46,48 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
             return Ok(());
         }
 
+        // Point removing has to remove `idx` from both maps: points-to-values and values-to-points.
+        // The first one is easy: we just remove the entry from the map.
+        // The second one is more complicated: we have to remove all mentions of `idx` in values-to-points map.
+        // To deal with it, take old values from points-to-values map, witch contains all values with `idx` in values-to-points map.
+
         let removed_values = self.point_to_values[idx as usize].clone();
+        self.point_to_values[idx as usize] = Default::default();
 
         if !removed_values.is_empty() {
             self.indexed_points -= 1;
         }
         self.values_count -= removed_values.len();
 
+        // Iterate over all values which were removed from points-to-values map
         for value_index in removed_values {
+            // Actually remove value from container and get it
             let value = std::mem::take(&mut self.point_to_values_container[value_index as usize]);
+
+            // Remove `idx` from values-to-points map. Take list of all id's for `value` and remove `idx` from them.
+            let mut was_last_idx = false;
             if let Some(vals_range) = self.value_to_points.get_mut(&value) {
                 if vals_range.start != vals_range.end {
                     let range = vals_range.start as usize..vals_range.end as usize;
                     let vals = &self.value_to_points_container[range.clone()];
                     if let Some(pos) = vals.iter().position(|&x| x == idx) {
+                        // remove `idx` from values-to-points map by swapping it with the last element
                         self.value_to_points_container
                             .swap(range.start + pos, range.end - 1);
                         vals_range.end -= 1;
                     }
                 }
+                if vals_range.start != vals_range.end {
+                    was_last_idx = true;
+                }
             }
+
+            // Special case. If `idx` was the last point for `value`, remove `value` from values-to-points map
+            if was_last_idx {
+                self.value_to_points.remove(&value);
+            }
+
+            // update db
             let key = MapIndex::encode_db_record(&value, idx);
             self.db_wrapper.remove(key)?;
         }
@@ -78,6 +100,9 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
     }
 
     pub fn load_from_db(&mut self) -> OperationResult<bool> {
+        // To avoid code duplication, use `MutableMapIndex` to load data from db
+        // and convert to immutable state
+
         let mut mutable = MutableMapIndex {
             map: Default::default(),
             point_to_values: Vec::new(),
@@ -101,6 +126,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
         self.point_to_values.clear();
         self.point_to_values_container.clear();
 
+        // flatten values-to-points map
         for (value, points) in map {
             let points = points.into_iter().collect::<Vec<_>>();
             let container_len = self.value_to_points_container.len() as u32;
@@ -109,6 +135,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
             self.value_to_points_container.extend(points);
         }
 
+        // flatten points-to-values map
         for values in point_to_values {
             let values = values.into_iter().collect::<Vec<_>>();
             let container_len = self.point_to_values_container.len() as u32;
