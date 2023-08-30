@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -17,8 +17,8 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     RecommendQueryScorer<'a, TMetric, TVectorStorage>
 {
     pub fn new(
-        query_positives: Vec<Vec<VectorElementType>>,
-        query_negatives: Vec<Vec<VectorElementType>>,
+        query_positives: Vec<VectorType>,
+        query_negatives: Vec<VectorType>,
         vector_storage: &'a TVectorStorage,
     ) -> Self {
         Self {
@@ -61,11 +61,11 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
 
         // get max similarity to positives and max to negatives
         let max_positive = positive_similarities
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| a.total_cmp(b))
             .unwrap_or(0.0);
 
         let max_negative = negative_similarities
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| a.total_cmp(b))
             .unwrap_or(0.0);
 
         if max_positive > max_negative {

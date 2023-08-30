@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use enum_dispatch::enum_dispatch;
+
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
@@ -9,7 +11,6 @@ use crate::entry::entry_point::OperationResult;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::ScoredPointOffset;
-use enum_dispatch::enum_dispatch;
 
 /// Trait for vector searching
 #[enum_dispatch]
