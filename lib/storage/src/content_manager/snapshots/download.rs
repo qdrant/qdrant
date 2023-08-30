@@ -32,7 +32,7 @@ async fn download_file(url: &Url, path: &Path) -> Result<(), StorageError> {
     let response = reqwest::get(url.clone()).await?;
 
     if !response.status().is_success() {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Failed to download snapshot from {}: status - {}",
             url,
             response.status()
@@ -60,7 +60,7 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf
                 )
             })?;
             if !local_path.exists() {
-                return Err(StorageError::bad_request(&format!(
+                return Err(StorageError::bad_request(format!(
                     "Snapshot file {local_path:?} does not exist"
                 )));
             }
@@ -72,7 +72,7 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf
             download_file(&url, &download_to).await?;
             Ok(download_to)
         }
-        _ => Err(StorageError::bad_request(&format!(
+        _ => Err(StorageError::bad_request(format!(
             "URL {} with schema {} is not supported",
             url,
             url.scheme()

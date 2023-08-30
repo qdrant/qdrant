@@ -13,7 +13,7 @@ use crate::content_manager::snapshots::download::{download_snapshot, downloaded_
 use crate::dispatcher::Dispatcher;
 use crate::{StorageError, TableOfContent};
 
-async fn activate_shard(
+pub async fn activate_shard(
     toc: &TableOfContent,
     collection: &Collection,
     peer_id: PeerId,
@@ -143,14 +143,14 @@ async fn _do_recover_from_snapshot(
     // Check config compatibility
     // Check vectors config
     if snapshot_config.params.vectors != state.config.params.vectors {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Snapshot is not compatible with existing collection: Collection vectors: {:?} Snapshot Vectors: {:?}",
             state.config.params.vectors, snapshot_config.params.vectors
         )));
     }
     // Check shard number
     if snapshot_config.params.shard_number != state.config.params.shard_number {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Snapshot is not compatible with existing collection: Collection shard number: {:?} Snapshot shard number: {:?}",
             state.config.params.shard_number, snapshot_config.params.shard_number
         )));
@@ -225,6 +225,10 @@ async fn _do_recover_from_snapshot(
                 activate_shard(toc, &collection, this_peer_id, shard_id).await?;
             } else {
                 match priority {
+                    SnapshotPriority::LocalOnly => {
+                        activate_shard(toc, &collection, this_peer_id, shard_id).await?;
+                    }
+
                     SnapshotPriority::Snapshot => {
                         // Snapshot is the source of truth, we need to remove all other replicas
                         activate_shard(toc, &collection, this_peer_id, shard_id).await?;

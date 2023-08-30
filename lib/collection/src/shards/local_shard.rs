@@ -29,6 +29,7 @@ use wal::{Wal, WalOptions};
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::file_utils::move_dir;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
@@ -70,8 +71,10 @@ impl LocalShard {
         let wal_to = Self::wal_path(to);
         let segments_from = Self::segments_path(from);
         let segments_to = Self::segments_path(to);
-        tokio::fs::rename(wal_from, wal_to).await?;
-        tokio::fs::rename(segments_from, segments_to).await?;
+
+        move_dir(wal_from, wal_to).await?;
+        move_dir(segments_from, segments_to).await?;
+
         Ok(())
     }
 

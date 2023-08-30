@@ -11,11 +11,13 @@ use validator::Validate;
 use crate::operations::types::CollectionResult;
 
 /// Defines source of truth for snapshot recovery
+/// `LocalOnly` means - restore snapshot without *any* additional synchronization
 /// `Snapshot` means - prefer snapshot data over the current state
 /// `Replica` means - prefer existing data over the snapshot
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPriority {
+    LocalOnly,
     Snapshot,
     #[default]
     Replica,
@@ -74,14 +76,16 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
 pub async fn list_snapshots_in_directory(
     directory: &Path,
 ) -> CollectionResult<Vec<SnapshotDescription>> {
-    let mut snapshots = Vec::new();
     let mut entries = tokio::fs::read_dir(directory).await?;
+    let mut snapshots = Vec::new();
+
     while let Some(entry) = entries.next_entry().await? {
-        let entry = entry;
         let path = entry.path();
-        if !path.is_dir() && path.extension().map(|s| s == "snapshot").unwrap_or(false) {
+
+        if !path.is_dir() && path.extension().map_or(false, |ext| ext == "snapshot") {
             snapshots.push(get_snapshot_description(&path).await?);
         }
     }
+
     Ok(snapshots)
 }
