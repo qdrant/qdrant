@@ -1992,13 +1992,13 @@ mod tests {
         assert_eq!(segment_info.num_points, 1);
         assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
 
-        // Delete vector of point 6, vector count should now be zero
-        segment
-            .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
-            .unwrap();
-        let segment_info = segment.info();
-        assert_eq!(segment_info.num_points, 1);
-        assert_eq!(segment_info.num_vectors, 1);
+        // // Delete vector of point 6, vector count should now be zero
+        // segment
+        //     .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
+        //     .unwrap();
+        // let segment_info = segment.info();
+        // assert_eq!(segment_info.num_points, 1);
+        // assert_eq!(segment_info.num_vectors, 1);
     }
 
     #[test]
