@@ -519,16 +519,6 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow_mut().drop(point_id)
     }
 
-    fn wipe(&mut self, is_appendable: bool) -> OperationResult<()> {
-        self.payload.borrow_mut().wipe()?;
-        for (_, field_indexes) in self.field_indexes.iter_mut() {
-            for index in field_indexes.drain(..) {
-                index.clear()?;
-            }
-        }
-        self.load_all_fields(is_appendable)
-    }
-
     fn flusher(&self) -> Flusher {
         let mut flushers = Vec::new();
         for field_indexes in self.field_indexes.values() {

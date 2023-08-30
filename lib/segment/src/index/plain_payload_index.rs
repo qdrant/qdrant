@@ -176,10 +176,6 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn wipe(&mut self, _is_appendable: bool) -> OperationResult<()> {
-        unreachable!()
-    }
-
     fn flusher(&self) -> Flusher {
         unreachable!()
     }
