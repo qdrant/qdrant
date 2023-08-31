@@ -98,8 +98,7 @@ pub(crate) fn overwrite_payload(
 ) -> CollectionResult<usize> {
     let updated_points =
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.set_full_payload(op_num, id, payload)?;
-            Ok(true)
+            write_segment.set_full_payload(op_num, id, payload)
         })?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -124,8 +123,7 @@ pub(crate) fn set_payload(
 ) -> CollectionResult<usize> {
     let updated_points =
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.set_payload(op_num, id, payload)?;
-            Ok(true)
+            write_segment.set_payload(op_num, id, payload)
         })?;
 
     check_unprocessed_points(points, &updated_points)?;

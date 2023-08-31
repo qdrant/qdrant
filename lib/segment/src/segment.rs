@@ -824,11 +824,17 @@ impl SegmentEntry for Segment {
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
 
-                    // Propagate point deletion to all its vectors
-                    for vector_data in segment.vector_data.values() {
-                        let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                        vector_storage.delete_vector(internal_id)?;
-                    }
+                    // Before, we propagated point deletions to also delete its vectors. This turns
+                    // out to be problematic because this sometimes makes us loose vector data
+                    // because we cannot control the order of segment flushes.
+                    // Disabled until we properly fix it or find a better way to clean up old
+                    // vectors.
+                    //
+                    // // Propagate point deletion to all its vectors
+                    // for vector_data in segment.vector_data.values() {
+                    //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    //     vector_storage.delete_vector(internal_id)?;
+                    // }
 
                     Ok((true, Some(internal_id)))
                 })
@@ -1984,15 +1990,15 @@ mod tests {
         segment.delete_point(103, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 1);
-        assert_eq!(segment_info.num_vectors, 1);
+        assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
 
-        // Delete vector of point 6, vector count should now be zero
-        segment
-            .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
-            .unwrap();
-        let segment_info = segment.info();
-        assert_eq!(segment_info.num_points, 1);
-        assert_eq!(segment_info.num_vectors, 0);
+        // // Delete vector of point 6, vector count should now be zero
+        // segment
+        //     .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
+        //     .unwrap();
+        // let segment_info = segment.info();
+        // assert_eq!(segment_info.num_points, 1);
+        // assert_eq!(segment_info.num_vectors, 1);
     }
 
     #[test]
@@ -2065,19 +2071,19 @@ mod tests {
         segment.delete_point(105, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 4);
+        assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
         // Delete vector 'a' of point 6, vector count should decrease by 1
         segment.delete_vector(106, 6.into(), "a").unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Deleting it again shouldn't chain anything
         segment.delete_vector(107, 6.into(), "a").unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Replace vector 'a' for point 8, counts should remain the same
         let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
@@ -2086,7 +2092,7 @@ mod tests {
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Replace both vectors for point 8, adding a new vector
         segment
@@ -2097,7 +2103,7 @@ mod tests {
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 4);
+        assert_eq!(segment_info.num_vectors, 6);
     }
 
     /// Tests segment functions to ensure invalid requests do error
