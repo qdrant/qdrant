@@ -208,3 +208,15 @@ impl From<tokio::task::JoinError> for HttpError {
         StorageError::service_error(err.to_string()).into()
     }
 }
+
+impl From<async_tempfile::Error> for HttpError {
+    fn from(_err: async_tempfile::Error) -> Self {
+        todo!() // TODO!
+    }
+}
+
+impl From<download_file::Error> for HttpError {
+    fn from(_err: download_file::Error) -> Self {
+        todo!() // TODO!
+    }
+}

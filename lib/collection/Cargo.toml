@@ -14,6 +14,7 @@ tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 [dev-dependencies]
 criterion = "0.5"
 rstest = "0.18.2"
+tempfile = "3.8"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
@@ -48,6 +49,7 @@ url = { version = "2", features = ["serde"] }
 validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
 
+async-tempfile = { path = "../common/async-tempfile" }
 common = { path = "../common/common" }
 segment = {path = "../segment"}
 api = {path = "../api"}
@@ -60,7 +62,6 @@ num_cpus = "1.16.0"
 tar = "0.4.40"
 fs_extra = "1.3.0"
 semver = "1.0.18"
-tempfile = "3.8.0"
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }
 

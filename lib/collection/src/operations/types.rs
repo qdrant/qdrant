@@ -766,6 +766,12 @@ impl From<validator::ValidationErrors> for CollectionError {
     }
 }
 
+impl From<async_tempfile::Error> for CollectionError {
+    fn from(err: async_tempfile::Error) -> Self {
+        CollectionError::service_error(err.to_string()) // TODO!
+    }
+}
+
 pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl Record {

@@ -1087,18 +1087,21 @@ impl ShardReplicaSet {
                 // Initialize "dummy" replica
                 local.replace(Dummy(DummyShard::new("Failed to restore local replica")));
 
-                // TODO: Handle single-node mode!? (How!? 😰)
+                // TODO: Handle single-node mode!? How!? 😰
 
-                // Mark this peer as "locally disabled"...
+                // In single-node mode current peer would *always* be *the* last active replica,
+                // so we'll never mark it as "locally disabled"...
+
+                // If this peer is *not* the last active replica...
                 let has_other_active_peers = self.active_remote_shards().await.is_empty();
 
-                // ...if this peer is *not* the last active replica
                 if has_other_active_peers {
+                    // Then mark this peer as "locally disabled"
                     self.locally_disabled_peers
                         .write()
                         .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
 
-                    // Notify peer failure
+                    // And Notify peer failure
                     self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
                 }
 

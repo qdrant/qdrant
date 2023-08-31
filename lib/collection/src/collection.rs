@@ -17,7 +17,7 @@ use segment::types::{
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
-use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
+use tokio::fs::{copy, create_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use validator::Validate;
@@ -1542,9 +1542,11 @@ impl Collection {
         );
 
         // Dedicated temporary directory for this snapshot (deleted on drop)
-        let snapshot_temp_dir = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_name}-temp-"))
-            .tempdir_in(global_temp_dir)?;
+        let snapshot_temp_dir = async_tempfile::Builder::new()
+            .prefix(format!("{snapshot_name}-temp-"))
+            .tempdir_in(global_temp_dir)
+            .await?;
+
         let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
         // Create snapshot of each shard
         {
@@ -1570,9 +1572,13 @@ impl Collection {
             .save(&snapshot_temp_dir_path)?;
 
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
-        let snapshot_temp_arc_file = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_name}-arc-"))
-            .tempfile_in(global_temp_dir)?;
+        let snapshot_temp_arc_file = async_tempfile::Builder::new()
+            .prefix(format!("{snapshot_name}"))
+            .suffix(".tar")
+            .tempfile_in(global_temp_dir)
+            .await?
+            .into_sync()
+            .await;
 
         // Archive snapshot folder into a single file
         let snapshot_temp_arc_file_arc = Arc::new(snapshot_temp_arc_file);
@@ -1588,12 +1594,10 @@ impl Collection {
         });
         archiving.await??;
 
-        // Remove temporary snapshot directory (automatically dropped on previous error)
-        log::debug!(
-            "Removing temporary snapshot data {:?}",
-            snapshot_temp_dir_path
-        );
-        remove_dir_all(&snapshot_temp_dir_path).await?;
+        // TODO: Extract as function/method?
+        if let Err(err) = snapshot_temp_dir.close().await {
+            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_temp_dir` path?
+        }
 
         // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
@@ -1649,56 +1653,80 @@ impl Collection {
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
-        let snapshot_temp_dir = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_file_name}-temp-"))
-            .tempdir_in(temp_dir)?;
+        let snapshot_temp_dir = async_tempfile::Builder::new()
+            .prefix(format!("{snapshot_file_name}-temp-"))
+            .tempdir_in(temp_dir)
+            .await?;
 
-        let snapshot_target_dir = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_file_name}-target-"))
-            .tempdir_in(temp_dir)?;
+        let snapshot_target_dir = async_tempfile::Builder::new()
+            .prefix(format!("{snapshot_file_name}-target-"))
+            .tempdir_in(temp_dir)
+            .await?;
 
         shard
             .create_snapshot(snapshot_temp_dir.path(), snapshot_target_dir.path(), false)
             .await?;
 
-        if let Err(err) = snapshot_temp_dir.close() {
-            log::error!("Failed to remove temporary directory: {err}");
+        // TODO: Extract as function/method?
+        if let Err(err) = snapshot_temp_dir.close().await {
+            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_temp_dir` path?
         }
 
-        let mut temp_file = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_file_name}-"))
-            .tempfile_in(temp_dir)?;
+        let mut snapshot_temp_file = async_tempfile::Builder::new()
+            .prefix(format!("{snapshot_file_name}-"))
+            .suffix(".snapshot")
+            .tempfile_in(temp_dir)
+            .await?
+            .into_sync()
+            .await;
 
-        let task = {
+        let tar = {
             let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
 
             tokio::task::spawn_blocking(move || -> CollectionResult<_> {
-                let mut tar = TarBuilder::new(temp_file.as_file_mut());
+                let mut tar = TarBuilder::new(snapshot_temp_file.as_file_mut());
                 tar.append_dir_all(".", &snapshot_target_dir)?;
                 tar.finish()?;
                 drop(tar);
 
-                Ok(temp_file)
+                Ok(snapshot_temp_file)
             })
         };
 
-        let task_result = task.await;
+        let tar_result = tar
+            .await
+            .map(|tar_result| tar_result.map(async_tempfile::NamedTempFile::from));
 
-        if let Err(err) = snapshot_target_dir.close() {
-            log::error!("Failed to remove temporary directory: {err}");
+        // TODO: Extract as function/method?
+        if let Err(err) = snapshot_target_dir.close().await {
+            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_target_dir` path?
         }
 
-        let temp_file = task_result??;
+        let snapshot_temp_file = tar_result??;
 
         let snapshot_path = self.shard_snapshot_path_unchecked(shard_id, snapshot_file_name)?;
 
         if let Some(snapshot_dir) = snapshot_path.parent() {
             if !snapshot_dir.exists() {
-                std::fs::create_dir_all(snapshot_dir)?;
+                tokio::fs::create_dir_all(snapshot_dir).await?;
             }
         }
 
-        move_file(temp_file.path(), &snapshot_path).await?;
+        // TODO: Reimplement as `async_tempfile::NamedTempFile::persist`!?
+        let move_result = move_file(snapshot_temp_file.path(), &snapshot_path).await;
+
+        // Only print `snapshot_temp_file.close()` error if move *failed*.
+        //
+        // If we successfully moved `snapshot_temp_file`, then `snapshot_temp_file.close()` will
+        // *always* return an error, because the file was moved and does not exist anymore.
+        if move_result.is_err() {
+            // TODO: Extract as function/method?
+            if let Err(err) = snapshot_temp_file.close().await {
+                log::error!("Failed to remove temporary file: {err}"); // TODO: Add `snapshot_temp_file` path?
+            }
+        }
+
+        move_result?;
 
         get_snapshot_description(&snapshot_path).await
     }
@@ -1739,23 +1767,24 @@ impl Collection {
             return Err(shard_not_found_error(shard_id));
         }
 
-        let snapshot = std::fs::File::open(snapshot_path)?;
+        let snapshot = tokio::fs::File::open(snapshot_path).await?.into_std().await;
 
         if !temp_dir.exists() {
-            std::fs::create_dir_all(temp_dir)?;
+            tokio::fs::create_dir_all(temp_dir).await?;
         }
 
         let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
 
-        let snapshot_temp_dir = tempfile::Builder::new()
-            .prefix(&format!(
+        let snapshot_temp_dir = async_tempfile::Builder::new()
+            .prefix(format!(
                 "{}-shard-{shard_id}-{}",
                 self.name(),
                 snapshot_file_name
             ))
-            .tempdir_in(temp_dir)?;
+            .tempdir_in(temp_dir)
+            .await?;
 
-        let task = {
+        let untar = {
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
             tokio::task::spawn_blocking(move || -> CollectionResult<_> {
@@ -1773,11 +1802,21 @@ impl Collection {
             })
         };
 
-        task.await??;
+        let recover = async {
+            untar.await??;
 
-        let recovered = self
-            .recover_local_shard_from(snapshot_temp_dir.path(), shard_id)
-            .await?;
+            self.recover_local_shard_from(snapshot_temp_dir.path(), shard_id)
+                .await
+        };
+
+        let recover_result = recover.await;
+
+        // TODO: Extract as function/method?
+        if let Err(err) = snapshot_temp_dir.close().await {
+            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_temp_dir` path?
+        }
+
+        let recovered = recover_result?;
 
         if !recovered {
             return Err(CollectionError::bad_request(format!(

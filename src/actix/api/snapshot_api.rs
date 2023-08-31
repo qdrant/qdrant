@@ -1,17 +1,14 @@
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use actix_files::NamedFile;
-use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator as valid;
 use collection::collection::Collection;
 use collection::common::file_utils::move_file;
-use collection::operations::snapshot_ops::{
-    ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
-};
+use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use reqwest::Url;
@@ -20,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::recover::{activate_shard, do_recover_from_snapshot};
 use storage::content_manager::snapshots::{
-    self, do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
+    do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots, get_full_snapshot_path,
 };
 use storage::content_manager::toc::TableOfContent;
@@ -56,7 +53,7 @@ pub struct SnapshottingParam {
 
 #[derive(MultipartForm)]
 pub struct SnapshottingForm {
-    snapshot: TempFile,
+    snapshot: actix_multipart::form::tempfile::TempFile,
 }
 
 // Actix specific code
@@ -71,7 +68,7 @@ pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> 
 pub async fn do_save_uploaded_snapshot(
     toc: &TableOfContent,
     collection_name: &str,
-    snapshot: TempFile,
+    snapshot: actix_multipart::form::tempfile::TempFile,
 ) -> std::result::Result<Url, StorageError> {
     let filename = snapshot
         .file_name
@@ -307,6 +304,7 @@ async fn create_shard_snapshot(
     let future = async move {
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
+
         let snapshot = collection
             .create_shard_snapshot(shard, &toc.optional_temp_or_snapshot_temp_path()?)
             .await?;
@@ -332,23 +330,16 @@ async fn recover_shard_snapshot(
 
         let download_dir = toc.snapshots_download_tempdir()?;
 
-        let snapshot_path = match request.location {
+        let (snapshot_path, snapshot_file) = match request.location {
             ShardSnapshotLocation::Url(url) => {
-                if !matches!(url.scheme(), "http" | "https") {
-                    let description = format!(
-                        "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
-                        url.scheme(),
-                    );
-
-                    return Err(StorageError::bad_input(description).into());
-                }
-                snapshots::download::download_snapshot(url, download_dir.path()).await?
+                let snapshot_file = download_file::download_file(url, download_dir.path()).await?;
+                persist_shard_snapshot(&collection, shard, snapshot_file).await?
             }
 
             ShardSnapshotLocation::Path(path) => {
                 let snapshot_path = collection.get_shard_snapshot_path(shard, path).await?;
                 check_shard_snapshot_file_exists(&snapshot_path)?;
-                snapshot_path
+                (snapshot_path, None)
             }
         };
 
@@ -360,6 +351,10 @@ async fn recover_shard_snapshot(
             request.priority.unwrap_or_default(),
         )
         .await?;
+
+        if let Some(snapshot_file) = snapshot_file {
+            let _ = persist_shard_snapshot(&collection, shard, snapshot_file).await?;
+        }
 
         Ok(())
     };
@@ -377,6 +372,8 @@ async fn upload_shard_snapshot(
 ) -> impl Responder {
     let SnapshotUploadingParam { wait, priority } = query.into_inner();
 
+    let snapshot_file = async_tempfile::NamedTempFile::from(form.snapshot.file);
+
     let future = async move {
         let (collection, shard) = path.into_inner();
         let collection = toc.get_collection(&collection).await?;
@@ -386,10 +383,15 @@ async fn upload_shard_snapshot(
             &toc,
             &collection,
             shard,
-            form.snapshot.file.path(),
+            snapshot_file.path(),
             priority.unwrap_or_default(),
         )
         .await?;
+
+        // TODO: Extract as function/method?
+        if let Err(err) = snapshot_file.close().await {
+            log::error!("Failed to remove temporary file: {err}"); // TODO: Add `snapshot_file` path?
+        }
 
         Ok(())
     };
@@ -423,10 +425,25 @@ async fn delete_shard_snapshot(
         check_shard_snapshot_file_exists(&snapshot_path)?;
         std::fs::remove_file(&snapshot_path)?;
 
-        Ok(true)
+        Ok(())
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+struct ShardSnapshotRecover {
+    location: ShardSnapshotLocation,
+
+    #[serde(default)]
+    priority: Option<SnapshotPriority>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum ShardSnapshotLocation {
+    Url(Url),
+    Path(PathBuf),
 }
 
 fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageError> {
@@ -446,6 +463,58 @@ fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageE
     } else {
         Ok(())
     }
+}
+
+async fn persist_shard_snapshot(
+    collection: &Collection,
+    shard: ShardId,
+    snapshot_file: download_file::DownloadedFile,
+) -> Result<(PathBuf, Option<download_file::DownloadedFile>), helpers::HttpError> {
+    if !collection.is_shard_local(&shard).await.unwrap_or(false) {
+        let snapshot_path = snapshot_file.file.path().to_path_buf();
+        return Ok((snapshot_path, Some(snapshot_file)));
+    }
+
+    let file_name = snapshot_file
+        .file_name
+        .as_deref()
+        // Check that file name
+        // - does not contain path separators
+        // - and  has `snapshot` extension
+        .filter(|file_name| {
+            let file_name = Path::new(file_name);
+
+            let no_path_separators = file_name.file_name() == Some(file_name.as_os_str());
+            let snapshot_extension = file_name.extension().map_or(false, |ext| ext == "snapshot");
+
+            no_path_separators && snapshot_extension
+        })
+        // - Convert sanitized name to an owned string
+        // - Or generate randomized name, if snapshot file does not have a name or name is invalid
+        .map_or_else(
+            || format!("downloaded-{}.snapshot", Uuid::new_v4()),
+            |str| str.to_string(),
+        );
+
+    let snapshot_path = collection.get_shard_snapshot_path(shard, file_name).await?;
+
+    // TODO: Reimplement as `async_tempfile::NamedTempFile::persist`!?
+    let move_result = move_file(snapshot_file.file.path(), &snapshot_path).await;
+
+    // Only print `snapshot_file.file.close()` error if move *failed*.
+    //
+    // If we successfully moved `snapshot_file.file`, then `snapshot_file.file.close()` will
+    // *always* return an error, because the file was moved and does not exist anymore.
+    if move_result.is_err() {
+        // TODO: Extract as function/method?
+        if let Err(err) = snapshot_file.file.close().await {
+            log::error!("Failed to remove temporary file: {err}"); // TODO: Add `snapshot_file.file` path?
+        }
+    }
+
+    move_result?;
+
+    Ok((snapshot_path, None))
 }
 
 async fn recover_shard_snapshot_impl(
