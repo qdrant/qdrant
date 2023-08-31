@@ -20,7 +20,7 @@ use crate::vector_storage::quantized::quantized_mmap_storage::{
 };
 use crate::vector_storage::quantized::quantized_query_scorer::QuantizedQueryScorer;
 use crate::vector_storage::quantized::quantized_reco_query_scorer::QuantizedRecoQueryScorer;
-use crate::vector_storage::query_scorer::reco_query_scorer::RecoQuery;
+use crate::vector_storage::query_scorer::reco_query::RecoQuery;
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
