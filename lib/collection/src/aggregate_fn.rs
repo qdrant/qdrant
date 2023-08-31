@@ -62,6 +62,49 @@ fn parse_strict(i: &str) -> IResult<&str, bool> {
         .parse(i)
 }
 
+fn get_numeric_argument(point: &ScoredPoint, at: usize) -> Option<f64> {
+    let arglist = point.aggregate_args.as_ref()?;
+    let arg = arglist.get(at)?;
+    // TODO: Should this work with longer lists?
+    if arg.len() != 1 { return None; };
+
+    arg[0].as_f64()
+}
+
+fn do_sum(points: &[ScoredPoint], strict: bool, arg_idx: usize) -> Option<f64> {
+    // TODO: numerically stable summation
+    let mut sum = 0.0f64;
+
+    for p in points {
+        let arg = get_numeric_argument(p, arg_idx);
+        if strict && arg.is_none() { return None; }
+        let arg = arg.unwrap_or_default();
+        sum += arg;
+    }
+
+    Some(sum)
+}
+
+fn do_minmax(points: &[ScoredPoint], strict: bool, arg_idx: usize, max: bool) -> Option<f64> {
+    let mut res = points.first().map(|p| get_numeric_argument(p, arg_idx))??;
+    let cmp = if max { f64::max } else { f64::min };
+
+    for p in points {
+        let arg = get_numeric_argument(p, arg_idx);
+        if strict && arg.is_none() { return None; }
+        let arg = arg.unwrap_or_default();
+        res = cmp(res, arg);
+    }
+
+    Some(res)
+}
+
+fn do_mean(points: &[ScoredPoint], strict: bool, arg_idx: usize) -> Option<f64> {
+    if points.len() == 0 { return None; }; 
+    let sum = do_sum(points, strict, arg_idx)?;
+    Some(sum / points.len() as f64)
+}
+
 /// Grammar:
 /// 
 /// function -> function_body | strict: function_body
@@ -106,19 +149,45 @@ impl AggregateFn {
         })
     }
 
-    pub fn run(&self, _points: &[ScoredPoint]) -> Value {
-        // TODO: Short-circuit on empty
-        todo!();
+    pub fn run(&self, points: &[ScoredPoint]) -> Value {
+        if points.is_empty() {
+            return Value::Null;
+        }
 
-        // TODO: No unwrap
-        //Value::Number(Number::from_f64(0.0).unwrap())
+        let res = match self.op {
+            Operation::Sum => do_sum(points, self.strict, 0),
+            Operation::Min => do_minmax(points, self.strict, 0, false),
+            Operation::Max => do_minmax(points, self.strict, 0, true),
+            Operation::Mean => do_mean(points, self.strict, 0),
+        };
+        
+
+        res.map_or(Value::Null, |res| Value::from(res))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use segment::types::ScoredPoint;
+
     use super::Operation;
     use super::AggregateFn;
+
+    fn make_points(count: usize) -> Vec<ScoredPoint> {
+        (0..count).map(|i| {
+            let v = serde_json::Value::from(i);
+
+            ScoredPoint {
+                id: (i as u64).into(),
+                payload: None,
+                score: 0.0,
+                version: 0,
+                vector: None,
+                aggregate_args: Some(vec![vec![v]]),
+            }
+        })
+        .collect()
+    }
 
     #[test]
     fn test_parse_aggr_fn() {
@@ -140,5 +209,31 @@ mod tests {
         assert!(AggregateFn::parse("sum(sum(foo))").is_err());
         assert!(AggregateFn::parse("sum()").is_err());
         assert!(AggregateFn::parse("whatever(foo)").is_err());
+    }
+
+    #[test]
+    fn test_simple_fns() {
+        let count = 10;
+        let points = make_points(count);
+
+        assert_eq!(
+            AggregateFn::parse("sum(foo)").unwrap().run(&points),
+            serde_json::Value::from((0..count).sum::<usize>() as f64)
+        );
+
+        assert_eq!(
+            AggregateFn::parse("min(foo)").unwrap().run(&points),
+            serde_json::Value::from(0 as f64)
+        );
+
+        assert_eq!(
+            AggregateFn::parse("max(foo)").unwrap().run(&points),
+            serde_json::Value::from((count - 1) as f64)
+        );
+
+        assert_eq!(
+            AggregateFn::parse("mean(foo)").unwrap().run(&points),
+            serde_json::Value::from((0..count).sum::<usize>() as f64 / count as f64)
+        );
     }
 }
