@@ -17,12 +17,7 @@ def basic_collection_setup(
         on_disk_payload=False,
         on_disk_vectors=False,
 ):
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="DELETE",
-        path_params={'collection_name': collection_name},
-    )
-    assert response.ok
+    drop_collection(collection_name)
 
     response = request_with_validation(
         api='/collections/{collection_name}',

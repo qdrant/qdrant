@@ -7,6 +7,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
+use common::validation::validate_range_generic;
 use futures::io;
 use merge::Merge;
 use schemars::JsonSchema;
@@ -29,7 +30,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::config_diff;
 use crate::config::{CollectionConfig, CollectionParams};
@@ -798,6 +799,7 @@ impl Record {
 #[serde(rename_all = "snake_case")]
 pub struct VectorParams {
     /// Size of a vectors used
+    #[validate(custom = "validate_nonzerou64_range_min_1_max_65536")]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
@@ -817,6 +819,13 @@ pub struct VectorParams {
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+/// Validate the value is in `[1, 65536]` or `None`.
+pub fn validate_nonzerou64_range_min_1_max_65536(
+    value: &NonZeroU64,
+) -> Result<(), ValidationError> {
+    validate_range_generic(&value.get(), Some(1), Some(65536))
 }
 
 /// Is considered empty if `None` or if diff has no field specified
