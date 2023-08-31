@@ -781,13 +781,7 @@ impl Record {
 
     pub fn get_vector_by_name(&self, name: &str) -> Option<&VectorType> {
         match &self.vector {
-            Some(VectorStruct::Single(vector)) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(vector)
-                } else {
-                    None
-                }
-            }
+            Some(VectorStruct::Single(vector)) => (name == DEFAULT_VECTOR_NAME).then_some(vector),
             Some(VectorStruct::Multi(vectors)) => vectors.get(name),
             None => None,
         }
