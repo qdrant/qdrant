@@ -460,6 +460,7 @@ name = "api"
 version = "0.11.1"
 dependencies = [
  "chrono",
+ "common",
  "env_logger",
  "log",
  "parking_lot",
@@ -1103,6 +1104,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "validator",
 ]
 
 [[package]]
