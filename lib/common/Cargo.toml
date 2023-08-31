@@ -10,3 +10,4 @@ edition = "2021"
 
 [dependencies]
 serde = "~1.0"
+validator = { version = "0.16", features = ["derive"] }

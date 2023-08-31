@@ -5,7 +5,7 @@
 pub struct VectorParams {
     /// Size of the vectors
     #[prost(uint64, tag = "1")]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 65536))]
     pub size: u64,
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
