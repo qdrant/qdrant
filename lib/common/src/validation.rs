@@ -6,7 +6,7 @@ use validator::ValidationError;
 /// Validate the value is in `[min, max]`
 #[inline]
 pub fn validate_range_generic<N>(
-    value: &N,
+    value: N,
     min: Option<N>,
     max: Option<N>,
 ) -> Result<(), ValidationError>
@@ -14,8 +14,8 @@ where
     N: PartialOrd + Serialize,
 {
     // If value is within bounds we're good
-    if min.as_ref().map(|min| value >= min).unwrap_or(true)
-        && max.as_ref().map(|max| value <= max).unwrap_or(true)
+    if min.as_ref().map(|min| &value >= min).unwrap_or(true)
+        && max.as_ref().map(|max| &value <= max).unwrap_or(true)
     {
         return Ok(());
     }
@@ -85,44 +85,44 @@ mod tests {
 
     #[test]
     fn test_validate_range_generic() {
-        assert!(validate_range_generic(&0, None, None).is_ok());
-        assert!(validate_range_generic(&u64::MAX, None, None).is_ok());
+        assert!(validate_range_generic(u64::MIN, None, None).is_ok());
+        assert!(validate_range_generic(u64::MAX, None, None).is_ok());
 
         // Min
-        assert!(validate_range_generic(&1, Some(1), None).is_ok());
-        assert!(validate_range_generic(&0, Some(1), None).is_err());
-        assert!(validate_range_generic(&1.0, Some(1.0), None).is_ok());
-        assert!(validate_range_generic(&0.0, Some(1.0), None).is_err());
+        assert!(validate_range_generic(1, Some(1), None).is_ok());
+        assert!(validate_range_generic(0, Some(1), None).is_err());
+        assert!(validate_range_generic(1.0, Some(1.0), None).is_ok());
+        assert!(validate_range_generic(0.0, Some(1.0), None).is_err());
 
         // Max
-        assert!(validate_range_generic(&1, None, Some(1)).is_ok());
-        assert!(validate_range_generic(&2, None, Some(1)).is_err());
-        assert!(validate_range_generic(&1.0, None, Some(1.0)).is_ok());
-        assert!(validate_range_generic(&2.0, None, Some(1.0)).is_err());
+        assert!(validate_range_generic(1, None, Some(1)).is_ok());
+        assert!(validate_range_generic(2, None, Some(1)).is_err());
+        assert!(validate_range_generic(1.0, None, Some(1.0)).is_ok());
+        assert!(validate_range_generic(2.0, None, Some(1.0)).is_err());
 
         // Min/max
-        assert!(validate_range_generic(&0, Some(1), Some(1)).is_err());
-        assert!(validate_range_generic(&1, Some(1), Some(1)).is_ok());
-        assert!(validate_range_generic(&2, Some(1), Some(1)).is_err());
-        assert!(validate_range_generic(&0, Some(1), Some(2)).is_err());
-        assert!(validate_range_generic(&1, Some(1), Some(2)).is_ok());
-        assert!(validate_range_generic(&2, Some(1), Some(2)).is_ok());
-        assert!(validate_range_generic(&3, Some(1), Some(2)).is_err());
-        assert!(validate_range_generic(&0, Some(2), Some(1)).is_err());
-        assert!(validate_range_generic(&1, Some(2), Some(1)).is_err());
-        assert!(validate_range_generic(&2, Some(2), Some(1)).is_err());
-        assert!(validate_range_generic(&3, Some(2), Some(1)).is_err());
-        assert!(validate_range_generic(&0.0, Some(1.0), Some(1.0)).is_err());
-        assert!(validate_range_generic(&1.0, Some(1.0), Some(1.0)).is_ok());
-        assert!(validate_range_generic(&2.0, Some(1.0), Some(1.0)).is_err());
-        assert!(validate_range_generic(&0.0, Some(1.0), Some(2.0)).is_err());
-        assert!(validate_range_generic(&1.0, Some(1.0), Some(2.0)).is_ok());
-        assert!(validate_range_generic(&2.0, Some(1.0), Some(2.0)).is_ok());
-        assert!(validate_range_generic(&3.0, Some(1.0), Some(2.0)).is_err());
-        assert!(validate_range_generic(&0.0, Some(2.0), Some(1.0)).is_err());
-        assert!(validate_range_generic(&1.0, Some(2.0), Some(1.0)).is_err());
-        assert!(validate_range_generic(&2.0, Some(2.0), Some(1.0)).is_err());
-        assert!(validate_range_generic(&3.0, Some(2.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(0, Some(1), Some(1)).is_err());
+        assert!(validate_range_generic(1, Some(1), Some(1)).is_ok());
+        assert!(validate_range_generic(2, Some(1), Some(1)).is_err());
+        assert!(validate_range_generic(0, Some(1), Some(2)).is_err());
+        assert!(validate_range_generic(1, Some(1), Some(2)).is_ok());
+        assert!(validate_range_generic(2, Some(1), Some(2)).is_ok());
+        assert!(validate_range_generic(3, Some(1), Some(2)).is_err());
+        assert!(validate_range_generic(0, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(1, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(2, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(3, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(0.0, Some(1.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(1.0, Some(1.0), Some(1.0)).is_ok());
+        assert!(validate_range_generic(2.0, Some(1.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(0.0, Some(1.0), Some(2.0)).is_err());
+        assert!(validate_range_generic(1.0, Some(1.0), Some(2.0)).is_ok());
+        assert!(validate_range_generic(2.0, Some(1.0), Some(2.0)).is_ok());
+        assert!(validate_range_generic(3.0, Some(1.0), Some(2.0)).is_err());
+        assert!(validate_range_generic(0.0, Some(2.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(1.0, Some(2.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(2.0, Some(2.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(3.0, Some(2.0), Some(1.0)).is_err());
     }
 
     #[test]

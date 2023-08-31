@@ -118,49 +118,47 @@ impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
 
 /// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(1), None))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
 }
 
 /// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u32_range_min_1(value: &Option<u32>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(1), None))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
 }
 
 /// Validate the value is in `[100, ]` or `None`.
 pub fn validate_u64_range_min_100(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(100), None))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(100), None))
 }
 
 /// Validate the value is in `[1000, ]` or `None`.
 pub fn validate_u64_range_min_1000(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(1000), None))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1000), None))
 }
 
 /// Validate the value is in `[4, ]` or `None`.
 pub fn validate_u64_range_min_4(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(4), None))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), None))
 }
 
 /// Validate the value is in `[4, 10000]` or `None`.
 pub fn validate_u64_range_min_4_max_10000(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| {
-        validate_range_generic(&v, Some(4), Some(10_000))
-    })
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), Some(10_000)))
 }
 
 /// Validate the value is in `[0.5, 1.0]` or `None`.
 pub fn validate_f32_range_min_0_5_max_1(value: &Option<f32>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(0.5), Some(1.0)))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.5), Some(1.0)))
 }
 
 /// Validate the value is in `[0.0, 1.0]` or `None`.
 pub fn validate_f64_range_1(value: &Option<f64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(0.0), Some(1.0)))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.0), Some(1.0)))
 }
 
 /// Validate the value is in `[1.0, ]` or `None`.
 pub fn validate_f64_range_min_1(value: &Option<f64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(&v, Some(1.0), None))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1.0), None))
 }
 
 /// Validate the list of named vectors is not empty.

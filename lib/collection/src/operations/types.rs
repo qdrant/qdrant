@@ -825,7 +825,7 @@ pub struct VectorParams {
 pub fn validate_nonzerou64_range_min_1_max_65536(
     value: &NonZeroU64,
 ) -> Result<(), ValidationError> {
-    validate_range_generic(&value.get(), Some(1), Some(65536))
+    validate_range_generic(value.get(), Some(1), Some(65536))
 }
 
 /// Is considered empty if `None` or if diff has no field specified
