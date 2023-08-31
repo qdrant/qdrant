@@ -4473,11 +4473,8 @@ dependencies = [
  "serde-value",
  "serde_cbor",
  "serde_json",
-<<<<<<< HEAD
  "smol_str",
-=======
  "sparse",
->>>>>>> 2e934aa9 (Sparse vector index)
  "sysinfo",
  "tar",
  "tempfile",
@@ -4726,7 +4723,7 @@ name = "sparse"
 version = "0.1.0"
 dependencies = [
  "common",
- "ordered-float 3.7.0",
+ "ordered-float 3.9.1",
 ]
 
 [[package]]
