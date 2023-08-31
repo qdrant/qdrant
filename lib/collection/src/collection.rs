@@ -23,6 +23,7 @@ use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use validator::Validate;
 
 use crate::collection_state::{ShardInfo, State};
+use crate::common::file_utils::move_file;
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
@@ -1648,10 +1649,6 @@ impl Collection {
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
-        if !temp_dir.exists() {
-            std::fs::create_dir_all(temp_dir)?;
-        }
-
         let snapshot_temp_dir = tempfile::Builder::new()
             .prefix(&format!("{snapshot_file_name}-temp-"))
             .tempdir_in(temp_dir)?;
@@ -1701,13 +1698,7 @@ impl Collection {
             }
         }
 
-        let _ = temp_file.persist(&snapshot_path).map_err(|err| {
-            if let Err(err) = err.file.close() {
-                log::error!("Failed to remove temporary file: {err}");
-            }
-
-            CollectionError::service_error(err.error.to_string())
-        })?;
+        move_file(temp_file.path(), &snapshot_path).await?;
 
         get_snapshot_description(&snapshot_path).await
     }
