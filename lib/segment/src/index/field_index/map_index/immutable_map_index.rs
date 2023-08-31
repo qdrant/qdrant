@@ -41,6 +41,75 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
         }
     }
 
+    /// Return mutable slice of a container which holds point_ids for given value.
+    fn get_mut_point_ids_slice(&mut self, value: &N) -> Option<&mut [PointOffsetType]> {
+        match self.value_to_points.get(value) {
+            Some(vals_range) if vals_range.start < vals_range.end => {
+                let range = vals_range.start as usize..vals_range.end as usize;
+                let vals = &mut self.value_to_points_container[range];
+                Some(vals)
+            }
+            _ => None,
+        }
+    }
+
+    /// Shrinks the range of values-to-points by one.
+    /// Returns true if the last element was removed.
+    fn shrink_value_range(&mut self, value: &N) -> bool {
+        if let Some(range) = self.value_to_points.get_mut(value) {
+            range.end -= 1;
+            return range.start == range.end; // true if the last element was removed
+        }
+        false
+    }
+
+    /// Removes `idx` from values-to-points-container.
+    /// It is implemented by shrinking the range of values-to-points by one and moving the removed element
+    /// out of the range.
+    /// Previously last element is swapped with the removed one and then the range is shrank by one.
+    ///
+    ///
+    /// Example:
+    ///     Before:
+    ///
+    /// value_to_points -> {
+    ///     "a": 0..5,
+    ///     "b": 5..10
+    /// }
+    /// value_to_points_container -> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ///
+    /// Args:
+    ///   value: "a"
+    ///   idx: 3
+    ///
+    /// After:
+    ///
+    /// value_to_points -> {
+    ///    "a": 0..4,
+    ///    "b": 5..10
+    /// }
+    ///
+    /// value_to_points_container -> [0, 1, 2, 4, (3), 5, 6, 7, 8, 9]
+    fn remove_idx_from_value_list(&mut self, value: &N, idx: PointOffsetType) {
+        let values = if let Some(values) = self.get_mut_point_ids_slice(value) {
+            values
+        } else {
+            debug_assert!(false, "value {} not found in value_to_points", value);
+            return;
+        };
+
+        // Finds the index of `idx` in values-to-points map and swaps it with the last element.
+        // So that removed element is out of the shrank range.
+        if let Some(pos) = values.iter().position(|&x| x == idx) {
+            // remove `idx` from values-to-points map by swapping it with the last element
+            values.swap(pos, values.len() - 1);
+        }
+
+        if self.shrink_value_range(value) {
+            self.value_to_points.remove(value);
+        }
+    }
+
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if self.point_to_values.len() <= idx as usize {
             return Ok(());
@@ -51,42 +120,19 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
         // The second one is more complicated: we have to remove all mentions of `idx` in values-to-points map.
         // To deal with it, take old values from points-to-values map, witch contains all values with `idx` in values-to-points map.
 
-        let removed_values = self.point_to_values[idx as usize].clone();
+        let removed_values_range = self.point_to_values[idx as usize].clone();
         self.point_to_values[idx as usize] = Default::default();
 
-        if !removed_values.is_empty() {
+        if !removed_values_range.is_empty() {
             self.indexed_points -= 1;
         }
-        self.values_count -= removed_values.len();
+        self.values_count -= removed_values_range.len();
 
         // Iterate over all values which were removed from points-to-values map
-        for value_index in removed_values {
+        for value_index in removed_values_range {
             // Actually remove value from container and get it
             let value = std::mem::take(&mut self.point_to_values_container[value_index as usize]);
-
-            // Remove `idx` from values-to-points map. Take list of all id's for `value` and remove `idx` from them.
-            let mut was_last_idx = false;
-            if let Some(vals_range) = self.value_to_points.get_mut(&value) {
-                if vals_range.start != vals_range.end {
-                    let range = vals_range.start as usize..vals_range.end as usize;
-                    let vals = &self.value_to_points_container[range.clone()];
-                    if let Some(pos) = vals.iter().position(|&x| x == idx) {
-                        // remove `idx` from values-to-points map by swapping it with the last element
-                        self.value_to_points_container
-                            .swap(range.start + pos, range.end - 1);
-                        vals_range.end -= 1;
-                    }
-                }
-                if vals_range.start != vals_range.end {
-                    was_last_idx = true;
-                }
-            }
-
-            // Special case. If `idx` was the last point for `value`, remove `value` from values-to-points map
-            if was_last_idx {
-                self.value_to_points.remove(&value);
-            }
-
+            self.remove_idx_from_value_list(&value, idx);
             // update db
             let key = MapIndex::encode_db_record(&value, idx);
             self.db_wrapper.remove(key)?;
