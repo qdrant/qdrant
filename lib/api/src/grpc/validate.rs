@@ -183,8 +183,7 @@ mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, GeoPoint, GeoPolygon, SearchPoints,
-        UpdateCollection,
+        CreateCollection, CreateFieldIndexCollection, SearchPoints, UpdateCollection,
     };
 
     #[test]
@@ -295,54 +294,6 @@ mod tests {
         assert!(
             bad_request.validate().is_err(),
             "bad search request should error on validation"
-        );
-    }
-
-    #[test]
-    fn test_geo_polygon() {
-        let bad_polygon = GeoPolygon { points: vec![] };
-        assert!(
-            bad_polygon.validate().is_err(),
-            "bad polygon should error on validation"
-        );
-
-        let bad_polygon = GeoPolygon {
-            points: vec![
-                GeoPoint { lat: 1., lon: 1. },
-                GeoPoint { lat: 2., lon: 2. },
-                GeoPoint { lat: 3., lon: 3. },
-            ],
-        };
-        assert!(
-            bad_polygon.validate().is_err(),
-            "bad polygon should error on validation"
-        );
-
-        let bad_polygon = GeoPolygon {
-            points: vec![
-                GeoPoint { lat: 1., lon: 1. },
-                GeoPoint { lat: 2., lon: 2. },
-                GeoPoint { lat: 3., lon: 3. },
-                GeoPoint { lat: 4., lon: 4. },
-            ],
-        };
-
-        assert!(
-            bad_polygon.validate().is_err(),
-            "bad polygon should error on validation"
-        );
-
-        let good_polygon = GeoPolygon {
-            points: vec![
-                GeoPoint { lat: 1., lon: 1. },
-                GeoPoint { lat: 2., lon: 2. },
-                GeoPoint { lat: 3., lon: 3. },
-                GeoPoint { lat: 1., lon: 1. },
-            ],
-        };
-        assert!(
-            good_polygon.validate().is_ok(),
-            "good polygon should not error on validation"
         );
     }
 }

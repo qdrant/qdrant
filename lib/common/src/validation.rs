@@ -38,7 +38,9 @@ pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError>
     }
 }
 
-/// Validate the collection name contains no illegal characters.
+/// Validate the collection name contains no illegal characters
+///
+/// This does not check the length of the name.
 pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
     const INVALID_CHARS: [char; 11] =
         ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
@@ -75,4 +77,95 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_range_generic() {
+        assert!(validate_range_generic(&0, None, None).is_ok());
+        assert!(validate_range_generic(&u64::MAX, None, None).is_ok());
+
+        // Min
+        assert!(validate_range_generic(&1, Some(1), None).is_ok());
+        assert!(validate_range_generic(&0, Some(1), None).is_err());
+        assert!(validate_range_generic(&1.0, Some(1.0), None).is_ok());
+        assert!(validate_range_generic(&0.0, Some(1.0), None).is_err());
+
+        // Max
+        assert!(validate_range_generic(&1, None, Some(1)).is_ok());
+        assert!(validate_range_generic(&2, None, Some(1)).is_err());
+        assert!(validate_range_generic(&1.0, None, Some(1.0)).is_ok());
+        assert!(validate_range_generic(&2.0, None, Some(1.0)).is_err());
+
+        // Min/max
+        assert!(validate_range_generic(&0, Some(1), Some(1)).is_err());
+        assert!(validate_range_generic(&1, Some(1), Some(1)).is_ok());
+        assert!(validate_range_generic(&2, Some(1), Some(1)).is_err());
+        assert!(validate_range_generic(&0, Some(1), Some(2)).is_err());
+        assert!(validate_range_generic(&1, Some(1), Some(2)).is_ok());
+        assert!(validate_range_generic(&2, Some(1), Some(2)).is_ok());
+        assert!(validate_range_generic(&3, Some(1), Some(2)).is_err());
+        assert!(validate_range_generic(&0, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(&1, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(&2, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(&3, Some(2), Some(1)).is_err());
+        assert!(validate_range_generic(&0.0, Some(1.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(&1.0, Some(1.0), Some(1.0)).is_ok());
+        assert!(validate_range_generic(&2.0, Some(1.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(&0.0, Some(1.0), Some(2.0)).is_err());
+        assert!(validate_range_generic(&1.0, Some(1.0), Some(2.0)).is_ok());
+        assert!(validate_range_generic(&2.0, Some(1.0), Some(2.0)).is_ok());
+        assert!(validate_range_generic(&3.0, Some(1.0), Some(2.0)).is_err());
+        assert!(validate_range_generic(&0.0, Some(2.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(&1.0, Some(2.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(&2.0, Some(2.0), Some(1.0)).is_err());
+        assert!(validate_range_generic(&3.0, Some(2.0), Some(1.0)).is_err());
+    }
+
+    #[test]
+    fn test_validate_not_empty() {
+        assert!(validate_not_empty(&None).is_ok());
+        assert!(validate_not_empty(&Some("not empty".into())).is_ok());
+        assert!(validate_not_empty(&Some(" ".into())).is_ok());
+        assert!(validate_not_empty(&Some("".into())).is_err());
+    }
+
+    #[test]
+    fn test_validate_collection_name() {
+        assert!(validate_collection_name("test_collection").is_ok());
+        assert!(validate_collection_name("").is_ok());
+        assert!(validate_collection_name("no/path").is_err());
+        assert!(validate_collection_name("no*path").is_err());
+        assert!(validate_collection_name("?").is_err());
+    }
+
+    #[test]
+    fn test_validate_geo_polygon() {
+        let bad_polygon: Vec<(f64, f64)> = vec![];
+        assert!(
+            validate_geo_polygon(&bad_polygon).is_err(),
+            "bad polygon should error on validation",
+        );
+
+        let bad_polygon = vec![(1., 1.), (2., 2.), (3., 3.)];
+        assert!(
+            validate_geo_polygon(&bad_polygon).is_err(),
+            "bad polygon should error on validation",
+        );
+
+        let bad_polygon = vec![(1., 1.), (2., 2.), (3., 3.), (4., 4.)];
+        assert!(
+            validate_geo_polygon(&bad_polygon).is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let good_polygon = vec![(1., 1.), (2., 2.), (3., 3.), (1., 1.)];
+        assert!(
+            validate_geo_polygon(&good_polygon).is_ok(),
+            "good polygon should not error on validation",
+        );
+    }
 }
