@@ -540,6 +540,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-tempfile"
+version = "0.0.0"
+dependencies = [
+ "log",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
