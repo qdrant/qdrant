@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
-use std::ops::{Deref, Mul};
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -304,6 +304,25 @@ impl<'s> SegmentHolder {
         Ok(applied_points)
     }
 
+    /// Try to acquire read lock over the given segment with increasing wait time.
+    /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
+    fn aloha_lock_segment_read<'a>(
+        &'a self,
+        segment: &'a Arc<RwLock<dyn SegmentEntry>>,
+    ) -> RwLockReadGuard<dyn SegmentEntry> {
+        let mut interval = Duration::from_nanos(100);
+        loop {
+            if let Some(guard) = segment.try_read_for(interval) {
+                return guard;
+            }
+
+            interval = interval.saturating_mul(2);
+            if interval.as_secs() >= 10 {
+                log::warn!("Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.");
+            }
+        }
+    }
+
     /// Try to acquire write lock over random segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     pub fn aloha_random_write<F>(
@@ -345,7 +364,7 @@ impl<'s> SegmentHolder {
             let opt_segment_guard = segment_lock.try_write_for(timeout);
 
             match opt_segment_guard {
-                None => timeout = timeout.mul(2), // Wait longer next time
+                None => timeout = timeout.saturating_mul(2), // Wait longer next time
                 Some(mut lock) => {
                     return apply(*segment_id, &mut lock);
                 }
@@ -434,17 +453,49 @@ impl<'s> SegmentHolder {
 
     /// Flushes all segments and returns maximum version to persist
     ///
+    /// Before flushing, this read-locks all segments. It prevents writes to all not-yet-flushed
+    /// segments during flushing. All locked segments are flushed and released one by one.
+    ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool) -> OperationResult<SeqNumberType> {
+        // Grab and keep to segment RwLock's until the end of this function
+        let segments = self.segment_locks(self.segment_flush_ordering())?;
+
+        // Read-lock all segments before flushing any, must prevent any writes to any segment
+        // That is to prevent any copy-on-write operation on two segments from occurring in between
+        // flushing the two segments. If that would happen, segments could end up in an
+        // inconsistent state on disk that is not recoverable after a crash.
+        //
+        // E.g.: we have a point on an immutable segment. If we use a set-payload operation, we do
+        // copy-on-write. The point from immutable segment A is deleted, the updated point is
+        // stored on appendable segment B.
+        // Because of flush ordering segment B (appendable) is flushed before segment A
+        // (not-appendable). If the copy-on-write operation happens in between, the point is
+        // deleted from A but the new point in B is not persisted. We cannot recover this by
+        // replaying the WAL in case of a crash because the point in A does not exist anymore,
+        // making copy-on-write impossible.
+        // Locking all segments prevents copy-on-write operations from occurring in between
+        // flushes.
+        let segment_reads: Vec<_> = segments
+            .iter()
+            .map(|segment| self.aloha_lock_segment_read(segment))
+            .collect();
+
+        // Assert we flush appendable segments first
+        debug_assert!(
+            segment_reads
+                .windows(2)
+                .all(|s| s[0].is_appendable() || !s[1].is_appendable()),
+            "Must flush appendable segments first",
+        );
+
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
 
-        for segment_id in self.segment_flush_ordering() {
-            let segment = self.segments.get(&segment_id).unwrap();
-            let segment_lock = segment.get();
-            let read_segment = segment_lock.read();
+        // Flush and release each segment
+        for read_segment in segment_reads {
             let segment_version = read_segment.version();
             let segment_persisted_version = read_segment.flush(sync)?;
 
@@ -453,13 +504,35 @@ impl<'s> SegmentHolder {
                 min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
             }
 
-            max_persisted_version = max(max_persisted_version, segment_persisted_version)
+            max_persisted_version = max(max_persisted_version, segment_persisted_version);
+
+            // Release read-lock immediately after flush, explicit to make this more clear
+            drop(read_segment);
         }
+
         if has_unsaved {
             Ok(min_unsaved_version)
         } else {
             Ok(max_persisted_version)
         }
+    }
+
+    /// Grab the RwLock's for all the given segment IDs.
+    fn segment_locks(
+        &self,
+        segment_ids: impl IntoIterator<Item = SegmentId>,
+    ) -> OperationResult<Vec<Arc<RwLock<dyn SegmentEntry>>>> {
+        segment_ids
+            .into_iter()
+            .map(|segment_id| {
+                self.segments
+                    .get(&segment_id)
+                    .ok_or_else(|| {
+                        OperationError::service_error(format!("No segment with ID {segment_id}"))
+                    })
+                    .map(LockedSegment::get)
+            })
+            .collect()
     }
 
     /// Take a snapshot of all segments into `snapshot_dir_path`
