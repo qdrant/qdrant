@@ -3801,7 +3801,7 @@ pub struct GeoPolygon {
     /// The minimum size is 4, and the first coordinate and the last coordinate
     /// should be the same to form a closed polygon.
     #[prost(message, repeated, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_geo_polygon")]
+    #[validate(custom = "common::validation::validate_geo_polygon")]
     pub points: ::prost::alloc::vec::Vec<GeoPoint>,
 }
 #[derive(serde::Serialize)]

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use common::validation::validate_range_generic;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::qdrant::{GeoPoint, NamedVectors};
+use super::qdrant::NamedVectors;
 
 pub trait ValidateExt {
     fn validate(&self) -> Result<(), ValidationErrors>;
@@ -176,25 +176,6 @@ pub fn validate_named_vectors_not_empty(
     let mut err = ValidationError::new("length");
     err.add_param(Cow::from("min"), &1);
     Err(err)
-}
-
-/// Validate a polygon has at least 4 points and is closed.
-pub fn validate_geo_polygon(points: &Vec<GeoPoint>) -> Result<(), ValidationError> {
-    let min_length = 4;
-    if points.len() < min_length {
-        let mut err = ValidationError::new("min_polygon_length");
-        err.add_param(Cow::from("length"), &points.len());
-        err.add_param(Cow::from("min_length"), &min_length);
-        return Err(err);
-    }
-
-    let first_point = &points[0];
-    let last_point = &points[points.len() - 1];
-    if first_point != last_point {
-        return Err(ValidationError::new("closed_polygon"));
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

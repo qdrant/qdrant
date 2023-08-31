@@ -54,3 +54,25 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
         None => Ok(()),
     }
 }
+
+/// Validate a polygon has at least 4 points and is closed.
+pub fn validate_geo_polygon<T>(points: &Vec<T>) -> Result<(), ValidationError>
+where
+    T: PartialEq,
+{
+    let min_length = 4;
+    if points.len() < min_length {
+        let mut err = ValidationError::new("min_polygon_length");
+        err.add_param(Cow::from("length"), &points.len());
+        err.add_param(Cow::from("min_length"), &min_length);
+        return Err(err);
+    }
+
+    let first_point = &points[0];
+    let last_point = &points[points.len() - 1];
+    if first_point != last_point {
+        return Err(ValidationError::new("closed_polygon"));
+    }
+
+    Ok(())
+}
