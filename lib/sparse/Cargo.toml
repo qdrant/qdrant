@@ -10,5 +10,5 @@ edition = "2021"
 
 
 [dependencies]
-common = {path = "../common"}
+common = { path = "../common/common" }
 ordered-float = "3.7.0"

@@ -29,7 +29,7 @@ thiserror = "1.0"
 parking_lot = "0.12"
 validator = { version = "0.16", features = ["derive"] }
 
-common = {path = "../common"}
+common = {path = "../common/common"}
 segment = {path = "../segment"}
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }
