@@ -8,6 +8,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator as valid;
 use collection::collection::Collection;
+use collection::common::file_utils::move_file;
 use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
@@ -86,7 +87,7 @@ pub async fn do_save_uploaded_snapshot(
 
     let path = collection_snapshot_path.join(filename);
 
-    snapshot.file.persist(&path)?;
+    move_file(snapshot.file.path(), &path).await?;
 
     let absolute_path = path.canonicalize()?;
 

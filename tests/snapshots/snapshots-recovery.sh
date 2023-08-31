@@ -7,6 +7,7 @@ docker volume create tempdir
 docker volume create storage
 
 declare DOCKER_IMAGE_NAME=qdrant-snapshots
+#declare DOCKER_IMAGE_NAME=qdrant/qdrant:snapshots
 declare CONTAINER_NAME=qdrant-snapshots-container
 
 docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAME
@@ -87,15 +88,37 @@ curl -X GET ${SNAPSHOT_URL} -H 'Content-Type: application/json' --fail -s -o tes
 # Upload snapshot via URL
 curl -X PUT "http://${QDRANT_HOST}/collections/test_collection_recovered_1/snapshots/recover" \
      -H 'Content-Type: application/json' \
-     --fail -s -d "{\"location\": \"${SNAPSHOT_URL}\"}"
+     --fail -s -d "{\"location\": \"${SNAPSHOT_URL}\"}" | jq
 
 # Upload snapshot as file
 curl -X POST "http://${QDRANT_HOST}/collections/test_collection_recovered_2/snapshots/upload" \
      -H 'Content-Type:multipart/form-data' \
-     -F 'snapshot=@test_collection.snapshot'
+     -F 'snapshot=@test_collection.snapshot' | jq
 
 # Check that all collections are present
-curl -X GET "http://${QDRANT_HOST}/collections/test_collection_recovered_1" --fail
+curl -X GET "http://${QDRANT_HOST}/collections/test_collection_recovered_1" --fail | jq
 
-curl -X GET "http://${QDRANT_HOST}/collections/test_collection_recovered_2" --fail
+curl -X GET "http://${QDRANT_HOST}/collections/test_collection_recovered_2" --fail | jq
+
+# Same for the shard snapshot
+
+declare SHARD_SNAPSHOT_NAME=$(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/shards/0/snapshots" --fail -H 'Content-Type: application/json' --data-raw '{}' | tee log.json | jq -r '.result.name')
+
+declare SHARD_SNAPSHOT_URL="http://${QDRANT_HOST}/collections/test_collection/shards/0/snapshots/${SHARD_SNAPSHOT_NAME}"
+
+# Download snapshot
+
+curl -X GET ${SHARD_SNAPSHOT_URL} -H 'Content-Type: application/json' --fail -s -o test_collection_shard.snapshot
+
+# Upload snapshot via URL
+
+curl -X PUT "http://${QDRANT_HOST}/collections/test_collection_recovered_1/shards/0/snapshots/recover" \
+     -H 'Content-Type: application/json' \
+     --fail -s -d "{\"location\": \"${SHARD_SNAPSHOT_URL}\"}" | jq
+
+# Upload snapshot as file
+
+curl -X POST "http://${QDRANT_HOST}/collections/test_collection_recovered_2/shards/0/snapshots/upload" \
+     -H 'Content-Type:multipart/form-data' \
+     -F 'snapshot=@test_collection_shard.snapshot' | jq
 
