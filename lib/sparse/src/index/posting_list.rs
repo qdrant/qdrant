@@ -45,7 +45,7 @@ impl PostingBuilder {
 
     pub fn build(mut self) -> PostingList {
         // Sort by id
-        self.elements.sort_by_key(|e| e.id);
+        self.elements.sort_unstable_by_key(|e| e.id);
 
         // Check for duplicates
         #[cfg(debug_assertions)]

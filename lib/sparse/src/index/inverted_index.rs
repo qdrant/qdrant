@@ -32,7 +32,7 @@ impl InvertedIndexBuilder {
     pub fn build(&mut self) -> InvertedIndex {
         // Get sorted keys
         let mut keys: Vec<u32> = self.postings.keys().copied().collect();
-        keys.sort();
+        keys.sort_unstable();
 
         let last_key = *keys.last().unwrap_or(&0);
 
