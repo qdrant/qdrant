@@ -87,6 +87,8 @@ pub fn init(
             api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
         }
 
+        let upload_dir = dispatcher_data.upload_dir().unwrap();
+
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -122,9 +124,7 @@ pub fn init(
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)
-                .app_data(
-                    TempFileConfig::default().directory(dispatcher_data.temp_snapshots_path()),
-                )
+                .app_data(TempFileConfig::default().directory(&upload_dir))
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
                 .service(index)
                 .configure(config_collections_api)

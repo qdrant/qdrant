@@ -9,10 +9,6 @@ use uuid::Uuid;
 
 use crate::StorageError;
 
-pub fn downloaded_snapshots_dir(snapshots_dir: &str) -> PathBuf {
-    Path::new(snapshots_dir).join("downloaded-snapshots")
-}
-
 fn random_name() -> String {
     format!("{}.snapshot", Uuid::new_v4())
 }
