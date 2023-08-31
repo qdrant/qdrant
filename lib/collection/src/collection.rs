@@ -1506,9 +1506,22 @@ impl Collection {
         Ok(snapshot_path)
     }
 
+    /// Creates a snapshot of the collection.
+    ///
+    /// The snapshot is created in three steps:
+    /// 1. Create a temporary directory and create a snapshot of each shard in it.
+    /// 2. Archive the temporary directory into a single file.
+    /// 3. Move the archive to the final location.
+    ///
+    /// # Arguments
+    ///
+    /// * `global_temp_dir`: directory used to host snapshots while they are being created
+    /// * `this_peer_id`: current peer id
+    ///
+    /// returns: Result<SnapshotDescription, CollectionError>
     pub async fn create_snapshot(
         &self,
-        temp_dir: &Path,
+        global_temp_dir: &Path,
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
@@ -1517,64 +1530,77 @@ impl Collection {
             this_peer_id,
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
+
+        // Final location of snapshot
         let snapshot_path = self.snapshots_path.join(&snapshot_name);
         log::info!(
             "Creating collection snapshot {} into {:?}",
             snapshot_name,
             snapshot_path
         );
-        let snapshot_path_tmp = snapshot_path.with_extension("tmp");
 
-        let snapshot_path_with_tmp_extension = temp_dir.join(&snapshot_name).with_extension("tmp");
-        let snapshot_path_with_arc_extension = temp_dir.join(&snapshot_name).with_extension("arc");
-
-        create_dir_all(&snapshot_path_with_tmp_extension).await?;
-
+        // Dedicated temporary directory for this snapshot (deleted on drop)
+        let snapshot_temp_dir = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_name}-temp-"))
+            .tempdir_in(global_temp_dir)?;
+        let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
+        // Create snapshot of each shard
         {
             let shards_holder = self.shards_holder.read().await;
             // Create snapshot of each shard
             for (shard_id, replica_set) in shards_holder.get_shards() {
                 let shard_snapshot_path =
-                    versioned_shard_path(&snapshot_path_with_tmp_extension, *shard_id, 0);
+                    versioned_shard_path(&snapshot_temp_dir_path, *shard_id, 0);
                 create_dir_all(&shard_snapshot_path).await?;
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
-                    .create_snapshot(temp_dir, &shard_snapshot_path, save_wal)
+                    .create_snapshot(&snapshot_temp_dir_path, &shard_snapshot_path, save_wal)
                     .await?;
             }
         }
 
-        CollectionVersion::save(&snapshot_path_with_tmp_extension)?;
+        // Save collection config and version
+        CollectionVersion::save(&snapshot_temp_dir_path)?;
         self.collection_config
             .read()
             .await
-            .save(&snapshot_path_with_tmp_extension)?;
+            .save(&snapshot_temp_dir_path)?;
 
-        let snapshot_path_with_arc_extension_clone = snapshot_path_with_arc_extension.clone();
-        let snapshot_path_with_tmp_extension_clone = snapshot_path_with_tmp_extension.clone();
-        log::debug!("Archiving snapshot {:?}", snapshot_path_with_tmp_extension);
+        // Dedicated temporary file for archiving this snapshot (deleted on drop)
+        let snapshot_temp_arc_file = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_name}-arc-"))
+            .tempfile_in(global_temp_dir)?;
+
+        // Archive snapshot folder into a single file
+        let snapshot_temp_arc_file_arc = Arc::new(snapshot_temp_arc_file);
+        let snapshot_arc_file_path_clone = snapshot_temp_arc_file_arc.clone();
+        let snapshot_temp_dir_path_clone = snapshot_temp_dir_path.clone();
+        log::debug!("Archiving snapshot {:?}", snapshot_temp_dir_path);
         let archiving = tokio::task::spawn_blocking(move || {
-            // have to use std here, cause TarBuilder is not async
-            let file = std::fs::File::create(&snapshot_path_with_arc_extension_clone)?;
-            let mut builder = TarBuilder::new(file);
+            let mut builder = TarBuilder::new(snapshot_arc_file_path_clone.as_ref());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
-            builder.append_dir_all(".", &snapshot_path_with_tmp_extension_clone)?;
+            builder.append_dir_all(".", &snapshot_temp_dir_path_clone)?;
             builder.finish()?;
             Ok::<_, CollectionError>(())
         });
-
         archiving.await??;
 
-        // remove temporary snapshot directory
-        remove_dir_all(&snapshot_path_with_tmp_extension).await?;
+        // Remove temporary snapshot directory (automatically dropped on previous error)
+        log::debug!(
+            "Removing temporary snapshot data {:?}",
+            snapshot_temp_dir_path
+        );
+        remove_dir_all(&snapshot_temp_dir_path).await?;
 
-        // move snapshot to permanent location
+        // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
-        // We can't copy to the target location directly, cause copy is not atomic.
-        copy(&snapshot_path_with_arc_extension, &snapshot_path_tmp).await?;
-        rename(&snapshot_path_tmp, &snapshot_path).await?;
-        remove_file(snapshot_path_with_arc_extension).await?;
+        // We can't copy to the target location directly, because copy is not atomic.
+        // So we copy to the final location with a temporary name and then rename atomically.
+        let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
+        copy(snapshot_temp_arc_file_arc.path(), &snapshot_path_tmp_move).await?;
+        rename(&snapshot_path_tmp_move, &snapshot_path).await?;
+        remove_file(snapshot_temp_arc_file_arc.path()).await?;
 
         log::info!(
             "Collection snapshot {} completed into {:?}",

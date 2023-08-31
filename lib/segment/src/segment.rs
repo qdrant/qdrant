@@ -1407,7 +1407,8 @@ impl SegmentEntry for Segment {
         // flush segment to capture latest state
         self.flush(true)?;
 
-        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
+        // use temp_path for intermediary files
+        let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
         let db_backup_path = temp_path.join(DB_BACKUP_PATH);
         let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
 
