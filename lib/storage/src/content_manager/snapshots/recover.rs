@@ -9,7 +9,7 @@ use collection::shards::shard_versioning::latest_shard_paths;
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
 };
-use crate::content_manager::snapshots::download::{download_snapshot, downloaded_snapshots_dir};
+use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
 use crate::{StorageError, TableOfContent};
 
@@ -76,23 +76,23 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
-    tokio::fs::create_dir_all(&snapshot_download_path).await?;
+    let download_dir = toc.snapshots_download_tempdir()?;
 
     log::debug!(
         "Downloading snapshot from {} to {}",
         location,
-        snapshot_download_path.display()
+        download_dir.path().display()
     );
 
-    let snapshot_path = download_snapshot(location, &snapshot_download_path).await?;
+    let snapshot_path = download_snapshot(location, download_dir.path()).await?;
 
     log::debug!("Snapshot downloaded to {}", snapshot_path.display());
 
-    let tmp_collection_dir = toc
-        .temp_storage_path()
-        .join("tmp_collections")
-        .join(collection_name);
+    let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
+
+    let tmp_collection_dir = tempfile::Builder::new()
+        .prefix(&format!("col-{}-recovery-", collection_name))
+        .tempdir_in(temp_storage_path)?;
 
     log::debug!(
         "Recovering collection {} from snapshot {}",
@@ -100,14 +100,12 @@ async fn _do_recover_from_snapshot(
         snapshot_path.display()
     );
 
-    if tmp_collection_dir.exists() {
-        tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
-    }
-    tokio::fs::create_dir_all(&tmp_collection_dir).await?;
+    log::debug!(
+        "Unpacking snapshot to {}",
+        tmp_collection_dir.path().display()
+    );
 
-    log::debug!("Unpacking snapshot to {}", tmp_collection_dir.display());
-
-    let tmp_collection_dir_clone = tmp_collection_dir.clone();
+    let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
     let restoring = tokio::task::spawn_blocking(move || {
         // Unpack snapshot collection to the target folder
         Collection::restore_snapshot(
@@ -119,7 +117,7 @@ async fn _do_recover_from_snapshot(
     });
     restoring.await??;
 
-    let snapshot_config = CollectionConfig::load(&tmp_collection_dir)?;
+    let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
     let collection = match toc.get_collection(collection_name).await.ok() {
@@ -179,7 +177,7 @@ async fn _do_recover_from_snapshot(
 
     // Recover shards from the snapshot
     for (shard_id, shard_info) in &state.shards {
-        let shards = latest_shard_paths(&tmp_collection_dir, *shard_id).await?;
+        let shards = latest_shard_paths(tmp_collection_dir.path(), *shard_id).await?;
 
         let snapshot_shard_path = shards
             .into_iter()

@@ -70,7 +70,7 @@ pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidd
 /// the launch of the service.
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
-    storage_config: Arc<StorageConfig>,
+    pub(super) storage_config: Arc<StorageConfig>,
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
@@ -218,26 +218,6 @@ impl TableOfContent {
 
     pub fn snapshots_path(&self) -> &str {
         &self.storage_config.snapshots_path
-    }
-
-    /// Get path for temporary snapshot files.
-    ///
-    /// Defaults to `snapshot_path()`.
-    /// A user may specify `storage.temp_path` to override this.
-    pub fn temp_snapshots_path(&self) -> &Path {
-        Path::new(self.temp_path().unwrap_or_else(|| self.snapshots_path()))
-    }
-
-    pub fn temp_path(&self) -> Option<&str> {
-        self.storage_config.temp_path.as_deref()
-    }
-
-    /// Get path for temporary storage files.
-    ///
-    /// Defaults to `storage_path()`.
-    /// A user may specify `storage.temp_path` to override this.
-    pub fn temp_storage_path(&self) -> &Path {
-        Path::new(self.temp_path().unwrap_or_else(|| self.storage_path()))
     }
 
     fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
@@ -1543,8 +1523,7 @@ impl TableOfContent {
         let collection = self.get_collection(collection_name).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
-        let temp_dir = self.temp_storage_path().join(SNAPSHOTS_TEMP_DIR);
-        tokio::fs::create_dir_all(&temp_dir).await?;
+        let temp_dir = self.optional_temp_or_storage_temp_path()?;
         Ok(collection
             .create_snapshot(&temp_dir, self.this_peer_id)
             .await?)

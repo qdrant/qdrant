@@ -15,6 +15,7 @@ pub mod errors;
 pub mod shard_distribution;
 pub mod snapshots;
 pub mod toc;
+pub mod toc_components;
 
 pub mod consensus_ops {
     use collection::shards::replica_set::ReplicaState;
