@@ -353,7 +353,7 @@ pub struct CreateCollection {
     #[prost(string, tag = "1")]
     #[validate(
         length(min = 1, max = 255),
-        custom = "crate::grpc::validate::validate_collection_name"
+        custom = "common::validation::validate_collection_name"
     )]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index

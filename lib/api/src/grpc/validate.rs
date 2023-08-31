@@ -178,23 +178,6 @@ pub fn validate_named_vectors_not_empty(
     Err(err)
 }
 
-/// Validate the collection name contains no illegal characters.
-pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
-    const INVALID_CHARS: [char; 11] =
-        ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
-
-    match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
-        Some(c) => {
-            let mut err = ValidationError::new("does_not_contain");
-            err.add_param(Cow::from("pattern"), &c);
-            err.message
-                .replace(format!("collection name cannot contain \"{c}\" char").into());
-            Err(err)
-        }
-        None => Ok(()),
-    }
-}
-
 /// Validate a polygon has at least 4 points and is closed.
 pub fn validate_geo_polygon(points: &Vec<GeoPoint>) -> Result<(), ValidationError> {
     let min_length = 4;

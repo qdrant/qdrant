@@ -37,3 +37,20 @@ pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError>
         _ => Ok(()),
     }
 }
+
+/// Validate the collection name contains no illegal characters.
+pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
+    const INVALID_CHARS: [char; 11] =
+        ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
+
+    match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
+        Some(c) => {
+            let mut err = ValidationError::new("does_not_contain");
+            err.add_param(Cow::from("pattern"), &c);
+            err.message
+                .replace(format!("collection name cannot contain \"{c}\" char").into());
+            Err(err)
+        }
+        None => Ok(()),
+    }
+}
