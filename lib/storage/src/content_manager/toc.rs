@@ -1645,7 +1645,7 @@ impl TableOfContent {
     /// # Errors
     ///
     /// This errors if:
-    /// - any of the peers has a diverged commit/term and the specified commit can never be reached
+    /// - any of the peers is not on the same term
     /// - waiting takes longer than the specified timeout
     /// - any of the peers cannot be reached
     pub async fn await_commit_on_all_peers(
@@ -1678,8 +1678,7 @@ impl TableOfContent {
     ///
     /// # Errors
     ///
-    /// This errors if the given peer has a diverged commit/term and the specified commit can never
-    /// be reached. Also errors if the peer cannot be reached.
+    /// This errors if the given peer is on a different term. Also errors if the peer cannot be reached.
     async fn await_commit_on_peer(
         &self,
         peer_id: PeerId,

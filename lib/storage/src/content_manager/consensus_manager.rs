@@ -605,14 +605,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         while start.elapsed() < timeout {
             let state = &self.hard_state();
 
-            // Okay if we're on a newer term, or if commit is reached within same term
-            let is_ok = state.term > term || (state.term == term && state.commit >= commit);
+            // Okay if on the same term and have at least the specified commit
+            let is_ok = state.term == term && state.commit >= commit;
             if is_ok {
                 return true;
             }
 
-            // Fail if commit is reached but we're on an older term
-            let is_fail = state.term < term && state.commit >= commit;
+            // Fail if on a different term
+            let is_fail = state.term != term;
             if is_fail {
                 return false;
             }
