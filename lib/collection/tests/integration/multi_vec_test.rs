@@ -128,7 +128,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         with_vector: Some(true.into()),
         params: None,
         score_threshold: None,
-        aggregate_function: None
+        aggregate_function: None,
     };
 
     let result = collection
@@ -157,7 +157,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         with_vector: Some(true.into()),
         params: None,
         score_threshold: None,
-        aggregate_function: None
+        aggregate_function: None,
     };
 
     let result = collection.search(failed_search_request, None, None).await;
@@ -180,7 +180,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         with_vector: Some(true.into()),
         params: None,
         score_threshold: None,
-        aggregate_function: None
+        aggregate_function: None,
     };
 
     let result = collection

@@ -177,7 +177,7 @@ pub struct ScoredPoint {
     /// Vector of the point
     pub vector: Option<VectorStruct>,
     /// Arguments used in an aggregate function
-    pub aggregate_args: Option<Vec<Vec<Value>>>
+    pub aggregate_args: Option<Vec<Vec<Value>>>,
 }
 
 impl Eq for ScoredPoint {}

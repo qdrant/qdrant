@@ -42,7 +42,7 @@ mod group_by {
             with_payload: None,
             with_vector: None,
             score_threshold: None,
-            aggregate_function: None
+            aggregate_function: None,
         });
 
         let request = GroupRequest::with_limit_from_request(source, "docId".to_string(), 3);
@@ -206,7 +206,7 @@ mod group_by {
                 with_payload: None,
                 with_vector: None,
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             }),
             "docId".to_string(),
             3,
@@ -242,7 +242,7 @@ mod group_by {
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: Some(WithVector::Bool(true)),
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             }),
             "docId".to_string(),
             3,
@@ -289,7 +289,7 @@ mod group_by {
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: Some(WithVector::Bool(true)),
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             }),
             "other_stuff".to_string(),
             3,
@@ -334,7 +334,7 @@ mod group_by {
                 with_payload: None,
                 with_vector: None,
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             }),
             "docId".to_string(),
             0,
@@ -375,7 +375,7 @@ mod group_by {
                 with_payload: None,
                 with_vector: None,
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             }),
             "docId".to_string(),
             3,
@@ -416,7 +416,7 @@ mod group_by {
                 with_payload: None,
                 with_vector: None,
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             }),
             "docId".to_string(),
             3,
@@ -461,7 +461,7 @@ mod group_by {
                 with_payload: None,
                 with_vector: None,
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             }),
             "docId".to_string(),
             400,
@@ -519,7 +519,7 @@ mod group_by_builder {
             with_payload: None,
             with_vector: None,
             score_threshold: None,
-            aggregate_function: None
+            aggregate_function: None,
         });
 
         let request = GroupRequest::with_limit_from_request(source_request, "docId".to_string(), 3);

@@ -8,7 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{CompressionRatio, GroupId, AggregateFunction, AggregateArgsList, ValueList};
+use super::qdrant::{AggregateArgsList, AggregateFunction, CompressionRatio, GroupId, ValueList};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -99,15 +99,14 @@ impl TryFrom<AggregateArgsList> for Vec<Vec<serde_json::Value>> {
 
 impl From<Vec<Vec<serde_json::Value>>> for AggregateArgsList {
     fn from(value: Vec<Vec<serde_json::Value>>) -> Self {
-        let args = value.into_iter().map(|values| {
-            ValueList {
-                values: values.into_iter().map(|v| json_to_proto(v)).collect()
-            }
-        }).collect();
+        let args = value
+            .into_iter()
+            .map(|values| ValueList {
+                values: values.into_iter().map(|v| json_to_proto(v)).collect(),
+            })
+            .collect();
 
-        Self {
-            args
-        }
+        Self { args }
     }
 }
 
@@ -472,7 +471,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score: point.score,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
-            aggregate_args: point.aggregate_args.map(|aa| aa.into())
+            aggregate_args: point.aggregate_args.map(|aa| aa.into()),
         }
     }
 }
@@ -1144,8 +1143,6 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
 
 impl From<String> for AggregateFunction {
     fn from(value: String) -> Self {
-        Self {
-            function: value
-        }
+        Self { function: value }
     }
 }

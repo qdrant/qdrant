@@ -1,12 +1,17 @@
-use nom::{IResult, bytes::complete::{tag, take_while1}, branch::alt, combinator::{value, opt}, Parser, sequence::{terminated, delimited, tuple}, character::complete::multispace0};
 use std::str::FromStr;
 
-use segment::types::{ScoredPoint, PayloadKeyType};
+use nom::branch::alt;
+use nom::bytes::complete::{tag, take_while1};
+use nom::character::complete::multispace0;
+use nom::combinator::{opt, value};
+use nom::sequence::{delimited, terminated, tuple};
+use nom::{IResult, Parser};
+use segment::types::{PayloadKeyType, ScoredPoint};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Err {
-    ParsingError
+    ParsingError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,7 +19,7 @@ pub enum Operation {
     Sum,
     Min,
     Max,
-    Mean
+    Mean,
 }
 
 impl FromStr for Operation {
@@ -28,7 +33,7 @@ impl FromStr for Operation {
             "min" => Ok(Self::Min),
             "max" => Ok(Self::Max),
             "mean" => Ok(Self::Mean),
-            _ => Err(Err::ParsingError)
+            _ => Err(Err::ParsingError),
         }
     }
 }
@@ -44,16 +49,14 @@ fn parse_op(i: &str) -> IResult<&str, Operation> {
         value(Operation::Min, tag("min")),
         value(Operation::Max, tag("max")),
         value(Operation::Mean, tag("mean")),
-    )).parse(i)
+    ))
+    .parse(i)
 }
 
 fn parse_arglist(i: &str) -> IResult<&str, Vec<PayloadKeyType>> {
-    delimited(
-        tag("("),
-        parse_ident,
-        tag(")"))
-    .map(|s| vec![s.to_string()])
-    .parse(i)
+    delimited(tag("("), parse_ident, tag(")"))
+        .map(|s| vec![s.to_string()])
+        .parse(i)
 }
 
 fn parse_strict(i: &str) -> IResult<&str, bool> {
@@ -66,7 +69,9 @@ fn get_numeric_argument(point: &ScoredPoint, at: usize) -> Option<f64> {
     let arglist = point.aggregate_args.as_ref()?;
     let arg = arglist.get(at)?;
     // TODO: Should this work with longer lists?
-    if arg.len() != 1 { return None; };
+    if arg.len() != 1 {
+        return None;
+    };
 
     arg[0].as_f64()
 }
@@ -77,7 +82,9 @@ fn do_sum(points: &[ScoredPoint], strict: bool, arg_idx: usize) -> Option<f64> {
 
     for p in points {
         let arg = get_numeric_argument(p, arg_idx);
-        if strict && arg.is_none() { return None; }
+        if strict && arg.is_none() {
+            return None;
+        }
         let arg = arg.unwrap_or_default();
         sum += arg;
     }
@@ -91,7 +98,9 @@ fn do_minmax(points: &[ScoredPoint], strict: bool, arg_idx: usize, max: bool) ->
 
     for p in points {
         let arg = get_numeric_argument(p, arg_idx);
-        if strict && arg.is_none() { return None; }
+        if strict && arg.is_none() {
+            return None;
+        }
         let arg = arg.unwrap_or_default();
         res = cmp(res, arg);
     }
@@ -100,29 +109,30 @@ fn do_minmax(points: &[ScoredPoint], strict: bool, arg_idx: usize, max: bool) ->
 }
 
 fn do_mean(points: &[ScoredPoint], strict: bool, arg_idx: usize) -> Option<f64> {
-    if points.len() == 0 { return None; }; 
+    if points.len() == 0 {
+        return None;
+    };
     let sum = do_sum(points, strict, arg_idx)?;
     Some(sum / points.len() as f64)
 }
 
 /// Grammar:
-/// 
+///
 /// function -> function_body | strict: function_body
-/// 
+///
 /// function_body -> operation(parameter)
-/// operation -> sum | min | max | mean 
+/// operation -> sum | min | max | mean
 /// parameter -> string
-/// 
+///
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AggregateFn {
     pub name: String,
     pub op: Operation,
     pub arg_keys: Vec<PayloadKeyType>,
-    pub strict: bool
+    pub strict: bool,
 }
 
 impl AggregateFn {
-
     pub fn extract_params(s: &str) -> Result<Vec<PayloadKeyType>, Err> {
         let func = Self::parse(s)?;
         Ok(func.arg_keys)
@@ -131,12 +141,7 @@ impl AggregateFn {
     pub fn parse(mut input: &str) -> Result<Self, Err> {
         input = input.trim();
 
-        let (strict, op, arg_keys) = 
-        tuple((
-            parse_strict,
-            parse_op,
-            parse_arglist
-        ))
+        let (strict, op, arg_keys) = tuple((parse_strict, parse_op, parse_arglist))
             .parse(input)
             .map_err(|_| Err::ParsingError)?
             .1;
@@ -145,7 +150,7 @@ impl AggregateFn {
             name: input.to_string(),
             strict,
             op,
-            arg_keys
+            arg_keys,
         })
     }
 
@@ -160,7 +165,6 @@ impl AggregateFn {
             Operation::Max => do_minmax(points, self.strict, 0, true),
             Operation::Mean => do_mean(points, self.strict, 0),
         };
-        
 
         res.map_or(Value::Null, |res| Value::from(res))
     }
@@ -170,40 +174,46 @@ impl AggregateFn {
 mod tests {
     use segment::types::ScoredPoint;
 
-    use super::Operation;
-    use super::AggregateFn;
+    use super::{AggregateFn, Operation};
 
     fn make_points(count: usize) -> Vec<ScoredPoint> {
-        (0..count).map(|i| {
-            let v = serde_json::Value::from(i);
+        (0..count)
+            .map(|i| {
+                let v = serde_json::Value::from(i);
 
-            ScoredPoint {
-                id: (i as u64).into(),
-                payload: None,
-                score: 0.0,
-                version: 0,
-                vector: None,
-                aggregate_args: Some(vec![vec![v]]),
-            }
-        })
-        .collect()
+                ScoredPoint {
+                    id: (i as u64).into(),
+                    payload: None,
+                    score: 0.0,
+                    version: 0,
+                    vector: None,
+                    aggregate_args: Some(vec![vec![v]]),
+                }
+            })
+            .collect()
     }
 
     #[test]
     fn test_parse_aggr_fn() {
-        assert_eq!(AggregateFn::parse("sum(foo)"), Ok(AggregateFn {
-            name: "sum(foo)".to_string(),
-            op: Operation::Sum,
-            arg_keys: vec!["foo".to_string()],
-            strict: false
-        }));
+        assert_eq!(
+            AggregateFn::parse("sum(foo)"),
+            Ok(AggregateFn {
+                name: "sum(foo)".to_string(),
+                op: Operation::Sum,
+                arg_keys: vec!["foo".to_string()],
+                strict: false
+            })
+        );
 
-        assert_eq!(AggregateFn::parse("  strict: mean(bar)  "), Ok(AggregateFn {
-            name: "strict: mean(bar)".to_string(),
-            op: Operation::Mean,
-            arg_keys: vec!["bar".to_string()],
-            strict: true
-        }));
+        assert_eq!(
+            AggregateFn::parse("  strict: mean(bar)  "),
+            Ok(AggregateFn {
+                name: "strict: mean(bar)".to_string(),
+                op: Operation::Mean,
+                arg_keys: vec!["bar".to_string()],
+                strict: true
+            })
+        );
 
         assert!(AggregateFn::parse("???").is_err());
         assert!(AggregateFn::parse("sum(sum(foo))").is_err());

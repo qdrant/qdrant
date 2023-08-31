@@ -30,9 +30,9 @@ use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector, PayloadContainer,
+    Filter, Payload, PayloadContainer, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -539,7 +539,7 @@ impl Segment {
         internal_result: &[ScoredPointOffset],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        aggregate_params: &[PayloadKeyType]
+        aggregate_params: &[PayloadKeyType],
     ) -> OperationResult<Vec<ScoredPoint>> {
         let id_tracker = self.id_tracker.borrow();
         internal_result
@@ -570,17 +570,23 @@ impl Segment {
                     let initial_payload = self.payload_by_offset(point_offset)?;
 
                     let aggr_args = if !aggregate_params.is_empty() {
-                        let params = aggregate_params.iter()
-                        .map(|path| {
-                            initial_payload.get_value(path).values().into_iter().cloned().collect()
-                        })
-                        .collect();
-                    
+                        let params = aggregate_params
+                            .iter()
+                            .map(|path| {
+                                initial_payload
+                                    .get_value(path)
+                                    .values()
+                                    .into_iter()
+                                    .cloned()
+                                    .collect()
+                            })
+                            .collect();
+
                         Some(params)
                     } else {
                         None
                     };
-                    
+
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {
                         i.process(initial_payload)
                     } else {
@@ -616,7 +622,7 @@ impl Segment {
                     score: scored_point_offset.score,
                     payload,
                     vector,
-                    aggregate_args: aggr_args
+                    aggregate_args: aggr_args,
                 })
             })
             .collect()
@@ -774,7 +780,7 @@ impl SegmentEntry for Segment {
                 .search(&[vector], filter, top, params, is_stopped)[0];
 
         check_stopped(is_stopped)?;
-        
+
         self.process_search_result(internal_result, with_payload, with_vector, aggregate_params)
     }
 
@@ -802,7 +808,12 @@ impl SegmentEntry for Segment {
         let res = internal_results
             .iter()
             .map(|internal_result| {
-                self.process_search_result(internal_result, with_payload, with_vector, aggregate_params)
+                self.process_search_result(
+                    internal_result,
+                    with_payload,
+                    with_vector,
+                    aggregate_params,
+                )
             })
             .collect();
 

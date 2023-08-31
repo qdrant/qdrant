@@ -1,10 +1,7 @@
 use collection::operations::point_ops::{Batch, WriteOrdering};
-use collection::operations::types::{
-    SearchRequest, UpdateStatus,
-};
+use collection::operations::types::{SearchRequest, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
-
 use tempfile::Builder;
 
 use crate::common::simple_collection_fixture;
@@ -32,7 +29,7 @@ async fn test_aggregate_extract_args() {
             payloads: vec![0, 1, 2, 3, 4]
                 .into_iter()
                 .map(|i| serde_json::from_str(&format!("{{ \"foo\": {} }}", i)).unwrap())
-                .collect()
+                .collect(),
         }
         .into(),
     );
@@ -57,7 +54,7 @@ async fn test_aggregate_extract_args() {
         limit: 5,
         offset: 0,
         score_threshold: None,
-        aggregate_function: Some("sum(foo)".to_string())
+        aggregate_function: Some("sum(foo)".to_string()),
     };
 
     let search_res = collection.search(search_request, None, None).await;
@@ -65,7 +62,9 @@ async fn test_aggregate_extract_args() {
     match search_res {
         Ok(res) => {
             assert!(res.iter().all(|p| p.aggregate_args.is_some()));
-            assert!(res.iter().all(|p| p.aggregate_args.as_ref().unwrap().len() == 1));
+            assert!(res
+                .iter()
+                .all(|p| p.aggregate_args.as_ref().unwrap().len() == 1));
         }
         Err(err) => panic!("search failed: {err:?}"),
     }

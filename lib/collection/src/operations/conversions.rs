@@ -95,16 +95,16 @@ pub fn try_record_from_grpc(
         .map(|vectors| vectors.try_into())
         .transpose()?;
 
-        
-    let aggregate_args = point.aggregate_args.map(|alist| {
-        alist.try_into()
-    }).transpose()?;
+    let aggregate_args = point
+        .aggregate_args
+        .map(|alist| alist.try_into())
+        .transpose()?;
 
     Ok(Record {
         id,
         payload,
         vector,
-        aggregate_args
+        aggregate_args,
     })
 }
 
@@ -310,7 +310,7 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
             vectors,
-            aggregate_args: None
+            aggregate_args: None,
         }
     }
 }
@@ -736,7 +736,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
                 vector_name => Some(vector_name.to_string()),
             },
             read_consistency: None,
-            aggregate_function: request.aggregate_function.clone().map(|af| af.into())
+            aggregate_function: request.aggregate_function.clone().map(|af| af.into()),
         }
     }
 }
@@ -792,7 +792,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
                     .unwrap_or_default(),
             ),
             score_threshold: value.score_threshold,
-            aggregate_function: value.aggregate_function.map(|af| af.function)
+            aggregate_function: value.aggregate_function.map(|af| af.function),
         })
     }
 }
@@ -813,7 +813,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
             offset: None,
             collection_name: String::new(),
             read_consistency: None,
-            aggregate_function: None
+            aggregate_function: None,
         };
 
         let SearchRequest {

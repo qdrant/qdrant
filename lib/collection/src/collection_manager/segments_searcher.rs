@@ -9,8 +9,8 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig,
-    SeqNumberType, WithPayload, WithPayloadInterface, WithVector, PayloadKeyType,
+    Filter, Indexes, PayloadKeyType, PointIdType, ScoreType, ScoredPoint, SearchParams,
+    SegmentConfig, SeqNumberType, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -307,7 +307,7 @@ impl SegmentsSearcher {
                                 Some(selected_vectors.into())
                             }
                         },
-                        aggregate_args: Some(vec![])
+                        aggregate_args: Some(vec![]),
                     },
                 );
                 point_version.insert(id, version);
@@ -523,7 +523,7 @@ mod tests {
             limit: 5,
             score_threshold: None,
             offset: 0,
-            aggregate_function: None
+            aggregate_function: None,
         };
 
         let batch_request = SearchRequestBatch {
@@ -577,7 +577,7 @@ mod tests {
                 filter: None,
                 params: None,
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             };
             let req2 = SearchRequest {
                 vector: random_vector(&mut rnd, 4).into(),
@@ -588,7 +588,7 @@ mod tests {
                 with_payload: None,
                 with_vector: None,
                 score_threshold: None,
-                aggregate_function: None
+                aggregate_function: None,
             };
 
             let batch_request = SearchRequestBatch {

@@ -199,7 +199,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
             with_payload,
             with_vector,
             score_threshold,
-            aggregate_function: None
+            aggregate_function: None,
         };
 
         GroupRequest {
@@ -481,7 +481,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
-                        aggregate_args: None
+                        aggregate_args: None,
                     },
                     ScoredPoint {
                         id: 2.into(),
@@ -489,7 +489,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
-                        aggregate_args: None
+                        aggregate_args: None,
                     },
                 ],
             ),
@@ -502,7 +502,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
-                        aggregate_args: None
+                        aggregate_args: None,
                     },
                     ScoredPoint {
                         id: 4.into(),
@@ -510,7 +510,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
-                        aggregate_args: None
+                        aggregate_args: None,
                     },
                 ],
             ),
@@ -534,7 +534,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_a.clone()),
                 vector: None,
-                aggregate_args: None
+                aggregate_args: None,
             },
             ScoredPoint {
                 id: 2.into(),
@@ -542,7 +542,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_a.clone()),
                 vector: None,
-                aggregate_args: None
+                aggregate_args: None,
             },
             ScoredPoint {
                 id: 3.into(),
@@ -550,7 +550,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_b.clone()),
                 vector: None,
-                aggregate_args: None
+                aggregate_args: None,
             },
             ScoredPoint {
                 id: 4.into(),
@@ -558,7 +558,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_b.clone()),
                 vector: None,
-                aggregate_args: None
+                aggregate_args: None,
             },
         ];
 
