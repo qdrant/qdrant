@@ -272,6 +272,7 @@ fn validate_geo_filter(query_filter: Filter) {
                 &query_vector,
                 &WithPayload::default(),
                 &false.into(),
+                &[],
                 Some(&query_filter),
                 5,
                 None,
@@ -297,6 +298,7 @@ fn validate_geo_filter(query_filter: Filter) {
                 &query_vector,
                 &WithPayload::default(),
                 &false.into(),
+                &[],
                 Some(&query_filter),
                 5,
                 None,
@@ -545,6 +547,7 @@ fn test_struct_payload_index() {
                 &query_vector,
                 &WithPayload::default(),
                 &false.into(),
+                &[],
                 Some(&query_filter),
                 5,
                 None,
@@ -557,6 +560,7 @@ fn test_struct_payload_index() {
                 &query_vector,
                 &WithPayload::default(),
                 &false.into(),
+                &[],
                 Some(&query_filter),
                 5,
                 None,
@@ -690,9 +694,9 @@ fn test_struct_payload_index_nested_fields() {
                 &WithPayload {
                     enable: true,
                     payload_selector: None,
-                    aggregate_keys: vec![]
                 },
                 &false.into(),
+                &[],
                 Some(&query_filter),
                 5,
                 None,
@@ -706,9 +710,9 @@ fn test_struct_payload_index_nested_fields() {
                 &WithPayload {
                     enable: true,
                     payload_selector: None,
-                    aggregate_keys: vec![]
                 },
                 &false.into(),
+                &[],
                 Some(&query_filter),
                 5,
                 None,
