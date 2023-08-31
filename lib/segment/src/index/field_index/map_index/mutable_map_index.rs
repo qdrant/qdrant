@@ -14,15 +14,15 @@ use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
 
 pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
-    map: HashMap<N, BTreeSet<PointOffsetType>>,
-    point_to_values: Vec<Vec<N>>,
+    pub(super) map: HashMap<N, BTreeSet<PointOffsetType>>,
+    pub(super) point_to_values: Vec<Vec<N>>,
     /// Amount of point which have at least one indexed payload value
-    indexed_points: usize,
-    values_count: usize,
-    db_wrapper: DatabaseColumnWrapper,
+    pub(super) indexed_points: usize,
+    pub(super) values_count: usize,
+    pub(super) db_wrapper: DatabaseColumnWrapper,
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> MutableMapIndex<N> {
+impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
