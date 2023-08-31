@@ -23,7 +23,7 @@ use segment::types::{
 };
 use serde;
 use serde::{Deserialize, Serialize};
-use serde_json::Error as JsonError;
+use serde_json::{Error as JsonError, Value};
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
@@ -79,6 +79,8 @@ pub struct Record {
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,
+
+    pub aggregate_args: Option<Vec<Vec<Value>>>,
 }
 
 /// Current statistics and configuration of the collection
@@ -247,6 +249,8 @@ pub struct SearchRequest {
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
+
+    pub aggregate_function: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]

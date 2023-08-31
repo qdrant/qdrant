@@ -62,6 +62,10 @@ message DeletePoints {
   optional WriteOrdering ordering = 4; // Write ordering guarantees
 }
 
+message AggregateFunction {
+  string function = 1;
+}
+
 message GetPoints {
   string collection_name = 1; // name of the collection
   repeated PointId ids = 2; // List of points to retrieve
@@ -69,6 +73,7 @@ message GetPoints {
   WithPayloadSelector with_payload = 4; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 5; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
+  optional AggregateFunction aggregate = 7;
 }
 
 message UpdatePointVectors {
@@ -233,6 +238,7 @@ message SearchPoints {
   optional string vector_name = 10; // Which vector to use for search, if not specified - use default vector
   optional WithVectorsSelector with_vectors = 11; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
+  optional AggregateFunction aggregate_function = 13;
 }
 
 message SearchBatchPoints {
@@ -354,6 +360,7 @@ message ScoredPoint {
   reserved 4; // deprecated "vector" field
   uint64 version = 5; // Last update operation applied to this point
   optional Vectors vectors = 6; // Vectors to search
+  optional AggregateArgsList aggregate_args = 7;
 }
 
 message GroupId {
@@ -411,11 +418,20 @@ message CountResult {
   uint64 count = 1;
 }
 
+message ValueList {
+  repeated Value values = 1;
+}
+
+message AggregateArgsList {
+  repeated ValueList args = 1;
+}
+
 message RetrievedPoint {
   PointId id = 1;
   map<string, Value> payload = 2;
   reserved 3; // deprecated "vector" field
   optional Vectors vectors = 4;
+  optional AggregateArgsList aggregate_args = 5;
 }
 
 message GetResponse {

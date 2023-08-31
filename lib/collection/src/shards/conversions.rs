@@ -384,11 +384,17 @@ pub fn try_scored_point_from_grpc(
         .map(|vectors| vectors.try_into())
         .transpose()?;
 
+    let aggregate_args = point
+        .aggregate_args
+        .map(|aa| { aa.try_into()})
+        .transpose()?;
+
     Ok(ScoredPoint {
         id,
         version: point.version,
         score: point.score,
         payload,
         vector,
+        aggregate_args
     })
 }

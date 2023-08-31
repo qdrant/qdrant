@@ -9,6 +9,7 @@ fn score_point(id: usize, score: ScoreType, version: SeqNumberType) -> ScoredPoi
         score,
         payload: None,
         vector: None,
+        aggregate_args: None
     }
 }
 

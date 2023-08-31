@@ -251,6 +251,7 @@ mod test {
             score,
             payload: None,
             vector: None,
+            aggregate_args: None
         }
     }
 

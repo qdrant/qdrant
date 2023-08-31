@@ -66,6 +66,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         limit: 3,
         offset: 0,
         score_threshold: None,
+        aggregate_function: None
     };
 
     let search_res = collection.search(search_request, None, None).await;
@@ -123,6 +124,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         limit: 3,
         offset: 0,
         score_threshold: None,
+        aggregate_function: None
     };
 
     let search_res = collection.search(search_request, None, None).await;

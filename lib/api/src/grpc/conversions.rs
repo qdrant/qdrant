@@ -8,7 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{CompressionRatio, GroupId};
+use super::qdrant::{CompressionRatio, GroupId, AggregateFunction, AggregateArgsList, ValueList};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -75,6 +75,48 @@ pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types
         map.insert(k, proto_to_json(v)?);
     }
     Ok(map.into())
+}
+
+impl TryFrom<ValueList> for Vec<serde_json::Value> {
+    type Error = Status;
+
+    fn try_from(value: ValueList) -> Result<Self, Self::Error> {
+        proto_vec_to_json(value.values)
+    }
+}
+
+impl TryFrom<AggregateArgsList> for Vec<Vec<serde_json::Value>> {
+    type Error = Status;
+
+    fn try_from(value: AggregateArgsList) -> Result<Self, Self::Error> {
+        let mut result = vec![];
+        for vallist in value.args {
+            result.push(vallist.try_into()?);
+        }
+        Ok(result)
+    }
+}
+
+impl From<Vec<Vec<serde_json::Value>>> for AggregateArgsList {
+    fn from(value: Vec<Vec<serde_json::Value>>) -> Self {
+        let args = value.into_iter().map(|values| {
+            ValueList {
+                values: values.into_iter().map(|v| json_to_proto(v)).collect()
+            }
+        }).collect();
+
+        Self {
+            args
+        }
+    }
+}
+
+pub fn proto_vec_to_json(proto: Vec<Value>) -> Result<Vec<serde_json::Value>, Status> {
+    let mut result = vec![];
+    for val in proto {
+        result.push(proto_to_json(val)?);
+    }
+    Ok(result)
 }
 
 fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
@@ -430,6 +472,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score: point.score,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
+            aggregate_args: point.aggregate_args.map(|aa| aa.into())
         }
     }
 }
@@ -1096,5 +1139,13 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
             "Malformed distance parameter, unexpected value: {dist}"
         ))),
         Some(grpc_distance) => Ok(grpc_distance.try_into()?),
+    }
+}
+
+impl From<String> for AggregateFunction {
+    fn from(value: String) -> Self {
+        Self {
+            function: value
+        }
     }
 }

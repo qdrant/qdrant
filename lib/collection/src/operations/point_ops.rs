@@ -55,6 +55,7 @@ impl TryFrom<Record> for PointStruct {
             id,
             payload,
             vector,
+            ..
         } = record;
 
         if vector.is_none() {

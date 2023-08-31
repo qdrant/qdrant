@@ -569,6 +569,7 @@ impl ShardOperation for RemoteShard {
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
+            aggregate: None,
         };
         let request = &GetPointsInternal {
             get_points: Some(get_points),

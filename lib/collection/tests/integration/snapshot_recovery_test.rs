@@ -150,6 +150,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         with_vector: Some(WithVector::Bool(true)),
         params: None,
         score_threshold: None,
+        aggregate_function: None
     };
 
     let reference_result = collection

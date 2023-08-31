@@ -857,7 +857,7 @@ impl Collection {
         }
     }
 
-    pub async fn _search_batch(
+    async fn _search_batch(
         &self,
         request: SearchRequestBatch,
         read_consistency: Option<ReadConsistency>,

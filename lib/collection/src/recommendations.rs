@@ -302,6 +302,7 @@ where
             limit: request.limit,
             score_threshold: request.score_threshold,
             offset: request.offset,
+            aggregate_function: None
         };
         searches.push(search_request)
     }

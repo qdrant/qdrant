@@ -1,3 +1,4 @@
+pub mod aggregate_fn;
 pub mod collection;
 pub mod collection_manager;
 pub mod collection_state;

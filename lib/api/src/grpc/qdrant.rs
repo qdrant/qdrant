@@ -2616,6 +2616,12 @@ pub struct DeletePoints {
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AggregateFunction {
+    #[prost(string, tag = "1")]
+    pub function: ::prost::alloc::string::String,
+}
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2636,6 +2642,8 @@ pub struct GetPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "6")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    #[prost(message, optional, tag = "7")]
+    pub aggregate: ::core::option::Option<AggregateFunction>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2957,6 +2965,8 @@ pub struct SearchPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    #[prost(message, optional, tag = "13")]
+    pub aggregate_function: ::core::option::Option<AggregateFunction>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3240,6 +3250,8 @@ pub struct ScoredPoint {
     /// Vectors to search
     #[prost(message, optional, tag = "6")]
     pub vectors: ::core::option::Option<Vectors>,
+    #[prost(message, optional, tag = "7")]
+    pub aggregate_args: ::core::option::Option<AggregateArgsList>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3345,6 +3357,18 @@ pub struct CountResult {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ValueList {
+    #[prost(message, repeated, tag = "1")]
+    pub values: ::prost::alloc::vec::Vec<Value>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AggregateArgsList {
+    #[prost(message, repeated, tag = "1")]
+    pub args: ::prost::alloc::vec::Vec<ValueList>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetrievedPoint {
     #[prost(message, optional, tag = "1")]
     pub id: ::core::option::Option<PointId>,
@@ -3352,6 +3376,8 @@ pub struct RetrievedPoint {
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(message, optional, tag = "4")]
     pub vectors: ::core::option::Option<Vectors>,
+    #[prost(message, optional, tag = "5")]
+    pub aggregate_args: ::core::option::Option<AggregateArgsList>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

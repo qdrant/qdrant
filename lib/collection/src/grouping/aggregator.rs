@@ -197,6 +197,7 @@ mod unit_tests {
             score,
             payload: Some(Payload::from(serde_json::json!({ "docId": payloads }))),
             vector: None,
+            aggregate_args: None
         }
     }
 
@@ -207,6 +208,7 @@ mod unit_tests {
             score,
             payload: None,
             vector: None,
+            aggregate_args: None
         }
     }
 

@@ -50,6 +50,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         with_vector: None,
         params: None,
         score_threshold: None,
+        aggregate_function: None
     };
 
     let reference_result = collection
@@ -71,6 +72,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         with_vector: None,
         params: None,
         score_threshold: None,
+        aggregate_function: None
     };
 
     let page_1_result = collection.search(page_1_request, None, None).await.unwrap();
@@ -90,6 +92,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         with_vector: None,
         params: None,
         score_threshold: None,
+        aggregate_function: None
     };
 
     let page_9_result = collection.search(page_9_request, None, None).await.unwrap();

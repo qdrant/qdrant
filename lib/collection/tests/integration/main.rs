@@ -14,3 +14,5 @@ pub mod multi_vec_test;
 pub mod pagination_test;
 #[cfg(test)]
 pub mod snapshot_recovery_test;
+#[cfg(test)]
+pub mod aggregate_test;

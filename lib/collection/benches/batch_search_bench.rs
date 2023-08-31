@@ -143,6 +143,7 @@ fn batch_search_bench(c: &mut Criterion) {
                             with_payload: None,
                             with_vector: None,
                             score_threshold: None,
+                            aggregate_function: None
                         };
                         let result = shard
                             .search(
@@ -175,6 +176,7 @@ fn batch_search_bench(c: &mut Criterion) {
                             with_payload: None,
                             with_vector: None,
                             score_threshold: None,
+                            aggregate_function: None
                         };
                         searches.push(search_query);
                     }
