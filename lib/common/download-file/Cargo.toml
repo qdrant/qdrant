@@ -1,0 +1,18 @@
+[package]
+name = "download-file"
+version = "0.0.0"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+async-tempfile = { path = "../async-tempfile" }
+futures = { version = "0.3", default-features = false }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
+tokio = { version = "1.32", default-features = false }
+thiserror = "1.0"
+url = "2.4"

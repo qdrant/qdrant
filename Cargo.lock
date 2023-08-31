@@ -1527,6 +1527,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "download-file"
+version = "0.0.0"
+dependencies = [
+ "async-tempfile",
+ "futures",
+ "reqwest",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
