@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use enum_dispatch::enum_dispatch;
-
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
