@@ -13,6 +13,12 @@ pub struct FixedLengthPriorityQueue<T: Ord> {
     length: usize,
 }
 
+impl<T: Ord> Default for FixedLengthPriorityQueue<T> {
+    fn default() -> Self {
+        Self::new(1)
+    }
+}
+
 impl<T: Ord> FixedLengthPriorityQueue<T> {
     pub fn new(length: usize) -> Self {
         assert!(length > 0);
