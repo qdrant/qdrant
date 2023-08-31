@@ -162,13 +162,13 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchPoints.limit", "range(min = 1)"),
             ("SearchPoints.params", ""),
-            ("SearchPoints.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
+            ("SearchPoints.vector_name", "custom = \"common::validation::validate_not_empty\""),
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
             ("SearchPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("SearchPointGroups.group_by", "length(min = 1)"),
             ("SearchPointGroups.params", ""),
-            ("SearchPointGroups.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
+            ("SearchPointGroups.vector_name", "custom = \"common::validation::validate_not_empty\""),
             ("SearchPointGroups.group_size", "range(min = 1)"),
             ("SearchPointGroups.limit", "range(min = 1)"),
             ("SearchParams.quantization", ""),
@@ -211,7 +211,7 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[])
         // Service: raft_service.proto
         .validates(&[
-            ("AddPeerToKnownMessage.uri", "custom = \"crate::grpc::validate::validate_not_empty\""),
+            ("AddPeerToKnownMessage.uri", "custom = \"common::validation::validate_not_empty\""),
             ("AddPeerToKnownMessage.port", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
         ], &[])
         // Service: snapshot_service.proto

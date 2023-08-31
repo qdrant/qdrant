@@ -29,3 +29,11 @@ where
     }
     Err(err)
 }
+
+/// Validate that `value` is a non-empty string or `None`.
+pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError> {
+    match value {
+        Some(value) if value.is_empty() => Err(ValidationError::new("not_empty")),
+        _ => Ok(()),
+    }
+}

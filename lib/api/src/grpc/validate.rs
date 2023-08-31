@@ -116,14 +116,6 @@ impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
     }
 }
 
-/// Validate that `value` is a non-empty string or `None`.
-pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError> {
-    match value {
-        Some(value) if value.is_empty() => Err(ValidationError::new("not_empty")),
-        _ => Ok(()),
-    }
-}
-
 /// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
     value.map_or(Ok(()), |v| validate_range_generic(&v, Some(1), None))
