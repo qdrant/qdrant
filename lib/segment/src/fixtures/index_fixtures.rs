@@ -7,7 +7,7 @@ use bitvec::prelude::{BitSlice, BitVec};
 use rand::Rng;
 
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
@@ -130,7 +130,7 @@ where
         let mut vectors = ChunkedVectors::new(dim);
         for _ in 0..num_vectors {
             let rnd_vec = random_vector(rng, dim);
-            let rnd_vec = TMetric::preprocess(&rnd_vec).unwrap_or(rnd_vec);
+            let rnd_vec = TMetric::preprocess(rnd_vec);
             vectors.push(&rnd_vec).unwrap();
         }
         TestRawScorerProducer::<TMetric> {
@@ -141,8 +141,8 @@ where
         }
     }
 
-    pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        let query = TMetric::preprocess(&query).unwrap_or(query);
+    pub fn get_raw_scorer(&self, query: VectorType) -> Box<dyn RawScorer + '_> {
+        let query = TMetric::preprocess(query);
         raw_scorer_impl(
             query,
             self,

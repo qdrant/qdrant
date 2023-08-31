@@ -4,7 +4,7 @@ mod prof;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
-use segment::data_types::vectors::VectorElementType;
+use segment::data_types::vectors::{VectorElementType, VectorType};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -117,8 +117,8 @@ impl Metric for FakeMetric {
         v1[0] + v2[0]
     }
 
-    fn preprocess(_vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
-        None
+    fn preprocess(vector: VectorType) -> VectorType {
+        vector
     }
 
     fn postprocess(score: ScoreType) -> ScoreType {

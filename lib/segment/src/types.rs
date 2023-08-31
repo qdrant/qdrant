@@ -21,7 +21,7 @@ use validator::{Validate, ValidationErrors};
 use crate::common::utils;
 use crate::common::utils::MultiValue;
 use crate::data_types::text_index::TextIndexParams;
-use crate::data_types::vectors::{VectorElementType, VectorStruct};
+use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 
@@ -124,10 +124,7 @@ pub enum Distance {
 }
 
 impl Distance {
-    pub fn preprocess_vector(
-        &self,
-        vector: &[VectorElementType],
-    ) -> Option<Vec<VectorElementType>> {
+    pub fn preprocess_vector(&self, vector: VectorType) -> VectorType {
         match self {
             Distance::Cosine => CosineMetric::preprocess(vector),
             Distance::Euclid => EuclidMetric::preprocess(vector),

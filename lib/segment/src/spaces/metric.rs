@@ -1,4 +1,4 @@
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::types::{Distance, ScoreType};
 
 /// Defines how to compare vectors
@@ -10,7 +10,7 @@ pub trait Metric {
 
     /// Necessary vector transformations performed before adding it to the collection (like normalization)
     /// Return None if metric does not required preprocessing
-    fn preprocess(vector: &[VectorElementType]) -> Option<Vec<VectorElementType>>;
+    fn preprocess(vector: VectorType) -> VectorType;
 
     /// correct metric score for displaying
     fn postprocess(score: ScoreType) -> ScoreType;

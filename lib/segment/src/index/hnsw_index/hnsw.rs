@@ -188,7 +188,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     let raw_scorer =
                         if let Some(quantized_storage) = vector_storage.quantized_storage() {
                             quantized_storage.raw_scorer(
-                                &vector,
+                                vector.to_owned(),
                                 id_tracker.deleted_point_bitslice(),
                                 deleted_bitslice,
                                 stopped,
@@ -239,7 +239,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             // If `quantization_params` is `Some`, then quantization is *not* ignored
             Some(quantized_storage) if !quantization_params.ignore => {
                 let scorer = quantized_storage.raw_scorer(
-                    vector,
+                    vector.to_owned(),
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
                     is_stopped,
@@ -349,7 +349,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     if let Some(quantized_storage) = vector_storage.quantized_storage() {
                         quantized_storage
                             .raw_scorer(
-                                vector,
+                                vector.to_vec(),
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
                                 is_stopped,
@@ -555,7 +555,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     let raw_scorer =
                         if let Some(quantized_storage) = vector_storage.quantized_storage() {
                             quantized_storage.raw_scorer(
-                                &vector,
+                                vector.to_owned(),
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
                                 stopped,
