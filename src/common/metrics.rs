@@ -98,12 +98,7 @@ impl MetricsProvider for AppFeaturesTelemetry {
             "app_status_recovery_mode",
             "features enabled in qdrant server",
             MetricType::COUNTER,
-            vec![
-                counter(
-                    if self.recovery_mode { 1.0 } else { 0.0 },
-                    &[],
-                )
-            ]
+            vec![counter(if self.recovery_mode { 1.0 } else { 0.0 }, &[])],
         ))
     }
 }
