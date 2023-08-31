@@ -52,7 +52,7 @@ where
             .score(|this| self.distance.similarity(this, v2))
     }
 
-    fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.quantized_data.score_internal(point_a, point_b)
+    fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
+        unimplemented!("Recommendation scorer compares against multiple vectors, not just one")
     }
 }
