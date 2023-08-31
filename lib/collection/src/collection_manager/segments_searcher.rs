@@ -392,7 +392,9 @@ fn search_in_segment(
         let aggregate_params = search_query
             .aggregate_function
             .as_ref()
-            .map_or(vec![], |f| AggregateFn::extract_params(f));
+            .map(|f| AggregateFn::extract_params(f).ok())
+            .unwrap_or_default()
+            .unwrap_or_default();
 
         let params = BatchSearchParams {
             vector_name: search_query.vector.get_name(),
