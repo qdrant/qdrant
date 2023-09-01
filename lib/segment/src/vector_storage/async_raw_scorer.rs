@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use bitvec::prelude::BitSlice;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
-use crate::data_types::vectors::VectorElementType;
+use super::query_scorer::reco_query_scorer::RecoQueryScorer;
+use crate::data_types::vectors::QueryVector;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -15,12 +16,12 @@ use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage as _, DEFAULT_STOPPED};
 
 pub fn new<'a>(
-    vector: Vec<VectorElementType>,
+    query: QueryVector,
     storage: &'a MemmapVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    Ok(AsyncRawScorerBuilder::new(vector, storage, point_deleted)?
+    Ok(AsyncRawScorerBuilder::new(query, storage, point_deleted)?
         .with_is_stopped(is_stopped)
         .build())
 }
@@ -202,7 +203,7 @@ where
 
 struct AsyncRawScorerBuilder<'a> {
     points_count: PointOffsetType,
-    vector: Vec<VectorElementType>,
+    query: Option<QueryVector>,
     storage: &'a MemmapVectorStorage,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
@@ -212,7 +213,7 @@ struct AsyncRawScorerBuilder<'a> {
 
 impl<'a> AsyncRawScorerBuilder<'a> {
     pub fn new(
-        vector: Vec<VectorElementType>,
+        query: QueryVector,
         storage: &'a MemmapVectorStorage,
         point_deleted: &'a BitSlice,
     ) -> OperationResult<Self> {
@@ -223,7 +224,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
 
         let builder = Self {
             points_count,
-            vector,
+            query: Some(query),
             point_deleted,
             vec_deleted,
             storage,
@@ -236,9 +237,9 @@ impl<'a> AsyncRawScorerBuilder<'a> {
 
     pub fn build(self) -> Box<dyn RawScorer + 'a> {
         match self.distance {
-            Distance::Cosine => Box::new(self.with_metric_scorer::<CosineMetric>()),
-            Distance::Euclid => Box::new(self.with_metric_scorer::<EuclidMetric>()),
-            Distance::Dot => Box::new(self.with_metric_scorer::<DotProductMetric>()),
+            Distance::Cosine => self._build_with_metric::<CosineMetric>(),
+            Distance::Euclid => self._build_with_metric::<EuclidMetric>(),
+            Distance::Dot => self._build_with_metric::<DotProductMetric>(),
         }
     }
 
@@ -247,16 +248,34 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         self
     }
 
-    fn with_metric_scorer<TMetric: Metric>(
+    fn _build_with_metric<TMetric: Metric + 'a>(mut self) -> Box<dyn RawScorer + 'a> {
+        let query = self
+            .query
+            .take()
+            .expect("new() ensures to always have a value");
+        match query {
+            QueryVector::PositiveNegative(query) => {
+                let query_scorer = RecoQueryScorer::<TMetric, _>::new(query, self.storage);
+                self._build_async_raw_scorer(query_scorer)
+            }
+            QueryVector::Nearest(vector) => {
+                let query_scorer = MetricQueryScorer::<TMetric, _>::new(vector, self.storage);
+                self._build_async_raw_scorer(query_scorer)
+            }
+        }
+    }
+
+    fn _build_async_raw_scorer<TQueryScorer: QueryScorer + 'a>(
         self,
-    ) -> AsyncRawScorerImpl<'a, MetricQueryScorer<'a, TMetric, MemmapVectorStorage>> {
-        AsyncRawScorerImpl::new(
+        query_scorer: TQueryScorer,
+    ) -> Box<dyn RawScorer + 'a> {
+        Box::new(AsyncRawScorerImpl::new(
             self.points_count,
-            MetricQueryScorer::new(self.vector, self.storage),
+            query_scorer,
             self.storage.get_mmap_vectors(),
             self.point_deleted,
             self.vec_deleted,
             self.is_stopped.unwrap_or(&DEFAULT_STOPPED),
-        )
+        ))
     }
 }

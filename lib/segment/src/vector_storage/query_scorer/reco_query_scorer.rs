@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
-use super::reco_query::RecoQuery;
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, ScoreType};
+use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::VectorStorage;
 
@@ -16,13 +16,8 @@ pub struct RecoQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
 impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     RecoQueryScorer<'a, TMetric, TVectorStorage>
 {
-    pub fn new(
-        query_positives: Vec<VectorType>,
-        query_negatives: Vec<VectorType>,
-        vector_storage: &'a TVectorStorage,
-    ) -> Self {
-        let query = RecoQuery::new(query_positives, query_negatives)
-            .transform(|vector| TMetric::preprocess(vector));
+    pub fn new(query: RecoQuery<VectorType>, vector_storage: &'a TVectorStorage) -> Self {
+        let query = query.transform(|vector| TMetric::preprocess(vector));
 
         Self {
             query,

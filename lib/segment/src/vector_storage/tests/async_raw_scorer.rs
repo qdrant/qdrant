@@ -2,10 +2,12 @@ use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
 use bitvec::slice::BitSlice;
+use itertools::Itertools;
 use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
 
 use crate::common::rocksdb_wrapper;
+use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::types::{Distance, PointOffsetType};
@@ -122,9 +124,12 @@ fn test_random_score(
     storage: &VectorStorageEnum,
     deleted_points: &BitSlice,
 ) -> Result<()> {
-    let query: Vec<_> = sampler(&mut rng).take(storage.vector_dim()).collect();
+    let query: QueryVector = sampler(&mut rng)
+        .take(storage.vector_dim())
+        .collect_vec()
+        .into();
 
-    let raw_scorer = new_raw_scorer(query.clone().into(), storage, deleted_points);
+    let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points);
 
     let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::Memmap(storage) = storage {

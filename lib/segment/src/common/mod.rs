@@ -44,15 +44,14 @@ pub fn check_vector(
 fn _check_vector(vector: &QueryVector, vector_config: &VectorDataConfig) -> OperationResult<()> {
     match vector {
         QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
-        QueryVector::PositiveNegative {
-            positives,
-            negatives,
-        } => {
-            positives
+        QueryVector::PositiveNegative(query) => {
+            query
+                .positives
                 .iter()
                 .try_for_each(|vector| check_vector_against_config(vector, vector_config))?;
 
-            negatives
+            query
+                .negatives
                 .iter()
                 .try_for_each(|vector| check_vector_against_config(vector, vector_config))?;
         }

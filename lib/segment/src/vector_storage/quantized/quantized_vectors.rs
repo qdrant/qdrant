@@ -20,7 +20,7 @@ use crate::vector_storage::quantized::quantized_mmap_storage::{
 };
 use crate::vector_storage::quantized::quantized_query_scorer::QuantizedQueryScorer;
 use crate::vector_storage::quantized::quantized_reco_query_scorer::QuantizedRecoQueryScorer;
-use crate::vector_storage::query_scorer::reco_query::RecoQuery;
+use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
@@ -59,29 +59,22 @@ impl QuantizedVectors {
     ) -> Box<dyn RawScorer + 'a> {
         match query {
             QueryVector::Nearest(vector) => {
-                self.quantized_metric_scorer(vector, point_deleted, vec_deleted, is_stopped)
+                self.quantized_metric_scorer(vector.clone(), point_deleted, vec_deleted, is_stopped)
             }
-            QueryVector::PositiveNegative {
-                positives,
-                negatives,
-            } => self.quantized_reco_scorer(
-                positives,
-                negatives,
-                point_deleted,
-                vec_deleted,
-                is_stopped,
-            ),
+            QueryVector::PositiveNegative(query) => {
+                self.quantized_reco_scorer(query.clone(), point_deleted, vec_deleted, is_stopped)
+            }
         }
     }
 
     fn quantized_metric_scorer<'a>(
         &'a self,
-        vector: &VectorType,
+        vector: VectorType,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
-        let original = self.distance.preprocess_vector(vector.to_vec());
+        let original = self.distance.preprocess_vector(vector);
 
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => {
@@ -127,14 +120,12 @@ impl QuantizedVectors {
     // All variants share the same code, but variables have different types.
     fn quantized_reco_scorer<'a>(
         &'a self,
-        positives: &[VectorType],
-        negatives: &[VectorType],
+        query: RecoQuery<VectorType>,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
-        let original = RecoQuery::new(positives.to_vec(), negatives.to_vec())
-            .transform(|v| self.distance.preprocess_vector(v));
+        let original = query.transform(|v| self.distance.preprocess_vector(v));
 
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => {

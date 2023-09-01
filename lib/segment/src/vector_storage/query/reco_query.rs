@@ -1,6 +1,6 @@
 use crate::types::ScoreType;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RecoQuery<T> {
     pub positives: Vec<T>,
     pub negatives: Vec<T>,
