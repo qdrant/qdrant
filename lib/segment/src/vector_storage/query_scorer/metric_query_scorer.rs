@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -15,9 +15,9 @@ pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStorage>
 impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     MetricQueryScorer<'a, TMetric, TVectorStorage>
 {
-    pub fn new(query: Vec<VectorElementType>, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(query: VectorType, vector_storage: &'a TVectorStorage) -> Self {
         Self {
-            query: TMetric::preprocess(&query).unwrap_or(query),
+            query: TMetric::preprocess(query),
             vector_storage,
             metric: PhantomData,
         }

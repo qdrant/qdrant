@@ -665,7 +665,7 @@ mod tests {
 
         {
             let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-                &query,
+                query.clone(),
                 borrowed_id_tracker.deleted_point_bitslice(),
                 borrowed_storage.deleted_vector_bitslice(),
                 &stopped,
@@ -690,7 +690,7 @@ mod tests {
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-            &query,
+            query.clone(),
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
             &stopped,

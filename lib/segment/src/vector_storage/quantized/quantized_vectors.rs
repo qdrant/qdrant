@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::vector_utils::TrySetCapacityExact;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::entry::entry_point::OperationResult;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
@@ -50,15 +50,12 @@ pub struct QuantizedVectors {
 impl QuantizedVectors {
     pub fn raw_scorer<'a>(
         &'a self,
-        query: &[VectorElementType],
+        query: VectorType,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
-        let query = self
-            .distance
-            .preprocess_vector(query)
-            .unwrap_or_else(|| query.to_vec());
+        let query = self.distance.preprocess_vector(query);
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => {
                 let encoded_query = storage.encode_query(&query);

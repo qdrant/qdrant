@@ -101,9 +101,8 @@ impl<'a> NamedVectors<'a> {
     {
         for (name, vector) in self.map.iter_mut() {
             let distance = distance_map(name);
-            if let Some(preprocessed_vector) = distance.preprocess_vector(vector) {
-                *vector = CowValue::Owned(preprocessed_vector);
-            }
+            let preprocessed_vector = distance.preprocess_vector(vector.to_vec());
+            *vector = CowValue::Owned(preprocessed_vector);
         }
     }
 }
