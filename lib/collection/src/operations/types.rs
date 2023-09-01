@@ -496,8 +496,6 @@ pub enum CollectionError {
     OutOfMemory { description: String, free: u64 },
     #[error("Timeout error: {description}")]
     Timeout { description: String },
-    #[error("Shard failure: {description}")]
-    ShardFailure { description: String },
 }
 
 impl CollectionError {
@@ -552,7 +550,6 @@ impl CollectionError {
             Self::Timeout { .. } => true,
             Self::Cancelled { .. } => true,
             Self::OutOfMemory { .. } => true,
-            Self::ShardFailure { .. } => true,
             // Not transient
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,
