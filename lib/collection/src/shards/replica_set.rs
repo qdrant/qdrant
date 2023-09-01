@@ -1004,7 +1004,7 @@ impl ShardReplicaSet {
             LocalShard::clear(&self.shard_path).await?;
         }
 
-        // Try to restore local replica from specified shard shapshot directory
+        // Try to restore local replica from specified shard snapshot directory
         let restore = async {
             LocalShard::move_data(replica_path, &self.shard_path).await?;
 
