@@ -21,10 +21,10 @@ impl AppBuildTelemetryCollector {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct AppFeaturesTelemetry {
-    debug: bool,
-    web_feature: bool,
-    service_debug_feature: bool,
-    recovery_mode: bool,
+    pub debug: bool,
+    pub web_feature: bool,
+    pub service_debug_feature: bool,
+    pub recovery_mode: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
