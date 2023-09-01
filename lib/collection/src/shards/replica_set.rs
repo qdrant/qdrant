@@ -1027,6 +1027,8 @@ impl ShardReplicaSet {
 
             // Or completely remove local replica directory, if restore failed
             Err(restore_err) => {
+                local.replace(Dummy(DummyShard::new("Failed to restore local replica")));
+
                 match tokio::fs::remove_dir_all(&self.shard_path).await {
                     Ok(()) => Err(restore_err),
 
