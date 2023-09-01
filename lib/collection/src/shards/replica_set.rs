@@ -1019,16 +1019,35 @@ impl ShardReplicaSet {
         };
 
         match restore.await {
-            // Update local replica, if it was successfully restored
             Ok(new_local) => {
                 local.replace(Local(new_local));
                 Ok(true)
             }
 
-            // Or completely remove local replica directory, if restore failed
             Err(restore_err) => {
+                // Intialize "dummy" replica
                 local.replace(Dummy(DummyShard::new("Failed to restore local replica")));
 
+                // TODO: Handle single-node mode!? (How!? 😰)
+
+                // Mark this peer as "locally disabled"...
+                let peers = self.replica_state.read().peers(); // TODO: Blocking `read` call in async context
+
+                let active_peers = peers
+                    .iter()
+                    .filter(|&(&peer, &state)| {
+                        peer != self.this_peer_id() && state == ReplicaState::Active
+                    })
+                    .count();
+
+                // ...if this peer is *not* the last active replica
+                if active_peers > 0 {
+                    self.locally_disabled_peers
+                        .write()
+                        .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
+                }
+
+                // Remove shard directory, so we don't leave empty directory/corrupted data
                 match tokio::fs::remove_dir_all(&self.shard_path).await {
                     Ok(()) => Err(restore_err),
 
