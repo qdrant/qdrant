@@ -996,16 +996,15 @@ impl ShardReplicaSet {
 
         let mut local = self.local.write().await;
 
-        if let Some(old_local) = local.take() {
-            // Drop `LocalShard` instance to free resources
-            drop(old_local);
-
-            // And clear shard data
-            LocalShard::clear(&self.shard_path).await?;
-        }
+        // Drop `LocalShard` instance to free resources and clear shard data
+        let clear = local.take().is_some();
 
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
+            if clear {
+                LocalShard::clear(&self.shard_path).await?;
+            }
+
             LocalShard::move_data(replica_path, &self.shard_path).await?;
 
             LocalShard::load(
