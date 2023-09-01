@@ -42,12 +42,12 @@ pub struct StackTrace {
 }
 
 pub fn get_stack_trace() -> StackTrace {
-    #[cfg(not(feature = "stacktrace"))]
+    #[cfg(not(all(target_os = "linux", feature = "stacktrace")))]
     {
         StackTrace { threads: vec![] }
     }
 
-    #[cfg(feature = "stacktrace")]
+    #[cfg(all(target_os = "linux", feature = "stacktrace"))]
     {
         let exe = std::env::current_exe().unwrap();
         let trace =
