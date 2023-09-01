@@ -671,13 +671,13 @@ mod tests {
 
         {
             let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-                query.clone(),
+                &query,
                 borrowed_id_tracker.deleted_point_bitslice(),
                 borrowed_storage.deleted_vector_bitslice(),
                 &stopped,
             );
             let scorer_orig = new_raw_scorer(
-                query.to_owned(),
+                query.clone(),
                 &borrowed_storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
             );
@@ -696,7 +696,7 @@ mod tests {
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-            query.clone(),
+            &query,
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
             &stopped,
