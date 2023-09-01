@@ -91,8 +91,7 @@ pub async fn transfer_shard(
                     replica_set.proxify_local(remote_shard).await?;
                 }
                 Some(ShardTransferMethod::Snapshot) => {
-                    // TODO: queue proxify
-                    todo!();
+                    replica_set.queue_proxify_local(remote_shard).await?;
                 }
             }
         } else {

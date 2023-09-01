@@ -54,41 +54,7 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    /// Un-proxify local shard.
-    ///
-    /// Returns true if the replica was un-proxified, false if it was already handled
-    pub async fn un_proxify_local(&self) -> CollectionResult<()> {
-        let mut local_write = self.local.write().await;
-
-        match &*local_write {
-            // Expected states, continue
-            Some(Shard::ForwardProxy(_)) => {}
-            Some(Shard::Local(_)) => return Ok(()),
-            // Unexpected states, error
-            Some(shard) => {
-                return Err(CollectionError::service_error(format!(
-                    "Cannot un-proxify local shard {} because it has unexpected type - {}",
-                    self.shard_id,
-                    shard.variant_name(),
-                )));
-            }
-            None => {
-                return Err(CollectionError::service_error(format!(
-                    "Cannot un-proxify local shard {} on peer {} because it is not active",
-                    self.shard_id,
-                    self.this_peer_id()
-                )));
-            }
-        };
-
-        if let Some(Shard::ForwardProxy(proxy)) = local_write.take() {
-            let local_shard = proxy.wrapped_shard;
-            let _ = local_write.insert(Shard::Local(local_shard));
-        }
-
-        Ok(())
-    }
-
+    // TODO: similar to function above, merge?
     pub async fn queue_proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
@@ -126,7 +92,7 @@ impl ShardReplicaSet {
         };
 
         if let Some(Shard::Local(local)) = local_write.take() {
-            let proxy_shard = QueueProxyShard::new(local).await;
+            let proxy_shard = QueueProxyShard::new(local, remote_shard).await;
             let _ = local_write.insert(Shard::QueueProxy(proxy_shard));
         }
 
@@ -135,14 +101,17 @@ impl ShardReplicaSet {
 
     /// Un-proxify local shard.
     ///
+    /// Supports unwrapping forward proxy and queue proxy shards.
+    ///
     /// Returns true if the replica was un-proxified, false if it was already handled
-    pub async fn un_queue_proxify_local(&self, remote_shard: &RemoteShard) -> CollectionResult<()> {
+    pub async fn un_proxify_local(&self) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
         match &*local_write {
-            // Expected states, continue
-            Some(Shard::QueueProxy(_)) => {}
+            // Already unwrapped, continue
             Some(Shard::Local(_)) => return Ok(()),
+            // Expected states, continue
+            Some(Shard::ForwardProxy(_) | Shard::QueueProxy(_)) => {}
             // Unexpected states, error
             Some(shard) => {
                 return Err(CollectionError::service_error(format!(
@@ -158,22 +127,28 @@ impl ShardReplicaSet {
                     self.this_peer_id()
                 )));
             }
-        };
-
-        if let Some(Shard::QueueProxy(proxy)) = local_write.take() {
-            // Transfer queue to remote before unproxying
-            proxy.transfer_all_missed_updates(remote_shard).await?;
-
-            // Release max ack version in update handler
-            proxy.set_max_ack_version(None).await;
-
-            // TODO: also switch state of remote here?
-
-            let local_shard = proxy.wrapped_shard;
-            let _ = local_write.insert(Shard::Local(local_shard));
         }
 
-        Ok(())
+        match local_write.take() {
+            // Unproxify shard
+            Some(Shard::ForwardProxy(proxy)) => {
+                let local_shard = proxy.wrapped_shard;
+                let _ = local_write.insert(Shard::Local(local_shard));
+                Ok(())
+            }
+            // Unproxify queue shard
+            Some(Shard::QueueProxy(proxy)) => {
+                // Transfer queue to remote before unproxying
+                proxy.transfer_all_missed_updates().await?;
+
+                // TODO: also switch state of remote here?
+
+                let local_shard = proxy.wrapped_shard;
+                let _ = local_write.insert(Shard::Local(local_shard));
+                Ok(())
+            }
+            _ => unreachable!(),
+        }
     }
 
     /// Custom operation for transferring data from one shard to another during transfer

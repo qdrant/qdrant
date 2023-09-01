@@ -35,6 +35,7 @@ use crate::shards::telemetry::LocalShardTelemetry;
 /// doesn't use a real queue, just so it is easy to understand its purpose.
 pub struct QueueProxyShard {
     pub(crate) wrapped_shard: LocalShard,
+    pub(crate) remote_shard: RemoteShard,
     /// ID of the last WAL operation we consider transferred.
     last_update_idx: AtomicU64,
     /// Lock required to protect transfer-in-progress updates.
@@ -49,10 +50,11 @@ const BATCH_SIZE: usize = 100;
 const BATCH_RETRIES: usize = 3;
 
 impl QueueProxyShard {
-    pub async fn new(wrapped_shard: LocalShard) -> Self {
+    pub async fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
         let last_idx = wrapped_shard.wal.lock().last_index();
         let shard = Self {
             wrapped_shard,
+            remote_shard,
             last_update_idx: last_idx.into(),
             update_lock: Default::default(),
         };
@@ -76,11 +78,12 @@ impl QueueProxyShard {
     }
 
     /// Transfer all updates that the remote missed from WAL
-    pub async fn transfer_all_missed_updates(
-        &self,
-        remote_shard: &RemoteShard,
-    ) -> CollectionResult<()> {
-        while !self.transfer_wal_batch(remote_shard).await? {}
+    pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
+        while !self.transfer_wal_batch(&self.remote_shard).await? {}
+
+        // Release max ack version in update handler
+        self.set_max_ack_version(None).await;
+
         Ok(())
     }
 
