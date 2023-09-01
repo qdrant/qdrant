@@ -57,9 +57,7 @@ impl QuantizedVectors {
     ) -> Box<dyn RawScorer + 'a> {
         match query {
             QueryVector::Nearest(vector) => {
-                let vector = self
-                    .distance
-                    .preprocess_vector(vector.to_vec());
+                let vector = self.distance.preprocess_vector(vector.to_vec());
                 self.raw_metric_scorer(vector, point_deleted, vec_deleted, is_stopped)
             }
         }
