@@ -40,7 +40,7 @@ where
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.query
-            .score(|this| self.quantized_data.score_point(this, idx))
+            .score_by(|this| self.quantized_data.score_point(this, idx))
     }
 
     fn score(&self, v2: &[VectorElementType]) -> ScoreType {
@@ -49,7 +49,7 @@ where
             "This method is not expected to be called for quantized scorer"
         );
         self.original_query
-            .score(|this| self.distance.similarity(this, v2))
+            .score_by(|this| self.distance.similarity(this, v2))
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

@@ -81,45 +81,43 @@ impl QuantizedVectors {
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
-        let vector = self
-            .distance
-            .preprocess_vector(vector.to_vec());
+        let original = self.distance.preprocess_vector(vector.to_vec());
 
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => {
-                let encoded_query = storage.encode_query(&vector);
+                let encoded = storage.encode_query(&original);
                 let quant_scorer =
-                    QuantizedQueryScorer::new(vector, encoded_query, storage, self.distance);
+                    QuantizedQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::ScalarMmap(storage) => {
-                let encoded_query = storage.encode_query(&vector);
+                let encoded = storage.encode_query(&original);
                 let quant_scorer =
-                    QuantizedQueryScorer::new(vector, encoded_query, storage, self.distance);
+                    QuantizedQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::PQRam(storage) => {
-                let encoded_query = storage.encode_query(&vector);
+                let encoded = storage.encode_query(&original);
                 let quant_scorer =
-                    QuantizedQueryScorer::new(vector, encoded_query, storage, self.distance);
+                    QuantizedQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::PQMmap(storage) => {
-                let encoded_query = storage.encode_query(&vector);
+                let encoded = storage.encode_query(&original);
                 let quant_scorer =
-                    QuantizedQueryScorer::new(vector, encoded_query, storage, self.distance);
+                    QuantizedQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::BinaryRam(storage) => {
-                let encoded_query = storage.encode_query(&vector);
+                let encoded = storage.encode_query(&original);
                 let quant_scorer =
-                    QuantizedQueryScorer::new(vector, encoded_query, storage, self.distance);
+                    QuantizedQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::BinaryMmap(storage) => {
-                let encoded_query = storage.encode_query(&vector);
+                let encoded = storage.encode_query(&original);
                 let quant_scorer =
-                    QuantizedQueryScorer::new(vector, encoded_query, storage, self.distance);
+                    QuantizedQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(quant_scorer, point_deleted, vec_deleted, is_stopped)
             }
         }
@@ -135,70 +133,44 @@ impl QuantizedVectors {
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
-        let original_query =
-            RecoQuery::new_preprocessed(positives.to_vec(), negatives.to_vec(), &|v| {
-                self.distance.preprocess_vector(v)
-            });
+        let original = RecoQuery::new(positives.to_vec(), negatives.to_vec())
+            .transform(|v| self.distance.preprocess_vector(v));
 
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => {
-                let encoded_query = original_query.reprocess(&|v| storage.encode_query(v));
-                let query_scorer = QuantizedRecoQueryScorer::new(
-                    original_query,
-                    encoded_query,
-                    storage,
-                    self.distance,
-                );
+                let encoded = original.clone().transform(|v| storage.encode_query(&v));
+                let query_scorer =
+                    QuantizedRecoQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::ScalarMmap(storage) => {
-                let encoded_query = original_query.reprocess(&|v| storage.encode_query(v));
-                let query_scorer = QuantizedRecoQueryScorer::new(
-                    original_query,
-                    encoded_query,
-                    storage,
-                    self.distance,
-                );
+                let encoded = original.clone().transform(|v| storage.encode_query(&v));
+                let query_scorer =
+                    QuantizedRecoQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::PQRam(storage) => {
-                let encoded_query = original_query.reprocess(&|v| storage.encode_query(v));
-                let query_scorer = QuantizedRecoQueryScorer::new(
-                    original_query,
-                    encoded_query,
-                    storage,
-                    self.distance,
-                );
+                let encoded = original.clone().transform(|v| storage.encode_query(&v));
+                let query_scorer =
+                    QuantizedRecoQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::PQMmap(storage) => {
-                let encoded_query = original_query.reprocess(&|v| storage.encode_query(v));
-                let query_scorer = QuantizedRecoQueryScorer::new(
-                    original_query,
-                    encoded_query,
-                    storage,
-                    self.distance,
-                );
+                let encoded = original.clone().transform(|v| storage.encode_query(&v));
+                let query_scorer =
+                    QuantizedRecoQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::BinaryRam(storage) => {
-                let encoded_query = original_query.reprocess(&|v| storage.encode_query(v));
-                let query_scorer = QuantizedRecoQueryScorer::new(
-                    original_query,
-                    encoded_query,
-                    storage,
-                    self.distance,
-                );
+                let encoded = original.clone().transform(|v| storage.encode_query(&v));
+                let query_scorer =
+                    QuantizedRecoQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QuantizedVectorStorage::BinaryMmap(storage) => {
-                let encoded_query = original_query.reprocess(&|v| storage.encode_query(v));
-                let query_scorer = QuantizedRecoQueryScorer::new(
-                    original_query,
-                    encoded_query,
-                    storage,
-                    self.distance,
-                );
+                let encoded = original.clone().transform(|v| storage.encode_query(&v));
+                let query_scorer =
+                    QuantizedRecoQueryScorer::new(original, encoded, storage, self.distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
         };

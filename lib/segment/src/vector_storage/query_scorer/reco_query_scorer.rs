@@ -21,9 +21,8 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
         query_negatives: Vec<VectorType>,
         vector_storage: &'a TVectorStorage,
     ) -> Self {
-        let query = RecoQuery::new_preprocessed(query_positives, query_negatives, &|vector| {
-            TMetric::preprocess(vector)
-        });
+        let query = RecoQuery::new(query_positives, query_negatives)
+            .transform(|vector| TMetric::preprocess(vector));
 
         Self {
             query,
@@ -44,7 +43,8 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
 
     #[inline]
     fn score(&self, against: &[VectorElementType]) -> ScoreType {
-        self.query.score(|this| TMetric::similarity(this, against))
+        self.query
+            .score_by(|example| TMetric::similarity(example, against))
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

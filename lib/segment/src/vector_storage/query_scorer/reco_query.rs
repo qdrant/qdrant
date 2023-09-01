@@ -1,5 +1,6 @@
 use crate::types::ScoreType;
 
+#[derive(Clone)]
 pub struct RecoQuery<T> {
     pub positives: Vec<T>,
     pub negatives: Vec<T>,
@@ -13,29 +14,19 @@ impl<T> RecoQuery<T> {
         }
     }
 
-    pub fn new_preprocessed<F, B>(positives: Vec<B>, negatives: Vec<B>, preprocess: &F) -> Self
+    pub fn transform<F, U>(self, mut f: F) -> RecoQuery<U>
     where
-        F: Fn(B) -> T,
-    {
-        Self {
-            positives: positives.into_iter().map(preprocess).collect(),
-            negatives: negatives.into_iter().map(preprocess).collect(),
-        }
-    }
-
-    pub fn reprocess<F, U>(&self, preprocess: &F) -> RecoQuery<U>
-    where
-        F: Fn(&T) -> U,
+        F: FnMut(T) -> U,
     {
         RecoQuery::new(
-            self.positives.iter().map(preprocess).collect(),
-            self.negatives.iter().map(preprocess).collect(),
+            self.positives.into_iter().map(&mut f).collect(),
+            self.negatives.into_iter().map(&mut f).collect(),
         )
     }
 
     /// Compares all vectors of the query against a single vector via a similarity function,
     /// then folds the similarites into a single score.
-    pub fn score(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
+    pub fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // get similarities to all positives
         let positive_similarities = self.positives.iter().map(&similarity);
 
@@ -51,9 +42,13 @@ fn merge_similarities(
     negatives: impl Iterator<Item = ScoreType>,
 ) -> ScoreType {
     // get max similarity to positives and max to negatives
-    let max_positive = positives.max_by(|a, b| a.total_cmp(b)).unwrap_or(0.0);
+    let max_positive = positives
+        .max_by(|a, b| a.total_cmp(b))
+        .unwrap_or(ScoreType::NEG_INFINITY);
 
-    let max_negative = negatives.max_by(|a, b| a.total_cmp(b)).unwrap_or(0.0);
+    let max_negative = negatives
+        .max_by(|a, b| a.total_cmp(b))
+        .unwrap_or(ScoreType::NEG_INFINITY);
 
     if max_positive > max_negative {
         max_positive
@@ -78,6 +73,7 @@ mod test {
     #[case::both_under_zero_but_negative_is_higher(vec![-84], vec![-42], -(42.0 * 42.0))]
     #[case::multiple_with_negative_best(vec![1, 2, 3], vec![4, 5, 6], -(6.0 * 6.0))]
     #[case::multiple_with_positive_best(vec![10, 2, 3], vec![4, 5, 6], 10.0)]
+    #[case::no_input(vec![], vec![], ScoreType::NEG_INFINITY)]
     fn score_query(
         #[case] positives: Vec<isize>,
         #[case] negatives: Vec<isize>,
@@ -87,7 +83,7 @@ mod test {
 
         let dummy_similarity = |x: &isize| *x as ScoreType;
 
-        let score = query.score(dummy_similarity);
+        let score = query.score_by(dummy_similarity);
 
         assert_eq!(score, expected);
     }
