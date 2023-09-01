@@ -205,6 +205,7 @@ async fn _do_recover_from_snapshot(
             let recovered = match recover_res {
                 Ok(recovered) => recovered,
                 Err(recover_err) => {
+                    // TODO: Handle single-node mode!?
                     let send_res = toc.send_set_replica_state_proposal(
                         collection_name.to_string(),
                         this_peer_id,
@@ -215,7 +216,17 @@ async fn _do_recover_from_snapshot(
 
                     match send_res {
                         Ok(()) => return Err(recover_err.into()),
-                        Err(_send_err) => return Err(recover_err.into()), // TODO: Contextualize `recover_err` with `send_err` details!
+
+                        Err(send_err) => {
+                            log::error!(
+                                "Failed to mark shard {shard_id} as \"dead\" \
+                                 after shard restore failed during collection snapshot recover: \
+                                 {send_err}"
+                            );
+
+                            // TODO: Contextualize `recover_err` with `send_err` details!?
+                            return Err(recover_err.into());
+                        }
                     }
                 }
             };

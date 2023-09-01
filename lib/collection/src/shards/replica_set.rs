@@ -1030,7 +1030,18 @@ impl ShardReplicaSet {
             Err(restore_err) => {
                 match tokio::fs::remove_dir_all(&self.shard_path).await {
                     Ok(()) => Err(restore_err),
-                    Err(_cleanup_err) => Err(restore_err), // TODO: Contextualize `restore_err` with `cleanup_err` details!
+
+                    Err(cleanup_err) => {
+                        log::error!(
+                            "Failed to cleanup shard {} directory ({}) after restore failed: \
+                             {cleanup_err}",
+                            self.shard_id,
+                            self.shard_path.display(),
+                        );
+
+                        // TODO: Contextualize `restore_err` with `cleanup_err` details!?
+                        Err(restore_err)
+                    }
                 }
             }
         }
