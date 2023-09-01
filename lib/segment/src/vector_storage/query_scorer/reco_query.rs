@@ -85,7 +85,9 @@ mod test {
     ) {
         let query = RecoQuery::new(positives, negatives);
 
-        let score = query.score(|x| *x as ScoreType);
+        let dummy_similarity = |x: &isize| *x as ScoreType;
+
+        let score = query.score(dummy_similarity);
 
         assert_eq!(score, expected);
     }
