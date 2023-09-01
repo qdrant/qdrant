@@ -265,6 +265,38 @@ impl ShardReplicaSet {
             .collect()
     }
 
+    pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
+        let mut local = self.local.write().await;
+
+        let current_shard = local.take();
+
+        // ToDo: Remove shard files here?
+        let local_shard_res = LocalShard::build(
+            self.shard_id,
+            self.collection_id.clone(),
+            &self.shard_path,
+            self.collection_config.clone(),
+            self.shared_storage_config.clone(),
+            self.update_runtime.clone(),
+        )
+        .await;
+
+        match local_shard_res {
+            Ok(local_shard) => {
+                *local = Some(Local(local_shard));
+                Ok(())
+            }
+            Err(err) => {
+                log::error!(
+                    "Failed to initialize local shard {:?}: {err}",
+                    self.shard_path
+                );
+                *local = current_shard;
+                Err(err)
+            }
+        }
+    }
+
     /// Create a new fresh replica set, no previous state is expected.
     #[allow(clippy::too_many_arguments)]
     pub async fn build(
@@ -561,8 +593,11 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
         };
 
-        if local_load_failure {
-            replica_set.update_locally_disabled(this_peer_id);
+        if local_load_failure && replica_set.active_remote_shards().await.len() > 0 {
+            replica_set
+                .locally_disabled_peers
+                .write()
+                .insert(this_peer_id);
         }
 
         replica_set
