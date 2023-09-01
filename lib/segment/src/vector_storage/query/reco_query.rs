@@ -14,6 +14,10 @@ impl<T> RecoQuery<T> {
         }
     }
 
+    pub fn iter_all(&self) -> impl Iterator<Item = &T> {
+        self.positives.iter().chain(self.negatives.iter())
+    }
+
     pub fn transform<F, U>(self, mut f: F) -> RecoQuery<U>
     where
         F: FnMut(T) -> U,
