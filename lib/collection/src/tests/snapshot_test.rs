@@ -159,6 +159,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_collection() {
+    std::env::set_var("RUST_LOG", log::Level::Debug.as_str());
     init_logger();
     _test_snapshot_collection(NodeType::Normal).await;
     _test_snapshot_collection(NodeType::Listener).await;
