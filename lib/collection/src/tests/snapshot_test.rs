@@ -102,10 +102,12 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .unwrap();
 
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_description = collection
+    let snapshot_description_res = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
-        .await
-        .unwrap();
+        .await;
+
+    assert!(snapshot_description_res.is_ok(), "snapshot should not fail");
+    let snapshot_description = snapshot_description_res.unwrap();
 
     // Do not recover in local mode if some shards are remote
     assert!(Collection::restore_snapshot(
