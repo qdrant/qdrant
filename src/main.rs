@@ -115,7 +115,7 @@ fn main() -> anyhow::Result<()> {
 
     // Run backtrace collector, expected to used by `rstack` crate
     if args.stacktrace {
-        #[cfg(feature = "stacktrace")]
+        #[cfg(all(target_os = "linux", feature = "stacktrace"))]
         {
             let _ = rstack_self::child();
         }
