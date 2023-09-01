@@ -99,25 +99,18 @@ impl<'a> SearchContext<'a> {
     }
 
     pub fn next_min(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
-        // Initialize min record id with max value
-        let mut min_record_id = u32::MAX;
-        // Indicates that posting iterators are not empty
-        let mut found = false;
+        let mut min_record_id = None;
 
         // Iterate first time to find min record id at the head of the posting lists
         for posting_iterator in to_inspect.iter() {
-            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
-                found = true;
-                if element.id < min_record_id {
-                    min_record_id = element.id;
+            if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
+                if Some(next_element.id) < min_record_id || min_record_id.is_none() {
+                    min_record_id = Some(next_element.id);
                 }
             }
         }
 
-        if !found {
-            return None;
-        }
-        Some(min_record_id)
+        min_record_id
     }
 
     /// Make sure the longest posting list is at the head of the posting list iterators
