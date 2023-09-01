@@ -500,6 +500,7 @@ impl ShardReplicaSet {
             &channel_service,
         );
 
+        let mut local_load_failure = false;
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
                 Dummy(DummyShard::new(recovery_reason))
@@ -521,6 +522,8 @@ impl ShardReplicaSet {
                             panic!("Failed to load local shard {shard_path:?}: {err}")
                         }
 
+                        local_load_failure = true;
+
                         log::error!(
                             "Failed to load local shard {shard_path:?}, \
                          initializing \"dummy\" shard instead: \
@@ -539,7 +542,7 @@ impl ShardReplicaSet {
             None
         };
 
-        Self {
+        let replica_set = Self {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
@@ -556,7 +559,13 @@ impl ShardReplicaSet {
             update_runtime,
             search_runtime,
             write_ordering_lock: Mutex::new(()),
+        };
+
+        if local_load_failure {
+            replica_set.update_locally_disabled(this_peer_id);
         }
+
+        replica_set
     }
 
     pub fn notify_peer_failure(&self, peer_id: PeerId) {
@@ -708,6 +717,19 @@ impl ShardReplicaSet {
         self.replica_state.read().get_peer_state(peer_id).copied()
     }
 
+    /// Try to generate error message for the failed local shard.
+    async fn try_explain_failure(&self) -> Option<String> {
+        let local = match self.local.try_read() {
+            Ok(local) => local,
+            Err(_) => return None,
+        };
+        match local.deref() {
+            Some(Dummy(dummy)) => Some(format!("Shard load error: {}", dummy.reason())),
+            Some(_) => None,
+            None => None,
+        }
+    }
+
     /// Execute read op. on replica set:
     /// 1 - Prefer local replica
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
@@ -718,21 +740,23 @@ impl ShardReplicaSet {
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
         let remotes = self.remotes.read().await;
-        let local = self.local.read().await;
 
         let mut local_result = None;
-        // 1 - prefer the local shard if it is active
-        if let Some(local) = local.deref() {
-            if self.peer_is_active(&self.this_peer_id()) {
-                let read_operation_res = read_operation(local.get()).await;
-                match &read_operation_res {
-                    Ok(_) => return read_operation_res,
-                    Err(error) => {
-                        if error.is_transient() {
-                            log::debug!("Local read op. failed: {}", error);
-                            local_result = Some(read_operation_res);
-                        } else {
-                            return read_operation_res;
+        {
+            let local = self.local.read().await;
+            // 1 - prefer the local shard if it is active
+            if let Some(local) = local.deref() {
+                if self.peer_is_active(&self.this_peer_id()) {
+                    let read_operation_res = read_operation(local.get()).await;
+                    match &read_operation_res {
+                        Ok(_) => return read_operation_res,
+                        Err(error) => {
+                            if error.is_transient() {
+                                log::debug!("Local read op. failed: {}", error);
+                                local_result = Some(read_operation_res);
+                            } else {
+                                return read_operation_res;
+                            }
                         }
                     }
                 }
@@ -750,10 +774,11 @@ impl ShardReplicaSet {
                 return local_result;
             }
 
+            let explain = self.try_explain_failure().await.unwrap_or_default();
             return Err(CollectionError::service_error(format!(
-                "The replica set for shard {} on peer {} has no active replica",
+                "The replica set for shard {} on peer {} has no active replica. {explain}",
                 self.shard_id,
-                self.this_peer_id()
+                self.this_peer_id(),
             )));
         }
 
@@ -862,8 +887,9 @@ impl ShardReplicaSet {
         };
 
         if active_count < factor {
+            let explain = self.try_explain_failure().await.unwrap_or_default();
             return Err(CollectionError::service_error(format!(
-                "The replica set for shard {} on peer {} does not have enough active replicas",
+                "The replica set for shard {} on peer {} does not have enough active replicas. {explain}",
                 self.shard_id,
                 self.this_peer_id(),
             )));
@@ -1530,8 +1556,9 @@ impl ShardReplicaSet {
                 local.is_some() && self.peer_is_active_or_pending(&this_peer_id);
 
             if active_remote_shards.is_empty() && !local_is_updatable {
+                let explain = self.try_explain_failure().await.unwrap_or_default();
                 return Err(CollectionError::service_error(format!(
-                    "The replica set for shard {} on peer {} has no active replica",
+                    "The replica set for shard {} on peer {} has no active replica. {explain}",
                     self.shard_id, this_peer_id
                 )));
             }

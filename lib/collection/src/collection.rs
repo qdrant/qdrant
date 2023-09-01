@@ -1390,7 +1390,10 @@ impl Collection {
                     .get(&replica_set.this_peer_id())
                     .copied()
                     .unwrap_or(ReplicaState::Dead);
-                let count_result = replica_set.count_local(count_request.clone()).await?;
+                let count_result = replica_set
+                    .count_local(count_request.clone())
+                    .await
+                    .unwrap_or_default();
                 let points_count = count_result.map(|x| x.count).unwrap_or(0);
                 local_shards.push(LocalShardInfo {
                     shard_id,

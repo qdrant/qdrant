@@ -91,6 +91,10 @@ impl StorageError {
             CollectionError::Timeout { .. } => StorageError::Timeout {
                 description: overriding_description,
             },
+            CollectionError::ShardFailure { .. } => StorageError::ServiceError {
+                description: overriding_description,
+                backtrace: None,
+            },
         }
     }
 }
@@ -131,6 +135,10 @@ impl From<CollectionError> for StorageError {
             },
             CollectionError::Timeout { .. } => StorageError::Timeout {
                 description: format!("{err}"),
+            },
+            CollectionError::ShardFailure { .. } => StorageError::ServiceError {
+                description: format!("{err}"),
+                backtrace: None,
             },
         }
     }

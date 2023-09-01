@@ -48,8 +48,14 @@ impl DummyShard {
         }
     }
 
+    pub fn reason(&self) -> String {
+        self.message.clone()
+    }
+
     fn dummy<T>(&self) -> CollectionResult<T> {
-        Err(CollectionError::service_error(self.message.to_string()))
+        Err(CollectionError::ShardFailure {
+            description: self.message.to_string(),
+        })
     }
 }
 
