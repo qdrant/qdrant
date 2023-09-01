@@ -198,38 +198,9 @@ async fn _do_recover_from_snapshot(
                 snapshot_shard_path.display()
             );
 
-            let recover_res = collection
+            let recovered = collection
                 .recover_local_shard_from(&snapshot_shard_path, *shard_id)
-                .await;
-
-            let recovered = match recover_res {
-                Ok(recovered) => recovered,
-                Err(recover_err) => {
-                    // TODO: Handle single-node mode!?
-                    let send_res = toc.send_set_replica_state_proposal(
-                        collection_name.to_string(),
-                        this_peer_id,
-                        *shard_id,
-                        ReplicaState::Dead,
-                        None,
-                    );
-
-                    match send_res {
-                        Ok(()) => return Err(recover_err.into()),
-
-                        Err(send_err) => {
-                            log::error!(
-                                "Failed to mark shard {shard_id} as \"dead\" \
-                                 after shard restore failed during collection snapshot recover: \
-                                 {send_err}"
-                            );
-
-                            // TODO: Contextualize `recover_err` with `send_err` details!?
-                            return Err(recover_err.into());
-                        }
-                    }
-                }
-            };
+                .await?;
 
             if !recovered {
                 log::debug!("Shard {} if not in snapshot", shard_id);

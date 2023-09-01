@@ -1047,6 +1047,9 @@ impl ShardReplicaSet {
                         .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
                 }
 
+                // Notify peer failure
+                self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
+
                 // Remove shard directory, so we don't leave empty directory/corrupted data
                 match tokio::fs::remove_dir_all(&self.shard_path).await {
                     Ok(()) => Err(restore_err),
