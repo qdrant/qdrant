@@ -990,17 +990,25 @@ impl ShardReplicaSet {
 
     /// Returns if local shard was recovered from path
     pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
-        if LocalShard::check_data(replica_path) {
-            let mut local = self.local.write().await;
-            let removed_local = local.take();
+        if !LocalShard::check_data(replica_path) {
+            return Ok(false);
+        }
 
-            if let Some(removing_local) = removed_local {
-                drop(removing_local); // release file handlers
-                LocalShard::clear(&self.shard_path).await?;
-            }
+        let mut local = self.local.write().await;
+
+        if let Some(old_local) = local.take() {
+            // Drop `LocalShard` instance to free resources
+            drop(old_local);
+
+            // And clear shard data
+            LocalShard::clear(&self.shard_path).await?;
+        }
+
+        // Try to restore local replica from specified shard shapshot directory
+        let restore = async {
             LocalShard::move_data(replica_path, &self.shard_path).await?;
 
-            let new_local_shard = LocalShard::load(
+            LocalShard::load(
                 self.shard_id,
                 self.collection_id.clone(),
                 &self.shard_path,
@@ -1008,12 +1016,23 @@ impl ShardReplicaSet {
                 self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
             )
-            .await?;
+            .await
+        };
 
-            local.replace(Local(new_local_shard));
-            Ok(true)
-        } else {
-            Ok(false)
+        match restore.await {
+            // Update local replica, if it was successfully restored
+            Ok(new_local) => {
+                local.replace(Local(new_local));
+                Ok(true)
+            }
+
+            // Or completely remove local replica directory, if restore failed
+            Err(restore_err) => {
+                match tokio::fs::remove_dir_all(&self.shard_path).await {
+                    Ok(()) => Err(restore_err),
+                    Err(_cleanup_err) => Err(restore_err), // TODO: Contextualize `restore_err` with `cleanup_err` details!
+                }
+            }
         }
     }
 
