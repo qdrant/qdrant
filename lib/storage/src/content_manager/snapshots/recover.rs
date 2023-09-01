@@ -198,9 +198,27 @@ async fn _do_recover_from_snapshot(
                 snapshot_shard_path.display()
             );
 
-            let recovered = collection
+            let recover_res = collection
                 .recover_local_shard_from(&snapshot_shard_path, *shard_id)
-                .await?;
+                .await;
+
+            let recovered = match recover_res {
+                Ok(recovered) => recovered,
+                Err(recover_err) => {
+                    let send_res = toc.send_set_replica_state_proposal(
+                        collection_name.to_string(),
+                        this_peer_id,
+                        *shard_id,
+                        ReplicaState::Dead,
+                        None,
+                    );
+
+                    match send_res {
+                        Ok(()) => return Err(recover_err.into()),
+                        Err(_send_err) => return Err(recover_err.into()), // TODO: Contextualize `recover_err` with `send_err` details!
+                    }
+                }
+            };
 
             if !recovered {
                 log::debug!("Shard {} if not in snapshot", shard_id);

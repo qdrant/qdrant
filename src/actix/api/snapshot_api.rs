@@ -487,7 +487,7 @@ async fn recover_shard_snapshot_impl(
     // TODO: Check snapshot compatibility?
     // TODO: Switch replica into `Partial` state?
 
-    collection
+    let restore_res = collection
         .restore_shard_snapshot(
             shard,
             snapshot_path,
@@ -495,7 +495,22 @@ async fn recover_shard_snapshot_impl(
             toc.is_distributed(),
             &toc.optional_temp_or_snapshot_temp_path()?,
         )
-        .await?;
+        .await;
+
+    if let Err(restore_err) = restore_res {
+        let send_res = toc.send_set_replica_state_proposal(
+            collection.name(),
+            toc.this_peer_id,
+            shard,
+            ReplicaState::Dead,
+            None,
+        );
+
+        match send_res {
+            Ok(()) => return Err(restore_err.into()),
+            Err(_send_err) => return Err(restore_err.into()), // TODO: Contextualize `restore_err` with `send_err` details!
+        }
+    }
 
     let state = collection.state().await;
     let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
