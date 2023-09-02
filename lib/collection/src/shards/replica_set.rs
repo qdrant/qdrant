@@ -1053,7 +1053,7 @@ impl ShardReplicaSet {
                     self.locally_disabled_peers
                         .write()
                         .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
-                    // Notify peer failure
+                                                      // Notify peer failure
                     self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
                 }
 
