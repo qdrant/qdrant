@@ -139,6 +139,19 @@ impl ReplicaSetState {
         self.peers.clone()
     }
 
+    pub fn active_peers(&self) -> Vec<PeerId> {
+        self.peers
+            .iter()
+            .filter_map(|(peer_id, state)| {
+                if *state == ReplicaState::Active {
+                    Some(*peer_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
         self.peers = peers;
     }
@@ -222,10 +235,12 @@ impl ShardReplicaSet {
     }
 
     pub async fn active_remote_shards(&self) -> Vec<PeerId> {
-        self.remote_peers()
-            .await
+        let replica_state = self.replica_state.read();
+        let this_peer_id = replica_state.this_peer_id;
+        replica_state
+            .active_peers()
             .into_iter()
-            .filter(|peer_id| self.peer_is_active(peer_id))
+            .filter(|peer_id| !self.is_locally_disabled(peer_id) && *peer_id != this_peer_id)
             .collect()
     }
 
@@ -1031,24 +1046,16 @@ impl ShardReplicaSet {
                 // TODO: Handle single-node mode!? (How!? 😰)
 
                 // Mark this peer as "locally disabled"...
-                let peers = self.replica_state.read().peers(); // TODO: Blocking `read` call in async context
-
-                let active_peers = peers
-                    .iter()
-                    .filter(|&(&peer, &state)| {
-                        peer != self.this_peer_id() && state == ReplicaState::Active
-                    })
-                    .count();
+                let has_other_active_peers = self.active_remote_shards().await.is_empty();
 
                 // ...if this peer is *not* the last active replica
-                if active_peers > 0 {
+                if has_other_active_peers {
                     self.locally_disabled_peers
                         .write()
                         .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
+                    // Notify peer failure
+                    self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
                 }
-
-                // Notify peer failure
-                self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
 
                 // Remove shard directory, so we don't leave empty directory/corrupted data
                 match tokio::fs::remove_dir_all(&self.shard_path).await {
