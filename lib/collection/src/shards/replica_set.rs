@@ -593,7 +593,7 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
         };
 
-        if local_load_failure && replica_set.active_remote_shards().await.len() > 0 {
+        if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
             replica_set
                 .locally_disabled_peers
                 .write()
