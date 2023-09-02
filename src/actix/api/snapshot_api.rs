@@ -452,7 +452,7 @@ async fn delete_shard_snapshot(
         check_shard_snapshot_file_exists(&snapshot_path)?;
         std::fs::remove_file(&snapshot_path)?;
 
-        Ok(())
+        Ok(true)
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
