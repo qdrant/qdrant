@@ -97,7 +97,7 @@ impl SimpleIdTracker {
                     external_id,
                     replaced_id
                 );
-                match external_id {
+                match replaced_id {
                     PointIdType::NumId(idx) => {
                         external_to_internal_num.remove(&idx);
                     }
