@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use api::grpc::conversions::date_time_to_proto;
@@ -88,4 +88,19 @@ pub async fn list_snapshots_in_directory(
     }
 
     Ok(snapshots)
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+pub struct ShardSnapshotRecover {
+    pub location: ShardSnapshotLocation,
+
+    #[serde(default)]
+    pub priority: Option<SnapshotPriority>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum ShardSnapshotLocation {
+    Url(Url),
+    Path(PathBuf),
 }

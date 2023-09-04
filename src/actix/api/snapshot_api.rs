@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{fmt, io};
 
 use actix_files::NamedFile;
@@ -8,7 +8,9 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator as valid;
 use collection::collection::Collection;
-use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use collection::operations::snapshot_ops::{
+    ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
+};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use reqwest::Url;
@@ -452,7 +454,7 @@ async fn delete_shard_snapshot(
         check_shard_snapshot_file_exists(&snapshot_path)?;
         std::fs::remove_file(&snapshot_path)?;
 
-        Ok(())
+        Ok(true)
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
@@ -544,21 +546,6 @@ async fn recover_shard_snapshot_impl(
     }
 
     Ok(())
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
-struct ShardSnapshotRecover {
-    location: ShardSnapshotLocation,
-
-    #[serde(default)]
-    priority: Option<SnapshotPriority>,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
-#[serde(untagged)]
-enum ShardSnapshotLocation {
-    Url(Url),
-    Path(PathBuf),
 }
 
 // Configure services

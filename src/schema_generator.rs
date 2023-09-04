@@ -3,7 +3,9 @@ use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
-use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
+use collection::operations::snapshot_ops::{
+    ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
+};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
     CountRequest, CountResult, GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest,
@@ -72,6 +74,7 @@ struct AllDefinitions {
     b6: RecommendGroupsRequest,
     b7: GroupsResult,
     b8: UpdateOperations,
+    b9: ShardSnapshotRecover,
 }
 
 fn save_schema<T: JsonSchema>() {
