@@ -16,6 +16,8 @@ docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml 
 
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-snapshots.ytt.yaml > ./openapi/openapi-snapshots.yaml
 
+docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-shard-snapshots.ytt.yaml > ./openapi/openapi-shard-snapshots.yaml
+
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-points.ytt.yaml > ./openapi/openapi-points.yaml
 
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-main.ytt.yaml > ./openapi/openapi-main.yaml
@@ -40,6 +42,7 @@ docker run --rm -v "${PWD}":/workdir mikefarah/yq eval-all '. as $item ireduce (
   ./openapi/openapi-cluster.yaml \
   ./openapi/openapi-collections.yaml \
   ./openapi/openapi-snapshots.yaml \
+  ./openapi/openapi-shard-snapshots.yaml \
   ./openapi/openapi-points.yaml \
   ./openapi/openapi-main.yaml \
   ./openapi/models.yaml > ./openapi/openapi-merged.yaml
