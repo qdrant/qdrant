@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use fs_extra::dir::CopyOptions;
 
@@ -26,6 +26,34 @@ pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> Colle
             })
         });
         task.await??;
+    }
+    Ok(())
+}
+
+pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> CollectionResult<()> {
+    // Try to rename first and fallback to copy to prevert TOCTOU
+    let from = from.as_ref();
+    let to = to.as_ref();
+
+    if let Err(_err) = tokio::fs::rename(from, to).await {
+        // If rename failed, try to copy.
+        // It is possible that the source and destination are on different filesystems.
+        tokio::fs::copy(from, to).await.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't move file from {} to {} due to {}",
+                from.display(),
+                to.display(),
+                err
+            ))
+        })?;
+
+        tokio::fs::remove_file(from).await.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't remove file {} due to {}",
+                from.display(),
+                err
+            ))
+        })?;
     }
     Ok(())
 }
