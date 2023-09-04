@@ -3643,6 +3643,7 @@ dependencies = [
  "clap",
  "collection",
  "colored",
+ "common",
  "config",
  "console-subscriber",
  "constant_time_eq 0.3.0",

@@ -353,7 +353,7 @@ pub struct CreateCollection {
     #[prost(string, tag = "1")]
     #[validate(
         length(min = 1, max = 255),
-        custom = "crate::grpc::validate::validate_collection_name"
+        custom = "common::validation::validate_collection_name"
     )]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index
@@ -3029,7 +3029,7 @@ pub struct SearchPoints {
     pub offset: ::core::option::Option<u64>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "10")]
-    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
+    #[validate(custom = "common::validation::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "11")]
@@ -3099,7 +3099,7 @@ pub struct SearchPointGroups {
     pub score_threshold: ::core::option::Option<f32>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "8")]
-    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
+    #[validate(custom = "common::validation::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
@@ -3801,7 +3801,7 @@ pub struct GeoPolygon {
     /// The minimum size is 4, and the first coordinate and the last coordinate
     /// should be the same to form a closed polygon.
     #[prost(message, repeated, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_geo_polygon")]
+    #[validate(custom = "common::validation::validate_geo_polygon")]
     pub points: ::prost::alloc::vec::Vec<GeoPoint>,
 }
 #[derive(serde::Serialize)]
@@ -7774,7 +7774,7 @@ pub struct Peer {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddPeerToKnownMessage {
     #[prost(string, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
+    #[validate(custom = "common::validation::validate_not_empty")]
     pub uri: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(uint32, optional, tag = "2")]
     #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
