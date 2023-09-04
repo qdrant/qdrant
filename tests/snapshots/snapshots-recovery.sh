@@ -102,13 +102,13 @@ curl -X GET "http://${QDRANT_HOST}/collections/test_collection_recovered_2" --fa
 
 # Same for the shard snapshot
 
-declare SHARD_SNAPSHOT_NAME=$(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/shards/0/snapshots" --fail -H 'Content-Type: application/json' --data-raw '{}' | tee log.json | jq -r '.result.name')
+SHARD_SNAPSHOT_NAME=$(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/shards/0/snapshots" --fail -H 'Content-Type: application/json' --data-raw '{}' | tee log.json | jq -r '.result.name')
 
 declare SHARD_SNAPSHOT_URL="http://${QDRANT_HOST}/collections/test_collection/shards/0/snapshots/${SHARD_SNAPSHOT_NAME}"
 
 # Download snapshot
 
-curl -X GET ${SHARD_SNAPSHOT_URL} -H 'Content-Type: application/json' --fail -s -o test_collection_shard.snapshot
+curl -X GET "${SHARD_SNAPSHOT_URL}" -H 'Content-Type: application/json' --fail -s -o test_collection_shard.snapshot
 
 # Upload snapshot via URL
 
