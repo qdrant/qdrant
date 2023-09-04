@@ -133,7 +133,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
         QueryVector::Nearest(vector) => {
             new_metric_scorer(vector.to_vec(), vector_storage, point_deleted, is_stopped)
         }
-        QueryVector::PositiveNegative(reco_query) => {
+        QueryVector::Recommend(reco_query) => {
             new_reco_scorer(reco_query, vector_storage, point_deleted, is_stopped)
         }
     }

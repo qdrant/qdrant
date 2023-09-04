@@ -214,7 +214,7 @@ impl BatchVectorStruct {
 #[derive(Debug, Clone)]
 pub enum QueryVector {
     Nearest(VectorType),
-    PositiveNegative(RecoQuery<VectorType>),
+    Recommend(RecoQuery<VectorType>),
 }
 
 impl From<VectorType> for QueryVector {

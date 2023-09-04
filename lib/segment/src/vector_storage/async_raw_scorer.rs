@@ -254,12 +254,12 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             .take()
             .expect("new() ensures to always have a value");
         match query {
-            QueryVector::PositiveNegative(query) => {
-                let query_scorer = RecoQueryScorer::<TMetric, _>::new(query, self.storage);
-                self._build_async_raw_scorer(query_scorer)
-            }
             QueryVector::Nearest(vector) => {
                 let query_scorer = MetricQueryScorer::<TMetric, _>::new(vector, self.storage);
+                self._build_async_raw_scorer(query_scorer)
+            }
+            QueryVector::Recommend(query) => {
+                let query_scorer = RecoQueryScorer::<TMetric, _>::new(query, self.storage);
                 self._build_async_raw_scorer(query_scorer)
             }
         }

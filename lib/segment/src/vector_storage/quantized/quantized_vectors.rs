@@ -52,17 +52,17 @@ pub struct QuantizedVectors {
 impl QuantizedVectors {
     pub fn raw_scorer<'a>(
         &'a self,
-        query: &QueryVector,
+        query: QueryVector,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
         match query {
             QueryVector::Nearest(vector) => {
-                self.quantized_metric_scorer(vector.clone(), point_deleted, vec_deleted, is_stopped)
+                self.quantized_metric_scorer(vector, point_deleted, vec_deleted, is_stopped)
             }
-            QueryVector::PositiveNegative(query) => {
-                self.quantized_reco_scorer(query.clone(), point_deleted, vec_deleted, is_stopped)
+            QueryVector::Recommend(reco_query) => {
+                self.quantized_reco_scorer(reco_query, point_deleted, vec_deleted, is_stopped)
             }
         }
     }

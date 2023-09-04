@@ -212,7 +212,7 @@ pub trait SegmentEntry {
     fn search(
         &self,
         vector_name: &str,
-        vector: &QueryVector,
+        query_vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
@@ -225,7 +225,7 @@ pub trait SegmentEntry {
     fn search_batch(
         &self,
         vector_name: &str,
-        vectors: &[&QueryVector],
+        query_vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
