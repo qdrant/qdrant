@@ -73,3 +73,57 @@ paths:
       tags:
         - service
       responses: #@ response(reference("LocksOption"))
+
+  /healthz:
+    get:
+      summary: Kubernetes healthz endpoint
+      description: An endpoint for health checking used in Kubernetes.
+      operationId: healthz
+      tags:
+        - service
+      responses:
+        '200':
+          description: Healthz response
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: healthz check passed
+        '4XX':
+          description: error
+
+  /livez:
+    get:
+      summary: Kubernetes livez endpoint
+      description: An endpoint for health checking used in Kubernetes.
+      operationId: livez
+      tags:
+        - service
+      responses:
+        '200':
+          description: Healthz response
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: healthz check passed
+        '4XX':
+          description: error
+
+  /readyz:
+    get:
+      summary: Kubernetes readyz endpoint
+      description: An endpoint for health checking used in Kubernetes.
+      operationId: readyz
+      tags:
+        - service
+      responses:
+        '200':
+          description: Healthz response
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: healthz check passed
+        '4XX':
+          description: error
