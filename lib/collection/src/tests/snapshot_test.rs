@@ -106,8 +106,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await;
 
-    assert!(snapshot_description_res.is_ok(), "snapshot should not fail");
-    let snapshot_description = snapshot_description_res.unwrap();
+    let snapshot_description = snapshot_description_res.expect("Error while creating snapshot");
 
     // Do not recover in local mode if some shards are remote
     assert!(Collection::restore_snapshot(

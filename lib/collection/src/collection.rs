@@ -1588,7 +1588,10 @@ impl Collection {
         let snapshot_temp_arc_file_arc = Arc::new(snapshot_temp_arc_file);
         let snapshot_arc_file_path_clone = snapshot_temp_arc_file_arc.clone();
         let snapshot_temp_dir_path_clone = snapshot_temp_dir_path.clone();
-        eprintln!("Archiving snapshot {:?}", snapshot_temp_dir_path);
+        eprintln!(
+            "Archiving snapshot {:?} into {:?}",
+            snapshot_temp_dir_path, &snapshot_arc_file_path_clone
+        );
         let archiving = tokio::task::spawn_blocking(move || {
             let mut builder = TarBuilder::new(snapshot_arc_file_path_clone.as_ref());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
