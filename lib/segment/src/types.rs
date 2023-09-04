@@ -1298,10 +1298,11 @@ impl GeoRadius {
 /// Geo filter request
 ///
 /// Matches coordinates inside the polygon, defined by the given coordinates in order.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPolygon {
     /// Ordered list of coordinates representing the vertices of a polygon.
+    #[validate(custom = "common::validation::validate_geo_polygon")]
     pub points: Vec<GeoPoint>,
 }
 

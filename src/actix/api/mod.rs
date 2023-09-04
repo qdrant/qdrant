@@ -9,7 +9,7 @@ pub mod service_api;
 pub mod snapshot_api;
 pub mod update_api;
 
-use api::grpc::validate::validate_collection_name;
+use common::validation::validate_collection_name;
 use serde::Deserialize;
 use validator::Validate;
 
