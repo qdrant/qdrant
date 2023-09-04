@@ -14,7 +14,7 @@ def test_dummy_shard_all_reads_and_writes_succeed(tmp_path: pathlib.Path):
     peer_url = start_cluster_with_corrupted_node(N_PEERS, 2, 1, tmp_path)
     read_requests(peer_url, 200)
     write_requests(peer_url, 200, 200)
-    collection_snapshot_and_collection_delete(peer_url)
+    collection_snapshot_and_collection_delete(peer_url, check_failure=False)
 
 def test_dummy_shard_all_reads_fail(tmp_path: pathlib.Path):
     peer_url = start_cluster_with_corrupted_node(N_PEERS, 1, 1, tmp_path)
@@ -182,10 +182,12 @@ def write_requests(peer_url, first_request_expected_status, following_requests_e
     execute_requests(peer_url, first_request_expected_status, TESTS[:1])
     execute_requests(peer_url, following_requests_expected_status, TESTS[1:])
 
-def collection_snapshot_and_collection_delete(peer_url):
-    # Create collection snapshot. We expect this request to fail in all cluster configurations.
-    resp = requests.post(f"{base_url(peer_url)}/snapshots")
-    assert_http_response(resp, 500, "POST", "snapshots")
+def collection_snapshot_and_collection_delete(peer_url, check_failure=True):
+    if check_failure:
+        # Create collection snapshot.
+        # Expect that snapshot creation fails unless it was not recovered from another replica
+        resp = requests.post(f"{base_url(peer_url)}/snapshots")
+        assert_http_response(resp, 500, "POST", "snapshots")
 
     # Delete collection. We expect this request to succeed in all cluster configurations.
     resp = requests.delete(base_url(peer_url))
