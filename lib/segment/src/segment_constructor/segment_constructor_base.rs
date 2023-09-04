@@ -81,13 +81,10 @@ fn create_segment(
 
     let id_tracker = sp(SimpleIdTracker::open(database.clone())?);
 
-    let is_appendaple_by_config = config
+    let appendable_flag = config
         .vector_data
         .values()
-        .map(|vector_config| match &vector_config.index {
-            Indexes::Plain {} => true,
-            Indexes::Hnsw(_) => false,
-        })
+        .map(|vector_config| vector_config.is_appendable())
         .all(|x| x);
 
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
@@ -95,7 +92,7 @@ fn create_segment(
         payload_storage,
         id_tracker.clone(),
         &payload_index_path,
-        is_appendaple_by_config,
+        appendable_flag,
     )?);
 
     let mut vector_data = HashMap::new();
@@ -187,8 +184,6 @@ fn create_segment(
     } else {
         SegmentType::Plain
     };
-    let appendable_flag = vector_data.values().all(VectorData::is_appendable);
-    assert_eq!(is_appendaple_by_config, appendable_flag);
 
     Ok(Segment {
         version,

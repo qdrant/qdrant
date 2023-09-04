@@ -91,13 +91,6 @@ pub struct VectorData {
 }
 
 impl VectorData {
-    /// Whether this vector data can be appended to
-    ///
-    /// This requires an index and storage type that both support appending.
-    pub fn is_appendable(&self) -> bool {
-        self.vector_index.borrow().is_appendable() && self.vector_storage.borrow().is_appendable()
-    }
-
     pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
         let index_task = match &*self.vector_index.borrow() {
             VectorIndexEnum::HnswMmap(index) => index.prefault_mmap_pages(),
@@ -1325,7 +1318,6 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| match field_type {
             Some(schema) => {
-                // todo(ivan)
                 segment
                     .payload_index
                     .borrow_mut()
@@ -1337,7 +1329,6 @@ impl SegmentEntry for Segment {
                     field_name: key.to_string(),
                 }),
                 Some(schema_type) => {
-                    // todo(ivan)
                     segment
                         .payload_index
                         .borrow_mut()

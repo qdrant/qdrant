@@ -200,8 +200,4 @@ impl VectorStorage for AppendableMmapVectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.get_bitslice()
     }
-
-    fn is_appendable(&self) -> bool {
-        true
-    }
 }
