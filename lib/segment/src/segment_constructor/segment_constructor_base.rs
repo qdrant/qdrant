@@ -84,8 +84,7 @@ fn create_segment(
     let appendable_flag = config
         .vector_data
         .values()
-        .map(|vector_config| vector_config.is_appendable())
-        .all(|x| x);
+        .all(|vector_config| vector_config.is_appendable());
 
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
