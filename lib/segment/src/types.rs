@@ -691,6 +691,24 @@ pub struct VectorDataConfig {
     pub quantization_config: Option<QuantizationConfig>,
 }
 
+impl VectorDataConfig {
+    /// Whether this vector data can be appended to
+    ///
+    /// This requires an index and storage type that both support appending.
+    pub fn is_appendable(&self) -> bool {
+        let is_index_appendable = match self.index {
+            Indexes::Plain {} => true,
+            Indexes::Hnsw(_) => false,
+        };
+        let is_storage_appendable = match self.storage_type {
+            VectorStorageType::Memory => true,
+            VectorStorageType::Mmap => false,
+            VectorStorageType::ChunkedMmap => true,
+        };
+        is_index_appendable && is_storage_appendable
+    }
+}
+
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 

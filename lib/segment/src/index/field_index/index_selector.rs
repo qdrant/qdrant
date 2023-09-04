@@ -18,14 +18,19 @@ pub fn index_selector(
     field: &str,
     payload_schema: &PayloadFieldSchema,
     db: Arc<RwLock<DB>>,
+    is_appendable: bool,
 ) -> Vec<FieldIndex> {
     match payload_schema {
         PayloadFieldSchema::FieldType(payload_type) => match payload_type {
             PayloadSchemaType::Keyword => {
-                vec![FieldIndex::KeywordIndex(MapIndex::new(db, field))]
+                vec![FieldIndex::KeywordIndex(MapIndex::new(
+                    db,
+                    field,
+                    is_appendable,
+                ))]
             }
             PayloadSchemaType::Integer => vec![
-                FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field)),
+                FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field, is_appendable)),
                 FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field)),
             ],
             PayloadSchemaType::Float => {

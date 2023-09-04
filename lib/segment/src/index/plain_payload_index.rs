@@ -175,10 +175,6 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
-        unreachable!()
-    }
-
     fn flusher(&self) -> Flusher {
         unreachable!()
     }
@@ -295,10 +291,6 @@ impl VectorIndex for PlainIndex {
 
     fn indexed_vector_count(&self) -> usize {
         0
-    }
-
-    fn is_appendable(&self) -> bool {
-        true
     }
 }
 

@@ -31,9 +31,6 @@ pub trait VectorIndex {
 
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;
-
-    /// Whether this vector index type support appending.
-    fn is_appendable(&self) -> bool;
 }
 
 pub enum VectorIndexEnum {
@@ -101,14 +98,6 @@ impl VectorIndex for VectorIndexEnum {
             Self::Plain(index) => index.indexed_vector_count(),
             Self::HnswRam(index) => index.indexed_vector_count(),
             Self::HnswMmap(index) => index.indexed_vector_count(),
-        }
-    }
-
-    fn is_appendable(&self) -> bool {
-        match self {
-            Self::Plain(index) => index.is_appendable(),
-            Self::HnswRam(index) => index.is_appendable(),
-            Self::HnswMmap(index) => index.is_appendable(),
         }
     }
 }

@@ -72,7 +72,7 @@ fn test_filtering_context_consistency() {
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
     let mut index =
-        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path()).unwrap();
+        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
 
     index
         .set_indexed("f", PayloadSchemaType::Integer.into())
