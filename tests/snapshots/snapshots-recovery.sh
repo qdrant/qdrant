@@ -15,7 +15,7 @@ docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAM
 
 docker run \
     --rm -d \
-    --network=host \
+    -p 6333:6333 -p 6334:6334 \
     -v snapshots:/qdrant/snapshots \
     -v tempdir:/qdrant/tempdir \
     -v storage:/qdrant/storage \
