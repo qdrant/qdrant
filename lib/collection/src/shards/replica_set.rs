@@ -265,6 +265,38 @@ impl ShardReplicaSet {
             .collect()
     }
 
+    pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
+        let mut local = self.local.write().await;
+
+        let current_shard = local.take();
+
+        // ToDo: Remove shard files here?
+        let local_shard_res = LocalShard::build(
+            self.shard_id,
+            self.collection_id.clone(),
+            &self.shard_path,
+            self.collection_config.clone(),
+            self.shared_storage_config.clone(),
+            self.update_runtime.clone(),
+        )
+        .await;
+
+        match local_shard_res {
+            Ok(local_shard) => {
+                *local = Some(Local(local_shard));
+                Ok(())
+            }
+            Err(err) => {
+                log::error!(
+                    "Failed to initialize local shard {:?}: {err}",
+                    self.shard_path
+                );
+                *local = current_shard;
+                Err(err)
+            }
+        }
+    }
+
     /// Create a new fresh replica set, no previous state is expected.
     #[allow(clippy::too_many_arguments)]
     pub async fn build(
@@ -500,6 +532,7 @@ impl ShardReplicaSet {
             &channel_service,
         );
 
+        let mut local_load_failure = false;
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
                 Dummy(DummyShard::new(recovery_reason))
@@ -521,6 +554,8 @@ impl ShardReplicaSet {
                             panic!("Failed to load local shard {shard_path:?}: {err}")
                         }
 
+                        local_load_failure = true;
+
                         log::error!(
                             "Failed to load local shard {shard_path:?}, \
                          initializing \"dummy\" shard instead: \
@@ -539,7 +574,7 @@ impl ShardReplicaSet {
             None
         };
 
-        Self {
+        let replica_set = Self {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
@@ -556,7 +591,16 @@ impl ShardReplicaSet {
             update_runtime,
             search_runtime,
             write_ordering_lock: Mutex::new(()),
+        };
+
+        if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
+            replica_set
+                .locally_disabled_peers
+                .write()
+                .insert(this_peer_id);
         }
+
+        replica_set
     }
 
     pub fn notify_peer_failure(&self, peer_id: PeerId) {
