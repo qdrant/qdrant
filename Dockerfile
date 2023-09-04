@@ -130,7 +130,6 @@ LABEL org.opencontainers.image.description="Official Qdrant image"
 LABEL org.opencontainers.image.url="https://qdrant.com/"
 LABEL org.opencontainers.image.documentation="https://qdrant.com/docs"
 LABEL org.opencontainers.image.source="https://github.com/qdrant/qdrant"
-LABEL org.opencontainers.image.version="dev"
 LABEL org.opencontainers.image.vendor="Qdrant"
 
 CMD ["./entrypoint.sh"]
