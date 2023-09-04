@@ -703,7 +703,7 @@ impl VectorDataConfig {
         let is_storage_appendable = match self.storage_type {
             VectorStorageType::Memory => true,
             VectorStorageType::Mmap => false,
-            VectorStorageType::ChunkedMmap => false,
+            VectorStorageType::ChunkedMmap => true,
         };
         is_index_appendable && is_storage_appendable
     }
