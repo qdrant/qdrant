@@ -764,7 +764,7 @@ fn test_update_payload_index_type() {
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(point_num)));
 
     let mut index =
-        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path()).unwrap();
+        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
 
     // set field to Integer type
     index.set_indexed("field", Integer.into()).unwrap();

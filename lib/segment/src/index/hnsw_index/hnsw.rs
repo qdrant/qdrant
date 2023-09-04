@@ -688,8 +688,4 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .or_else(|| self.graph.as_ref().map(|graph| graph.num_points()))
             .unwrap_or(0)
     }
-
-    fn is_appendable(&self) -> bool {
-        false
-    }
 }

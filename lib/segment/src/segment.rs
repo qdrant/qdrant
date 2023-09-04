@@ -91,13 +91,6 @@ pub struct VectorData {
 }
 
 impl VectorData {
-    /// Whether this vector data can be appended to
-    ///
-    /// This requires an index and storage type that both support appending.
-    pub fn is_appendable(&self) -> bool {
-        self.vector_index.borrow().is_appendable() && self.vector_storage.borrow().is_appendable()
-    }
-
     pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
         let index_task = match &*self.vector_index.borrow() {
             VectorIndexEnum::HnswMmap(index) => index.prefault_mmap_pages(),

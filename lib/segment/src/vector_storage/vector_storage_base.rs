@@ -123,9 +123,6 @@ pub trait VectorStorage {
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
     fn deleted_vector_bitslice(&self) -> &BitSlice;
-
-    /// Whether this vector storage type support appending.
-    fn is_appendable(&self) -> bool;
 }
 
 pub enum VectorStorageEnum {
@@ -273,14 +270,6 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::Memmap(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::AppendableMemmap(v) => v.deleted_vector_bitslice(),
-        }
-    }
-
-    fn is_appendable(&self) -> bool {
-        match self {
-            VectorStorageEnum::Simple(v) => v.is_appendable(),
-            VectorStorageEnum::Memmap(v) => v.is_appendable(),
-            VectorStorageEnum::AppendableMemmap(v) => v.is_appendable(),
         }
     }
 }

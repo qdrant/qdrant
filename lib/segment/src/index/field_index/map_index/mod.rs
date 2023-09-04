@@ -35,8 +35,12 @@ pub enum MapIndex<N: Hash + Eq + Clone + Display + FromStr> {
 }
 
 impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
-    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
-        MapIndex::Mutable(MutableMapIndex::new(db, field_name))
+    pub fn new(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
+        if is_appendable {
+            MapIndex::Mutable(MutableMapIndex::new(db, field_name))
+        } else {
+            MapIndex::Immutable(ImmutableMapIndex::new(db, field_name))
+        }
     }
 
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
@@ -551,7 +555,8 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let mut index =
+            MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
         index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
             match &mut index {
@@ -568,7 +573,8 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let mut index =
+            MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
         index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(

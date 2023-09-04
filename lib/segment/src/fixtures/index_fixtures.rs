@@ -113,10 +113,6 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         &self.deleted_vectors
     }
-
-    fn is_appendable(&self) -> bool {
-        true
-    }
 }
 
 impl<TMetric> TestRawScorerProducer<TMetric>

@@ -80,9 +80,6 @@ pub trait PayloadIndex {
     /// Drop all payload of the point
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
 
-    /// Completely drop payload. Pufff!
-    fn wipe(&mut self) -> OperationResult<()>;
-
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
 
