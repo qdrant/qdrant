@@ -77,7 +77,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SnapshotRecover"
+              $ref: "#/components/schemas/ShardSnapshotRecover"
       responses: #@ response_with_accepted(type("boolean"))
 
   /collections/{collection_name}/shards/{shard_id}/snapshots:

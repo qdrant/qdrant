@@ -130,36 +130,36 @@ def test_shard_snapshot_operations_non_wait():
             continue
 
 
-def test_snapshot_invalid_file_uri():
-    # Invalid file:// host
+def test_shard_snapshot_recovery_errors():
+
+    # Invalid collection name
     response = request_with_validation(
         api='/collections/{collection_name}/shards/{shard_id}/snapshots/recover',
         method="PUT",
         path_params={'shard_id': 0, 'collection_name': "somethingthatdoesnotexist"},
         body={
-            "location": "file://whatever.snapshot",
+            "location": "whatever",
         }
     )
     assert response.status_code == 404
 
-    # Absolute path that does not exist
+    # Invalid file url
     response = request_with_validation(
         api='/collections/{collection_name}/shards/{shard_id}/snapshots/recover',
         method="PUT",
-        path_params={'shard_id': 0, 'collection_name': "somethingthatdoesnotexist"},
+        path_params={'shard_id': 0, 'collection_name': collection_name},
         body={
             "location": "file:///whatever.snapshot",
         }
     )
-    assert response.status_code == 404
+    assert response.status_code == 400
 
-    # Path that does not exist
     response = request_with_validation(
         api='/collections/{collection_name}/shards/{shard_id}/snapshots/recover',
         method="PUT",
-        path_params={'shard_id': 0, 'collection_name': "somethingthatdoesnotexist"},
+        path_params={'shard_id': 0, 'collection_name': collection_name},
         body={
-            "location": "file://localhost/whatever.snapshot",
+            "location": "http://localhost:6333/snapshots/whatever.snapshot",
         }
     )
-    assert response.status_code == 404
+    assert response.status_code == 400

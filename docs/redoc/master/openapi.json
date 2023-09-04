@@ -2415,7 +2415,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SnapshotRecover"
+                "$ref": "#/components/schemas/ShardSnapshotRecover"
               }
             }
           }
@@ -9256,6 +9256,39 @@
             "$ref": "#/components/schemas/DeleteVectors"
           }
         }
+      },
+      "ShardSnapshotRecover": {
+        "type": "object",
+        "required": [
+          "location"
+        ],
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/ShardSnapshotLocation"
+          },
+          "priority": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotPriority"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "ShardSnapshotLocation": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "uri"
+          },
+          {
+            "type": "string"
+          }
+        ]
       }
     }
   }
