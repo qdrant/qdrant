@@ -2,11 +2,11 @@ use std::cmp::Ordering;
 
 use ordered_float::OrderedFloat;
 
-use crate::common::types::{DimWeight, RecordId};
+use crate::common::types::RecordId;
 
 #[derive(Debug, PartialEq)]
 pub struct ScoredCandidate {
-    pub score: DimWeight,
+    pub score: f32, // TODO move `ScoreType` to `common::types`
     pub vector_id: RecordId,
 }
 
