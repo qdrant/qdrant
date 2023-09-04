@@ -1,5 +1,5 @@
+use std::fmt;
 use std::path::Path;
-use std::{fmt, io};
 
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
@@ -8,6 +8,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator as valid;
 use collection::collection::Collection;
+use collection::common::file_utils::move_file;
 use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
@@ -86,7 +87,7 @@ pub async fn do_save_uploaded_snapshot(
 
     let path = collection_snapshot_path.join(filename);
 
-    snapshot.file.persist(&path)?;
+    move_file(snapshot.file.path(), &path).await?;
 
     let absolute_path = path.canonicalize()?;
 
@@ -381,46 +382,14 @@ async fn upload_shard_snapshot(
         let collection = toc.get_collection(&collection).await?;
         collection.assert_shard_exists(shard).await?;
 
-        let snapshot_file_name = form
-            .snapshot
-            .file_name
-            .unwrap_or_else(|| format!("{}.snapshot", Uuid::new_v4()));
-
-        let (uploaded_snapshot_file, snapshot_path) =
-            if collection.is_shard_local(&shard).await.unwrap_or(false) {
-                let snapshot_path = collection
-                    .get_shard_snapshot_path(shard, &snapshot_file_name)
-                    .await?;
-
-                form.snapshot
-                    .file
-                    .persist(&snapshot_path)
-                    .map_err(io::Error::from)?;
-
-                (None, snapshot_path)
-            } else {
-                let uploaded_snapshot_path = form.snapshot.file.path().to_path_buf();
-                (Some(form.snapshot.file), uploaded_snapshot_path)
-            };
-
         recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard,
-            &snapshot_path,
+            form.snapshot.file.path(),
             priority.unwrap_or_default(),
         )
         .await?;
-
-        if let Some(uploaded_snapshot_file) = uploaded_snapshot_file {
-            let snapshot_path = collection
-                .get_shard_snapshot_path(shard, &snapshot_file_name)
-                .await?;
-
-            uploaded_snapshot_file
-                .persist(snapshot_path)
-                .map_err(io::Error::from)?;
-        }
 
         Ok(())
     };

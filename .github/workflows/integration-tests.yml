@@ -175,6 +175,37 @@ jobs:
         shell: bash
         run: ./low-ram.sh
 
+  test-snapshot-operations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get install clang protobuf-compiler jq
+      - name: Setup git-lfs
+        run: git lfs install
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Docker build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          tags: qdrant-snapshots
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
+          build-args: |
+            PROFILE=ci
+      - name: Run test snapshot operations on different storage filesystems
+        working-directory: ./tests/snapshots
+        shell: bash
+        run: ./snapshots-recovery.sh
+
   test-shard-snapshot-api:
     runs-on: ubuntu-latest
 
