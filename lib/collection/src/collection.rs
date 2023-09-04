@@ -1546,10 +1546,9 @@ impl Collection {
 
         // Final location of snapshot
         let snapshot_path = self.snapshots_path.join(&snapshot_name);
-        log::info!(
+        eprintln!(
             "Creating collection snapshot {} into {:?}",
-            snapshot_name,
-            snapshot_path
+            snapshot_name, snapshot_path
         );
 
         // Dedicated temporary directory for this snapshot (deleted on drop)
@@ -1589,7 +1588,7 @@ impl Collection {
         let snapshot_temp_arc_file_arc = Arc::new(snapshot_temp_arc_file);
         let snapshot_arc_file_path_clone = snapshot_temp_arc_file_arc.clone();
         let snapshot_temp_dir_path_clone = snapshot_temp_dir_path.clone();
-        log::debug!("Archiving snapshot {:?}", snapshot_temp_dir_path);
+        eprintln!("Archiving snapshot {:?}", snapshot_temp_dir_path);
         let archiving = tokio::task::spawn_blocking(move || {
             let mut builder = TarBuilder::new(snapshot_arc_file_path_clone.as_ref());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
@@ -1600,7 +1599,7 @@ impl Collection {
         archiving.await??;
 
         // Remove temporary snapshot directory (automatically dropped on previous error)
-        log::debug!(
+        eprintln!(
             "Removing temporary snapshot data {:?}",
             snapshot_temp_dir_path
         );
@@ -1615,10 +1614,9 @@ impl Collection {
         rename(&snapshot_path_tmp_move, &snapshot_path).await?;
         remove_file(snapshot_temp_arc_file_arc.path()).await?;
 
-        log::info!(
+        eprintln!(
             "Collection snapshot {} completed into {:?}",
-            snapshot_name,
-            snapshot_path
+            snapshot_name, snapshot_path
         );
         get_snapshot_description(&snapshot_path).await
     }
