@@ -223,7 +223,7 @@ async fn _do_recover_from_snapshot(
                 activate_shard(toc, &collection, this_peer_id, shard_id).await?;
             } else {
                 match priority {
-                    SnapshotPriority::LocalOnly => {
+                    SnapshotPriority::NoSync => {
                         activate_shard(toc, &collection, this_peer_id, shard_id).await?;
                     }
 
