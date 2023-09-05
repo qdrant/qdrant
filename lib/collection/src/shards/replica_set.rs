@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::{Either, BoxFuture};
+use futures::future::{BoxFuture, Either};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
@@ -1509,7 +1509,10 @@ impl ShardReplicaSet {
                     update_futures.push(Either::Right(local_update));
                 }
             }
-            let concurrency = self.shared_storage_config.update_concurrency.unwrap_or_else(|| update_futures.len());
+            let concurrency = self
+                .shared_storage_config
+                .update_concurrency
+                .unwrap_or_else(|| update_futures.len());
             futures::stream::iter(update_futures)
                 .buffer_unordered(concurrency)
                 .collect::<Vec<_>>()

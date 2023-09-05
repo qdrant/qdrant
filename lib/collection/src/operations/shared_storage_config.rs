@@ -41,7 +41,7 @@ impl SharedStorageConfig {
         handle_collection_load_errors: bool,
         recovery_mode: Option<String>,
         search_timeout: Option<Duration>,
-        update_concurrency: Option<usize>
+        update_concurrency: Option<usize>,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
