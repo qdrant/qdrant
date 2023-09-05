@@ -43,7 +43,7 @@ def test_batch_update():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
+        body={"operations": [
             {
                 "upsert": {
                     "points": [
@@ -85,7 +85,8 @@ def test_batch_update():
                     ]
                 }
             },
-        ],
+        ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok
@@ -110,33 +111,35 @@ def test_batch_update():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "update_vectors": {
-                    "points": [
-                        {
-                            "id": 7,
-                            "vector": {
-                                "image": [2.0, 6.0, 3.0, 2.0],
-                                "text": [5.0, 7.0, 0.0, 8.0, 2.0, 7.0, 1.0, 6.0],
+        body={
+            "operations": [
+                {
+                    "update_vectors": {
+                        "points": [
+                            {
+                                "id": 7,
+                                "vector": {
+                                    "image": [2.0, 6.0, 3.0, 2.0],
+                                    "text": [5.0, 7.0, 0.0, 8.0, 2.0, 7.0, 1.0, 6.0],
+                                },
                             },
-                        },
-                    ]
-                }
-            },
-            {
-                "update_vectors": {
-                    "points": [
-                        {
-                            "id": 7,
-                            "vector": {
-                                "image": [0.0, 3.0, 1.0, 8.0],
+                        ]
+                    }
+                },
+                {
+                    "update_vectors": {
+                        "points": [
+                            {
+                                "id": 7,
+                                "vector": {
+                                    "image": [0.0, 3.0, 1.0, 8.0],
+                                },
                             },
-                        },
-                    ]
-                }
-            },
-        ],
+                        ]
+                    }
+                },
+            ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok
@@ -161,48 +164,50 @@ def test_batch_update():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "upsert": {
-                    "points": [
-                        {
-                            "id": 9,
-                            "vector": {
-                                "image": [5.0, 5.0, 3.0, 6.0],
-                                "text": [8.0, 4.0, 7.0, 3.0, 3.0, 8.0, 9.0, 0.0],
+        body={
+            "operations": [
+                {
+                    "upsert": {
+                        "points": [
+                            {
+                                "id": 9,
+                                "vector": {
+                                    "image": [5.0, 5.0, 3.0, 6.0],
+                                    "text": [8.0, 4.0, 7.0, 3.0, 3.0, 8.0, 9.0, 0.0],
+                                },
+                                "payload": {},
                             },
-                            "payload": {},
-                        },
-                    ]
-                }
-            },
-            {
-                "upsert": {
-                    "points": [
-                        {
-                            "id": 10,
-                            "vector": {
-                                "image": [2.0, 9.0, 1.0, 4.0],
-                                "text": [1.0, 5.0, 5.0, 6.0, 9.0, 3.0, 3.0, 2.0],
+                        ]
+                    }
+                },
+                {
+                    "upsert": {
+                        "points": [
+                            {
+                                "id": 10,
+                                "vector": {
+                                    "image": [2.0, 9.0, 1.0, 4.0],
+                                    "text": [1.0, 5.0, 5.0, 6.0, 9.0, 3.0, 3.0, 2.0],
+                                },
+                                "payload": {},
                             },
-                            "payload": {},
-                        },
-                    ]
-                }
-            },
-            {
-                "delete_vectors": {
-                    "points": [7, 10],
-                    "vector": ["text"],
-                }
-            },
-            {
-                "delete_vectors": {
-                    "points": [9, 10],
-                    "vector": ["image"],
-                }
-            },
-        ],
+                        ]
+                    }
+                },
+                {
+                    "delete_vectors": {
+                        "points": [7, 10],
+                        "vector": ["text"],
+                    }
+                },
+                {
+                    "delete_vectors": {
+                        "points": [9, 10],
+                        "vector": ["image"],
+                    }
+                },
+            ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok
