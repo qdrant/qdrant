@@ -3916,10 +3916,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/UpdateOperation"
-                }
+                "$ref": "#/components/schemas/UpdateOperations"
               }
             }
           }
@@ -9216,6 +9213,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PointGroup"
+            }
+          }
+        }
+      },
+      "UpdateOperations": {
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpdateOperation"
             }
           }
         }
