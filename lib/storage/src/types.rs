@@ -83,7 +83,7 @@ impl StorageConfig {
             self.performance
                 .search_timeout_sec
                 .map(|x| Duration::from_secs(x as u64)),
-            self.update_concurrency
+            self.update_concurrency,
         )
     }
 }
