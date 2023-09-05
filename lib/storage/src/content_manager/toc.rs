@@ -1668,10 +1668,10 @@ impl TableOfContent {
         // Handle requests with timeout
         tokio::time::timeout(timeout, responses)
             .await
+            .map(|_| ())
             .map_err(|_elapsed| StorageError::Timeout {
                 description: "Failed to wait for consensus commit on all peers, timed out.".into(),
-            })?
-            .map(|_oks| ())
+            })
     }
 
     /// Wait until the given peer reaches the given commit
