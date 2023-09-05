@@ -11,7 +11,8 @@ collection_name = 'test_collection_batch_update'
 
 @pytest.fixture(autouse=True)
 def setup(on_disk_vectors, on_disk_payload):
-    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload)
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors,
+                           on_disk_payload=on_disk_payload)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -43,42 +44,44 @@ def test_batch_update():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "upsert": {
-                    "points": [
-                        {
-                            "id": 7,
-                            "vector": [1.0, 2.0, 3.0, 4.0],
-                            "payload": {},
-                        },
-                    ]
-                }
-            },
-            {
-                "upsert": {
-                    "points": [
-                        {
-                            "id": 8,
-                            "vector": [1.0, 2.0, 3.0, 4.0],
-                            "payload": {},
-                        },
-                    ]
-                }
-            },
-            {"delete": {"points": [8]}},
-            {
-                "upsert": {
-                    "points": [
-                        {
-                            "id": 7,
-                            "vector": [2.0, 1.0, 3.0, 4.0],
-                            "payload": {},
-                        },
-                    ]
-                }
-            },
-        ],
+        body={
+            "operations": [
+                {
+                    "upsert": {
+                        "points": [
+                            {
+                                "id": 7,
+                                "vector": [1.0, 2.0, 3.0, 4.0],
+                                "payload": {},
+                            },
+                        ]
+                    }
+                },
+                {
+                    "upsert": {
+                        "points": [
+                            {
+                                "id": 8,
+                                "vector": [1.0, 2.0, 3.0, 4.0],
+                                "payload": {},
+                            },
+                        ]
+                    }
+                },
+                {"delete": {"points": [8]}},
+                {
+                    "upsert": {
+                        "points": [
+                            {
+                                "id": 7,
+                                "vector": [2.0, 1.0, 3.0, 4.0],
+                                "payload": {},
+                            },
+                        ]
+                    }
+                },
+            ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok
@@ -100,28 +103,30 @@ def test_batch_update():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "update_vectors": {
-                    "points": [
-                        {
-                            "id": 7,
-                            "vector": [1.0, 2.0, 3.0, 4.0],
-                        },
-                    ]
-                }
-            },
-            {
-                "update_vectors": {
-                    "points": [
-                        {
-                            "id": 7,
-                            "vector": [9.0, 2.0, 4.0, 2.0],
-                        },
-                    ]
-                }
-            },
-        ],
+        body={
+            "operations": [
+                {
+                    "update_vectors": {
+                        "points": [
+                            {
+                                "id": 7,
+                                "vector": [1.0, 2.0, 3.0, 4.0],
+                            },
+                        ]
+                    }
+                },
+                {
+                    "update_vectors": {
+                        "points": [
+                            {
+                                "id": 7,
+                                "vector": [9.0, 2.0, 4.0, 2.0],
+                            },
+                        ]
+                    }
+                },
+            ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok
@@ -143,25 +148,27 @@ def test_batch_update():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "upsert": {
-                    "points": [
-                        {
-                            "id": 9,
-                            "vector": [0.0, 5.0, 2.0, 1.0],
-                            "payload": {},
-                        },
-                    ]
-                }
-            },
-            {
-                "delete_vectors": {
-                    "points": [9],
-                    "vector": [""],
-                }
-            },
-        ],
+        body={
+            "operations": [
+                {
+                    "upsert": {
+                        "points": [
+                            {
+                                "id": 9,
+                                "vector": [0.0, 5.0, 2.0, 1.0],
+                                "payload": {},
+                            },
+                        ]
+                    }
+                },
+                {
+                    "delete_vectors": {
+                        "points": [9],
+                        "vector": [""],
+                    }
+                },
+            ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok
@@ -190,24 +197,26 @@ def test_batch_update_payload():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "overwrite_payload": {
-                    "payload": {
-                        "test_payload": "1",
+        body={
+            "operations": [
+                {
+                    "overwrite_payload": {
+                        "payload": {
+                            "test_payload": "1",
+                        },
+                        "points": [1],
                     },
-                    "points": [1],
                 },
-            },
-            {
-                "overwrite_payload": {
-                    "payload": {
-                        "test_payload": "2",
+                {
+                    "overwrite_payload": {
+                        "payload": {
+                            "test_payload": "2",
+                        },
+                        "points": [2],
                     },
-                    "points": [2],
                 },
-            },
-        ],
+            ]
+        },
     )
     assert response.ok
 
@@ -235,18 +244,20 @@ def test_batch_update_payload():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "clear_payload": {
-                    "points": [1],
+        body={
+            "operations": [
+                {
+                    "clear_payload": {
+                        "points": [1],
+                    },
                 },
-            },
-            {
-                "clear_payload": {
-                    "points": [2],
+                {
+                    "clear_payload": {
+                        "points": [2],
+                    },
                 },
-            },
-        ],
+            ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok
@@ -269,33 +280,35 @@ def test_batch_update_payload():
         api="/collections/{collection_name}/points/batch",
         method="POST",
         path_params={"collection_name": collection_name},
-        body=[
-            {
-                "overwrite_payload": {
-                    "payload": {
-                        "test_payload_1": "1",
+        body={
+            "operations": [
+                {
+                    "overwrite_payload": {
+                        "payload": {
+                            "test_payload_1": "1",
+                        },
+                        "points": [1],
                     },
-                    "points": [1],
                 },
-            },
-            {
-                "set_payload": {
-                    "payload": {
-                        "test_payload_2": "2",
-                        "test_payload_3": "3",
+                {
+                    "set_payload": {
+                        "payload": {
+                            "test_payload_2": "2",
+                            "test_payload_3": "3",
+                        },
+                        "points": [1],
+                    }
+                },
+                {
+                    "delete_payload": {
+                        "keys": [
+                            "test_payload_2",
+                        ],
+                        "points": [1],
                     },
-                    "points": [1],
-                }
-            },
-            {
-                "delete_payload": {
-                    "keys": [
-                        "test_payload_2",
-                    ],
-                    "points": [1],
                 },
-            },
-        ],
+            ]
+        },
         query_params={"wait": "true"},
     )
     assert response.ok

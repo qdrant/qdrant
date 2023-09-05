@@ -346,9 +346,7 @@ paths:
         content:
           application/json:
             schema:
-              type: array
-              items:
-                $ref: "#/components/schemas/UpdateOperation"
+              $ref: "#/components/schemas/UpdateOperations"
       parameters:
         - name: collection_name
           in: path

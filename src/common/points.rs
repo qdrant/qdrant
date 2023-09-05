@@ -88,7 +88,6 @@ pub enum UpdateOperation {
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(transparent)]
 pub struct UpdateOperations {
     pub operations: Vec<UpdateOperation>,
 }
