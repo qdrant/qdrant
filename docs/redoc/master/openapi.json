@@ -3908,7 +3908,8 @@
         "tags": [
           "points"
         ],
-        "summary": "Apply a series of update operations for points, vectors and payloads",
+        "summary": "Batch update points",
+        "description": "Apply a series of update operations for points, vectors and payloads",
         "operationId": "batch_update",
         "requestBody": {
           "description": "update operations",
