@@ -108,6 +108,7 @@ storage:
     on_disk: false
     # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     payload_m: null
+  update_concurrency: 2
 
 service:
 
