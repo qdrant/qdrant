@@ -139,6 +139,19 @@ impl ReplicaSetState {
         self.peers.clone()
     }
 
+    pub fn active_peers(&self) -> Vec<PeerId> {
+        self.peers
+            .iter()
+            .filter_map(|(peer_id, state)| {
+                if *state == ReplicaState::Active {
+                    Some(*peer_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
         self.peers = peers;
     }
@@ -222,10 +235,12 @@ impl ShardReplicaSet {
     }
 
     pub async fn active_remote_shards(&self) -> Vec<PeerId> {
-        self.remote_peers()
-            .await
+        let replica_state = self.replica_state.read();
+        let this_peer_id = replica_state.this_peer_id;
+        replica_state
+            .active_peers()
             .into_iter()
-            .filter(|peer_id| self.peer_is_active(peer_id))
+            .filter(|peer_id| !self.is_locally_disabled(peer_id) && *peer_id != this_peer_id)
             .collect()
     }
 
@@ -248,6 +263,38 @@ impl ShardReplicaSet {
                 )
             })
             .collect()
+    }
+
+    pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
+        let mut local = self.local.write().await;
+
+        let current_shard = local.take();
+
+        // ToDo: Remove shard files here?
+        let local_shard_res = LocalShard::build(
+            self.shard_id,
+            self.collection_id.clone(),
+            &self.shard_path,
+            self.collection_config.clone(),
+            self.shared_storage_config.clone(),
+            self.update_runtime.clone(),
+        )
+        .await;
+
+        match local_shard_res {
+            Ok(local_shard) => {
+                *local = Some(Local(local_shard));
+                Ok(())
+            }
+            Err(err) => {
+                log::error!(
+                    "Failed to initialize local shard {:?}: {err}",
+                    self.shard_path
+                );
+                *local = current_shard;
+                Err(err)
+            }
+        }
     }
 
     /// Create a new fresh replica set, no previous state is expected.
@@ -485,6 +532,7 @@ impl ShardReplicaSet {
             &channel_service,
         );
 
+        let mut local_load_failure = false;
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
                 Dummy(DummyShard::new(recovery_reason))
@@ -506,6 +554,8 @@ impl ShardReplicaSet {
                             panic!("Failed to load local shard {shard_path:?}: {err}")
                         }
 
+                        local_load_failure = true;
+
                         log::error!(
                             "Failed to load local shard {shard_path:?}, \
                          initializing \"dummy\" shard instead: \
@@ -524,7 +574,7 @@ impl ShardReplicaSet {
             None
         };
 
-        Self {
+        let replica_set = Self {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
@@ -541,7 +591,16 @@ impl ShardReplicaSet {
             update_runtime,
             search_runtime,
             write_ordering_lock: Mutex::new(()),
+        };
+
+        if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
+            replica_set
+                .locally_disabled_peers
+                .write()
+                .insert(this_peer_id);
         }
+
+        replica_set
     }
 
     pub fn notify_peer_failure(&self, peer_id: PeerId) {
@@ -990,17 +1049,24 @@ impl ShardReplicaSet {
 
     /// Returns if local shard was recovered from path
     pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
-        if LocalShard::check_data(replica_path) {
-            let mut local = self.local.write().await;
-            let removed_local = local.take();
+        if !LocalShard::check_data(replica_path) {
+            return Ok(false);
+        }
 
-            if let Some(removing_local) = removed_local {
-                drop(removing_local); // release file handlers
+        let mut local = self.local.write().await;
+
+        // Drop `LocalShard` instance to free resources and clear shard data
+        let clear = local.take().is_some();
+
+        // Try to restore local replica from specified shard snapshot directory
+        let restore = async {
+            if clear {
                 LocalShard::clear(&self.shard_path).await?;
             }
+
             LocalShard::move_data(replica_path, &self.shard_path).await?;
 
-            let new_local_shard = LocalShard::load(
+            LocalShard::load(
                 self.shard_id,
                 self.collection_id.clone(),
                 &self.shard_path,
@@ -1008,12 +1074,51 @@ impl ShardReplicaSet {
                 self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
             )
-            .await?;
+            .await
+        };
 
-            local.replace(Local(new_local_shard));
-            Ok(true)
-        } else {
-            Ok(false)
+        match restore.await {
+            Ok(new_local) => {
+                local.replace(Local(new_local));
+                Ok(true)
+            }
+
+            Err(restore_err) => {
+                // Initialize "dummy" replica
+                local.replace(Dummy(DummyShard::new("Failed to restore local replica")));
+
+                // TODO: Handle single-node mode!? (How!? 😰)
+
+                // Mark this peer as "locally disabled"...
+                let has_other_active_peers = self.active_remote_shards().await.is_empty();
+
+                // ...if this peer is *not* the last active replica
+                if has_other_active_peers {
+                    self.locally_disabled_peers
+                        .write()
+                        .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
+
+                    // Notify peer failure
+                    self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
+                }
+
+                // Remove shard directory, so we don't leave empty directory/corrupted data
+                match tokio::fs::remove_dir_all(&self.shard_path).await {
+                    Ok(()) => Err(restore_err),
+
+                    Err(cleanup_err) => {
+                        log::error!(
+                            "Failed to cleanup shard {} directory ({}) after restore failed: \
+                             {cleanup_err}",
+                            self.shard_id,
+                            self.shard_path.display(),
+                        );
+
+                        // TODO: Contextualize `restore_err` with `cleanup_err` details!?
+                        Err(restore_err)
+                    }
+                }
+            }
         }
     }
 
