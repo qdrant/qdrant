@@ -484,7 +484,7 @@ async fn recover_shard_snapshot_impl(
         activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
     } else {
         match priority {
-            SnapshotPriority::LocalOnly => {
+            SnapshotPriority::NoSync => {
                 activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
             }
 
