@@ -4,11 +4,12 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use futures::future::try_join_all;
+use itertools::Itertools;
 use ordered_float::Float;
 use parking_lot::RwLock;
 use segment::common::BYTES_IN_KB;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::VectorElementType;
+use segment::data_types::vectors::QueryVector;
 use segment::entry::entry_point::{OperationError, SegmentEntry};
 use segment::types::{
     Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig,
@@ -20,7 +21,9 @@ use tokio::task::JoinHandle;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
-use crate::operations::types::{CollectionError, CollectionResult, Record, SearchRequestBatch};
+use crate::operations::types::{
+    CollectionError, CollectionResult, CoreSearchRequestBatch, QueryEnum, Record,
+};
 
 type BatchOffset = usize;
 type SegmentOffset = usize;
@@ -148,7 +151,7 @@ impl SegmentsSearcher {
 
     pub async fn search(
         segments: &RwLock<SegmentHolder>,
-        batch_request: Arc<SearchRequestBatch>,
+        batch_request: Arc<CoreSearchRequestBatch>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
         is_stopped: Arc<AtomicBool>,
@@ -227,7 +230,7 @@ impl SegmentsSearcher {
                 let mut res = vec![];
                 for (segment_id, batch_ids) in searches_to_rerun.iter() {
                     let segment = locked_segments[*segment_id].clone();
-                    let partial_batch_request = Arc::new(SearchRequestBatch {
+                    let partial_batch_request = Arc::new(CoreSearchRequestBatch {
                         searches: batch_ids
                             .iter()
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
@@ -322,7 +325,24 @@ impl SegmentsSearcher {
 }
 
 #[derive(PartialEq, Default, Debug)]
+pub enum SearchType {
+    #[default]
+    Nearest,
+    // Recommend,
+}
+
+impl From<&QueryEnum> for SearchType {
+    fn from(query: &QueryEnum) -> Self {
+        match query {
+            QueryEnum::Nearest(_) => Self::Nearest,
+            // QueryEnum::PositiveNegative { .. } => Self::Recommend,
+        }
+    }
+}
+
+#[derive(PartialEq, Default, Debug)]
 struct BatchSearchParams<'a> {
+    pub search_type: SearchType,
     pub vector_name: &'a str,
     pub filter: Option<&'a Filter>,
     pub with_payload: WithPayload,
@@ -376,7 +396,7 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 /// * Vector of boolean indicating if the segment have further points to search
 fn search_in_segment(
     segment: LockedSegment,
-    request: Arc<SearchRequestBatch>,
+    request: Arc<CoreSearchRequestBatch>,
     total_points: usize,
     use_sampling: bool,
     is_stopped: &AtomicBool,
@@ -386,7 +406,7 @@ fn search_in_segment(
 
     let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
     let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // if segment have more points to return
-    let mut vectors_batch: Vec<&[VectorElementType]> = vec![];
+    let mut vectors_batch: Vec<QueryVector> = vec![];
     let mut prev_params = BatchSearchParams::default();
 
     for search_query in &request.searches {
@@ -396,7 +416,8 @@ fn search_in_segment(
             .unwrap_or(&WithPayloadInterface::Bool(false));
 
         let params = BatchSearchParams {
-            vector_name: search_query.vector.get_name(),
+            search_type: search_query.query.as_ref().into(),
+            vector_name: search_query.query.get_vector_name(),
             filter: search_query.filter.as_ref(),
             with_payload: WithPayload::from(with_payload_interface),
             with_vector: search_query.with_vector.clone().unwrap_or_default(),
@@ -404,9 +425,11 @@ fn search_in_segment(
             params: search_query.params.as_ref(),
         };
 
+        let query = search_query.query.clone().into();
+
         // same params enables batching
         if params == prev_params {
-            vectors_batch.push(search_query.vector.get_vector().as_slice());
+            vectors_batch.push(query);
         } else {
             // different params means different batches
             // execute what has been batched so far
@@ -425,7 +448,7 @@ fn search_in_segment(
                 vectors_batch.clear()
             }
             // start new batch for current search query
-            vectors_batch.push(search_query.vector.get_vector().as_slice());
+            vectors_batch.push(query);
             prev_params = params;
         }
     }
@@ -450,7 +473,7 @@ fn search_in_segment(
 
 fn execute_batch_search(
     segment: &LockedSegment,
-    vectors_batch: &Vec<&[VectorElementType]>,
+    vectors_batch: &Vec<QueryVector>,
     search_params: &BatchSearchParams,
     use_sampling: bool,
     total_points: usize,
@@ -487,6 +510,7 @@ fn execute_batch_search(
         let batch_len = vectors_batch.len();
         return Ok((vec![vec![]; batch_len], vec![false; batch_len]));
     }
+    let vectors_batch = &vectors_batch.iter().collect_vec();
     let res = read_segment.search_batch(
         search_params.vector_name,
         vectors_batch,
@@ -577,7 +601,7 @@ mod tests {
     use crate::collection_manager::fixtures::{
         build_test_holder, optimize_segment, random_segment,
     };
-    use crate::operations::types::SearchRequest;
+    use crate::operations::types::{CoreSearchRequest, SearchRequest};
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
     #[test]
@@ -617,8 +641,8 @@ mod tests {
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
-        let req = SearchRequest {
-            vector: query.into(),
+        let req = CoreSearchRequest {
+            query: query.into(),
             with_payload: None,
             with_vector: None,
             filter: None,
@@ -628,7 +652,7 @@ mod tests {
             offset: 0,
         };
 
-        let batch_request = SearchRequestBatch {
+        let batch_request = CoreSearchRequestBatch {
             searches: vec![req],
         };
 
@@ -692,8 +716,8 @@ mod tests {
                 score_threshold: None,
             };
 
-            let batch_request = SearchRequestBatch {
-                searches: vec![req1, req2],
+            let batch_request = CoreSearchRequestBatch {
+                searches: vec![req1.into(), req2.into()],
             };
 
             let result_no_sampling = SegmentsSearcher::search(

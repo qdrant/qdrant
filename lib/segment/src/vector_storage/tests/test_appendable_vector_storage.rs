@@ -5,7 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::types::{
@@ -52,7 +52,8 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "2 vectors must be deleted"
     );
 
-    let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+    let vector = vec![0.0, 1.0, 1.1, 1.0];
+    let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
@@ -77,7 +78,8 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "3 vectors must be deleted"
     );
 
-    let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+    let vector = vec![1.0, 0.0, 0.0, 0.0];
+    let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
@@ -101,7 +103,8 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "all vectors must be deleted"
     );
 
-    let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+    let vector = vec![1.0, 0.0, 0.0, 0.0];
+    let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
@@ -157,7 +160,9 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         "2 vectors must be deleted from other storage"
     );
 
-    let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+    let vector = vec![0.0, 1.0, 1.1, 1.0];
+    let query = vector.as_slice().into();
+
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
@@ -205,7 +210,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
             .unwrap();
     }
 
-    let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+    let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into();
 
     let closest = new_raw_scorer(
         query.clone(),
@@ -296,11 +301,11 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         .quantize(dir.path(), &config, 1, &stopped)
         .unwrap();
 
-    let query = vec![0.5, 0.5, 0.5, 0.5];
+    let query = vec![0.5, 0.5, 0.5, 0.5].into();
 
     {
         let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-            query.clone(),
+            &query,
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
             &stopped,
@@ -327,13 +332,13 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     assert_eq!(files, borrowed_storage.files());
 
     let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-        query.clone(),
+        &query,
         borrowed_id_tracker.deleted_point_bitslice(),
         borrowed_storage.deleted_vector_bitslice(),
         &stopped,
     );
     let scorer_orig = new_raw_scorer(
-        query.clone(),
+        query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     );

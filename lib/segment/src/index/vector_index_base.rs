@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::QueryVector;
 use crate::entry::entry_point::OperationResult;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -15,7 +15,7 @@ pub trait VectorIndex {
     /// Return list of Ids with fitting
     fn search(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -52,7 +52,7 @@ impl VectorIndexEnum {
 impl VectorIndex for VectorIndexEnum {
     fn search(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,

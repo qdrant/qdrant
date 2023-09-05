@@ -138,7 +138,7 @@ fn test_filterable_hnsw() {
     let mut hits = 0;
     let attempts = 100;
     for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim);
+        let query = random_vector(&mut rnd, dim).into();
 
         let range_size = 40;
         let left_range = rnd.gen_range(0..400);

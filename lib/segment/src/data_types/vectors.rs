@@ -89,7 +89,7 @@ pub struct NamedVector {
 }
 
 /// Vector data separator for named and unnamed modes
-/// Unanmed mode:
+/// Unnamed mode:
 ///
 /// {
 ///   "vector": [1.0, 2.0, 3.0]
@@ -149,6 +149,12 @@ impl NamedVectorStruct {
             NamedVectorStruct::Named(v) => &v.vector,
         }
     }
+    pub fn to_vector(self) -> VectorType {
+        match self {
+            NamedVectorStruct::Default(v) => v,
+            NamedVectorStruct::Named(v) => v.vector,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -201,5 +207,41 @@ impl BatchVectorStruct {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum QueryVector {
+    Nearest(VectorType),
+    // having an enum will allow other inputs like:
+    // PositiveNegative {
+    //     positives: Vec<Vec<VectorElementType>>,
+    //     negatives: Vec<Vec<VectorElementType>>,
+    // }
+}
+
+impl QueryVector {
+    pub fn as_single(&self) -> Option<&[VectorElementType]> {
+        match self {
+            QueryVector::Nearest(v) => Some(v),
+        }
+    }
+}
+
+impl From<VectorType> for QueryVector {
+    fn from(vec: VectorType) -> Self {
+        Self::Nearest(vec)
+    }
+}
+
+impl<'a> From<&'a [VectorElementType]> for QueryVector {
+    fn from(vec: &'a [VectorElementType]) -> Self {
+        Self::Nearest(vec.to_vec())
+    }
+}
+
+impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
+    fn from(vec: [VectorElementType; N]) -> Self {
+        Self::Nearest(vec.to_vec())
     }
 }

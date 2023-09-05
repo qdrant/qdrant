@@ -13,7 +13,7 @@ use crate::common::operation_time_statistics::{
 };
 use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::QueryVector;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -222,7 +222,7 @@ impl PlainIndex {
 impl VectorIndex for PlainIndex {
     fn search(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
@@ -237,9 +237,9 @@ impl VectorIndex for PlainIndex {
                 let filtered_ids_vec = payload_index.query_points(filter);
                 vectors
                     .iter()
-                    .map(|vector| {
+                    .map(|&vector| {
                         new_stoppable_raw_scorer(
-                            vector.to_vec(),
+                            vector.to_owned(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
                             is_stopped,
@@ -254,9 +254,9 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 vectors
                     .iter()
-                    .map(|vector| {
+                    .map(|&vector| {
                         new_stoppable_raw_scorer(
-                            vector.to_vec(),
+                            vector.to_owned(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
                             is_stopped,

@@ -18,7 +18,7 @@ use crate::common::{
     check_named_vectors, check_stopped, check_vector, check_vector_name, check_vectors, mmap_ops,
 };
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::entry::entry_point::OperationError::TypeInferenceError;
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
@@ -731,7 +731,7 @@ impl SegmentEntry for Segment {
     fn search(
         &self,
         vector_name: &str,
-        vector: &[VectorElementType],
+        vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
@@ -754,7 +754,7 @@ impl SegmentEntry for Segment {
     fn search_batch(
         &self,
         vector_name: &str,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
@@ -1594,7 +1594,7 @@ mod tests {
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -1693,7 +1693,7 @@ mod tests {
         let results_with_valid_filter = segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &[1.0, 1.0],
+                &[1.0, 1.0].into(),
                 &WithPayload::default(),
                 &false.into(),
                 Some(&filter_valid),
@@ -1707,7 +1707,7 @@ mod tests {
         let results_with_invalid_filter = segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &[1.0, 1.0],
+                &[1.0, 1.0].into(),
                 &WithPayload::default(),
                 &false.into(),
                 Some(&filter_invalid),
@@ -1881,7 +1881,7 @@ mod tests {
         // first pass on consistent data
         segment.check_consistency_and_repair().unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -2189,11 +2189,12 @@ mod tests {
         let wrong_names = vec!["aa", "bb", ""];
 
         for (vector_name, vector) in wrong_vectors_single.iter() {
-            check_vector(vector_name, vector, &config).err().unwrap();
+            let vector = vector.to_owned().into();
+            check_vector(vector_name, &vector, &config).err().unwrap();
             segment
                 .search(
                     vector_name,
-                    vector,
+                    &vector,
                     &WithPayload {
                         enable: false,
                         payload_selector: None,
@@ -2209,7 +2210,7 @@ mod tests {
             segment
                 .search_batch(
                     vector_name,
-                    &[vector, vector],
+                    &[&vector, &vector],
                     &WithPayload {
                         enable: false,
                         payload_selector: None,

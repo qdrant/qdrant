@@ -67,8 +67,8 @@ fn test_batch_and_single_request_equivalency() {
     }
 
     for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rnd, dim);
-        let query_vector_2 = random_vector(&mut rnd, dim);
+        let query_vector_1 = random_vector(&mut rnd, dim).into();
+        let query_vector_2 = random_vector(&mut rnd, dim).into();
 
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
@@ -152,8 +152,8 @@ fn test_batch_and_single_request_equivalency() {
     hnsw_index.build_index(&stopped).unwrap();
 
     for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rnd, dim);
-        let query_vector_2 = random_vector(&mut rnd, dim);
+        let query_vector_1 = random_vector(&mut rnd, dim).into();
+        let query_vector_2 = random_vector(&mut rnd, dim).into();
 
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
