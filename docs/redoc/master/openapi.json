@@ -5701,7 +5701,7 @@
         }
       },
       "NamedVectorStruct": {
-        "description": "Vector data separator for named and unnamed modes Unanmed mode:\n\n{ \"vector\": [1.0, 2.0, 3.0] }\n\nor named mode:\n\n{ \"vector\": { \"vector\": [1.0, 2.0, 3.0], \"name\": \"image-embeddings\" } }",
+        "description": "Vector data separator for named and unnamed modes Unnamed mode:\n\n{ \"vector\": [1.0, 2.0, 3.0] }\n\nor named mode:\n\n{ \"vector\": { \"vector\": [1.0, 2.0, 3.0], \"name\": \"image-embeddings\" } }",
         "anyOf": [
           {
             "type": "array",

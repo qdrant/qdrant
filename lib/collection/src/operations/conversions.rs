@@ -720,9 +720,9 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
 
-        api::grpc::qdrant::SearchPoints {
+        Self {
             collection_name: collection_id,
-            vector: request.vector.get_vector().clone(),
+            vector: request.vector.get_vector().to_vec(),
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
             with_vectors: request.with_vector.clone().map(|wv| wv.into()),

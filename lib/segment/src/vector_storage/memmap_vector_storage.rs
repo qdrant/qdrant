@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
         let raw_scorer = new_raw_scorer(
-            points[2].clone(),
+            points[2].as_slice().into(),
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
         );
@@ -393,7 +393,8 @@ mod tests {
             "2 vectors must be deleted"
         );
 
-        let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+        let vector = vec![0.0, 1.0, 1.1, 1.0];
+        let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
@@ -418,7 +419,9 @@ mod tests {
             "3 vectors must be deleted"
         );
 
-        let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+        let vector = vec![1.0, 0.0, 0.0, 0.0];
+        let query = vector.as_slice().into();
+
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
@@ -442,7 +445,8 @@ mod tests {
             "all vectors must be deleted"
         );
 
-        let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+        let vector = vec![1.0, 0.0, 0.0, 0.0];
+        let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
@@ -502,7 +506,8 @@ mod tests {
             "2 vectors must be deleted from other storage"
         );
 
-        let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+        let vector = vec![0.0, 1.0, 1.1, 1.0];
+        let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
@@ -568,7 +573,8 @@ mod tests {
                 .unwrap();
         }
 
-        let query = vec![-1.0, -1.0, -1.0, -1.0];
+        let vector = vec![-1.0, -1.0, -1.0, -1.0];
+        let query = vector.as_slice().into();
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
         let scorer = new_raw_scorer(
@@ -657,11 +663,11 @@ mod tests {
             .quantize(dir.path(), &config, 1, &stopped)
             .unwrap();
 
-        let query = vec![0.5, 0.5, 0.5, 0.5];
+        let query = [0.5, 0.5, 0.5, 0.5].into();
 
         {
             let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-                query.clone(),
+                &query,
                 borrowed_id_tracker.deleted_point_bitslice(),
                 borrowed_storage.deleted_vector_bitslice(),
                 &stopped,
@@ -686,7 +692,7 @@ mod tests {
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-            query.clone(),
+            &query,
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
             &stopped,

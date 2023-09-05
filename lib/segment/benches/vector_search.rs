@@ -61,6 +61,7 @@ fn benchmark_naive(c: &mut Criterion) {
     group.bench_function("storage vector search", |b| {
         b.iter(|| {
             let vector = random_vector(DIM);
+            let vector = vector.as_slice().into();
             new_raw_scorer(
                 vector,
                 &borrowed_storage,
@@ -82,6 +83,8 @@ fn random_access_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("storage-score-random");
 
     let vector = random_vector(DIM);
+    let vector = vector.as_slice().into();
+
     let scorer = new_raw_scorer(
         vector,
         &borrowed_storage,

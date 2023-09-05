@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::VectorElementType;
+use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::index::field_index::CardinalityEstimation;
 use segment::telemetry::SegmentTelemetry;
@@ -174,7 +174,7 @@ impl SegmentEntry for ProxySegment {
     fn search(
         &self,
         vector_name: &str,
-        vector: &[VectorElementType],
+        vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
@@ -236,7 +236,7 @@ impl SegmentEntry for ProxySegment {
     fn search_batch(
         &self,
         vector_name: &str,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
@@ -830,7 +830,7 @@ mod tests {
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -898,7 +898,7 @@ mod tests {
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -953,7 +953,7 @@ mod tests {
             deleted_indexes,
         );
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -1008,13 +1008,12 @@ mod tests {
             deleted_indexes,
         );
 
-        let q1 = vec![1.0, 1.0, 1.0, 0.1];
-        let q2 = vec![1.0, 1.0, 0.1, 0.1];
-        let q3 = vec![1.0, 0.1, 1.0, 0.1];
-        let q4 = vec![0.1, 1.0, 1.0, 0.1];
+        let q1 = [1.0, 1.0, 1.0, 0.1];
+        let q2 = [1.0, 1.0, 0.1, 0.1];
+        let q3 = [1.0, 0.1, 1.0, 0.1];
+        let q4 = [0.1, 1.0, 1.0, 0.1];
 
-        let query_vectors: &[&[VectorElementType]] =
-            &[q1.as_slice(), q2.as_slice(), q3.as_slice(), q4.as_slice()];
+        let query_vectors: &[&QueryVector] = &[&q1.into(), &q2.into(), &q3.into(), &q4.into()];
 
         let mut all_single_results = Vec::with_capacity(query_vectors.len());
         for query_vector in query_vectors {

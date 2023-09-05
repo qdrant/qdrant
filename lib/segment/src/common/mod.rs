@@ -15,7 +15,7 @@ pub mod version;
 use std::sync::atomic::AtomicBool;
 
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{SegmentConfig, VectorDataConfig};
 
@@ -34,11 +34,14 @@ pub fn check_vector_name(vector_name: &str, segment_config: &SegmentConfig) -> O
 /// Returns an error if incompatible.
 pub fn check_vector(
     vector_name: &str,
-    vector: &[VectorElementType],
+    vector: &QueryVector,
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
-    check_vector_against_config(vector, vector_config)?;
+    match vector {
+        QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
+    }
+
     Ok(())
 }
 
@@ -47,12 +50,14 @@ pub fn check_vector(
 /// Returns an error if incompatible.
 pub fn check_vectors(
     vector_name: &str,
-    vectors: &[&[VectorElementType]],
+    vectors: &[&QueryVector],
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
     for vector in vectors {
-        check_vector_against_config(vector, vector_config)?;
+        match vector {
+            QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
+        }
     }
     Ok(())
 }
@@ -65,7 +70,7 @@ pub fn check_named_vectors(
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     for (vector_name, vector_data) in vectors.iter() {
-        check_vector(vector_name, vector_data, segment_config)?;
+        check_vector(vector_name, &vector_data.to_vec().into(), segment_config)?;
     }
     Ok(())
 }

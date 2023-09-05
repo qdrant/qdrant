@@ -21,7 +21,7 @@ fn test_point_exclusion() {
 
     assert!(segment.has_point(3.into()));
 
-    let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment
         .search(
@@ -80,7 +80,7 @@ fn test_named_vector_search() {
 
     assert!(segment.has_point(3.into()));
 
-    let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment
         .search(
@@ -197,7 +197,8 @@ fn ordered_deletion_test() {
     };
 
     let segment = load_segment(&path).unwrap().unwrap();
-    let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+
     let res = segment
         .search(
             DEFAULT_VECTOR_NAME,
@@ -254,7 +255,7 @@ fn test_update_named_vector() {
             .unwrap();
     }
 
-    let query_vector = random_vector(&mut rng, dim);
+    let query_vector = random_vector(&mut rng, dim).into();
 
     // do exact search
     let search_params = SearchParams {

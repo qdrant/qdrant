@@ -15,7 +15,7 @@ use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::{mmap_ops, BYTES_IN_KB};
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::QueryVector;
 use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
@@ -184,22 +184,20 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 .try_for_each(|block_point_id| {
                     check_process_stopped(stopped)?;
 
-                    let vector = vector_storage.get_vector(block_point_id).to_vec();
-                    let raw_scorer =
-                        if let Some(quantized_storage) = vector_storage.quantized_storage() {
-                            quantized_storage.raw_scorer(
-                                vector.to_owned(),
-                                id_tracker.deleted_point_bitslice(),
-                                deleted_bitslice,
-                                stopped,
-                            )
-                        } else {
-                            new_raw_scorer(
-                                vector.to_owned(),
-                                &vector_storage,
-                                id_tracker.deleted_point_bitslice(),
-                            )
-                        };
+                    let vector = vector_storage.get_vector(block_point_id).into();
+                    let raw_scorer = match vector_storage.quantized_storage() {
+                        Some(quantized_storage) => quantized_storage.raw_scorer(
+                            &vector,
+                            id_tracker.deleted_point_bitslice(),
+                            deleted_bitslice,
+                            stopped,
+                        ),
+                        None => new_raw_scorer(
+                            vector,
+                            &vector_storage,
+                            id_tracker.deleted_point_bitslice(),
+                        ),
+                    };
                     let block_condition_checker = BuildConditionChecker {
                         filter_list: block_filter_list,
                         current_point: block_point_id,
@@ -215,7 +213,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
     pub fn search_with_graph(
         &self,
-        vector: &[VectorElementType],
+        vector: &QueryVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -239,7 +237,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             // If `quantization_params` is `Some`, then quantization is *not* ignored
             Some(quantized_storage) if !quantization_params.ignore => {
                 let scorer = quantized_storage.raw_scorer(
-                    vector.to_owned(),
+                    vector,
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
                     is_stopped,
@@ -301,7 +299,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
     fn search_vectors_with_graph(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -315,7 +313,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
     fn search_vectors_plain(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: &Filter,
         top: usize,
         params: Option<&SearchParams>,
@@ -332,9 +330,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         if ignore_quantization {
             vectors
                 .iter()
-                .map(|vector| {
+                .map(|&vector| {
                     new_stoppable_raw_scorer(
-                        vector.to_vec(),
+                        vector.to_owned(),
                         &vector_storage,
                         id_tracker.deleted_point_bitslice(),
                         is_stopped,
@@ -345,11 +343,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         } else {
             vectors
                 .iter()
-                .map(|vector| {
+                .map(|&vector| {
                     if let Some(quantized_storage) = vector_storage.quantized_storage() {
                         quantized_storage
                             .raw_scorer(
-                                vector.to_vec(),
+                                vector,
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
                                 is_stopped,
@@ -357,7 +355,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                             .peek_top_iter(&mut filtered_points.iter().copied(), top)
                     } else {
                         new_stoppable_raw_scorer(
-                            vector.to_vec(),
+                            vector.to_owned(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
                             is_stopped,
@@ -379,7 +377,7 @@ impl HNSWIndex<GraphLinksMmap> {
 impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
     fn search(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -407,9 +405,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     });
                     vectors
                         .iter()
-                        .map(|vector| {
+                        .map(|&vector| {
                             new_stoppable_raw_scorer(
-                                vector.to_vec(),
+                                vector.to_owned(),
                                 &vector_storage,
                                 id_tracker.deleted_point_bitslice(),
                                 is_stopped,
@@ -551,22 +549,19 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
                     check_process_stopped(stopped)?;
-                    let vector = vector_storage.get_vector(vector_id).to_vec();
-                    let raw_scorer =
-                        if let Some(quantized_storage) = vector_storage.quantized_storage() {
-                            quantized_storage.raw_scorer(
-                                vector.to_owned(),
-                                id_tracker.deleted_point_bitslice(),
-                                vector_storage.deleted_vector_bitslice(),
-                                stopped,
-                            )
-                        } else {
-                            new_raw_scorer(
-                                vector.to_owned(),
-                                &vector_storage,
-                                id_tracker.deleted_point_bitslice(),
-                            )
-                        };
+                    let vector = vector_storage.get_vector(vector_id).into();
+                    let raw_scorer = if let Some(quantized_storage) =
+                        vector_storage.quantized_storage()
+                    {
+                        quantized_storage.raw_scorer(
+                            &vector,
+                            id_tracker.deleted_point_bitslice(),
+                            vector_storage.deleted_vector_bitslice(),
+                            stopped,
+                        )
+                    } else {
+                        new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
+                    };
                     let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                     graph_layers_builder.link_new_point(vector_id, points_scorer);

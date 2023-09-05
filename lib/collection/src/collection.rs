@@ -904,11 +904,10 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let batch_size = request.searches.len();
         let request = Arc::new(request);
 
         // query all shards concurrently
-        let mut all_searches_res = {
+        let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards
@@ -916,6 +915,18 @@ impl Collection {
                 .map(|shard| shard.search(request.clone(), read_consistency));
             try_join_all(all_searches).await?
         };
+
+        self.merge_from_shards(all_searches_res, request, shard_selection)
+            .await
+    }
+
+    async fn merge_from_shards(
+        &self,
+        mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
+        request: Arc<SearchRequestBatch>,
+        shard_selection: Option<u32>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, CollectionError> {
+        let batch_size = request.searches.len();
 
         // merge results from shards in order
         let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];

@@ -124,7 +124,7 @@ fn test_random_score(
 ) -> Result<()> {
     let query: Vec<_> = sampler(&mut rng).take(storage.vector_dim()).collect();
 
-    let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points);
+    let raw_scorer = new_raw_scorer(query.clone().into(), storage, deleted_points);
 
     let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::Memmap(storage) = storage {
