@@ -11,8 +11,7 @@ impl NamedTempFile {
         let dir = dir.into();
 
         let tempfile = tokio::task::spawn_blocking(move || {
-            tempfile::NamedTempFile::new_in(&dir)
-                .map_err(move |err| Error::new(err).path(dir))
+            tempfile::NamedTempFile::new_in(&dir).map_err(move |err| Error::new(err).path(dir))
         })
         .await
         .map_err(Error::from)
@@ -91,8 +90,7 @@ impl TempDir {
         let dir = dir.into();
 
         let tempdir = tokio::task::spawn_blocking(move || {
-            tempfile::TempDir::new_in(&dir)
-                .map_err(move |err| Error::new(err).path(dir))
+            tempfile::TempDir::new_in(&dir).map_err(move |err| Error::new(err).path(dir))
         })
         .await
         .map_err(Error::from)
@@ -288,7 +286,10 @@ impl fmt::Display for PersistError {
         format_error(
             f,
             &self.error,
-            self.file.as_ref().map(NamedTempFile::path).or(self.error.path.as_deref()),
+            self.file
+                .as_ref()
+                .map(NamedTempFile::path)
+                .or(self.error.path.as_deref()),
         )
     }
 }
@@ -453,5 +454,8 @@ fn format_error(f: &mut fmt::Formatter<'_>, error: &Error, path: Option<&Path>) 
     let path_sep = if path.is_some() { " " } else { "" };
     let path: &dyn fmt::Display = path.as_ref().map_or(&"", |path| path);
 
-    write!(f, "{message} temporary {resource}{path_sep}{path}: {source}")
+    write!(
+        f,
+        "{message} temporary {resource}{path_sep}{path}: {source}"
+    )
 }

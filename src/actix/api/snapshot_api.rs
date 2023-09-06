@@ -388,10 +388,7 @@ async fn upload_shard_snapshot(
         )
         .await?;
 
-        // TODO: Extract as function/method?
-        if let Err(err) = snapshot_file.close().await {
-            log::error!("Failed to remove temporary file: {err}"); // TODO: Add `snapshot_file` path?
-        }
+        snapshot_file.close().await;
 
         Ok(())
     };
@@ -501,14 +498,13 @@ async fn persist_shard_snapshot(
     // TODO: Reimplement as `async_tempfile::NamedTempFile::persist`!?
     let move_result = move_file(snapshot_file.file.path(), &snapshot_path).await;
 
-    // Only print `snapshot_file.file.close()` error if move *failed*.
+    // Only print `snapshot_file.file.try_close()` error if move *failed*.
     //
-    // If we successfully moved `snapshot_file.file`, then `snapshot_file.file.close()` will
+    // If we successfully moved `snapshot_file.file`, then `snapshot_file.file.try_close()` will
     // *always* return an error, because the file was moved and does not exist anymore.
-    if move_result.is_err() {
-        // TODO: Extract as function/method?
-        if let Err(err) = snapshot_file.file.close().await {
-            log::error!("Failed to remove temporary file: {err}"); // TODO: Add `snapshot_file.file` path?
+    if let Err(err) = snapshot_file.file.try_close().await {
+        if move_result.is_err() {
+            log::error!("{err}");
         }
     }
 

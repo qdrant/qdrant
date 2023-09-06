@@ -1594,10 +1594,7 @@ impl Collection {
         });
         archiving.await??;
 
-        // TODO: Extract as function/method?
-        if let Err(err) = snapshot_temp_dir.close().await {
-            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_temp_dir` path?
-        }
+        snapshot_temp_dir.close().await;
 
         // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
@@ -1667,10 +1664,7 @@ impl Collection {
             .create_snapshot(snapshot_temp_dir.path(), snapshot_target_dir.path(), false)
             .await?;
 
-        // TODO: Extract as function/method?
-        if let Err(err) = snapshot_temp_dir.close().await {
-            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_temp_dir` path?
-        }
+        snapshot_temp_dir.close().await;
 
         let mut snapshot_temp_file = async_tempfile::Builder::new()
             .prefix(format!("{snapshot_file_name}-"))
@@ -1698,9 +1692,7 @@ impl Collection {
             .map(|tar_result| tar_result.map(async_tempfile::NamedTempFile::from));
 
         // TODO: Extract as function/method?
-        if let Err(err) = snapshot_target_dir.close().await {
-            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_target_dir` path?
-        }
+        snapshot_target_dir.close().await;
 
         let snapshot_temp_file = tar_result??;
 
@@ -1715,14 +1707,13 @@ impl Collection {
         // TODO: Reimplement as `async_tempfile::NamedTempFile::persist`!?
         let move_result = move_file(snapshot_temp_file.path(), &snapshot_path).await;
 
-        // Only print `snapshot_temp_file.close()` error if move *failed*.
+        // Only print `snapshot_temp_file.try_close()` error if move *failed*.
         //
-        // If we successfully moved `snapshot_temp_file`, then `snapshot_temp_file.close()` will
+        // If we successfully moved `snapshot_temp_file`, then `snapshot_temp_file.try_close()` will
         // *always* return an error, because the file was moved and does not exist anymore.
-        if move_result.is_err() {
-            // TODO: Extract as function/method?
-            if let Err(err) = snapshot_temp_file.close().await {
-                log::error!("Failed to remove temporary file: {err}"); // TODO: Add `snapshot_temp_file` path?
+        if let Err(err) = snapshot_temp_file.try_close().await {
+            if move_result.is_err() {
+                log::error!("{err}");
             }
         }
 
@@ -1811,10 +1802,7 @@ impl Collection {
 
         let recover_result = recover.await;
 
-        // TODO: Extract as function/method?
-        if let Err(err) = snapshot_temp_dir.close().await {
-            log::error!("Failed to remove temporary directory: {err}"); // TODO: Add `snapshot_temp_dir` path?
-        }
+        snapshot_temp_dir.close().await;
 
         let recovered = recover_result?;
 
