@@ -5,7 +5,8 @@ use bitvec::prelude::BitSlice;
 use super::query::RecoQuery;
 use super::query_scorer::reco_query_scorer::RecoQueryScorer;
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
-use crate::data_types::vectors::{QueryVector, VectorElementType, VectorType};
+use crate::data_types::vectors::{QueryVector, VectorType};
+use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
@@ -129,38 +130,44 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
-    match query {
-        QueryVector::Nearest(vector) => {
-            new_metric_scorer(vector.to_vec(), vector_storage, point_deleted, is_stopped)
-        }
-        QueryVector::Recommend(reco_query) => {
-            new_reco_scorer(reco_query, vector_storage, point_deleted, is_stopped)
-        }
+    match vector_storage.distance() {
+        Distance::Cosine => new_scorer_with_metric::<CosineMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Euclid => new_scorer_with_metric::<EuclidMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Dot => new_scorer_with_metric::<DotProductMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
     }
 }
 
-pub fn new_metric_scorer<'a, TVectorStorage: VectorStorage>(
-    vector: Vec<VectorElementType>,
+pub fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: VectorStorage>(
+    query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
-    match vector_storage.distance() {
-        Distance::Cosine => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<CosineMetric, TVectorStorage>::new(vector, vector_storage),
+    match query {
+        QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
+            MetricQueryScorer::<TMetric, TVectorStorage>::new(vector, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
         ),
-        Distance::Euclid => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<EuclidMetric, TVectorStorage>::new(vector, vector_storage),
-            point_deleted,
-            vec_deleted,
-            is_stopped,
-        ),
-        Distance::Dot => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<DotProductMetric, TVectorStorage>::new(vector, vector_storage),
+        QueryVector::Recommend(reco_query) => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<TMetric, TVectorStorage>::new(reco_query, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
