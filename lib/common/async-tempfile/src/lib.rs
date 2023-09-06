@@ -1,6 +1,5 @@
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::{io, result};
+use std::{fmt, io, result};
 
 #[derive(Debug)]
 pub struct NamedTempFile {
@@ -11,9 +10,15 @@ impl NamedTempFile {
     pub async fn new_in(dir: impl Into<PathBuf>) -> Result<Self> {
         let dir = dir.into();
 
-        let tempfile = tokio::task::spawn_blocking(move || tempfile::NamedTempFile::new_in(dir))
-            .await??
-            .into();
+        let tempfile = tokio::task::spawn_blocking(move || {
+            tempfile::NamedTempFile::new_in(&dir)
+                .map_err(move |err| Error::new(err).path(dir))
+        })
+        .await
+        .map_err(Error::from)
+        .and_then(|res| res)
+        .map_err(|err| err.context("failed to create", "file"))?
+        .into();
 
         Ok(tempfile)
     }
@@ -30,12 +35,23 @@ impl NamedTempFile {
         self.inner.path()
     }
 
-    pub async fn keep(self) -> Result<(tokio::fs::File, PathBuf)> {
-        let result = self.inner.asyncify(tempfile::NamedTempFile::keep).await??;
-        Ok(result)
+    pub async fn keep(self) -> Result<(tokio::fs::File, PathBuf), PersistError> {
+        let file_and_path = self
+            .inner
+            .asyncify(tempfile::NamedTempFile::keep)
+            .await
+            .map_err(PersistError::from)
+            .and_then(|res| res.map_err(PersistError::from))
+            .map_err(move |err| err.resource("file"))?;
+
+        Ok(file_and_path)
     }
 
-    pub async fn close(self) -> Result<()> {
+    pub async fn try_close(self) -> Result<()> {
+        self.inner.try_close().await
+    }
+
+    pub async fn close(self) {
         self.inner.close().await
     }
 
@@ -74,9 +90,15 @@ impl TempDir {
     pub async fn new_in(dir: impl Into<PathBuf>) -> Result<Self> {
         let dir = dir.into();
 
-        let tempdir = tokio::task::spawn_blocking(move || tempfile::TempDir::new_in(dir))
-            .await??
-            .into();
+        let tempdir = tokio::task::spawn_blocking(move || {
+            tempfile::TempDir::new_in(&dir)
+                .map_err(move |err| Error::new(err).path(dir))
+        })
+        .await
+        .map_err(Error::from)
+        .and_then(|res| res)
+        .map_err(|err| err.context("failed to create", "directory"))?
+        .into();
 
         Ok(tempdir)
     }
@@ -89,7 +111,11 @@ impl TempDir {
         self.inner.take().into_path()
     }
 
-    pub async fn close(self) -> Result<()> {
+    pub async fn try_close(self) -> Result<()> {
+        self.inner.try_close().await
+    }
+
+    pub async fn close(self) {
         self.inner.close().await
     }
 
@@ -112,8 +138,8 @@ impl From<tempfile::TempDir> for TempDir {
 
 #[derive(Clone, Debug, Default)]
 pub struct Builder {
-    prefix: Option<OsString>,
-    suffix: Option<OsString>,
+    prefix: Option<String>,
+    suffix: Option<String>,
 }
 
 impl Builder {
@@ -121,12 +147,12 @@ impl Builder {
         Self::default()
     }
 
-    pub fn prefix(&mut self, prefix: impl Into<OsString>) -> &mut Self {
+    pub fn prefix(&mut self, prefix: impl Into<String>) -> &mut Self {
         self.prefix = Some(prefix.into());
         self
     }
 
-    pub fn suffix(&mut self, suffix: impl Into<OsString>) -> &mut Self {
+    pub fn suffix(&mut self, suffix: impl Into<String>) -> &mut Self {
         self.suffix = Some(suffix.into());
         self
     }
@@ -135,8 +161,15 @@ impl Builder {
         let dir = dir.into();
 
         let tempfile = self
-            .asyncify(move |builder| builder.tempfile_in(dir))
-            .await??
+            .asyncify(move |builder| {
+                builder
+                    .tempfile_in(&dir)
+                    .map_err(move |err| Error::new(err).path(dir))
+            })
+            .await
+            .map_err(Error::from)
+            .and_then(|res| res)
+            .map_err(|err| err.context("failed to create", "file"))?
             .into();
 
         Ok(tempfile)
@@ -146,8 +179,15 @@ impl Builder {
         let dir = dir.into();
 
         let tempdir = self
-            .asyncify(move |builder| builder.tempdir_in(dir))
-            .await??
+            .asyncify(move |builder| {
+                builder
+                    .tempdir_in(&dir)
+                    .map_err(move |err| Error::new(err).path(dir))
+            })
+            .await
+            .map_err(Error::from)
+            .and_then(|res| res)
+            .map_err(|err| err.context("failed to create", "directory"))?
             .into();
 
         Ok(tempdir)
@@ -181,32 +221,108 @@ impl Builder {
 pub type Result<T, E = Error> = result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
-#[error("{0}")]
-pub enum Error {
-    Io(#[from] io::Error),
-    Join(#[from] tokio::task::JoinError),
-    Persist(#[from] PersistError),
+pub struct Error {
+    source: io::Error,
+    message: &'static str,
+    resource: &'static str,
+    path: Option<PathBuf>,
 }
 
-impl From<tempfile::PersistError<tokio::fs::File>> for Error {
-    fn from(err: tempfile::PersistError<tokio::fs::File>) -> Self {
-        PersistError::from(err).into()
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        format_error(f, &self, self.path.as_deref())
+    }
+}
+
+impl Error {
+    fn new(source: impl Into<io::Error>) -> Self {
+        Self {
+            source: source.into(),
+            message: "",
+            resource: "",
+            path: None,
+        }
+    }
+
+    fn context(self, message: &'static str, resource: &'static str) -> Self {
+        self.message(message).resource(resource)
+    }
+
+    fn message(mut self, message: &'static str) -> Self {
+        self.message = message;
+        self
+    }
+
+    fn resource(mut self, resource: &'static str) -> Self {
+        self.resource = resource;
+        self
+    }
+
+    fn path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Self::new(err)
+    }
+}
+
+impl From<tokio::task::JoinError> for Error {
+    fn from(err: tokio::task::JoinError) -> Self {
+        Self::new(err)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{source}")]
 pub struct PersistError {
-    pub source: io::Error,
-    pub file: NamedTempFile,
+    #[source]
+    pub error: Error,
+    pub file: Option<NamedTempFile>,
 }
 
-impl From<tempfile::PersistError<tokio::fs::File>> for PersistError {
-    fn from(err: tempfile::PersistError<tokio::fs::File>) -> Self {
+impl fmt::Display for PersistError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        format_error(
+            f,
+            &self.error,
+            self.file.as_ref().map(NamedTempFile::path).or(self.error.path.as_deref()),
+        )
+    }
+}
+
+impl PersistError {
+    fn new(error: impl Into<Error>, file: Option<NamedTempFile>) -> Self {
         Self {
-            source: err.error,
-            file: err.file.into(),
+            error: error.into().message("failed to persist"),
+            file,
         }
+    }
+
+    fn resource(mut self, resource: &'static str) -> Self {
+        self.error.resource = resource;
+        self
+    }
+}
+
+impl<T> From<tempfile::PersistError<T>> for PersistError
+where
+    tempfile::NamedTempFile<T>: Into<NamedTempFile>,
+{
+    fn from(error: tempfile::PersistError<T>) -> Self {
+        let tempfile::PersistError { error, file } = error;
+        Self::new(error, Some(file.into()))
+    }
+}
+
+impl<E> From<E> for PersistError
+where
+    E: Into<Error>,
+{
+    fn from(error: E) -> Self {
+        Self::new(error, None)
     }
 }
 
@@ -253,9 +369,22 @@ impl<Res: Resource> Inner<Res> {
         Ok(result)
     }
 
-    pub async fn close(self) -> Result<()> {
-        self.asyncify(Resource::close).await??;
+    pub async fn try_close(self) -> Result<()> {
+        let path = self.path().to_path_buf();
+
+        self.asyncify(Resource::try_close)
+            .await
+            .map_err(Error::from)
+            .and_then(|res| res.map_err(Error::from))
+            .map_err(move |err| err.context("failed to close", Res::TYPE).path(path))?;
+
         Ok(())
+    }
+
+    pub async fn close(self) {
+        if let Err(err) = self.try_close().await {
+            log::error!("{err}");
+        }
     }
 
     pub fn into_inner(mut self) -> Res {
@@ -269,7 +398,7 @@ impl<Res: Resource> Drop for Inner<Res> {
             let handle = tokio::task::spawn_blocking(move || {
                 let path = resource.path().to_path_buf();
 
-                if let Err(err) = resource.close() {
+                if let Err(err) = resource.try_close() {
                     log::error!(
                         "Failed to close temporary {} {}: {err}",
                         Res::TYPE,
@@ -287,7 +416,7 @@ trait Resource: Sized + Send + Sync + 'static {
     const TYPE: &'static str;
 
     fn path(&self) -> &Path;
-    fn close(self) -> io::Result<()>;
+    fn try_close(self) -> io::Result<()>;
 }
 
 impl<T: Send + Sync + 'static> Resource for tempfile::NamedTempFile<T> {
@@ -297,7 +426,7 @@ impl<T: Send + Sync + 'static> Resource for tempfile::NamedTempFile<T> {
         self.path()
     }
 
-    fn close(self) -> io::Result<()> {
+    fn try_close(self) -> io::Result<()> {
         self.close()
     }
 }
@@ -309,7 +438,20 @@ impl Resource for tempfile::TempDir {
         self.path()
     }
 
-    fn close(self) -> io::Result<()> {
+    fn try_close(self) -> io::Result<()> {
         self.close()
     }
+}
+
+fn format_error(f: &mut fmt::Formatter<'_>, error: &Error, path: Option<&Path>) -> fmt::Result {
+    let source = &error.source;
+    let message = error.message;
+    let resource = error.resource;
+
+    let path = path.map(Path::display);
+
+    let path_sep = if path.is_some() { " " } else { "" };
+    let path: &dyn fmt::Display = path.as_ref().map_or(&"", |path| path);
+
+    write!(f, "{message} temporary {resource}{path_sep}{path}: {source}")
 }
