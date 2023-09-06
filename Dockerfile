@@ -62,7 +62,7 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-RUN xx-apt-get install -y gcc g++ libc6-dev libunwind-dev
+RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
 ARG PROFILE=release
@@ -81,7 +81,7 @@ COPY --from=planner /qdrant/recipe.json recipe.json
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
-RUN PKG_CONFIG="$(xx-info)-pkg-config" \
+RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
@@ -91,7 +91,7 @@ COPY . .
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
-RUN PKG_CONFIG="$(xx-info)-pkg-config" \
+RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
     xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --bin qdrant \
