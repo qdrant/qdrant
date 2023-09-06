@@ -1610,6 +1610,11 @@ impl Collection {
                 snapshot_arc_file_path_clone,
                 Path::exists(snapshot_arc_file_path_clone.as_ref().path())
             );
+            eprintln!(
+                "after {:?} exists {}",
+                snapshot_temp_dir_path_clone,
+                Path::exists(&snapshot_temp_dir_path_clone)
+            );
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
             builder.append_dir_all(".", &snapshot_temp_dir_path_clone)?;
             builder.finish()?;

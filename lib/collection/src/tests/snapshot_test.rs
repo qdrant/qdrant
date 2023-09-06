@@ -162,6 +162,8 @@ async fn _test_snapshot_collection(node_type: NodeType) {
 async fn test_snapshot_collection() {
     std::env::set_var("RUST_LOG", log::Level::Debug.as_str());
     init_logger();
-    _test_snapshot_collection(NodeType::Normal).await;
-    _test_snapshot_collection(NodeType::Listener).await;
+    for _ in 0..10000 {
+        _test_snapshot_collection(NodeType::Normal).await;
+        _test_snapshot_collection(NodeType::Listener).await;
+    }
 }
