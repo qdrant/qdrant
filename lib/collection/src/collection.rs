@@ -1593,34 +1593,30 @@ impl Collection {
             snapshot_temp_dir_path, &snapshot_arc_file_path_clone
         );
 
-        eprintln!(
-            "before task {:?} exists {}",
-            snapshot_arc_file_path_clone,
-            Path::exists(snapshot_arc_file_path_clone.as_ref().path())
-        );
         let archiving = tokio::task::spawn_blocking(move || {
             eprintln!(
-                "before builder {:?} exists {}",
+                "before tar builder\n{:?} exists {}\n{:?} exists {}",
+                snapshot_temp_dir_path_clone,
+                Path::exists(&snapshot_temp_dir_path_clone),
                 snapshot_arc_file_path_clone,
                 Path::exists(snapshot_arc_file_path_clone.as_ref().path())
             );
             let mut builder = TarBuilder::new(snapshot_arc_file_path_clone.as_ref());
             eprintln!(
-                "after builder {:?} exists {}",
+                "before append\n{:?} exists {}\n{:?} exists {}",
+                snapshot_temp_dir_path_clone,
+                Path::exists(&snapshot_temp_dir_path_clone),
                 snapshot_arc_file_path_clone,
                 Path::exists(snapshot_arc_file_path_clone.as_ref().path())
-            );
-            eprintln!(
-                "before append{:?} exists {}",
-                snapshot_temp_dir_path_clone,
-                Path::exists(&snapshot_temp_dir_path_clone)
             );
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
             builder.append_dir_all(".", &snapshot_temp_dir_path_clone)?;
             eprintln!(
-                "after append {:?} exists {}",
+                "after append\n{:?} exists {}\n{:?} exists {}",
                 snapshot_temp_dir_path_clone,
-                Path::exists(&snapshot_temp_dir_path_clone)
+                Path::exists(&snapshot_temp_dir_path_clone),
+                snapshot_arc_file_path_clone,
+                Path::exists(snapshot_arc_file_path_clone.as_ref().path())
             );
             builder.finish()?;
             Ok::<_, CollectionError>(())
