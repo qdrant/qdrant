@@ -1619,7 +1619,7 @@ impl ShardReplicaSet {
                 .update_concurrency
                 .unwrap_or(update_futures.len());
             futures::stream::iter(update_futures)
-                .buffer_ordered(concurrency)
+                .buffered(concurrency)
                 .collect::<Vec<_>>()
                 .await
         };
