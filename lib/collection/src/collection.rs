@@ -1592,8 +1592,24 @@ impl Collection {
             "Archiving snapshot {:?} into {:?}",
             snapshot_temp_dir_path, &snapshot_arc_file_path_clone
         );
+
+        eprintln!(
+            "out {:?} exists {}",
+            snapshot_arc_file_path_clone,
+            Path::exists(snapshot_arc_file_path_clone.as_ref().path())
+        );
         let archiving = tokio::task::spawn_blocking(move || {
+            eprintln!(
+                "in before {:?} exists {}",
+                snapshot_arc_file_path_clone,
+                Path::exists(snapshot_arc_file_path_clone.as_ref().path())
+            );
             let mut builder = TarBuilder::new(snapshot_arc_file_path_clone.as_ref());
+            eprintln!(
+                "in after {:?} exists {}",
+                snapshot_arc_file_path_clone,
+                Path::exists(snapshot_arc_file_path_clone.as_ref().path())
+            );
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
             builder.append_dir_all(".", &snapshot_temp_dir_path_clone)?;
             builder.finish()?;
