@@ -1617,7 +1617,7 @@ impl ShardReplicaSet {
             let concurrency = self
                 .shared_storage_config
                 .update_concurrency
-                .unwrap_or_else(|| update_futures.len());
+                .unwrap_or(update_futures.len());
             futures::stream::iter(update_futures)
                 .buffer_unordered(concurrency)
                 .collect::<Vec<_>>()
