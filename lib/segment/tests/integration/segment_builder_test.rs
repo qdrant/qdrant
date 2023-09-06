@@ -137,13 +137,13 @@ fn test_building_cancellation() {
 
     for idx in 0..1000 {
         baseline_segment
-            .upsert_point(1, idx.into(), &only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
         segment
             .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
         segment_2
-            .upsert_point(1, idx.into(), &only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
     }
     // Get normal build time
