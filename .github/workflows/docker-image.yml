@@ -43,3 +43,35 @@ jobs:
         docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
+
+  build-unprivileged:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Get current tag
+        id: vars
+        run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+      - name: Build the Docker image
+        env:
+          RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          docker buildx create --use
+          
+          docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
+          
+          DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
+          TAGS="-t ${DOCKERHUB_TAG}"
+          
+          GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
+          
+          docker buildx build -f Dockerfile.unprivileged --platform='linux/amd64,linux/arm64' $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+          
+          docker pull $DOCKERHUB_TAG
+          
+          docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
+          docker tag $DOCKERHUB_TAG $GITHUB_TAG
+          docker push $GITHUB_TAG
