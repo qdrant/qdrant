@@ -101,7 +101,10 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .await
     .unwrap();
 
-    let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let snapshots_temp_dir = Builder::new()
+        .prefix("snapshot_temp_dir")
+        .tempdir()
+        .unwrap();
     let snapshot_description_res = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await;
