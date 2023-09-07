@@ -6,6 +6,7 @@ mod common;
 mod consensus;
 mod greeting;
 mod migrations;
+mod ports;
 mod settings;
 mod snapshots;
 mod startup;
@@ -41,6 +42,7 @@ use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_reporting::TelemetryReporter;
 use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
+use crate::ports::validate_port_available;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::startup::{remove_started_file_indicator, touch_started_file_indicator};
@@ -376,6 +378,7 @@ fn main() -> anyhow::Result<()> {
     {
         let dispatcher_arc = dispatcher_arc.clone();
         let settings = settings.clone();
+        validate_port_available(settings.service.http_port, "REST")?;
         let handle = thread::Builder::new()
             .name("web".to_string())
             .spawn(move || {
@@ -394,6 +397,7 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(grpc_port) = settings.service.grpc_port {
         let settings = settings.clone();
+        validate_port_available(grpc_port, "gRPC")?;
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
