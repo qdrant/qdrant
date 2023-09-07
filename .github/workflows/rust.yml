@@ -66,7 +66,12 @@ jobs:
           echo "content<<$delimiter" >> $GITHUB_OUTPUT
           echo "$(jq '[.flakyFailure] | flatten | .[0]["system-err"]' flaky_tests.json -r)" >> $GITHUB_OUTPUT
           echo $delimiter >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v3
+      - name: pull issue template
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/ISSUE_TEMPLATE/flaky_test.md
+          sparse-checkout-cone-mode: false
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
       - name: Create issue for flaky tests
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
