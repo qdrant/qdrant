@@ -31,7 +31,7 @@ jobs:
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci
     - name: Upload test report
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
@@ -44,17 +44,17 @@ jobs:
       issues: write 
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        os: [ ubuntu-latest, windows-latest, macos-latest  ]
     steps:
       - name: Download test report
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: junit-${{ matrix.os }}.xml
       - name: Process test report
         id: process-test-report
         run: |
           pip install yq
-          xq '.testsuites.testsuite.testcase[] | select(. | has("flakyFailure"))' junit.xml > flaky_tests.json
+          xq '.. | select(type == "object") | select(has("flakyFailure"))' junit.xml > flaky_tests.json
           echo has_flaky_tests=$(jq '. | has("flakyFailure")' flaky_tests.json) >> $GITHUB_OUTPUT
       - name: Get flaky test details
         id: get-flaky-tests
