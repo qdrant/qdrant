@@ -6,3 +6,7 @@ fail-fast = false
 # Print out output for failing tests as soon as they fail, and also at the end
 # of the run (for easy scrollability).
 failure-output = "immediate-final"
+
+# save junit report
+[profile.ci.junit]
+path = "junit.xml"
