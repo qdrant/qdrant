@@ -1573,7 +1573,7 @@ impl Collection {
 
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
         let snapshot_temp_arc_file = async_tempfile::Builder::new()
-            .prefix(format!("{snapshot_name}"))
+            .prefix(snapshot_name.to_string())
             .suffix(".tar")
             .tempfile_in(global_temp_dir)
             .await?
