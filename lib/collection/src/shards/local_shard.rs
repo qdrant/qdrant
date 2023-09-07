@@ -11,6 +11,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::data_types::vectors::VectorElementType;
+use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
@@ -210,14 +211,27 @@ impl LocalShard {
             );
         }
 
-        for handler in load_handlers {
-            let segment_opt = handler.join().map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Can't join segment load thread: {:?}",
-                    err.type_id()
-                ))
-            })??;
-            if let Some(segment) = segment_opt {
+        {
+            // TODO: Is it fine to hold read-lock on `collection_config` here? 🤔
+            let collection_config = collection_config.read().await;
+
+            for handler in load_handlers {
+                let segment = handler.join().map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Can't join segment load thread: {:?}",
+                        err.type_id()
+                    ))
+                })??;
+
+                let Some(segment) = segment else {
+                    continue;
+                };
+
+                collection_config
+                    .params
+                    .vectors
+                    .check_compatible_with_segment_config(&segment.config().vector_data)?;
+
                 segment_holder.add(segment);
             }
         }

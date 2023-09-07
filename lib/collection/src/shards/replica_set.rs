@@ -1072,6 +1072,10 @@ impl ShardReplicaSet {
             return Ok(false);
         }
 
+        // TODO:
+        //   Check that shard snapshot is compatible with the collection
+        //   (see `VectorsConfig::check_compatible_with_segment_config`)
+
         let mut local = self.local.write().await;
 
         // Drop `LocalShard` instance to free resources and clear shard data
