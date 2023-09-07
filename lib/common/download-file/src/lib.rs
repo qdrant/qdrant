@@ -19,8 +19,10 @@ pub async fn download_file(url: Url, dir: impl Into<PathBuf>) -> Result<Download
 
     let mut file = async_tempfile::NamedTempFile::new_in(dir).await?;
 
+    // Save *final* (i.e., after possible redirects) URL
     let url = response.url().clone();
 
+    // Parse file name from the *final* URL
     // TODO: Parse file name from `Content-Disposition` header!?
     let file_name = Path::new(url.path())
         .file_name()
