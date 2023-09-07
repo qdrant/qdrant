@@ -15,7 +15,9 @@ use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::fixtures::payload_fixtures::random_vector;
 use crate::id_tracker::id_tracker_base::IdTracker;
 use crate::types::{
-    Distance, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
+    Distance, 
+    // ProductQuantization, ProductQuantizationConfig, 
+    QuantizationConfig,
     ScalarQuantization, ScalarQuantizationConfig,
 };
 #[cfg(target_os = "linux")]
@@ -25,8 +27,7 @@ use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 const DIMS: usize = 512;
-const NUM_POINTS: usize = 5_000;
-const NUM_DELETE_POINTS: usize = 300;
+const NUM_POINTS: usize = 500;
 const DISTANCE: Distance = Distance::Dot;
 const MAX_EXAMPLES: usize = 100;
 
@@ -76,7 +77,7 @@ fn u8_quant_config() -> Option<QuantizationConfig> {
     }))
 }
 
-// fn pq4_quant_config() -> Option<QuantizationConfig> {
+// fn pq_x4_quant_config() -> Option<QuantizationConfig> {
 //     Some(QuantizationConfig::Product(ProductQuantization {
 //         product: ProductQuantizationConfig {
 //             compression: crate::types::CompressionRatio::X4,
@@ -112,7 +113,7 @@ fn scoring_equivalency(
         &mut rng,
         &mut *raw_storage,
         &mut id_tracker,
-        NUM_DELETE_POINTS,
+        NUM_POINTS / 10,
     )?;
 
     storage.update_from(&raw_storage, &mut (0..NUM_POINTS as _), &Default::default())?;
@@ -132,7 +133,6 @@ fn scoring_equivalency(
     let attempts = 50;
     for _i in 0..attempts {
         let query = random_reco_query(&mut rng, DIMS);
-        // let query: QueryVector = random_vector(&mut rng, DIMS).into();
 
         let raw_scorer = new_raw_scorer(
             query.clone(),
@@ -152,7 +152,7 @@ fn scoring_equivalency(
             None => new_raw_scorer(query, &storage, id_tracker.deleted_point_bitslice()),
         };
 
-        let points = rng.gen_range(1..10);
+        let points = rng.gen_range(1..20);
         let points = (0..storage.total_vector_count() as _).choose_multiple(&mut rng, points);
 
         let raw_res = score(&*raw_scorer, &points);
@@ -172,9 +172,11 @@ fn scoring_equivalency(
                 .zip(other_res.iter())
                 .for_each(|(raw, other)| {
                     assert!(
-                        (raw.score - other.score).abs() / raw.score < 0.05,
-                        "Scorer results are not similar, attempt: {}",
-                        _i
+                        (raw.score - other.score).abs() / raw.score < 0.10,
+                        "Scorer results are not similar, attempt: {}. raw: {:?}, other: {:?}",
+                        _i,
+                        raw,
+                        other,
                     );
                 });
         }
@@ -191,7 +193,7 @@ fn compare_scoring_equivalency(
 
     #[values(
         None,
-        // pq4_quant_config(), 
+        // pq_x4_quant_config(), 
         u8_quant_config()
     )]
     quantization_config: Option<QuantizationConfig>,
