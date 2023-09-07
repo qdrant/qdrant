@@ -15,10 +15,11 @@ use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::fixtures::payload_fixtures::random_vector;
 use crate::id_tracker::id_tracker_base::IdTracker;
 use crate::types::{
-    Distance, 
-    // ProductQuantization, ProductQuantizationConfig, 
+    Distance,
+    // ProductQuantization, ProductQuantizationConfig,
     QuantizationConfig,
-    ScalarQuantization, ScalarQuantizationConfig,
+    ScalarQuantization,
+    ScalarQuantizationConfig,
 };
 #[cfg(target_os = "linux")]
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
