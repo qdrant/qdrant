@@ -228,7 +228,7 @@ pub struct Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        format_error(f, &self, self.path.as_deref())
+        format_error(f, self, self.path.as_deref())
     }
 }
 
