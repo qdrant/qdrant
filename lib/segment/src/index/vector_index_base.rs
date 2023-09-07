@@ -100,12 +100,4 @@ impl VectorIndex for VectorIndexEnum {
             Self::HnswMmap(index) => index.indexed_vector_count(),
         }
     }
-
-    fn is_appendable(&self) -> bool {
-        match self {
-            Self::Plain(index) => index.is_appendable(),
-            Self::HnswRam(index) => index.is_appendable(),
-            Self::HnswMmap(index) => index.is_appendable(),
-        }
-    }
 }
