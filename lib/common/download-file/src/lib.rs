@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::{io, result};
+use std::{fmt, io, result};
 
 use futures::TryStreamExt as _;
 use tokio::io::AsyncWriteExt as _;
@@ -13,7 +13,7 @@ pub struct DownloadedFile {
 }
 
 pub async fn download_file(url: Url, dir: impl Into<PathBuf>) -> Result<DownloadedFile> {
-    let response = reqwest::get(url).await?;
+    let response = reqwest::get(url).await.map_err(|err| Error::new(err, ""))?;
 
     response.error_for_status_ref()?;
 
@@ -33,11 +33,18 @@ pub async fn download_file(url: Url, dir: impl Into<PathBuf>) -> Result<Download
         let mut bytes_stream = response.bytes_stream();
         let mut writer = tokio::io::BufWriter::new(file.as_file_mut());
 
-        while let Some(bytes) = bytes_stream.try_next().await? {
-            writer.write_all(&bytes).await?;
+        while let Some(bytes) = bytes_stream
+            .try_next()
+            .await
+            .map_err(|err| Error::new(err, ""))?
+        {
+            writer
+                .write_all(&bytes)
+                .await
+                .map_err(|err| Error::new(err, ""))?;
         }
 
-        writer.shutdown().await?;
+        writer.shutdown().await.map_err(|err| Error::new(err, ""))?;
     }
 
     let downloaded_file = DownloadedFile {
@@ -52,8 +59,40 @@ pub async fn download_file(url: Url, dir: impl Into<PathBuf>) -> Result<Download
 pub type Result<T, E = Error> = result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
+pub struct Error {
+    source: Source,
+    context: String,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let context = self.context.trim();
+        let context_sep = if !context.is_empty() { ": " } else { "" };
+
+        let source = &self.source;
+
+        write!(f, "{context}{context_sep}{source}")
+    }
+}
+
+impl Error {
+    pub fn new(source: impl Into<Source>, context: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            context: context.into(),
+        }
+    }
+}
+
+impl<E: Into<Source>> From<E> for Error {
+    fn from(error: E) -> Self {
+        Self::new(error, String::new())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
 #[error("{0}")]
-pub enum Error {
+pub enum Source {
     Io(#[from] io::Error),
     Reqwest(#[from] reqwest::Error),
     AsyncTempfile(#[from] async_tempfile::Error),
