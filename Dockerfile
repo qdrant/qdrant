@@ -109,6 +109,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 ARG APP=/qdrant
+ARG USERNAME=root
+ARG USER_UID=0
+ARG USER_GID=0
 
 RUN mkdir -p ${APP}
 
@@ -119,11 +122,17 @@ COPY --from=builder /static ${APP}/static
 
 WORKDIR ${APP}
 
+# Create the user
+RUN if [[ "${USER_UID}" != "0" ]]; then (groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && chown -R $USER_GID:$USER_GID ${APP}); fi
+
 ENV TZ=Etc/UTC \
     RUN_MODE=production
 
 EXPOSE 6333
 EXPOSE 6334
+USER $USER_UID:$USER_GID
 
 LABEL org.opencontainers.image.title="Qdrant"
 LABEL org.opencontainers.image.description="Official Qdrant image"
