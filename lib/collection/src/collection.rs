@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,7 +17,7 @@ use segment::types::{
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
-use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
+use tokio::fs::{copy, create_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use validator::Validate;
@@ -1610,9 +1609,10 @@ impl Collection {
                 snapshot_arc_file_path_clone,
                 Path::exists(snapshot_arc_file_path_clone.as_ref().path())
             );
-            Command::new("sync")
-                .output()
-                .expect("Failed to execute command");
+
+            // Command::new("sync")
+            //     .output()
+            //     .expect("Failed to execute command");
 
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
             builder.append_dir_all(".", &snapshot_temp_dir_path_clone)?;
@@ -1627,13 +1627,6 @@ impl Collection {
             Ok::<_, CollectionError>(())
         });
         archiving.await??;
-
-        // Remove temporary snapshot directory (automatically dropped on previous error)
-        eprintln!(
-            "Removing temporary snapshot data {:?}",
-            snapshot_temp_dir_path
-        );
-        remove_dir_all(&snapshot_temp_dir_path).await?;
 
         // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
