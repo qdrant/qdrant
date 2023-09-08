@@ -5,7 +5,7 @@ use itertools::Itertools;
 use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
 
-use super::utils::{delete_random_vectors, insert_random_vectors, sampler, score, Result};
+use super::utils::{delete_random_vectors, insert_distributed_vectors, sampler, score, Result};
 use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
@@ -15,6 +15,14 @@ use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_wit
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{async_raw_scorer, new_raw_scorer, VectorStorageEnum};
+
+pub fn insert_random_vectors(
+    rng: &mut impl rand::Rng,
+    storage: &mut impl VectorStorage,
+    vectors: usize,
+) -> Result<()> {
+    insert_distributed_vectors(storage, vectors, &mut sampler(rng))
+}
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {

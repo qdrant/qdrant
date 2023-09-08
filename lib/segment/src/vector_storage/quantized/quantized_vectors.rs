@@ -204,8 +204,7 @@ impl QuantizedVectors {
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
-        dbg!("create quantized vectors");
-        let vector_parameters = Self::construct_vector_parameters(distance, dim, dbg!(count));
+        let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
@@ -219,7 +218,6 @@ impl QuantizedVectors {
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
-                dbg!("create pq");
                 Self::create_pq(
                     vectors,
                     &vector_parameters,
@@ -254,7 +252,6 @@ impl QuantizedVectors {
             distance,
         };
 
-        dbg!("saving quantized vectors");
         quantized_vectors.save_to(path)?;
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
         Ok(quantized_vectors)
@@ -392,23 +389,17 @@ impl QuantizedVectors {
             );
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
-            dbg!("in ram");
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            dbg!("set capacity");
             storage_builder.try_set_capacity_exact(vector_parameters.count)?;
-            dbg!("set capacity ok");
-            let encoded_vectors = EncodedVectorsPQ::encode(
+            Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
                 bucket_size,
                 max_threads,
                 || stopped.load(Ordering::SeqCst),
-            )?;
-            dbg!("encoded vectors ok");
-            Ok(QuantizedVectorStorage::PQRam(encoded_vectors))
+            )?))
         } else {
-            dbg!("in disk");
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 mmap_data_path.as_path(),

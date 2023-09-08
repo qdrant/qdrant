@@ -2,6 +2,7 @@ use std::{error, result};
 
 use rand::seq::IteratorRandom;
 
+use crate::data_types::vectors::VectorElementType;
 use crate::id_tracker::IdTracker;
 use crate::types::PointOffsetType;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage};
@@ -13,19 +14,18 @@ pub fn sampler(rng: impl rand::Rng) -> impl Iterator<Item = f32> {
     rng.sample_iter(rand::distributions::Standard)
 }
 
-pub fn insert_random_vectors(
-    rng: &mut impl rand::Rng,
+pub fn insert_distributed_vectors(
     storage: &mut impl VectorStorage,
     vectors: usize,
+    sampler: &mut impl Iterator<Item = VectorElementType>,
 ) -> Result<()> {
     let start = storage.total_vector_count() as u32;
     let end = start + vectors as u32;
 
     let mut vector = vec![0.; storage.vector_dim()];
-    let mut sampler = sampler(rng);
 
     for offset in start..end {
-        for (item, value) in vector.iter_mut().zip(&mut sampler) {
+        for (item, value) in vector.iter_mut().zip(&mut *sampler) {
             *item = value;
         }
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -5,20 +6,18 @@ use std::{error, result};
 
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
+use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng, SeedableRng};
 use rstest::rstest;
 
+use super::utils::sampler;
 use crate::common::rocksdb_wrapper;
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-use crate::fixtures::payload_fixtures::random_vector;
 use crate::id_tracker::id_tracker_base::IdTracker;
 use crate::types::{
-    Distance,
-    // ProductQuantization, ProductQuantizationConfig,
-    QuantizationConfig,
-    ScalarQuantization,
+    BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantizationConfig,
 };
 #[cfg(target_os = "linux")]
@@ -27,27 +26,39 @@ use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
-const DIMS: usize = 512;
+
+const DIMS: usize = 128;
 const NUM_POINTS: usize = 500;
 const DISTANCE: Distance = Distance::Dot;
-const MAX_EXAMPLES: usize = 100;
+const MAX_EXAMPLES: usize = 10;
+const SAMPLE_SIZE: usize = 100;
+const SEED: u64 = 42;
 
 type Result<T, E = Error> = result::Result<T, E>;
 type Error = Box<dyn error::Error>;
 
-fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
+type WithQuantization = (
+    QuantizationConfig,
+    Box<dyn Iterator<Item = VectorElementType>>,
+);
+
+fn random_reco_query<R: Rng + ?Sized>(
+    rnd: &mut R,
+    dim: usize,
+    sampler: &mut impl Iterator<Item = f32>,
+) -> QueryVector {
     let num_positives: usize = rnd.gen_range(0..MAX_EXAMPLES);
     let num_negatives: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
     let positives = (0..num_positives)
-        .map(|_| random_vector(rnd, dim))
+        .map(|_| sampler.take(dim).collect())
         .collect_vec();
 
     let negatives = (0..num_negatives)
-        .map(|_| random_vector(rnd, dim))
+        .map(|_| sampler.take(dim).collect())
         .collect_vec();
 
-    QueryVector::Recommend(RecoQuery::new(positives, negatives))
+    RecoQuery::new(positives, negatives).into()
 }
 
 fn ram_storage(dir: &Path) -> AtomicRefCell<VectorStorageEnum> {
@@ -68,37 +79,61 @@ fn async_memmap_storage(dir: &std::path::Path) -> AtomicRefCell<VectorStorageEnu
     Arc::into_inner(storage).unwrap()
 }
 
-fn u8_quant_config() -> Option<QuantizationConfig> {
-    Some(QuantizationConfig::Scalar(ScalarQuantization {
-        scalar: ScalarQuantizationConfig {
-            r#type: crate::types::ScalarType::Int8,
-            quantile: None,
-            always_ram: Some(true),
-        },
-    }))
+fn scalar_u8() -> Option<WithQuantization> {
+    let config = ScalarQuantizationConfig {
+        r#type: crate::types::ScalarType::Int8,
+        quantile: Some(0.5),
+        always_ram: Some(true),
+    }
+    .into();
+
+    let sampler = {
+        let rng = StdRng::seed_from_u64(SEED);
+        Box::new(rng.sample_iter(rand_distr::Normal::new(0.0, 8.0).unwrap()))
+    };
+
+    Some((config, sampler))
 }
 
-// fn pq_x4_quant_config() -> Option<QuantizationConfig> {
-//     Some(QuantizationConfig::Product(ProductQuantization {
-//         product: ProductQuantizationConfig {
-//             compression: crate::types::CompressionRatio::X4,
-//             always_ram: Some(true),
-//         },
-//     }))
-// }
+fn product_x4() -> Option<WithQuantization> {
+    let config = ProductQuantizationConfig {
+        compression: crate::types::CompressionRatio::X4,
+        always_ram: Some(true),
+    }
+    .into();
+
+    let sampler = {
+        let rng = thread_rng();
+        Box::new(rng.sample_iter(rand::distributions::Standard))
+    };
+
+    Some((config, sampler))
+}
+
+fn binary() -> Option<WithQuantization> {
+    let config = BinaryQuantizationConfig {
+        always_ram: Some(true),
+    }
+    .into();
+
+    let sampler = {
+        let rng = StdRng::seed_from_u64(SEED);
+        Box::new(
+            rng.sample_iter(rand::distributions::Uniform::new_inclusive(-1.0, 1.0))
+                .map(|x| x as u8 as f32),
+        )
+    };
+
+    Some((config, sampler))
+}
 
 fn scoring_equivalency(
     other_storage: impl FnOnce(&std::path::Path) -> AtomicRefCell<VectorStorageEnum>,
-    quantization_config: Option<QuantizationConfig>,
+    with_quantization: Option<WithQuantization>,
 ) -> Result<()> {
-    let other_dir = tempfile::Builder::new().prefix("other-storage").tempdir()?;
-
-    let mut rng = thread_rng();
-
-    let storage = other_storage(other_dir.path());
-    let mut storage = storage.borrow_mut();
-
-    let mut id_tracker = FixtureIdTracker::new(NUM_POINTS);
+    let (quant_config, quant_sampler) = with_quantization
+        .map(|v| (Some(v.0), Some(v.1)))
+        .unwrap_or_default();
 
     let raw_dir = tempfile::Builder::new().prefix("raw-storage").tempdir()?;
 
@@ -109,7 +144,12 @@ fn scoring_equivalency(
 
     let mut raw_storage = raw_storage.borrow_mut();
 
-    super::utils::insert_random_vectors(&mut rng, &mut *raw_storage, NUM_POINTS)?;
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut sampler = quant_sampler.unwrap_or(Box::new(sampler(rng.clone())));
+
+    super::utils::insert_distributed_vectors(&mut *raw_storage, NUM_POINTS, &mut sampler)?;
+
+    let mut id_tracker = FixtureIdTracker::new(NUM_POINTS);
     super::utils::delete_random_vectors(
         &mut rng,
         &mut *raw_storage,
@@ -117,23 +157,21 @@ fn scoring_equivalency(
         NUM_POINTS / 10,
     )?;
 
-    storage.update_from(&raw_storage, &mut (0..NUM_POINTS as _), &Default::default())?;
+    let other_dir = tempfile::Builder::new().prefix("other-storage").tempdir()?;
+
+    let other_storage = other_storage(other_dir.path());
+    let mut other_storage = other_storage.borrow_mut();
+
+    other_storage.update_from(&raw_storage, &mut (0..NUM_POINTS as _), &Default::default())?;
 
     let quant_dir = tempfile::Builder::new().prefix("quant-storage").tempdir()?;
-    if let Some(quantization_config) = quantization_config {
-        dbg!("beginning quantization");
-        storage.quantize(
-            quant_dir.path(),
-            &quantization_config,
-            1,
-            &AtomicBool::new(false),
-        )?;
-        dbg!("finished quantization");
+    if let Some(config) = &quant_config {
+        other_storage.quantize(quant_dir.path(), config, 4, &AtomicBool::new(false))?;
     }
 
     let attempts = 50;
     for _i in 0..attempts {
-        let query = random_reco_query(&mut rng, DIMS);
+        let query = random_reco_query(&mut rng, DIMS, &mut sampler);
 
         let raw_scorer = new_raw_scorer(
             query.clone(),
@@ -143,43 +181,61 @@ fn scoring_equivalency(
 
         let is_stopped = AtomicBool::new(false);
 
-        let scorer = match storage.quantized_storage() {
+        let other_scorer = match other_storage.quantized_storage() {
             Some(quantized_storage) => quantized_storage.raw_scorer(
                 query,
                 id_tracker.deleted_point_bitslice(),
-                storage.deleted_vector_bitslice(),
+                other_storage.deleted_vector_bitslice(),
                 &is_stopped,
             ),
-            None => new_raw_scorer(query, &storage, id_tracker.deleted_point_bitslice()),
+            None => new_raw_scorer(query, &other_storage, id_tracker.deleted_point_bitslice()),
         };
 
-        let points = rng.gen_range(1..20);
-        let points = (0..storage.total_vector_count() as _).choose_multiple(&mut rng, points);
+        let points =
+            (0..other_storage.total_vector_count() as _).choose_multiple(&mut rng, SAMPLE_SIZE);
 
-        let raw_res = score(&*raw_scorer, &points);
-        let other_res = score(&*scorer, &points);
+        let raw_scores = score(&*raw_scorer, &points);
+        let other_scores = score(&*other_scorer, &points);
 
-        if storage.quantized_storage().is_none() {
+        // Compare scores
+        if other_storage.quantized_storage().is_none() {
             // both calculations are done on raw vectors, so score should be exactly the same
             assert_eq!(
-                raw_res, other_res,
+                raw_scores, other_scores,
                 "Scorer results are not equal, attempt: {}",
                 _i
             );
         } else {
-            // quantization is used for the other storage, so score should be similar but not necessarily the exact same
-            raw_res
+            // Quantization is used for the other storage, so score should be similar
+            // but not necessarily the exact same. Recommend query has a step function,
+            // so small differences in similarities can lead to very different scores
+
+            let top = SAMPLE_SIZE / 10;
+
+            let raw_top: HashSet<_> = raw_scores
                 .iter()
-                .zip(other_res.iter())
-                .for_each(|(raw, other)| {
-                    assert!(
-                        (raw.score - other.score).abs() / raw.score < 0.10,
-                        "Scorer results are not similar, attempt: {}. raw: {:?}, other: {:?}",
-                        _i,
-                        raw,
-                        other,
-                    );
-                });
+                .sorted()
+                .rev()
+                .take(top)
+                .map(|p| p.idx)
+                .collect();
+            let other_top: HashSet<_> = other_scores
+                .iter()
+                .sorted()
+                .rev()
+                .take(top)
+                .map(|p| p.idx)
+                .collect();
+
+            let intersection = raw_top.intersection(&other_top).count();
+
+            assert!(
+                (intersection as f32 / top as f32) >= 0.7, // at least 70% of top 10% results should be shared
+                "Top results from scorers are not similar, attempt {_i}:
+                top raw: {raw_top:?},
+                top other: {other_top:?}
+                only {intersection} of {top} top results are shared",
+            );
         }
     }
 
@@ -192,12 +248,9 @@ fn compare_scoring_equivalency(
         &std::path::Path,
     ) -> AtomicRefCell<VectorStorageEnum>,
 
-    #[values(
-        None,
-        // pq_x4_quant_config(), 
-        u8_quant_config()
-    )]
-    quantization_config: Option<QuantizationConfig>,
+    #[values(None, product_x4(), scalar_u8(), binary())] quantization_config: Option<
+        WithQuantization,
+    >,
 ) -> Result<()> {
     scoring_equivalency(other_storage, quantization_config)
 }

@@ -1,3 +1,4 @@
+use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::types::ScoreType;
 
 #[derive(Debug, Clone)]
@@ -58,6 +59,12 @@ fn merge_similarities(
         max_positive
     } else {
         -(max_negative * max_negative)
+    }
+}
+
+impl From<RecoQuery<VectorType>> for QueryVector {
+    fn from(query: RecoQuery<VectorType>) -> Self {
+        QueryVector::Recommend(query)
     }
 }
 
