@@ -46,8 +46,10 @@ jobs:
         
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
         TAGS_UNPRIVILEGED="-t ${DOCKERHUB_TAG_UNPRIVILEGED}"
+        DOCKERHUB_TAG_LATEST_UNPRIVILEGED="qdrant/qdrant:latest-unprivileged"
+        TAGS_UNPRIVILEGED="${TAGS_UNPRIVILEGED} -t ${DOCKERHUB_TAG_LATEST_UNPRIVILEGED}"
         GITHUB_TAG_UNPRIVILEGED="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
       
-        docker buildx build --build-arg='USER_UID=1000' --build-arg='USER_GID=1000' --build-arg='USERNAME=qdrant' --platform='linux/amd64,linux/arm64' $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --build-arg='USER_ID=1000' --platform='linux/amd64,linux/arm64' $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
