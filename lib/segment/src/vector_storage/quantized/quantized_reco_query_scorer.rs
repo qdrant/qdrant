@@ -9,7 +9,7 @@ where
 {
     original_query: RecoQuery<VectorType>,
     query: RecoQuery<TEncodedQuery>,
-    quantized_data: &'a TEncodedVectors,
+    quantized_storage: &'a TEncodedVectors,
     distance: Distance,
 }
 
@@ -21,13 +21,13 @@ where
     pub fn new(
         original_query: RecoQuery<VectorType>,
         query: RecoQuery<TEncodedQuery>,
-        quantized_data: &'a TEncodedVectors,
+        quantized_storage: &'a TEncodedVectors,
         distance: Distance,
     ) -> Self {
         Self {
             original_query,
             query,
-            quantized_data,
+            quantized_storage,
             distance,
         }
     }
@@ -40,7 +40,7 @@ where
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.query
-            .score_by(|this| self.quantized_data.score_point(this, idx))
+            .score_by(|this| self.quantized_storage.score_point(this, idx))
     }
 
     fn score(&self, v2: &[VectorElementType]) -> ScoreType {
