@@ -19,11 +19,15 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     pub fn new(
-        original_query: RecoQuery<VectorType>,
-        query: RecoQuery<TEncodedQuery>,
+        raw_query: RecoQuery<VectorType>,
         quantized_storage: &'a TEncodedVectors,
         distance: Distance,
     ) -> Self {
+        let original_query = raw_query.transform(|v| distance.preprocess_vector(v));
+        let query = original_query
+            .clone()
+            .transform(|v| quantized_storage.encode_query(&v));
+
         Self {
             original_query,
             query,

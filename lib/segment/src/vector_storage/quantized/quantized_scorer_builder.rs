@@ -49,6 +49,7 @@ impl<'a> QuantizedRawScorerBuilder<'a> {
             QuantizedVectorStorage::BinaryMmap(storage) => self.new_quantized_scorer(storage),
         }
     }
+
     fn new_quantized_scorer<TEncodedQuery: 'a>(
         mut self,
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
@@ -66,12 +67,7 @@ impl<'a> QuantizedRawScorerBuilder<'a> {
         query: RecoQuery<Vec<f32>>,
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> Box<dyn RawScorer + 'a> {
-        let original = query.transform(|v| self.distance.preprocess_vector(v));
-        let encoded = original
-            .clone()
-            .transform(|v| quantized_storage.encode_query(&v));
-        let query_scorer =
-            QuantizedRecoQueryScorer::new(original, encoded, quantized_storage, *self.distance);
+        let query_scorer = QuantizedRecoQueryScorer::new(query, quantized_storage, *self.distance);
         raw_scorer_from_query_scorer(
             query_scorer,
             self.point_deleted,
@@ -79,15 +75,13 @@ impl<'a> QuantizedRawScorerBuilder<'a> {
             self.is_stopped,
         )
     }
+
     fn quantized_metric_scorer<TEncodedQuery: 'a>(
         &self,
         query: VectorType,
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> Box<dyn RawScorer + 'a> {
-        let original = self.distance.preprocess_vector(query);
-        let encoded = quantized_storage.encode_query(&original);
-        let query_scorer =
-            QuantizedQueryScorer::new(original, encoded, quantized_storage, *self.distance);
+        let query_scorer = QuantizedQueryScorer::new(query, quantized_storage, *self.distance);
         raw_scorer_from_query_scorer(
             query_scorer,
             self.point_deleted,
