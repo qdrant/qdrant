@@ -1133,33 +1133,42 @@ impl ShardReplicaSet {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(snapshot_path.join(REPLICA_STATE_FILE))?;
 
-        // If this shard have local data
-        let is_snapshot_local = replica_state.read().is_local;
-
-        if !is_distributed && !is_snapshot_local {
+        if !is_distributed && !replica_state.read().is_local {
             return Err(CollectionError::service_error(format!(
                 "Can't restore snapshot is local mode with missing data at shard: {}",
                 snapshot_path.display()
             )));
         }
 
+        // Update peer(s) state and `this_peer_id` in the `replica_state.json`
+        //
+        // Note that `replica_state.json` *seems* to be unused *anywhere* after snapshot restore,
+        // so these updates are *probably* irrelevant...
         replica_state.write(|state| {
-            state.this_peer_id = this_peer_id;
+            // Initialize/update current replica state
             if is_distributed {
-                state
+                // In distributed mode: copy state from the replica this snapshot was taken from
+                let replica_state = state
                     .peers
-                    .remove(&this_peer_id)
-                    .and_then(|replica_state| state.peers.insert(this_peer_id, replica_state));
+                    .get(&state.this_peer_id)
+                    .copied()
+                    .unwrap_or(ReplicaState::Active);
+
+                state.peers.insert(this_peer_id, replica_state);
             } else {
-                // In local mode we don't want any remote peers
+                // In single-node mode: clear remote replicas and initialize active local replica
                 state.peers.clear();
                 state.peers.insert(this_peer_id, ReplicaState::Active);
             }
+
+            // Update `this_peer_id`
+            state.this_peer_id = this_peer_id;
         })?;
 
         if replica_state.read().is_local {
             LocalShard::restore_snapshot(snapshot_path)?;
         }
+
         Ok(())
     }
 

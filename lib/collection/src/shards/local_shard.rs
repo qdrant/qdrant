@@ -183,26 +183,32 @@ impl LocalShard {
         let mut load_handlers = vec![];
 
         for entry in segment_dirs {
-            let segments_path = entry.unwrap().path();
-            load_handlers.push(
-                thread::Builder::new()
-                    .name(format!("shard-load-{collection_id}-{id}"))
-                    .spawn(move || {
-                        let mut res = load_segment(&segments_path)?;
-                        if let Some(segment) = &mut res {
+            let segment_path = entry?.path();
+
+            let thread = thread::Builder::new()
+                .name(format!("shard-load-{collection_id}-{id}"))
+                .spawn(move || -> CollectionResult<_> {
+                    let mut segment = load_segment(&segment_path)?;
+
+                    match &mut segment {
+                        Some(segment) => {
                             segment.check_consistency_and_repair()?;
-                        } else {
-                            std::fs::remove_dir_all(&segments_path).map_err(|err| {
+                        }
+
+                        None => {
+                            std::fs::remove_dir_all(&segment_path).map_err(|err| {
                                 CollectionError::service_error(format!(
-                                    "Can't remove leftover segment {}, due to {}",
-                                    segments_path.to_str().unwrap(),
-                                    err
+                                    "Failed to remove leftover segment {}: {err}",
+                                    segment_path.display()
                                 ))
                             })?;
                         }
-                        Ok::<_, CollectionError>(res)
-                    })?,
-            );
+                    }
+
+                    Ok(segment)
+                })?;
+
+            load_handlers.push(thread);
         }
 
         for handler in load_handlers {
@@ -514,25 +520,24 @@ impl LocalShard {
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
-        // recover segments
         let segments_path = LocalShard::segments_path(snapshot_path);
-        // iterate over segments directory and recover each segment
+
         for entry in std::fs::read_dir(segments_path)? {
-            let entry_path = entry?.path();
-            if entry_path.extension().map(|s| s == "tar").unwrap_or(false) {
-                let segment_id_opt = entry_path
-                    .file_stem()
-                    .map(|s| s.to_str().unwrap().to_owned());
-                if segment_id_opt.is_none() {
-                    return Err(CollectionError::service_error(
-                        "Segment ID is empty".to_string(),
-                    ));
-                }
-                let segment_id = segment_id_opt.unwrap();
-                Segment::restore_snapshot(&entry_path, &segment_id)?;
-                std::fs::remove_file(&entry_path)?;
+            let entry = entry?;
+            let entry_path = entry.path();
+
+            if entry_path.extension().map_or(true, |ext| ext != "tar") {
+                continue;
             }
+
+            let Some(segment_id) = entry_path.file_stem().and_then(|str| str.to_str()) else {
+                return Err(CollectionError::service_error("Segment ID is empty".into()));
+            };
+
+            Segment::restore_snapshot(&entry_path, segment_id)?;
+            std::fs::remove_file(&entry_path)?; // TODO?
         }
+
         Ok(())
     }
 
