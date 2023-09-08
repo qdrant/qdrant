@@ -6,12 +6,12 @@ use quantization::EncodedVectors;
 use super::quantized_query_scorer::QuantizedQueryScorer;
 use super::quantized_reco_query_scorer::QuantizedRecoQueryScorer;
 use super::quantized_vectors::QuantizedVectorStorage;
-use crate::data_types::vectors::{QueryVector, VectorType};
+use crate::data_types::vectors::QueryVector;
 use crate::types::Distance;
-use crate::vector_storage::query::RecoQuery;
+use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
-pub(super) struct QuantizedRawScorerBuilder<'a> {
+pub(super) struct QuantizedScorerBuilder<'a> {
     quantized_storage: &'a QuantizedVectorStorage,
     query: Option<QueryVector>,
     point_deleted: &'a BitSlice,
@@ -20,7 +20,7 @@ pub(super) struct QuantizedRawScorerBuilder<'a> {
     distance: &'a Distance,
 }
 
-impl<'a> QuantizedRawScorerBuilder<'a> {
+impl<'a> QuantizedScorerBuilder<'a> {
     pub fn new(
         quantized_storage: &'a QuantizedVectorStorage,
         query: QueryVector,
@@ -50,38 +50,31 @@ impl<'a> QuantizedRawScorerBuilder<'a> {
         }
     }
 
+    #[inline]
     fn new_quantized_scorer<TEncodedQuery: 'a>(
         mut self,
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> Box<dyn RawScorer + 'a> {
-        match self.query.take().unwrap() {
-            QueryVector::Nearest(vector) => self.quantized_metric_scorer(vector, quantized_storage),
+        match self
+            .query
+            .take()
+            .expect("new() ensures to always have a value")
+        {
+            QueryVector::Nearest(vector) => {
+                let query_scorer =
+                    QuantizedQueryScorer::new(vector, quantized_storage, *self.distance);
+                self.into_raw_scorer(query_scorer)
+            }
             QueryVector::Recommend(reco_query) => {
-                self.quantized_reco_scorer(reco_query, quantized_storage)
+                let query_scorer =
+                    QuantizedRecoQueryScorer::new(reco_query, quantized_storage, *self.distance);
+                self.into_raw_scorer(query_scorer)
             }
         }
     }
 
-    fn quantized_reco_scorer<TEncodedQuery: 'a>(
-        &self,
-        query: RecoQuery<Vec<f32>>,
-        quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
-    ) -> Box<dyn RawScorer + 'a> {
-        let query_scorer = QuantizedRecoQueryScorer::new(query, quantized_storage, *self.distance);
-        raw_scorer_from_query_scorer(
-            query_scorer,
-            self.point_deleted,
-            self.vec_deleted,
-            self.is_stopped,
-        )
-    }
-
-    fn quantized_metric_scorer<TEncodedQuery: 'a>(
-        &self,
-        query: VectorType,
-        quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
-    ) -> Box<dyn RawScorer + 'a> {
-        let query_scorer = QuantizedQueryScorer::new(query, quantized_storage, *self.distance);
+    #[inline]
+    fn into_raw_scorer(self, query_scorer: impl QueryScorer + 'a) -> Box<dyn RawScorer + 'a> {
         raw_scorer_from_query_scorer(
             query_scorer,
             self.point_deleted,

@@ -1,6 +1,6 @@
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::types::{Distance, PointOffsetType, ScoreType};
-use crate::vector_storage::query::RecoQuery;
+use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct QuantizedRecoQueryScorer<'a, TEncodedQuery, TEncodedVectors>

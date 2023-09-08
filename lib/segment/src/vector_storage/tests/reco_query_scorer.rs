@@ -22,7 +22,7 @@ use crate::types::{
 };
 #[cfg(target_os = "linux")]
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
-use crate::vector_storage::query::RecoQuery;
+use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};

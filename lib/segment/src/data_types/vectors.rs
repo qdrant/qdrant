@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::named_vectors::NamedVectors;
 use crate::common::utils::transpose_map_into_named_vector;
-use crate::vector_storage::query::RecoQuery;
+use crate::vector_storage::query::reco_query::RecoQuery;
 
 /// Type of vector element.
 pub type VectorElementType = f32;

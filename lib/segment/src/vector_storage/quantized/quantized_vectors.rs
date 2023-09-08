@@ -6,7 +6,7 @@ use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
-use super::quantized_scorer_builder::QuantizedRawScorerBuilder;
+use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
@@ -55,7 +55,7 @@ impl QuantizedVectors {
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Box<dyn RawScorer + 'a> {
-        QuantizedRawScorerBuilder::new(
+        QuantizedScorerBuilder::new(
             &self.storage_impl,
             query,
             point_deleted,
@@ -296,7 +296,7 @@ impl QuantizedVectors {
                 vector_parameters,
                 bucket_size,
                 max_threads,
-                || stopped.load(Ordering::SeqCst),
+                || stopped.load(Ordering::Relaxed),
             )?))
         } else {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);

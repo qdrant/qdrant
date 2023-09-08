@@ -16,14 +16,6 @@ use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{async_raw_scorer, new_raw_scorer, VectorStorageEnum};
 
-pub fn insert_random_vectors(
-    rng: &mut impl rand::Rng,
-    storage: &mut impl VectorStorage,
-    vectors: usize,
-) -> Result<()> {
-    insert_distributed_vectors(storage, vectors, &mut sampler(rng))
-}
-
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
     test_async_raw_scorer_defaults(Distance::Cosine)
@@ -85,6 +77,13 @@ fn test_async_raw_scorer(
     }
 
     Ok(())
+}
+fn insert_random_vectors(
+    rng: &mut impl rand::Rng,
+    storage: &mut impl VectorStorage,
+    vectors: usize,
+) -> Result<()> {
+    insert_distributed_vectors(storage, vectors, &mut sampler(rng))
 }
 
 fn test_random_score(
