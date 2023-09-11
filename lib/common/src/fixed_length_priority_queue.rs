@@ -2,6 +2,7 @@ use std::cmp::Reverse;
 use std::collections::binary_heap::Iter as BinaryHeapIter;
 use std::collections::BinaryHeap;
 use std::iter::Rev;
+use std::num::NonZeroUsize;
 use std::vec::IntoIter as VecIntoIter;
 
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct FixedLengthPriorityQueue<T: Ord> {
     heap: BinaryHeap<Reverse<T>>,
-    length: usize,
+    length: NonZeroUsize,
 }
 
 impl<T: Ord> Default for FixedLengthPriorityQueue<T> {
@@ -22,14 +23,13 @@ impl<T: Ord> Default for FixedLengthPriorityQueue<T> {
 impl<T: Ord> FixedLengthPriorityQueue<T> {
     pub fn new(length: usize) -> Self {
         assert!(length > 0);
-        FixedLengthPriorityQueue::<T> {
-            heap: BinaryHeap::with_capacity(length + 1),
-            length,
-        }
+        let heap = BinaryHeap::with_capacity(length + 1);
+        let length = NonZeroUsize::new(length).unwrap();
+        FixedLengthPriorityQueue::<T> { heap, length }
     }
 
     pub fn push(&mut self, value: T) -> Option<T> {
-        if self.heap.len() < self.length {
+        if self.heap.len() < self.length.into() {
             self.heap.push(Reverse(value));
             return None;
         }
