@@ -119,11 +119,19 @@ COPY --from=builder /static ${APP}/static
 
 WORKDIR ${APP}
 
+ARG USER_ID=0
+
+# Create the user
+RUN if [[ "$USER_ID" != "0" ]]; then (groupadd --gid $USER_ID qdrant \
+    && useradd --uid $USER_ID --gid $USER_ID -m qdrant \
+    && chown -R $USER_ID:$USER_ID ${APP}); fi
+
 ENV TZ=Etc/UTC \
     RUN_MODE=production
 
 EXPOSE 6333
 EXPOSE 6334
+USER $USER_ID:$USER_ID
 
 LABEL org.opencontainers.image.title="Qdrant"
 LABEL org.opencontainers.image.description="Official Qdrant image"
