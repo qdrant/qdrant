@@ -1580,12 +1580,12 @@ impl ShardReplicaSet {
                 )));
             }
 
-            let mut update_futures = Vec::new();
+            let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
             for remote in active_remote_shards {
-                let op = operation.clone();
+                let operation = operation.clone();
                 update_futures.push(Either::Left(async move {
                     remote
-                        .update(op, wait)
+                        .update(operation, wait)
                         .await
                         .map_err(|err| (remote.peer_id, err))
                 }));
