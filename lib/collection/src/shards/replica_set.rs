@@ -1615,11 +1615,12 @@ impl ShardReplicaSet {
                 }
             }
             match self.shared_storage_config.update_concurrency {
-                Some(concurrency) =>
+                Some(concurrency) => {
                     futures::stream::iter(update_futures)
                         .buffered(concurrency.get())
                         .collect::<Vec<_>>()
-                        .await,
+                        .await
+                }
                 _ => futures::future::join_all(update_futures).await,
             }
         };
