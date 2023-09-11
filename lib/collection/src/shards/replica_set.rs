@@ -1614,14 +1614,14 @@ impl ShardReplicaSet {
                     update_futures.push(Either::Right(local_update));
                 }
             }
-            let concurrency = self
-                .shared_storage_config
-                .update_concurrency
-                .unwrap_or(update_futures.len());
-            futures::stream::iter(update_futures)
-                .buffered(concurrency)
-                .collect::<Vec<_>>()
-                .await
+            match self.shared_storage_config.update_concurrency {
+                Some(concurrency) =>
+                    futures::stream::iter(update_futures)
+                        .buffered(concurrency.get())
+                        .collect::<Vec<_>>()
+                        .await,
+                _ => futures::future::join_all(update_futures).await,
+            }
         };
 
         let total_results = all_res.len();

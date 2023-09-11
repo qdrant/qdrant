@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use crate::operations::types::NodeType;
@@ -18,7 +19,7 @@ pub struct SharedStorageConfig {
     pub handle_collection_load_errors: bool,
     pub recovery_mode: Option<String>,
     pub search_timeout: Duration,
-    pub update_concurrency: Option<usize>,
+    pub update_concurrency: Option<NonZeroUsize>,
 }
 
 impl Default for SharedStorageConfig {
@@ -41,7 +42,7 @@ impl SharedStorageConfig {
         handle_collection_load_errors: bool,
         recovery_mode: Option<String>,
         search_timeout: Option<Duration>,
-        update_concurrency: Option<usize>,
+        update_concurrency: Option<NonZeroUsize>,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
