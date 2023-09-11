@@ -74,9 +74,24 @@ impl PostingBuilder {
     }
 }
 
+/// Iterator over posting list elements offering skipping abilities to avoid full iteration.
 pub struct PostingListIterator<'a> {
     posting_list: &'a PostingList,
     current_index: usize,
+}
+
+impl<'a> Iterator for PostingListIterator<'a> {
+    type Item = &'a PostingElement;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_index < self.posting_list.elements.len() {
+            let element = &self.posting_list.elements[self.current_index];
+            self.current_index += 1;
+            Some(element)
+        } else {
+            None
+        }
+    }
 }
 
 impl<'a> PostingListIterator<'a> {
@@ -87,18 +102,9 @@ impl<'a> PostingListIterator<'a> {
         }
     }
 
+    /// Returns the next element without advancing the iterator.
     pub fn peek(&self) -> Option<&PostingElement> {
         self.posting_list.elements.get(self.current_index)
-    }
-
-    pub fn next(&mut self) -> Option<&PostingElement> {
-        if self.current_index < self.posting_list.elements.len() {
-            let element = &self.posting_list.elements[self.current_index];
-            self.current_index += 1;
-            Some(element)
-        } else {
-            None
-        }
     }
 
     /// Returns the number of elements from the current position to the end of the list.
@@ -133,6 +139,7 @@ impl<'a> PostingListIterator<'a> {
         }
     }
 
+    /// Skips to the end of the posting list and returns None.
     pub fn skip_to_end(&mut self) -> Option<&PostingElement> {
         self.current_index = self.posting_list.elements.len();
         None
