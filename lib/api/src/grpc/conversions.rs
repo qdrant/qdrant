@@ -4,7 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{default_quantization_ignore_value, default_quantization_rescore_value};
+use segment::types::{default_quantization_ignore_value, Rescoring};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -343,9 +343,11 @@ impl From<QuantizationSearchParams> for segment::types::QuantizationSearchParams
     fn from(params: QuantizationSearchParams) -> Self {
         Self {
             ignore: params.ignore.unwrap_or(default_quantization_ignore_value()),
-            rescore: params
-                .rescore
-                .unwrap_or(default_quantization_rescore_value()),
+            rescore: match params.rescore {
+                Some(true) => Rescoring::Enabled,
+                Some(false) => Rescoring::Disabled,
+                None => Rescoring::Auto,
+            },
             oversampling: params.oversampling,
         }
     }
@@ -355,7 +357,11 @@ impl From<segment::types::QuantizationSearchParams> for QuantizationSearchParams
     fn from(params: segment::types::QuantizationSearchParams) -> Self {
         Self {
             ignore: Some(params.ignore),
-            rescore: Some(params.rescore),
+            rescore: match params.rescore {
+                Rescoring::Enabled => Some(true),
+                Rescoring::Disabled => Some(false),
+                Rescoring::Auto => None,
+            },
             oversampling: params.oversampling,
         }
     }

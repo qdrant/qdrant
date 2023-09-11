@@ -35,7 +35,7 @@ use crate::types::Condition::Field;
 use crate::types::PointOffsetType;
 use crate::types::{
     default_quantization_ignore_value, FieldCondition, Filter, HnswConfig,
-    QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
+    QuantizationSearchParams, Rescoring, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{
     new_raw_scorer, new_stoppable_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum,
@@ -233,7 +233,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         // - and `params.quantization.ignore` is `false`
         let quantization_params = params.and_then(|p| p.quantization).unwrap_or_default();
 
-        let (raw_scorer, quantized) = match quantized_storage {
+        let (raw_scorer, do_oversampling) = match quantized_storage {
             // If `quantization_params` is `Some`, then quantization is *not* ignored
             Some(quantized_storage) if !quantization_params.ignore => {
                 let scorer = quantized_storage.raw_scorer(
@@ -243,7 +243,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     is_stopped,
                 );
 
-                (scorer, true)
+                let do_oversampling = match quantization_params.rescore {
+                    Rescoring::Enabled => true,
+                    Rescoring::Disabled => false,
+                    Rescoring::Auto => quantized_storage.default_rescoring(),
+                };
+
+                (scorer, do_oversampling)
             }
 
             _ => {
@@ -266,7 +272,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             return Vec::new();
         };
 
-        if quantized && quantization_params.rescore {
+        if do_oversampling {
             let oversampling = quantization_params.oversampling.unwrap_or(1.0);
 
             let oversampled_top = if oversampling > 1.0 {
@@ -432,7 +438,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         let mut params = *params;
                         params.quantization = Some(QuantizationSearchParams {
                             ignore: true,
-                            rescore: false,
+                            rescore: Rescoring::Disabled,
                             oversampling: None,
                         }); // disable quantization for exact search
                         params

@@ -274,6 +274,16 @@ pub struct SegmentInfo {
     pub vector_data: HashMap<String, VectorDataInfo>,
 }
 
+/// Rescoring modes. Used to re-score top-k results using original vectors.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Rescoring {
+    Enabled,
+    Disabled,
+    #[default]
+    Auto,
+}
+
 /// Additional parameters of the search
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -282,11 +292,13 @@ pub struct QuantizationSearchParams {
     #[serde(default = "default_quantization_ignore_value")]
     pub ignore: bool,
 
-    /// If true, use original vectors to re-score top-k results.
+    /// Re-score mode top-k results.
+    /// If enabled, all results will be re-scored using original vectors.
     /// Might require more time in case if original vectors are stored on disk.
-    /// Default is false.
-    #[serde(default = "default_quantization_rescore_value")]
-    pub rescore: bool,
+    /// Default mode is Auto. Qdrant decided automatically if re-scoring is required.
+    #[serde(deserialize_with = "deserialize_rescore")]
+    #[serde(default)]
+    pub rescore: Rescoring,
 
     /// Oversampling factor for quantization. Default is 1.0.
     ///
@@ -304,12 +316,28 @@ pub const fn default_quantization_ignore_value() -> bool {
     false
 }
 
-pub const fn default_quantization_rescore_value() -> bool {
-    false
-}
-
 pub const fn default_quantization_oversampling_value() -> Option<f64> {
     None
+}
+
+fn deserialize_rescore<'de, D>(deserializer: D) -> Result<Rescoring, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    Ok(match serde::de::Deserialize::deserialize(deserializer)? {
+        // backward compatibility, bool was used before
+        Value::Bool(b) => {
+            if b {
+                Rescoring::Enabled
+            } else {
+                Rescoring::Disabled
+            }
+        }
+        Value::String(s) if s == "enabled" => Rescoring::Enabled,
+        Value::String(s) if s == "disabled" => Rescoring::Disabled,
+        Value::String(s) if s == "auto" => Rescoring::Auto,
+        _ => return Err(serde::de::Error::custom("invalid rescoring type")),
+    })
 }
 
 /// Additional parameters of the search
@@ -2450,6 +2478,55 @@ mod tests {
         assert!(merged.must.as_ref().unwrap().contains(&condition1));
         assert!(merged.must.as_ref().unwrap().contains(&condition2));
         assert!(merged.should.as_ref().unwrap().contains(&condition1));
+    }
+
+    #[test]
+    fn test_parse_quantization_rescoring() {
+        let query = r#"
+        {
+            "rescore": true
+        }
+        "#;
+        let params: QuantizationSearchParams = serde_json::from_str(query).unwrap();
+        assert_eq!(params.rescore, Rescoring::Enabled);
+
+        let query = r#"
+        {
+            "rescore": false
+        }
+        "#;
+        let params: QuantizationSearchParams = serde_json::from_str(query).unwrap();
+        assert_eq!(params.rescore, Rescoring::Disabled);
+
+        let query = r#"
+        { }
+        "#;
+        let params: QuantizationSearchParams = serde_json::from_str(query).unwrap();
+        assert_eq!(params.rescore, Rescoring::Auto);
+
+        let query = r#"
+        {
+            "rescore": "enabled"
+        }
+        "#;
+        let params: QuantizationSearchParams = serde_json::from_str(query).unwrap();
+        assert_eq!(params.rescore, Rescoring::Enabled);
+
+        let query = r#"
+        {
+            "rescore": "disabled"
+        }
+        "#;
+        let params: QuantizationSearchParams = serde_json::from_str(query).unwrap();
+        assert_eq!(params.rescore, Rescoring::Disabled);
+
+        let query = r#"
+        {
+            "rescore": "auto"
+        }
+        "#;
+        let params: QuantizationSearchParams = serde_json::from_str(query).unwrap();
+        assert_eq!(params.rescore, Rescoring::Auto);
     }
 }
 
