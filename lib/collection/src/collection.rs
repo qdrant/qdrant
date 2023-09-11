@@ -17,7 +17,7 @@ use segment::types::{
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
-use tokio::fs::{copy, create_dir_all, remove_file, rename};
+use tokio::fs::{copy, create_dir_all, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use validator::Validate;
@@ -1581,32 +1581,31 @@ impl Collection {
             .save(&snapshot_temp_dir_path)?;
 
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
-        let snapshot_temp_arc_file = tempfile::Builder::new()
+        let mut snapshot_temp_arc_file = tempfile::Builder::new()
             .prefix(&format!("{snapshot_name}-arc-"))
             .tempfile_in(global_temp_dir)?;
 
         // Archive snapshot folder into a single file
-        let snapshot_temp_arc_file_arc = Arc::new(snapshot_temp_arc_file);
-        let snapshot_arc_file_path_clone = snapshot_temp_arc_file_arc.clone();
         let snapshot_temp_dir_path_clone = snapshot_temp_dir_path.clone();
-        log::debug!("Archiving snapshot {:?}", snapshot_temp_dir_path);
+        log::debug!("Archiving snapshot {:?}", &snapshot_temp_dir_path);
         let archiving = tokio::task::spawn_blocking(move || {
-            let mut builder = TarBuilder::new(snapshot_arc_file_path_clone.as_ref());
+            let mut builder = TarBuilder::new(snapshot_temp_arc_file.as_file_mut());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
             builder.append_dir_all(".", &snapshot_temp_dir_path_clone)?;
             builder.finish()?;
-            Ok::<_, CollectionError>(())
+            drop(builder);
+            // return ownership of the file
+            Ok::<_, CollectionError>(snapshot_temp_arc_file)
         });
-        archiving.await??;
+        snapshot_temp_arc_file = archiving.await??;
 
         // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
         // We can't copy to the target location directly, because copy is not atomic.
         // So we copy to the final location with a temporary name and then rename atomically.
         let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
-        copy(snapshot_temp_arc_file_arc.path(), &snapshot_path_tmp_move).await?;
+        copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
         rename(&snapshot_path_tmp_move, &snapshot_path).await?;
-        remove_file(snapshot_temp_arc_file_arc.path()).await?;
 
         log::info!(
             "Collection snapshot {} completed into {:?}",
