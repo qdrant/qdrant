@@ -108,7 +108,9 @@ storage:
     on_disk: false
     # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     payload_m: null
-  #update_concurrency: 2
+  # Maximum number of concurrent updates to remote replica sets on other peers.
+  # If `null` - maximum concurrency is used.
+  update_concurrency: null
 
 service:
 

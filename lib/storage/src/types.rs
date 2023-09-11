@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -70,7 +71,7 @@ pub struct StorageConfig {
     #[serde(default)]
     pub recovery_mode: Option<String>,
     #[serde(default)]
-    pub update_concurrency: Option<usize>,
+    pub update_concurrency: Option<NonZeroUsize>,
 }
 
 impl StorageConfig {
