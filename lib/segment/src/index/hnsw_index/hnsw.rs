@@ -35,7 +35,7 @@ use crate::types::Condition::Field;
 use crate::types::PointOffsetType;
 use crate::types::{
     default_quantization_ignore_value, FieldCondition, Filter, HnswConfig,
-    QuantizationSearchParams, Rescoring, SearchParams, VECTOR_ELEMENT_SIZE,
+    QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{
     new_raw_scorer, new_stoppable_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum,
@@ -244,9 +244,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 );
 
                 let do_oversampling = match quantization_params.rescore {
-                    Rescoring::Enabled => true,
-                    Rescoring::Disabled => false,
-                    Rescoring::Auto => quantized_storage.default_rescoring(),
+                    Some(true) => true,
+                    Some(false) => false,
+                    None => quantized_storage.default_rescoring(),
                 };
 
                 (scorer, do_oversampling)
@@ -438,7 +438,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         let mut params = *params;
                         params.quantization = Some(QuantizationSearchParams {
                             ignore: true,
-                            rescore: Rescoring::Disabled,
+                            rescore: Some(false),
                             oversampling: None,
                         }); // disable quantization for exact search
                         params
