@@ -55,8 +55,8 @@ fn test_alias_operation() {
         handle_collection_load_errors: false,
         recovery_mode: None,
         async_scorer: false,
-        // update_concurrency: Some(NonZeroUsize::new(2).unwrap()),
-        update_concurrency: None,
+        update_concurrency: Some(NonZeroUsize::new(2).unwrap()),
+        // update_concurrency: None,
     };
 
     let search_runtime = Runtime::new().unwrap();
