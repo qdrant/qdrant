@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use crate::common::types::RecordId;
+use crate::common::types::{DimId, RecordId};
 use crate::index::posting_list::PostingList;
 
+/// Inverted flatten index from dimension id to posting list
 pub struct InvertedIndex {
     pub postings: Vec<PostingList>,
 }
@@ -14,7 +15,7 @@ impl InvertedIndex {
 }
 
 pub struct InvertedIndexBuilder {
-    postings: HashMap<u32, PostingList>,
+    postings: HashMap<DimId, PostingList>,
 }
 
 impl InvertedIndexBuilder {
@@ -24,7 +25,7 @@ impl InvertedIndexBuilder {
         }
     }
 
-    pub fn add(&mut self, id: u32, posting: PostingList) -> &mut Self {
+    pub fn add(&mut self, id: DimId, posting: PostingList) -> &mut Self {
         self.postings.insert(id, posting);
         self
     }
