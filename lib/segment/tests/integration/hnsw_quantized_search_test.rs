@@ -142,7 +142,7 @@ fn hnsw_quantized_search_test(
             &false.into(),
         );
         let best_1 = oversampling_1_result[0][0];
-        let worst_1 = oversampling_1_result[0][top - 1];
+        let worst_1 = oversampling_1_result[0].last().unwrap();
 
         let oversampling_2_result = hnsw_index.search(
             &[&oversampling_query],
@@ -160,7 +160,7 @@ fn hnsw_quantized_search_test(
             &false.into(),
         );
         let best_2 = oversampling_2_result[0][0];
-        let worst_2 = oversampling_2_result[0][top - 1];
+        let worst_2 = oversampling_2_result[0].last().unwrap();
 
         if best_2.score < best_1.score {
             println!("oversampling_1_result = {:?}", oversampling_1_result);
