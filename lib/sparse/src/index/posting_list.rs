@@ -2,7 +2,7 @@ use crate::common::types::{DimWeight, RecordId};
 
 #[derive(Debug, Copy, Clone)]
 pub struct PostingElement {
-    pub id: RecordId,
+    pub record_id: RecordId,
     pub weight: DimWeight,
     pub max_next_weight: DimWeight,
 }
@@ -35,9 +35,9 @@ impl PostingBuilder {
         }
     }
 
-    pub fn add(&mut self, id: RecordId, weight: DimWeight) {
+    pub fn add(&mut self, record_id: RecordId, weight: DimWeight) {
         self.elements.push(PostingElement {
-            id,
+            record_id,
             weight,
             max_next_weight: f32::NEG_INFINITY,
         });
@@ -45,14 +45,17 @@ impl PostingBuilder {
 
     pub fn build(mut self) -> PostingList {
         // Sort by id
-        self.elements.sort_unstable_by_key(|e| e.id);
+        self.elements.sort_unstable_by_key(|e| e.record_id);
 
         // Check for duplicates
         #[cfg(debug_assertions)]
         {
             for i in 1..self.elements.len() {
-                if self.elements[i].id == self.elements[i - 1].id {
-                    panic!("Duplicate id {} in posting list", self.elements[i].id);
+                if self.elements[i].record_id == self.elements[i - 1].record_id {
+                    panic!(
+                        "Duplicate id {} in posting list",
+                        self.elements[i].record_id
+                    );
                 }
             }
         }
@@ -115,8 +118,8 @@ impl<'a> PostingListIterator<'a> {
         }
         // Use binary search to find the next element with ID > id
 
-        let next_element =
-            self.posting_list.elements[self.current_index..].binary_search_by(|e| e.id.cmp(&id));
+        let next_element = self.posting_list.elements[self.current_index..]
+            .binary_search_by(|e| e.record_id.cmp(&id));
 
         match next_element {
             Ok(found_offset) => {
@@ -157,21 +160,21 @@ mod tests {
 
         let mut iter = PostingListIterator::new(&posting_list);
 
-        assert_eq!(iter.peek().unwrap().id, 1);
+        assert_eq!(iter.peek().unwrap().record_id, 1);
 
-        assert_eq!(iter.next().unwrap().id, 1);
-        assert_eq!(iter.peek().unwrap().id, 2);
-        assert_eq!(iter.next().unwrap().id, 2);
-        assert_eq!(iter.peek().unwrap().id, 3);
+        assert_eq!(iter.next().unwrap().record_id, 1);
+        assert_eq!(iter.peek().unwrap().record_id, 2);
+        assert_eq!(iter.next().unwrap().record_id, 2);
+        assert_eq!(iter.peek().unwrap().record_id, 3);
 
-        assert_eq!(iter.skip_to(7).unwrap().id, 7);
-        assert_eq!(iter.peek().unwrap().id, 7);
+        assert_eq!(iter.skip_to(7).unwrap().record_id, 7);
+        assert_eq!(iter.peek().unwrap().record_id, 7);
 
         assert!(iter.skip_to(9).is_none());
-        assert_eq!(iter.peek().unwrap().id, 10);
+        assert_eq!(iter.peek().unwrap().record_id, 10);
 
         assert!(iter.skip_to(20).is_some());
-        assert_eq!(iter.peek().unwrap().id, 20);
+        assert_eq!(iter.peek().unwrap().record_id, 20);
 
         assert!(iter.skip_to(21).is_none());
         assert!(iter.peek().is_none());

@@ -81,7 +81,7 @@ impl<'a> SearchContext<'a> {
             if let Some(record_id) = posting_iterator
                 .posting_list_iterator
                 .peek()
-                .map(|element| element.id)
+                .map(|element| element.record_id)
             {
                 // accumulate score for the current record id
                 if record_id == min_record_id {
@@ -104,8 +104,8 @@ impl<'a> SearchContext<'a> {
         // Iterate first time to find min record id at the head of the posting lists
         for posting_iterator in to_inspect.iter() {
             if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
-                if Some(next_element.id) < min_record_id || min_record_id.is_none() {
-                    min_record_id = Some(next_element.id);
+                if Some(next_element.record_id) < min_record_id || min_record_id.is_none() {
+                    min_record_id = Some(next_element.record_id);
                 }
             }
         }
