@@ -1586,12 +1586,11 @@ impl Collection {
             .tempfile_in(global_temp_dir)?;
 
         // Archive snapshot folder into a single file
-        let snapshot_temp_dir_path_clone = snapshot_temp_dir_path.clone();
         log::debug!("Archiving snapshot {:?}", &snapshot_temp_dir_path);
         let archiving = tokio::task::spawn_blocking(move || {
             let mut builder = TarBuilder::new(snapshot_temp_arc_file.as_file_mut());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
-            builder.append_dir_all(".", &snapshot_temp_dir_path_clone)?;
+            builder.append_dir_all(".", &snapshot_temp_dir_path)?;
             builder.finish()?;
             drop(builder);
             // return ownership of the file
