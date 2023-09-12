@@ -1308,7 +1308,7 @@ mod tests {
         use segment::segment_constructor::build_segment;
         use segment::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
 
-        // Create proxyied multivec segment
+        // Create proxied multivec segment
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let dim = 1;
         let config = SegmentConfig {
