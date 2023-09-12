@@ -477,10 +477,21 @@ impl<'s> SegmentHolder {
         // making copy-on-write impossible.
         // Locking all segments prevents copy-on-write operations from occurring in between
         // flushes.
-        let segment_reads: Vec<_> = segments
+        //
+        // WARNING: Ordering is very important here. Specifically:
+        // - We MUST lock non-appendable first, then appendable.
+        // - We MUST flush appendable first, then non-appendable
+        // Because of this, two rev(erse) calls are used below here.
+        //
+        // Locking must happen in this order because `apply_points_to_appendable` can take two
+        // write locks, also in this order. If we'd use different ordering we will eventually end
+        // up with a deadlock.
+        let mut segment_reads: Vec<_> = segments
             .iter()
+            .rev()
             .map(|segment| self.aloha_lock_segment_read(segment))
             .collect();
+        segment_reads.reverse();
 
         // Assert we flush appendable segments first
         debug_assert!(
