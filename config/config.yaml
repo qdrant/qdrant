@@ -17,7 +17,7 @@ storage:
   # Note: those payload values that are involved in filtering and are indexed - remain in RAM.
   on_disk_payload: true
 
-  # Maximum number of concurrent updates to remote replica sets on other peers.
+  # Maximum number of concurrent updates to shard replicas
   # If `null` - maximum concurrency is used.
   update_concurrency: null
 
