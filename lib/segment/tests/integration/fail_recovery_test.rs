@@ -51,7 +51,7 @@ fn test_insert_fail_recovery() {
     assert!(ok_res.is_ok());
     assert!(segment.error_status.is_some());
 
-    // Perform operation anf recover the error - operation is fixed now
+    // Perform operation and recover the error - operation is fixed now
     let recover_res = segment.set_payload(
         2,
         1.into(),
