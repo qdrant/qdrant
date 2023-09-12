@@ -1980,7 +1980,7 @@ mod tests {
         assert_eq!(segment_info.num_points, 2);
         assert_eq!(segment_info.num_vectors, 2);
 
-        // Delete point 4, counts should derease by 1
+        // Delete point 4, counts should decrease by 1
         segment.delete_point(103, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 1);
@@ -2061,7 +2061,7 @@ mod tests {
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete point 4, counts should derease by 1
+        // Delete point 4, counts should decrease by 1
         segment.delete_point(105, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
