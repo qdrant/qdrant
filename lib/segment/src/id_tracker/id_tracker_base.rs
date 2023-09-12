@@ -6,7 +6,7 @@ use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
 
-/// Sampling randomess seed
+/// Sampling randomness seed
 ///
 /// Using seeded randomness so search results don't show randomness or 'inconsistencies' which
 /// would otherwise be introduced by HNSW/ID tracker point sampling.
