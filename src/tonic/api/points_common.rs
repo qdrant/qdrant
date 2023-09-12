@@ -19,8 +19,7 @@ use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation,
 };
 use collection::operations::types::{
-    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
-    SearchRequestBatch,
+    default_exact_count, Batch, PointRequest, ScrollRequest, SearchRequest,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -730,7 +729,7 @@ pub async fn search_batch(
         .map(|search_point| search_point.try_into())
         .collect();
 
-    let search_requests = SearchRequestBatch {
+    let search_requests = Batch {
         searches: searches?,
     };
 
@@ -867,7 +866,7 @@ pub async fn recommend_batch(
         .into_iter()
         .map(|recommend_point| recommend_point.try_into())
         .collect();
-    let recommend_batch = RecommendRequestBatch {
+    let recommend_batch = Batch {
         searches: searches?,
     };
 

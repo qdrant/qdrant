@@ -28,8 +28,8 @@ use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequest, SearchRequestBatch, UpdateResult,
+    Batch, CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult,
+    PointRequest, Record, SearchRequest, UpdateResult,
 };
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
@@ -480,7 +480,7 @@ impl ShardOperation for RemoteShard {
 
     async fn search(
         &self,
-        batch_request: Arc<SearchRequestBatch>,
+        batch_request: Arc<Batch<SearchRequest>>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);

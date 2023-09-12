@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
-use collection::operations::types::{SearchRequest, SearchRequestBatch, VectorParams};
+use collection::operations::types::{Batch, SearchRequest, VectorParams};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
@@ -146,7 +146,7 @@ fn batch_search_bench(c: &mut Criterion) {
                         };
                         let result = shard
                             .search(
-                                Arc::new(SearchRequestBatch {
+                                Arc::new(Batch {
                                     searches: vec![search_query],
                                 }),
                                 search_runtime_handle,
@@ -179,7 +179,7 @@ fn batch_search_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let search_query = SearchRequestBatch { searches };
+                    let search_query = Batch { searches };
                     let result = shard
                         .search(Arc::new(search_query), search_runtime_handle)
                         .await

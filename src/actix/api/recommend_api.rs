@@ -2,9 +2,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::types::{
-    RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
-};
+use collection::operations::types::{Batch, RecommendGroupsRequest, RecommendRequest};
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -46,7 +44,7 @@ async fn recommend_points(
 async fn do_recommend_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: RecommendRequestBatch,
+    request: Batch<RecommendRequest>,
     read_consistency: Option<ReadConsistency>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.recommend_batch(collection_name, request, read_consistency)
@@ -57,7 +55,7 @@ async fn do_recommend_batch_points(
 async fn recommend_batch_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    request: Json<RecommendRequestBatch>,
+    request: Json<Batch<RecommendRequest>>,
     params: Query<ReadParams>,
 ) -> impl Responder {
     let timing = Instant::now();

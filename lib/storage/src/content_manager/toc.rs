@@ -19,9 +19,9 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    AliasDescription, CollectionResult, CountRequest, CountResult, GroupsResult, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
-    SearchRequestBatch, UpdateResult, VectorsConfig,
+    AliasDescription, Batch, CollectionResult, CountRequest, CountResult, GroupsResult,
+    PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
+    UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -1131,7 +1131,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - for what collection do we recommend
-    /// * `request` - [`RecommendRequestBatch`]
+    /// * `request` - [`Batch<RecommendRequest>`]
     ///
     /// # Result
     ///
@@ -1139,7 +1139,7 @@ impl TableOfContent {
     pub async fn recommend_batch(
         &self,
         collection_name: &str,
-        request: RecommendRequestBatch,
+        request: Batch<RecommendRequest>,
         read_consistency: Option<ReadConsistency>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
@@ -1184,7 +1184,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - in what collection do we search
-    /// * `request` - [`SearchRequestBatch`]
+    /// * `request` - [`Batch<SearchRequest>`]
     /// * `shard_selection` - which local shard to use
     /// # Result
     ///
@@ -1192,7 +1192,7 @@ impl TableOfContent {
     pub async fn search_batch(
         &self,
         collection_name: &str,
-        request: SearchRequestBatch,
+        request: Batch<SearchRequest>,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {

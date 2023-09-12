@@ -1,7 +1,7 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::operations::types::{SearchGroupsRequest, SearchRequest, SearchRequestBatch};
+use collection::operations::types::{Batch, SearchGroupsRequest, SearchRequest};
 use storage::content_manager::toc::TableOfContent;
 
 use super::read_params::ReadParams;
@@ -34,7 +34,7 @@ async fn search_points(
 async fn batch_search_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    request: Json<SearchRequestBatch>,
+    request: Json<Batch<SearchRequest>>,
     params: Query<ReadParams>,
 ) -> impl Responder {
     let timing = Instant::now();

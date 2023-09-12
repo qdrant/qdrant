@@ -37,9 +37,9 @@ use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
 use crate::operations::types::{
-    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
+    Batch, CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
-    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, VectorsConfigDiff,
+    ScrollResult, SearchRequest, UpdateResult, VectorsConfigDiff,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
@@ -821,7 +821,7 @@ impl Collection {
 
     pub async fn search_batch(
         &self,
-        request: SearchRequestBatch,
+        request: Batch<SearchRequest>,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -871,7 +871,7 @@ impl Collection {
                 without_payload_request.with_vector = None;
                 without_payload_requests.push(without_payload_request);
             }
-            let without_payload_batch = SearchRequestBatch {
+            let without_payload_batch = Batch {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
@@ -900,7 +900,7 @@ impl Collection {
 
     pub async fn _search_batch(
         &self,
-        request: SearchRequestBatch,
+        request: Batch<SearchRequest>,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -923,7 +923,7 @@ impl Collection {
     async fn merge_from_shards(
         &self,
         mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
-        request: Arc<SearchRequestBatch>,
+        request: Arc<Batch<SearchRequest>>,
         shard_selection: Option<u32>,
     ) -> Result<Vec<Vec<ScoredPoint>>, CollectionError> {
         let batch_size = request.searches.len();
@@ -1028,7 +1028,7 @@ impl Collection {
             return Ok(vec![]);
         }
         // search is a special case of search_batch with a single batch
-        let request_batch = SearchRequestBatch {
+        let request_batch = Batch {
             searches: vec![request],
         };
         let results = self

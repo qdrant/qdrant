@@ -12,8 +12,8 @@ use tokio::sync::RwLockReadGuard;
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequest, RecommendRequest, RecommendRequestBatch,
-    Record, SearchRequest, SearchRequestBatch, UsingVector,
+    Batch, CollectionError, CollectionResult, PointRequest, RecommendRequest, Record,
+    SearchRequest, UsingVector,
 };
 
 fn avg_vectors<'a>(
@@ -53,7 +53,7 @@ where
         return Ok(vec![]);
     }
     // `recommend_by` is a special case of recommend_by_batch with a single batch
-    let request_batch = RecommendRequestBatch {
+    let request_batch = Batch {
         searches: vec![request],
     };
     let results = recommend_batch_by(
@@ -136,7 +136,7 @@ fn get_search_vector_name(request: &RecommendRequest) -> String {
 /// * `collection_by_name` - function to retrieve collection by name, used to retrieve points from other collections
 ///
 pub async fn recommend_batch_by<'a, F, Fut>(
-    request_batch: RecommendRequestBatch,
+    request_batch: Batch<RecommendRequest>,
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
@@ -306,7 +306,7 @@ where
         searches.push(search_request)
     }
 
-    let search_batch_request = SearchRequestBatch { searches };
+    let search_batch_request = Batch { searches };
 
     collection
         .search_batch(search_batch_request, read_consistency, None)

@@ -7,10 +7,10 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
 };
 use collection::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
+    AliasDescription, Batch, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
     CountRequest, CountResult, GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult,
-    SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
+    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
+    UpdateResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
@@ -59,8 +59,8 @@ struct AllDefinitions {
     ap: CollectionClusterInfo,
     aq: TelemetryData,
     ar: ClusterOperations,
-    at: SearchRequestBatch,
-    au: RecommendRequestBatch,
+    at: Batch<SearchRequest>,
+    au: Batch<RecommendRequest>,
     av: LocksOption,
     aw: SnapshotRecover,
     ax: CollectionsAliasesResponse,

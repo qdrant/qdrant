@@ -12,8 +12,8 @@ use tokio::sync::oneshot;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
+    Batch, CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CountRequest,
+    CountResult, PointRequest, Record, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
@@ -118,7 +118,7 @@ impl ShardOperation for LocalShard {
 
     async fn search(
         &self,
-        request: Arc<SearchRequestBatch>,
+        request: Arc<Batch<SearchRequest>>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let (collection_params, indexing_threshold_kb) = {
@@ -132,7 +132,7 @@ impl ShardOperation for LocalShard {
             )
         };
 
-        let core_request = Arc::new(CoreSearchRequestBatch::from(request.as_ref().clone()));
+        let core_request: Arc<Batch<CoreSearchRequest>> = Arc::new(request.as_ref().clone().into());
 
         // check vector names existing
         for req in &core_request.searches {

@@ -4,9 +4,8 @@ use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointsSelector, WriteOrdering,
 };
 use collection::operations::types::{
-    CountRequest, CountResult, GroupsResult, PointRequest, RecommendGroupsRequest, Record,
-    ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    Batch, CountRequest, CountResult, GroupsResult, PointRequest, RecommendGroupsRequest, Record,
+    ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest, UpdateResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors, VectorOperations};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
@@ -472,7 +471,7 @@ pub async fn do_search_points(
 pub async fn do_search_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: SearchRequestBatch,
+    request: Batch<SearchRequest>,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {

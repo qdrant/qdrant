@@ -22,7 +22,7 @@ use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentH
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequestBatch, QueryEnum, Record,
+    Batch, CollectionError, CollectionResult, CoreSearchRequest, QueryEnum, Record,
 };
 
 type BatchOffset = usize;
@@ -151,7 +151,7 @@ impl SegmentsSearcher {
 
     pub async fn search(
         segments: &RwLock<SegmentHolder>,
-        batch_request: Arc<CoreSearchRequestBatch>,
+        batch_request: Arc<Batch<CoreSearchRequest>>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
         is_stopped: Arc<AtomicBool>,
@@ -230,7 +230,7 @@ impl SegmentsSearcher {
                 let mut res = vec![];
                 for (segment_id, batch_ids) in searches_to_rerun.iter() {
                     let segment = locked_segments[*segment_id].clone();
-                    let partial_batch_request = Arc::new(CoreSearchRequestBatch {
+                    let partial_batch_request = Arc::new(Batch {
                         searches: batch_ids
                             .iter()
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
@@ -396,7 +396,7 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 /// * Vector of boolean indicating if the segment have further points to search
 fn search_in_segment(
     segment: LockedSegment,
-    request: Arc<CoreSearchRequestBatch>,
+    request: Arc<Batch<CoreSearchRequest>>,
     total_points: usize,
     use_sampling: bool,
     is_stopped: &AtomicBool,
@@ -652,7 +652,7 @@ mod tests {
             offset: 0,
         };
 
-        let batch_request = CoreSearchRequestBatch {
+        let batch_request = Batch {
             searches: vec![req],
         };
 
@@ -716,7 +716,7 @@ mod tests {
                 score_threshold: None,
             };
 
-            let batch_request = CoreSearchRequestBatch {
+            let batch_request = Batch {
                 searches: vec![req1.into(), req2.into()],
             };
 

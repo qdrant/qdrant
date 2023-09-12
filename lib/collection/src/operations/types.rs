@@ -252,10 +252,10 @@ pub struct SearchRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct SearchRequestBatch {
+#[serde(rename = "{TRequest}Batch", rename_all = "snake_case")]
+pub struct Batch<TRequest: Validate> {
     #[validate]
-    pub searches: Vec<SearchRequest>,
+    pub searches: Vec<TRequest>,
 }
 
 #[derive(Debug, Clone)]
@@ -289,7 +289,7 @@ impl AsRef<QueryEnum> for QueryEnum {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Validate)]
 pub struct CoreSearchRequest {
     /// Every kind of query that can be performed on segment level
     pub query: QueryEnum,
@@ -308,11 +308,6 @@ pub struct CoreSearchRequest {
     /// Whether to return the point vector with the result?
     pub with_vector: Option<WithVector>,
     pub score_threshold: Option<ScoreType>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CoreSearchRequestBatch {
-    pub searches: Vec<CoreSearchRequest>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -428,13 +423,6 @@ pub struct RecommendRequest {
     /// Note: the other collection should have the same vector size as the current collection
     #[serde(default)]
     pub lookup_from: Option<LookupLocation>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
-pub struct RecommendRequestBatch {
-    #[validate]
-    pub searches: Vec<RecommendRequest>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -1161,14 +1149,10 @@ pub struct BaseGroupRequest {
     pub with_lookup: Option<WithLookupInterface>,
 }
 
-impl From<SearchRequestBatch> for CoreSearchRequestBatch {
-    fn from(batch: SearchRequestBatch) -> Self {
-        CoreSearchRequestBatch {
-            searches: batch
-                .searches
-                .into_iter()
-                .map(CoreSearchRequest::from)
-                .collect(),
+impl From<Batch<SearchRequest>> for Batch<CoreSearchRequest> {
+    fn from(batch: Batch<SearchRequest>) -> Self {
+        Self {
+            searches: batch.searches.into_iter().map(Into::into).collect(),
         }
     }
 }
