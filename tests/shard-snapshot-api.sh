@@ -210,7 +210,7 @@ function recover-local-concurrent {
 	check-recovered - "$SNAPSHOT_POINTS" "$@"
 }
 
-function recocover-local-concurrent-priority-snapshot {
+function recover-local-concurrent-priority-snapshot {
 	recover-local-concurrent snapshot
 }
 
