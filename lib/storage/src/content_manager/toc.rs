@@ -61,7 +61,6 @@ use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
-pub const SNAPSHOTS_TEMP_DIR: &str = "snapshots_temp";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidden";
 

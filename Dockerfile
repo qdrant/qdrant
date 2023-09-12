@@ -62,7 +62,7 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-RUN xx-apt-get install -y gcc g++ libc6-dev libunwind-dev
+RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
 ARG PROFILE=release
@@ -81,7 +81,7 @@ COPY --from=planner /qdrant/recipe.json recipe.json
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
-RUN PKG_CONFIG="$(xx-info)-pkg-config" \
+RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
@@ -91,7 +91,7 @@ COPY . .
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
-RUN PKG_CONFIG="$(xx-info)-pkg-config" \
+RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
     xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --bin qdrant \
@@ -119,11 +119,19 @@ COPY --from=builder /static ${APP}/static
 
 WORKDIR ${APP}
 
+ARG USER_ID=0
+
+# Create the user
+RUN if [[ "$USER_ID" != "0" ]]; then (groupadd --gid $USER_ID qdrant \
+    && useradd --uid $USER_ID --gid $USER_ID -m qdrant \
+    && chown -R $USER_ID:$USER_ID ${APP}); fi
+
 ENV TZ=Etc/UTC \
     RUN_MODE=production
 
 EXPOSE 6333
 EXPOSE 6334
+USER $USER_ID:$USER_ID
 
 LABEL org.opencontainers.image.title="Qdrant"
 LABEL org.opencontainers.image.description="Official Qdrant image"
