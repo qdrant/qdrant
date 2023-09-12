@@ -263,7 +263,7 @@ pub trait SegmentOptimizer {
     ///
     /// # Result
     ///
-    /// Rolls back back optimization state.
+    /// Rolls back optimization state.
     /// All processed changes will still be there, but the collection should be returned into state
     /// before optimization.
     fn handle_cancellation(
