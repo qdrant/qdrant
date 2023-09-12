@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::{join, join_all, BoxFuture};
+use futures::future::{BoxFuture, Either};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
@@ -1580,19 +1580,19 @@ impl ShardReplicaSet {
                 )));
             }
 
-            let mut remote_futures = Vec::new();
+            let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
             for remote in active_remote_shards {
-                let op = operation.clone();
-                remote_futures.push(async move {
+                let operation = operation.clone();
+                update_futures.push(Either::Left(async move {
                     remote
-                        .update(op, wait)
+                        .update(operation, wait)
                         .await
                         .map_err(|err| (remote.peer_id, err))
-                });
+                }));
             }
 
-            match local.deref() {
-                Some(local) if self.peer_is_active_or_pending(&this_peer_id) => {
+            if let Some(local) = local.deref() {
+                if self.peer_is_active_or_pending(&this_peer_id) {
                     let local_wait =
                         if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
                             false
@@ -1611,18 +1611,17 @@ impl ShardReplicaSet {
                                 (peer_id, err)
                             })
                     };
-                    let remote_updates = join_all(remote_futures);
-
-                    // run local and remote shards read concurrently
-                    let (mut remote_res, local_res): (
-                        Vec<Result<UpdateResult, (PeerId, CollectionError)>>,
-                        _,
-                    ) = join(remote_updates, local_update).await;
-                    // return both remote and local results
-                    remote_res.push(local_res);
-                    remote_res
+                    update_futures.push(Either::Right(local_update));
                 }
-                _ => join_all(remote_futures).await,
+            }
+            match self.shared_storage_config.update_concurrency {
+                Some(concurrency) => {
+                    futures::stream::iter(update_futures)
+                        .buffered(concurrency.get())
+                        .collect::<Vec<_>>()
+                        .await
+                }
+                _ => futures::future::join_all(update_futures).await,
             }
         };
 

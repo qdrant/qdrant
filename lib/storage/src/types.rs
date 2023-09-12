@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -69,6 +70,8 @@ pub struct StorageConfig {
     /// Provided value will be used error message for unavailable requests.
     #[serde(default)]
     pub recovery_mode: Option<String>,
+    #[serde(default)]
+    pub update_concurrency: Option<NonZeroUsize>,
 }
 
 impl StorageConfig {
@@ -81,6 +84,7 @@ impl StorageConfig {
             self.performance
                 .search_timeout_sec
                 .map(|x| Duration::from_secs(x as u64)),
+            self.update_concurrency,
         )
     }
 }

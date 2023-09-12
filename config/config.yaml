@@ -17,6 +17,10 @@ storage:
   # Note: those payload values that are involved in filtering and are indexed - remain in RAM.
   on_disk_payload: true
 
+  # Maximum number of concurrent updates to shard replicas
+  # If `null` - maximum concurrency is used.
+  update_concurrency: null
+
   # Write-ahead-log related configuration
   wal:
     # Size of a single WAL segment
@@ -108,6 +112,7 @@ storage:
     on_disk: false
     # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     payload_m: null
+
 
 service:
 

@@ -67,3 +67,14 @@ def search(peer_url, vector, city, collection="test_collection"):
     r_search = requests.post(f"{peer_url}/collections/{collection}/points/search", json=q)
     assert_http_ok(r_search)
     return r_search.json()["result"]
+
+
+def count_counts(peer_url, collection="test_collection"):
+    r_search = requests.post(
+        f"{peer_url}/collections/{collection}/points/count",
+        json={
+            "exact": True,
+        }
+    )
+    assert_http_ok(r_search)
+    return r_search.json()["result"]["count"]
