@@ -1282,7 +1282,7 @@ mod tests {
         assert_eq!(segment_info.num_points, 5);
         assert_eq!(segment_info.num_vectors, 5);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         proxy_segment.delete_point(101, 99999.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 5);
@@ -1391,7 +1391,7 @@ mod tests {
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         proxy_segment.delete_point(104, 1.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
