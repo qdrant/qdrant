@@ -104,4 +104,14 @@ impl Shard {
             Shard::Dummy(dummy_shard) => dummy_shard.on_optimizer_config_update().await,
         }
     }
+
+    pub fn is_update_in_progress(&self) -> bool {
+        match self {
+            Self::Local(local_shard) => local_shard.is_update_in_progress(),
+            Self::Proxy(proxy_shard) => proxy_shard.is_update_in_progress(),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.is_update_in_progress(),
+            Self::QueueProxy(proxy_shard) => proxy_shard.is_update_in_progress(),
+            Self::Dummy(_) => false,
+        }
+    }
 }

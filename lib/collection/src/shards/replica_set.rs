@@ -872,10 +872,10 @@ impl ShardReplicaSet {
 
         let (local, is_local_ready) = match self.local.try_read() {
             Ok(local) => {
-                let is_local_ready = local.deref().as_ref().map_or(false, |local| match local {
-                    Shard::Local(local) => !local.is_update_in_progress(),
-                    _ => true,
-                });
+                let is_local_ready = local
+                    .deref()
+                    .as_ref()
+                    .map_or(false, Shard::is_update_in_progress);
 
                 (futures::future::ready(local).left_future(), is_local_ready)
             }
