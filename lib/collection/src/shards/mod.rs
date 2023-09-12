@@ -18,6 +18,7 @@ pub mod shard_trait;
 pub mod shard_versioning;
 pub mod telemetry;
 pub mod transfer;
+pub mod update_tracker;
 
 use std::path::{Path, PathBuf};
 

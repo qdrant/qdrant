@@ -871,7 +871,15 @@ impl ShardReplicaSet {
         let remotes = self.remotes.read().await;
 
         let (local, is_local_ready) = match self.local.try_read() {
-            Ok(local) => (futures::future::ready(local).left_future(), true),
+            Ok(local) => {
+                let is_local_ready = local.deref().as_ref().map_or(false, |local| match local {
+                    Shard::Local(local) => !local.is_update_in_progress(),
+                    _ => true,
+                });
+
+                (futures::future::ready(local).left_future(), is_local_ready)
+            }
+
             Err(_) => (self.local.read().right_future(), false),
         };
 

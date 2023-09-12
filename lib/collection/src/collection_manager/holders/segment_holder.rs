@@ -16,6 +16,7 @@ use segment::types::{PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
+use crate::shards::update_tracker::UpdateTracker;
 
 pub type SegmentId = usize;
 
@@ -137,6 +138,9 @@ impl From<ProxySegment> for LockedSegment {
 #[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
+
+    update_tracker: UpdateTracker,
+
     /// Seq number of the first un-recovered operation.
     /// If there are no failed operation - None
     pub failed_operation: BTreeSet<SeqNumberType>,
@@ -158,6 +162,10 @@ impl<'s> SegmentHolder {
 
     pub fn is_empty(&self) -> bool {
         self.segments.is_empty()
+    }
+
+    pub fn update_tracker(&self) -> UpdateTracker {
+        self.update_tracker.clone()
     }
 
     fn generate_new_key(&self) -> SegmentId {
@@ -271,6 +279,8 @@ impl<'s> SegmentHolder {
     where
         F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
     {
+        let _update_guard = self.update_tracker.update();
+
         let mut processed_segments = 0;
         for segment in self.segments.values() {
             let is_applied = f(&mut segment.get().write())?;
@@ -287,6 +297,8 @@ impl<'s> SegmentHolder {
             &mut RwLockWriteGuard<dyn SegmentEntry>,
         ) -> OperationResult<bool>,
     {
+        let _update_guard = self.update_tracker.update();
+
         let mut applied_points = 0;
         for (idx, segment) in &self.segments {
             // Collect affected points first, we want to lock segment for writing as rare as possible
@@ -384,6 +396,8 @@ impl<'s> SegmentHolder {
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
+        let _update_guard = self.update_tracker.update();
+
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments();
 
