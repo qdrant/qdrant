@@ -203,7 +203,7 @@ where
 
 struct AsyncRawScorerBuilder<'a> {
     points_count: PointOffsetType,
-    query: Option<QueryVector>,
+    query: QueryVector,
     storage: &'a MemmapVectorStorage,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
@@ -224,7 +224,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
 
         let builder = Self {
             points_count,
-            query: Some(query),
+            query,
             point_deleted,
             vec_deleted,
             storage,
@@ -248,34 +248,40 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         self
     }
 
-    fn _build_with_metric<TMetric: Metric + 'a>(mut self) -> Box<dyn RawScorer + 'a> {
-        let query = self
-            .query
-            .take()
-            .expect("new() ensures to always have a value");
+    fn _build_with_metric<TMetric: Metric + 'a>(self) -> Box<dyn RawScorer + 'a> {
+        let Self {
+            points_count,
+            query,
+            storage,
+            point_deleted,
+            vec_deleted,
+            distance: _,
+            is_stopped,
+        } = self;
+
         match query {
             QueryVector::Nearest(vector) => {
-                let query_scorer = MetricQueryScorer::<TMetric, _>::new(vector, self.storage);
-                self._build_async_raw_scorer(query_scorer)
+                let query_scorer = MetricQueryScorer::<TMetric, _>::new(vector, storage);
+                Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                ))
             }
             QueryVector::Recommend(query) => {
-                let query_scorer = RecoQueryScorer::<TMetric, _>::new(query, self.storage);
-                self._build_async_raw_scorer(query_scorer)
+                let query_scorer = RecoQueryScorer::<TMetric, _>::new(query, storage);
+                Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                ))
             }
         }
-    }
-
-    fn _build_async_raw_scorer<TQueryScorer: QueryScorer + 'a>(
-        self,
-        query_scorer: TQueryScorer,
-    ) -> Box<dyn RawScorer + 'a> {
-        Box::new(AsyncRawScorerImpl::new(
-            self.points_count,
-            query_scorer,
-            self.storage.get_mmap_vectors(),
-            self.point_deleted,
-            self.vec_deleted,
-            self.is_stopped.unwrap_or(&DEFAULT_STOPPED),
-        ))
     }
 }
