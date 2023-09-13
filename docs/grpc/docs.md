@@ -181,6 +181,8 @@
 - [qdrant_internal_service.proto](#qdrant_internal_service-proto)
     - [HttpPortRequest](#qdrant-HttpPortRequest)
     - [HttpPortResponse](#qdrant-HttpPortResponse)
+    - [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest)
+    - [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse)
   
     - [QdrantInternal](#qdrant-QdrantInternal)
   
@@ -3029,6 +3031,38 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+
+<a name="qdrant-WaitOnConsensusCommitRequest"></a>
+
+### WaitOnConsensusCommitRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| commit | [int64](#int64) |  | Raft commit as u64 |
+| term | [int64](#int64) |  | Raft term as u64 |
+| timeout | [int64](#int64) |  | Timeout in seconds |
+
+
+
+
+
+
+<a name="qdrant-WaitOnConsensusCommitResponse"></a>
+
+### WaitOnConsensusCommitResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| ok | [bool](#bool) |  | False if commit/term is diverged and never reached or if timed out. |
+
+
+
+
+
  
 
  
@@ -3044,6 +3078,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
 | GetHttpPort | [HttpPortRequest](#qdrant-HttpPortRequest) | [HttpPortResponse](#qdrant-HttpPortResponse) | Get HTTP port for remote host. |
+| WaitOnConsensusCommit | [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest) | [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse) | Wait until the target node reached the given commit ID. |
 
  
 
