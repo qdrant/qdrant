@@ -7724,6 +7724,7 @@ pub mod qdrant_internal_client {
                 .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetHttpPort"));
             self.inner.unary(req, path, codec).await
         }
+        ///
         /// Wait until the target node reached the given commit ID.
         pub async fn wait_on_consensus_commit(
             &mut self,
@@ -7770,6 +7771,7 @@ pub mod qdrant_internal_server {
             tonic::Response<super::HttpPortResponse>,
             tonic::Status,
         >;
+        ///
         /// Wait until the target node reached the given commit ID.
         async fn wait_on_consensus_commit(
             &self,
@@ -7922,7 +7924,11 @@ pub mod qdrant_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).wait_on_consensus_commit(request).await
+                                <T as QdrantInternal>::wait_on_consensus_commit(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
