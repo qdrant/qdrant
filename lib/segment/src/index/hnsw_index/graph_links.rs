@@ -207,12 +207,7 @@ impl GraphLinksConverter {
     }
 
     pub fn serialize_to(&self, bytes_data: &mut [u8]) {
-        let header = GraphLinksFileHeader {
-            point_count: self.reindex.len() as u64,
-            levels_count: self.get_levels_count() as u64,
-            total_links_len: self.total_links_len as u64,
-            total_offsets_len: self.total_offsets_len as u64,
-        };
+        let header = self.get_header();
 
         header.serialize_bytes_to(bytes_data);
 
@@ -224,7 +219,8 @@ impl GraphLinksConverter {
             reindex_slice.copy_from_slice(&self.reindex);
         }
 
-        let mut level_offsets = Vec::new();
+        let header_levels_count = header.levels_count as usize;
+        let mut level_offsets = Vec::with_capacity(header_levels_count);
         {
             let links_range = header.get_links_range();
             let offsets_range = header.get_offsets_range();
@@ -239,7 +235,7 @@ impl GraphLinksConverter {
 
             let mut links_pos = 0;
             let mut offsets_pos = 1;
-            for level in 0..header.levels_count as usize {
+            for level in 0..header_levels_count {
                 level_offsets.push(offsets_pos as u64 - 1);
                 self.iterate_level_points(level, |_, links| {
                     links_mmap[links_pos..links_pos + links.len()].copy_from_slice(links);
