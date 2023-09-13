@@ -1592,8 +1592,7 @@ impl Collection {
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
-        self.assert_shard_is_local(shard_id).await?;
-        self.shard_snapshot_path_unchecked(shard_id, snapshot_file_name)
+        self.shards_holder.read().await.get_shard_snapshot_path(shard_id, &self.snapshots_path, snapshot_file_name).await
     }
 
     pub async fn restore_shard_snapshot(
@@ -1616,39 +1615,6 @@ impl Collection {
                 temp_dir,
             )
             .await
-    }
-
-    async fn assert_shard_is_local(&self, shard_id: ShardId) -> CollectionResult<()> {
-        self.shards_holder
-            .read()
-            .await
-            .assert_shard_is_local(shard_id)
-            .await
-    }
-
-    fn snapshots_path_for_shard_unchecked(&self, shard_id: ShardId) -> PathBuf {
-        self.snapshots_path.join(format!("shards/{shard_id}"))
-    }
-
-    fn shard_snapshot_path_unchecked(
-        &self,
-        shard_id: ShardId,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        let snapshots_path = self.snapshots_path_for_shard_unchecked(shard_id);
-
-        let snapshot_file_name = snapshot_file_name.as_ref();
-
-        if snapshot_file_name.file_name() != Some(snapshot_file_name.as_os_str()) {
-            return Err(CollectionError::bad_input(format!(
-                "Invalid snapshot file name {}",
-                snapshot_file_name.display(),
-            )));
-        }
-
-        let snapshot_path = snapshots_path.join(snapshot_file_name);
-
-        Ok(snapshot_path)
     }
 
     pub async fn recover_local_shard_from(

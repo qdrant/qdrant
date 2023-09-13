@@ -563,6 +563,16 @@ impl ShardHolder {
         }
         Ok(())
     }
+
+    pub async fn get_shard_snapshot_path(
+        &self,
+        shard_id: ShardId,
+        snapshots_path: &Path,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        self.assert_shard_is_local(shard_id).await?;
+        self.shard_snapshot_path_unchecked(shard_id, snapshots_path, snapshot_file_name)
+    }
 }
 
 pub(crate) fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
