@@ -875,7 +875,7 @@ impl ShardReplicaSet {
                 let is_local_ready = local
                     .deref()
                     .as_ref()
-                    .map_or(false, Shard::is_update_in_progress);
+                    .map_or(false, |local| !local.is_update_in_progress());
 
                 (futures::future::ready(local).left_future(), is_local_ready)
             }
