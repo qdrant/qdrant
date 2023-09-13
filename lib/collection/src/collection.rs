@@ -53,7 +53,7 @@ use crate::shards::replica_set::{
 }; // TODO rename ReplicaShard to ReplicaSetShard
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
-use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
+use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
     change_remote_shard_route, check_transfer_conflicts_strict, finalize_partial_shard,
@@ -287,28 +287,7 @@ impl Collection {
 
     /// Return a list of local shards, present on this peer
     pub async fn get_local_shards(&self) -> Vec<ShardId> {
-        let shards_holder = self.shards_holder.read().await;
-        let mut res = vec![];
-        for (shard_id, replica_set) in shards_holder.get_shards() {
-            if replica_set.has_local_shard().await {
-                res.push(*shard_id);
-            }
-        }
-        res
-    }
-
-    pub async fn is_all_active(&self) -> bool {
-        let shards_holder = self.shards_holder.read().await;
-        for (_, replica_set) in shards_holder.get_shards() {
-            if !replica_set
-                .peers()
-                .into_iter()
-                .all(|(_, state)| state == ReplicaState::Active)
-            {
-                return false;
-            }
-        }
-        true
+        self.shards_holder.read().await.get_local_shards().await
     }
 
     pub async fn set_shard_replica_state(
@@ -417,59 +396,23 @@ impl Collection {
     }
 
     pub async fn contains_shard(&self, shard_id: ShardId) -> bool {
-        let shard_holder_read = self.shards_holder.read().await;
-        shard_holder_read.contains_shard(&shard_id)
-    }
-
-    /// Returns true if shard it explicitly local, false otherwise.
-    pub async fn is_shard_local(&self, shard_id: &ShardId) -> Option<bool> {
-        let shard_holder_read = self.shards_holder.read().await;
-        if let Some(shard) = shard_holder_read.get_shard(shard_id) {
-            Some(shard.is_local().await)
-        } else {
-            None
-        }
+        self.shards_holder.read().await.contains_shard(&shard_id)
     }
 
     pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
-        let shard_holder_read = self.shards_holder.read().await;
-        let matched = shard_holder_read
-            .shard_transfers
+        self.shards_holder
             .read()
-            .iter()
-            .any(|transfer| transfer_key.check(transfer));
-        matched
-    }
-
-    pub async fn get_transfer(&self, transfer_key: &ShardTransferKey) -> Option<ShardTransfer> {
-        let shard_holder_read = self.shards_holder.read().await;
-        let transfer = shard_holder_read
-            .shard_transfers
-            .read()
-            .iter()
-            .find(|transfer| transfer_key.check(transfer))
-            .cloned();
-        transfer
-    }
-
-    pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
-        self.get_transfers(|transfer| transfer.from == *current_peer_id)
+            .await
+            .check_transfer_exists(transfer_key)
             .await
     }
 
-    pub async fn get_transfers<F>(&self, mut predicate: F) -> Vec<ShardTransfer>
-    where
-        F: FnMut(&ShardTransfer) -> bool,
-    {
-        let shard_holder = self.shards_holder.read().await;
-        let transfers = shard_holder
-            .shard_transfers
+    pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
+        self.shards_holder
             .read()
-            .iter()
-            .filter(|&transfer| predicate(transfer))
-            .cloned()
-            .collect();
-        transfers
+            .await
+            .get_outgoing_transfers(current_peer_id)
+            .await
     }
 
     async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
@@ -644,7 +587,7 @@ impl Collection {
                 )));
             };
 
-        let transfer = self.get_transfer(&transfer_key).await;
+        let transfer = shard_holder_guard.get_transfer(&transfer_key).await;
 
         if transfer.map(|x| x.sync).unwrap_or(false) {
             replica_set.set_replica_state(&transfer_key.to, ReplicaState::Dead)?;
@@ -1706,10 +1649,11 @@ impl Collection {
     }
 
     pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
-        match self.shards_holder.read().await.get_shard(&shard_id) {
-            Some(_) => Ok(()),
-            None => Err(shard_not_found_error(shard_id)),
-        }
+        self.shards_holder
+            .read()
+            .await
+            .assert_shard_exists(shard_id)
+            .await
     }
 
     pub async fn get_snapshots_path_for_shard(
@@ -1791,18 +1735,7 @@ impl Collection {
     }
 
     async fn assert_shard_is_local(&self, shard_id: ShardId) -> CollectionResult<()> {
-        let is_local_shard = self
-            .is_shard_local(&shard_id)
-            .await
-            .ok_or_else(|| shard_not_found_error(shard_id))?;
-
-        if is_local_shard {
-            Ok(())
-        } else {
-            Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local shard"
-            )))
-        }
+        self.shards_holder.read().await.assert_shard_is_local(shard_id).await
     }
 
     fn snapshots_path_for_shard_unchecked(&self, shard_id: ShardId) -> PathBuf {
@@ -1916,7 +1849,7 @@ impl Collection {
         }
 
         // Check for un-reported finished transfers
-        let outgoing_transfers = self.get_outgoing_transfers(&self.this_peer_id).await;
+        let outgoing_transfers = shard_holder.get_outgoing_transfers(&self.this_peer_id).await;
         let tasks_lock = self.transfer_tasks.lock().await;
         for transfer in outgoing_transfers {
             match tasks_lock.get_task_result(&transfer.key()) {
@@ -1979,7 +1912,7 @@ impl Collection {
             }
 
             // Try to find dead replicas with no active transfers
-            let transfers = self.get_transfers(|_| true).await;
+            let transfers = shard_holder.get_transfers(|_| true).await;
 
             // Try to find a replica to transfer from
             for replica_id in replica_set.active_remote_shards().await {
@@ -2013,11 +1946,5 @@ impl Collection {
 
     pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
         self.updates_lock.write().await
-    }
-}
-
-fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
-    CollectionError::NotFound {
-        what: format!("shard {shard_id}"),
     }
 }

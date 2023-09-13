@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionResult, ShardTransferInfo};
+use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
@@ -271,5 +271,91 @@ impl ShardHolder {
                 self.add_shard(shard_id, replica_set);
             }
         }
+    }
+
+    pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
+        match self.get_shard(&shard_id) {
+            Some(_) => Ok(()),
+            None => Err(shard_not_found_error(shard_id)),
+        }
+    }
+
+    pub async fn assert_shard_is_local(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let is_local_shard = self
+            .is_shard_local(&shard_id)
+            .await
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        if is_local_shard {
+            Ok(())
+        } else {
+            Err(CollectionError::bad_input(format!("Shard {shard_id} is not a local shard")))
+        }
+    }
+
+    /// Returns true if shard it explicitly local, false otherwise.
+    pub async fn is_shard_local(&self, shard_id: &ShardId) -> Option<bool> {
+        match self.get_shard(shard_id) {
+            Some(shard) => Some(shard.is_local().await),
+            None => None,
+        }
+    }
+
+    /// Return a list of local shards, present on this peer
+    pub async fn get_local_shards(&self) -> Vec<ShardId> {
+        let mut res = Vec::with_capacity(1);
+        for (shard_id, replica_set) in self.get_shards() {
+            if replica_set.has_local_shard().await {
+                res.push(*shard_id);
+            }
+        }
+        res
+    }
+
+    pub async fn is_all_active(&self) -> bool {
+        self.get_shards().all(|(_, replica_set)| {
+            replica_set
+                .peers()
+                .into_iter()
+                .all(|(_, state)| state == ReplicaState::Active)
+        })
+    }
+
+    pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
+        self.shard_transfers
+            .read()
+            .iter()
+            .any(|transfer| transfer_key.check(transfer))
+    }
+
+    pub async fn get_transfer(&self, transfer_key: &ShardTransferKey) -> Option<ShardTransfer> {
+        self.shard_transfers
+            .read()
+            .iter()
+            .find(|transfer| transfer_key.check(transfer))
+            .cloned()
+    }
+
+    pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
+        self.get_transfers(|transfer| transfer.from == *current_peer_id)
+            .await
+    }
+
+    pub async fn get_transfers<F>(&self, mut predicate: F) -> Vec<ShardTransfer>
+    where
+        F: FnMut(&ShardTransfer) -> bool,
+    {
+        self.shard_transfers
+            .read()
+            .iter()
+            .filter(|&transfer| predicate(transfer))
+            .cloned()
+            .collect()
+    }
+}
+
+pub(crate) fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
+    CollectionError::NotFound {
+        what: format!("shard {shard_id}"),
     }
 }
