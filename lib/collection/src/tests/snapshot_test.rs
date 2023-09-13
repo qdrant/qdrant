@@ -158,8 +158,13 @@ async fn _test_snapshot_collection(node_type: NodeType) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_snapshot_collection() {
+async fn test_snapshot_collection_normal() {
     init_logger();
     _test_snapshot_collection(NodeType::Normal).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_collection_listener() {
+    init_logger();
     _test_snapshot_collection(NodeType::Listener).await;
 }
