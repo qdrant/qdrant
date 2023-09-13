@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
 use chrono::Utc;
@@ -584,6 +584,44 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
             Ok(Ok(()))
         }
+    }
+
+    /// Wait and block until consensus reaches a `commit` and `term`
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if successful.
+    /// Returns `false` on failure, if we have diverged commit/term for example.
+    pub async fn wait_for_consensus_commit(
+        &self,
+        commit: u64,
+        term: u64,
+        consensus_tick: Duration,
+        timeout: Duration,
+    ) -> bool {
+        let start = Instant::now();
+
+        // TODO: naive approach with spinlock for waiting on commit/term, find better way
+        while start.elapsed() < timeout {
+            let state = &self.hard_state();
+
+            // Okay if on the same term and have at least the specified commit
+            let is_ok = state.term == term && state.commit >= commit;
+            if is_ok {
+                return true;
+            }
+
+            // Fail if on a different term
+            let is_fail = state.term != term;
+            if is_fail {
+                return false;
+            }
+
+            tokio::time::sleep(consensus_tick).await
+        }
+
+        // Fail on timeout
+        false
     }
 
     /// Send operation to the consensus thread and listen for the result.
