@@ -1575,7 +1575,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .create_shard_snapshot(shard_id, temp_dir, &self.snapshots_path, &self.name())
+            .create_shard_snapshot(&self.snapshots_path, &self.name(), shard_id, temp_dir)
             .await
     }
 
@@ -1592,7 +1592,11 @@ impl Collection {
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
-        self.shards_holder.read().await.get_shard_snapshot_path(shard_id, &self.snapshots_path, snapshot_file_name).await
+        self.shards_holder
+            .read()
+            .await
+            .get_shard_snapshot_path(&self.snapshots_path, shard_id, snapshot_file_name)
+            .await
     }
 
     pub async fn restore_shard_snapshot(
@@ -1607,9 +1611,9 @@ impl Collection {
             .read()
             .await
             .restore_shard_snapshot(
-                shard_id,
                 snapshot_path,
                 &self.name(),
+                shard_id,
                 this_peer_id,
                 is_distributed,
                 temp_dir,
