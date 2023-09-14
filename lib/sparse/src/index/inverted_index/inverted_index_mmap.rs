@@ -1,12 +1,12 @@
 use std::mem::size_of;
 use std::path::Path;
 use std::sync::Arc;
+
 use memmap2::{Mmap, MmapMut};
 
+use super::inverted_index_ram::InvertedIndexRam;
 use crate::common::types::DimId;
 use crate::index::posting_list::PostingElement;
-
-use super::inverted_index_ram::InvertedIndexRam;
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
 
@@ -24,15 +24,12 @@ struct PostingListFileHeader {
 impl InvertedIndexMmap {
     pub fn get(&self, id: &DimId) -> Option<&[PostingElement]> {
         // TODO: check if id is in range
-        let header = transmute_from_u8::<PostingListFileHeader>(&self.mmap[
-            *id as usize * POSTING_HEADER_SIZE
-            ..
-            (*id as usize + 1) * POSTING_HEADER_SIZE
-        ]).clone();
-        let elements_bytes = &self.mmap[
-            header.start_offset as usize
-            ..
-            header.end_offset as usize];
+        let header = transmute_from_u8::<PostingListFileHeader>(
+            &self.mmap
+                [*id as usize * POSTING_HEADER_SIZE..(*id as usize + 1) * POSTING_HEADER_SIZE],
+        )
+        .clone();
+        let elements_bytes = &self.mmap[header.start_offset as usize..header.end_offset as usize];
         Some(transmute_from_u8_to_slice(elements_bytes))
     }
 
@@ -53,17 +50,13 @@ impl InvertedIndexMmap {
         })
     }
 
-    pub fn load<P: AsRef<Path>>(
-        path: P,
-    ) -> std::io::Result<Self> {
+    pub fn load<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         Ok(Self {
             mmap: Arc::new(Self::open_read_mmap(path.as_ref())?),
         })
     }
 
-    fn calculate_file_length(
-        inverted_index_ram: &InvertedIndexRam,
-    ) -> usize {
+    fn calculate_file_length(inverted_index_ram: &InvertedIndexRam) -> usize {
         let total_posting_headers_size = inverted_index_ram.postings.len() * POSTING_HEADER_SIZE;
 
         let mut total_posting_elements_size = 0;
@@ -74,10 +67,7 @@ impl InvertedIndexMmap {
         total_posting_headers_size + total_posting_elements_size
     }
 
-    fn save_posting_headers(
-        mmap: &mut MmapMut,
-        inverted_index_ram: &InvertedIndexRam,
-    ) {
+    fn save_posting_headers(mmap: &mut MmapMut, inverted_index_ram: &InvertedIndexRam) {
         let total_posting_headers_size = inverted_index_ram.postings.len() * POSTING_HEADER_SIZE;
 
         let mut elements_offset: usize = total_posting_headers_size;
@@ -97,10 +87,7 @@ impl InvertedIndexMmap {
         }
     }
 
-    fn save_posting_elements(
-        mmap: &mut MmapMut,
-        inverted_index_ram: &InvertedIndexRam,
-    ) {
+    fn save_posting_elements(mmap: &mut MmapMut, inverted_index_ram: &InvertedIndexRam) {
         // todo: avoid total_posting_headers_size duplication
         let total_posting_headers_size = inverted_index_ram.postings.len() * POSTING_HEADER_SIZE;
 
@@ -108,9 +95,8 @@ impl InvertedIndexMmap {
         for posting in &inverted_index_ram.postings {
             // save posting element
             let posting_elements_bytes = transmute_to_u8_slice(&posting.elements);
-            mmap[offset..offset + posting_elements_bytes.len()].copy_from_slice(
-                posting_elements_bytes
-            );
+            mmap[offset..offset + posting_elements_bytes.len()]
+                .copy_from_slice(posting_elements_bytes);
             offset += posting_elements_bytes.len();
         }
     }
@@ -133,7 +119,7 @@ impl InvertedIndexMmap {
             .write(true)
             .create(false)
             .open(path)?;
-    
+
         unsafe { MmapMut::map_mut(&file) }
     }
 
@@ -144,7 +130,7 @@ impl InvertedIndexMmap {
             .write(true)
             .create(true)
             .open(path)?;
-    
+
         file.set_len(length as u64)?;
         Ok(())
     }
@@ -180,8 +166,9 @@ pub fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
 mod tests {
     use tempfile::Builder;
 
-    use crate::index::{inverted_index::inverted_index_ram::InvertedIndexBuilder, posting_list::PostingList};
     use super::*;
+    use crate::index::inverted_index::inverted_index_ram::InvertedIndexBuilder;
+    use crate::index::posting_list::PostingList;
 
     fn compare_indexes(
         inverted_index_ram: &InvertedIndexRam,
@@ -200,23 +187,23 @@ mod tests {
     #[test]
     fn test_inverted_index_mmap() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-        .add(
-            1,
-            PostingList::from(vec![
-                (1, 10.0),
-                (2, 20.0),
-                (3, 30.0),
-                (4, 1.0),
-                (5, 2.0),
-                (6, 3.0),
-                (7, 4.0),
-                (8, 5.0),
-                (9, 6.0),
-            ]),
-        )
-        .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-        .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-        .build();
+            .add(
+                1,
+                PostingList::from(vec![
+                    (1, 10.0),
+                    (2, 20.0),
+                    (3, 30.0),
+                    (4, 1.0),
+                    (5, 2.0),
+                    (6, 3.0),
+                    (7, 4.0),
+                    (8, 5.0),
+                    (9, 6.0),
+                ]),
+            )
+            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
 
         let tmp_path = Builder::new()
             .prefix("test_serialize_dir")
@@ -224,23 +211,13 @@ mod tests {
             .unwrap();
 
         {
-            let inverted_index_mmap = InvertedIndexMmap::convert_and_save(
-                &inverted_index_ram,
-                &tmp_path,
-            ).unwrap();
+            let inverted_index_mmap =
+                InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_path).unwrap();
 
-            compare_indexes(
-                &inverted_index_ram,
-                &inverted_index_mmap,
-            );
+            compare_indexes(&inverted_index_ram, &inverted_index_mmap);
         }
-        let inverted_index_mmap = InvertedIndexMmap::load(
-            &tmp_path,
-        ).unwrap();
+        let inverted_index_mmap = InvertedIndexMmap::load(&tmp_path).unwrap();
 
-        compare_indexes(
-            &inverted_index_ram,
-            &inverted_index_mmap,
-        );
+        compare_indexes(&inverted_index_ram, &inverted_index_mmap);
     }
 }
