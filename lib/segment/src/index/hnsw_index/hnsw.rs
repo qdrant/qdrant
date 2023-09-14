@@ -187,7 +187,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     let vector = vector_storage.get_vector(block_point_id).into();
                     let raw_scorer = match vector_storage.quantized_storage() {
                         Some(quantized_storage) => quantized_storage.raw_scorer(
-                            &vector,
+                            vector,
                             id_tracker.deleted_point_bitslice(),
                             deleted_bitslice,
                             stopped,
@@ -237,7 +237,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             // If `quantization_params` is `Some`, then quantization is *not* ignored
             Some(quantized_storage) if !quantization_params.ignore => {
                 let scorer = quantized_storage.raw_scorer(
-                    vector,
+                    vector.clone(),
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
                     is_stopped,
@@ -347,7 +347,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     if let Some(quantized_storage) = vector_storage.quantized_storage() {
                         quantized_storage
                             .raw_scorer(
-                                vector,
+                                vector.clone(),
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
                                 is_stopped,
@@ -554,7 +554,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         vector_storage.quantized_storage()
                     {
                         quantized_storage.raw_scorer(
-                            &vector,
+                            vector,
                             id_tracker.deleted_point_bitslice(),
                             vector_storage.deleted_vector_bitslice(),
                             stopped,

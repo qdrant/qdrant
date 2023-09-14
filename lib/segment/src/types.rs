@@ -550,6 +550,12 @@ impl From<ProductQuantizationConfig> for QuantizationConfig {
     }
 }
 
+impl From<BinaryQuantizationConfig> for QuantizationConfig {
+    fn from(config: BinaryQuantizationConfig) -> Self {
+        QuantizationConfig::Binary(BinaryQuantization { binary: config })
+    }
+}
+
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
 
 impl Default for HnswConfig {
