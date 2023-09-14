@@ -1133,7 +1133,7 @@ impl TableOfContent {
         .map_err(|err| err.into())
     }
 
-    /// Recommend points in a batchig fashion using positive and negative example from the request
+    /// Recommend points in a batching fashion using positive and negative example from the request
     ///
     /// # Arguments
     ///

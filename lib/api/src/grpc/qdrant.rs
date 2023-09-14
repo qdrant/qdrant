@@ -4509,7 +4509,7 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         ///
-        /// Iterate over all or filtered points points
+        /// Iterate over all or filtered points
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPoints>,
@@ -4784,7 +4784,7 @@ pub mod points_server {
             tonic::Status,
         >;
         ///
-        /// Iterate over all or filtered points points
+        /// Iterate over all or filtered points
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPoints>,

@@ -40,7 +40,7 @@ pub fn setup_panic_hook(reporting_enabled: bool, reporting_id: String) {
 }
 
 /// Creates a file that indicates that the server has been started.
-/// This file is used to check if the server has been been successfully started before potential kill.
+/// This file is used to check if the server has been successfully started before potential kill.
 pub fn touch_started_file_indicator() {
     if let Err(err) = std::fs::write(get_init_file_path(), "") {
         log::warn!("Failed to create init file indicator: {}", err);

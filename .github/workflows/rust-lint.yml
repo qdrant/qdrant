@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Install miniml nightly (only for fmt)
+    - name: Install minimal nightly (only for fmt)
       uses: dtolnay/rust-toolchain@nightly
       with:
         profile: minimal
