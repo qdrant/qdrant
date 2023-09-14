@@ -71,6 +71,9 @@ pub struct CollectionParams {
     /// Does not have any performance impact.
     #[serde(default = "default_write_consistency_factor")]
     pub write_consistency_factor: NonZeroU32,
+    /// TODO
+    #[serde(default = "default_read_fan_out_ratio")]
+    pub read_fan_out_factor: u32,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -86,6 +89,7 @@ impl Anonymize for CollectionParams {
             shard_number: self.shard_number,
             replication_factor: self.replication_factor,
             write_consistency_factor: self.write_consistency_factor,
+            read_fan_out_factor: self.read_fan_out_factor,
             on_disk_payload: self.on_disk_payload,
         }
     }
@@ -101,6 +105,10 @@ pub fn default_replication_factor() -> NonZeroU32 {
 
 pub fn default_write_consistency_factor() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
+}
+
+const fn default_read_fan_out_ratio() -> u32 {
+    0
 }
 
 const fn default_on_disk_payload() -> bool {

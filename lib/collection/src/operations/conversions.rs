@@ -499,6 +499,8 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     .ok_or_else(|| {
                         Status::invalid_argument("`write_consistency_factor` cannot be zero")
                     })?,
+
+                    read_fan_out_factor: 0, // TODO!
                 },
             },
             hnsw_config: match config.hnsw_config {
