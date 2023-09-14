@@ -53,10 +53,10 @@ pub fn db_options() -> Options {
 
 pub fn open_db<T: AsRef<str>>(
     path: &Path,
-    vector_pathes: &[T],
+    vector_paths: &[T],
 ) -> Result<Arc<RwLock<DB>>, rocksdb::Error> {
     let mut column_families = vec![DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF];
-    for vector_path in vector_pathes {
+    for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
     let db = DB::open_cf(&db_options(), path, column_families)?;

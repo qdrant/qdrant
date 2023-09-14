@@ -126,7 +126,7 @@ def create_multi_from_collection(collection_name, source_collection_name, vector
 
 @pytest.mark.parametrize("ok,source,size,distance", [
     (True, source_collection_name, 4, 'Dot'), # ok
-    (False, "i-do-not-exist", 4, 'Dot'), # fail: non existing source collection
+    (False, "i-do-not-exist", 4, 'Dot'), # fail: nonexistent source collection
     (False, source_collection_name, 8, 'Dot'), # fail: bad size
     (False, source_collection_name, 4, 'Cosine'), # fail: bad distance
 ])

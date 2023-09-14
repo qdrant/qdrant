@@ -25,7 +25,7 @@ Execute the following command
 ```bash
 grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d '{}' 0.0.0.0:6334 qdrant.Qdrant/HealthCheck
 ```
-Here and below the ```./lib/api/src/grpc/proto/``` should be a path to the folder with a probuf schemas.
+Here and below the ```./lib/api/src/grpc/proto/``` should be a path to the folder with a protobuf schemas.
 Expected response:
 ```json
 {

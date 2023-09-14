@@ -1282,13 +1282,13 @@ mod tests {
         assert_eq!(segment_info.num_points, 5);
         assert_eq!(segment_info.num_vectors, 5);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         proxy_segment.delete_point(101, 99999.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 5);
         assert_eq!(segment_info.num_vectors, 5);
 
-        // Delete point 1, counts should derease by 1
+        // Delete point 1, counts should decrease by 1
         proxy_segment.delete_point(102, 4.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
@@ -1308,7 +1308,7 @@ mod tests {
         use segment::segment_constructor::build_segment;
         use segment::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
 
-        // Create proxyied multivec segment
+        // Create proxied multivec segment
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let dim = 1;
         let config = SegmentConfig {
@@ -1391,13 +1391,13 @@ mod tests {
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         proxy_segment.delete_point(104, 1.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete point 4, counts should derease by 1
+        // Delete point 4, counts should decrease by 1
         proxy_segment.delete_point(105, 4.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);

@@ -680,7 +680,7 @@ mod tests {
         );
         assert_eq!(links, cmp_links);
 
-        // 4 levels with random unexists links
+        // 4 levels with random nonexistent links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
             vec![vec![1, 2, 5, 6]],
             vec![vec![0, 2, 7, 8], vec![], vec![34, 45, 10]],

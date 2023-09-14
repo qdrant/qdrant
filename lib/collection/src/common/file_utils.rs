@@ -7,7 +7,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 /// Move directory from one location to another.
 /// Handles the case when the source and destination are on different filesystems.
 pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> CollectionResult<()> {
-    // Try to rename first and fallback to copy to prevert TOCTOU
+    // Try to rename first and fallback to copy to prevent TOCTOU
     let from = from.into();
     let to = to.into();
 
@@ -31,7 +31,7 @@ pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> Colle
 }
 
 pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> CollectionResult<()> {
-    // Try to rename first and fallback to copy to prevert TOCTOU
+    // Try to rename first and fallback to copy to prevent TOCTOU
     let from = from.as_ref();
     let to = to.as_ref();
 

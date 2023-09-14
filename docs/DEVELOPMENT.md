@@ -89,7 +89,7 @@ So the expected approach to benchmarking is to run only ones which might be affe
 To run benchmark, use the following command inside a related sub-crate:
 
 ```bash
-cargo bench --bench name_of_banchmark
+cargo bench --bench name_of_benchmark
 ```
 
 In this case you will see the execution timings and, if you launched this bench earlier, the difference in execution time.
@@ -119,7 +119,7 @@ Found 1 outliers among 100 measurements (1.00%)
 To run benchmarks with profiler to generate FlameGraph - use the following command:
 
 ```bash
-cargo bench --bench name_of_banchmark -- --profile-time=60
+cargo bench --bench name_of_benchmark -- --profile-time=60
 ```
 
 This command will run each benchmark iterator for `60` seconds and generate FlameGraph svg along with profiling records files.

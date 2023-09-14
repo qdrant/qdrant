@@ -1042,7 +1042,7 @@ impl RaftMessageSender {
 
             // Should we ignore the error? Seems like it will only produce noise.
             //
-            // - `send_message` is only called by the sub-task spawned by the consnsus thread.
+            // - `send_message` is only called by the sub-task spawned by the consensus thread.
             // - `report_snapshot` sends a message back to the consensus thread.
             // - It can only fail, if the "receiver" end of the channel is closed.
             // - Which means consensus thread either resolved successfully, or failed.
