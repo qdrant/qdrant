@@ -15,7 +15,7 @@ impl InvertedIndex {
         match self {
             InvertedIndex::Ram(index) => index
                 .get(id)
-                .map(|posting_list| PostingListIterator::new(posting_list)),
+                .map(|posting_list| PostingListIterator::new(&posting_list.elements)),
         }
     }
 }
