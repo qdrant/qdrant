@@ -10,8 +10,8 @@ use segment::types::{Distance, QuantizationConfig};
 use tonic::Status;
 
 use super::types::{
-    BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
-    VectorParamsDiff, VectorsConfigDiff,
+    BaseGroupRequest, CoreSearchRequest, GroupsResult, PointGroup, QueryEnum,
+    RecommendGroupsRequest, SearchGroupsRequest, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -37,7 +37,7 @@ use crate::operations::types::{
     SearchRequest, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shards::remote_shard::CollectionSearchRequest;
+use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
 
 pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
     api::grpc::qdrant::WriteOrdering {
@@ -739,6 +739,26 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     }
 }
 
+impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearchPoints {
+    fn from(value: CollectionCoreSearchRequest<'a>) -> Self {
+        let (collection_id, request) = value.0;
+
+        Self {
+            collection_name: collection_id,
+            // query: Some(request.query.into()),
+            filter: request.filter.clone().map(|f| f.into()),
+            limit: request.limit as u64,
+            with_vectors: request.with_vector.clone().map(|wv| wv.into()),
+            with_payload: request.with_payload.clone().map(|wp| wp.into()),
+            params: request.params.map(|sp| sp.into()),
+            score_threshold: request.score_threshold,
+            offset: Some(request.offset as u64),
+            vector_name: Some(request.query.get_vector_name().to_owned()),
+            read_consistency: None,
+        }
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
     type Error = Status;
 
@@ -762,6 +782,28 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookupInterface {
 
     fn try_from(value: api::grpc::qdrant::WithLookup) -> Result<Self, Self::Error> {
         Ok(Self::WithLookup(value.try_into()?))
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::CoreSearchPoints) -> Result<Self, Self::Error> {
+        Ok(Self {
+            query: QueryEnum::Other, // TODO(luis): replace with other queries from CoreSearchPoints
+            filter: value.filter.map(|f| f.try_into()).transpose()?,
+            params: value.params.map(|p| p.into()),
+            limit: value.limit as usize,
+            offset: value.offset.unwrap_or_default() as usize,
+            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector: Some(
+                value
+                    .with_vectors
+                    .map(|with_vectors| with_vectors.into())
+                    .unwrap_or_default(),
+            ),
+            score_threshold: value.score_threshold,
+        })
     }
 }
 

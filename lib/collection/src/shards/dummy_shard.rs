@@ -8,8 +8,8 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
+    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::shard_trait::ShardOperation;
@@ -83,6 +83,14 @@ impl ShardOperation for DummyShard {
     async fn search(
         &self,
         _: Arc<SearchRequestBatch>,
+        _: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        self.dummy()
+    }
+
+    async fn core_search(
+        &self,
+        _: Arc<CoreSearchRequestBatch>,
         _: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy()

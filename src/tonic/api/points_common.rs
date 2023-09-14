@@ -3,8 +3,8 @@ use std::time::Instant;
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
-    points_update_operation, BatchResult, ClearPayloadPoints, CountPoints, CountResponse,
-    CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
+    points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
+    CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
     DeletePointVectors, DeletePoints, FieldType, GetPoints, GetResponse, PayloadIndexParams,
     PointsOperationResponse, PointsSelector, ReadConsistency as ReadConsistencyGrpc,
     RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
@@ -19,8 +19,8 @@ use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation,
 };
 use collection::operations::types::{
-    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
-    SearchRequestBatch,
+    default_exact_count, CoreSearchRequestBatch, PointRequest, RecommendRequestBatch,
+    ScrollRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -34,10 +34,10 @@ use storage::content_manager::toc::TableOfContent;
 use tonic::{Response, Status};
 
 use crate::common::points::{
-    do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
-    do_search_batch_points, do_search_points, do_set_payload, do_update_vectors, do_upsert_points,
-    CreateFieldIndex,
+    do_clear_payload, do_core_search_batch_points, do_count_points, do_create_index,
+    do_delete_index, do_delete_payload, do_delete_points, do_delete_vectors, do_get_points,
+    do_overwrite_payload, do_scroll_points, do_search_batch_points, do_search_points,
+    do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
 
 fn extract_points_selector(
@@ -725,10 +725,8 @@ pub async fn search_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
-    let searches: Result<Vec<_>, Status> = search_points
-        .into_iter()
-        .map(|search_point| search_point.try_into())
-        .collect();
+    let searches: Result<Vec<_>, Status> =
+        search_points.into_iter().map(TryInto::try_into).collect();
 
     let search_requests = SearchRequestBatch {
         searches: searches?,
@@ -738,6 +736,46 @@ pub async fn search_batch(
 
     let timing = Instant::now();
     let scored_points = do_search_batch_points(
+        toc,
+        &collection_name,
+        search_requests,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = SearchBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn core_search_batch(
+    toc: &TableOfContent,
+    collection_name: String,
+    search_points: Vec<CoreSearchPoints>,
+    read_consistency: Option<ReadConsistencyGrpc>,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchBatchResponse>, Status> {
+    let searches: Result<Vec<_>, Status> =
+        search_points.into_iter().map(TryInto::try_into).collect();
+
+    let search_requests = CoreSearchRequestBatch {
+        searches: searches?,
+    };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let scored_points = do_core_search_batch_points(
         toc,
         &collection_name,
         search_requests,

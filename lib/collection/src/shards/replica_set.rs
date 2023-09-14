@@ -31,8 +31,8 @@ use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
+    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
@@ -1749,6 +1749,23 @@ impl ShardReplicaSet {
                 let search_runtime = self.search_runtime.clone();
 
                 async move { shard.search(request, &search_runtime).await }.boxed()
+            },
+            read_consistency.unwrap_or_default(),
+        )
+        .await
+    }
+
+    pub async fn custom_search(
+        &self,
+        request: Arc<CoreSearchRequestBatch>,
+        read_consistency: Option<ReadConsistency>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = request.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                async move { shard.core_search(request, &search_runtime).await }.boxed()
             },
             read_consistency.unwrap_or_default(),
         )

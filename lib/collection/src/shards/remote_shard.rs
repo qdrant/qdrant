@@ -5,9 +5,9 @@ use std::sync::Arc;
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
 use api::grpc::qdrant::{
-    CollectionOperationResponse, CountPoints, CountPointsInternal, GetCollectionInfoRequest,
-    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, InitiateShardTransferRequest,
-    ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal,
+    CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
+    GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
+    InitiateShardTransferRequest, ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -28,8 +28,9 @@ use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequest, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
+    CountRequest, CountResult, PointRequest, Record, SearchRequest, SearchRequestBatch,
+    UpdateResult,
 };
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
@@ -405,6 +406,7 @@ impl RemoteShard {
 
 // New-type to own the type in the crate for conversions via From
 pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequest));
+pub struct CollectionCoreSearchRequest<'a>(pub(crate) (CollectionId, &'a CoreSearchRequest));
 
 #[async_trait]
 #[allow(unused_variables)]
@@ -501,6 +503,58 @@ impl ShardOperation for RemoteShard {
             .with_points_client(|mut client| async move {
                 client
                     .search_batch(tonic::Request::new(request.clone()))
+                    .await
+            })
+            .await?
+            .into_inner();
+
+        let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_batch_response
+            .result
+            .into_iter()
+            .zip(batch_request.searches.iter())
+            .map(|(batch_result, request)| {
+                let is_payload_required = request
+                    .with_payload
+                    .as_ref()
+                    .map_or(false, |with_payload| with_payload.is_required());
+
+                batch_result
+                    .result
+                    .into_iter()
+                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
+                    .collect()
+            })
+            .collect();
+        let result = result.map_err(|e| e.into());
+        if result.is_ok() {
+            timer.set_success(true);
+        }
+        result
+    }
+
+    async fn core_search(
+        &self,
+        batch_request: Arc<CoreSearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
+        timer.set_success(false);
+
+        let search_points = batch_request
+            .searches
+            .iter()
+            .map(|s| CollectionCoreSearchRequest((self.collection_id.clone(), s)).into())
+            .collect();
+
+        let request = &CoreSearchBatchPointsInternal {
+            collection_name: self.collection_id.clone(),
+            search_points,
+            shard_id: Some(self.id),
+        };
+        let search_batch_response = self
+            .with_points_client(|mut client| async move {
+                client
+                    .core_search_batch(tonic::Request::new(request.clone()))
                     .await
             })
             .await?
