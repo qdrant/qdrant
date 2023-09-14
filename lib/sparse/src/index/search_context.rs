@@ -26,9 +26,9 @@ impl<'a> SearchContext<'a> {
         let mut postings_iterators = Vec::new();
 
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(posting) = inverted_index.get(id) {
+            if let Some(posting_list_iterator) = inverted_index.get(id) {
                 postings_iterators.push(IndexedPostingListIterator {
-                    posting_list_iterator: PostingListIterator::new(posting),
+                    posting_list_iterator,
                     query_weight_offset,
                 });
             }
@@ -184,7 +184,7 @@ impl<'a> SearchContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::inverted_index::InvertedIndexBuilder;
+    use crate::index::inverted_index::inverted_index_ram::InvertedIndexBuilder;
     use crate::index::posting_list::PostingList;
 
     #[test]

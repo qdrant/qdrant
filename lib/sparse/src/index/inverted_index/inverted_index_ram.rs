@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
+use super::InvertedIndex;
 use crate::common::types::DimId;
 use crate::index::posting_list::PostingList;
 
 /// Inverted flatten index from dimension id to posting list
-pub struct InvertedIndex {
+pub struct InvertedIndexRam {
     pub postings: Vec<PostingList>,
 }
 
-impl InvertedIndex {
+impl InvertedIndexRam {
     pub fn get(&self, id: &DimId) -> Option<&PostingList> {
         self.postings.get((*id) as usize)
     }
@@ -45,6 +46,6 @@ impl InvertedIndexBuilder {
         for key in keys {
             postings[key as usize] = self.postings.remove(&key).unwrap();
         }
-        InvertedIndex { postings }
+        InvertedIndex::Ram(InvertedIndexRam { postings })
     }
 }
