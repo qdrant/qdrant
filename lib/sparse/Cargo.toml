@@ -12,3 +12,7 @@ edition = "2021"
 [dependencies]
 common = {path = "../common"}
 ordered-float = "3.7.0"
+memmap2 = "0.7.1"
+
+[dev-dependencies]
+tempfile = "3.8.0"

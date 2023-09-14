@@ -189,11 +189,13 @@ mod tests {
 
     #[test]
     fn advance_basic_test() {
-        let inverted_index = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .build();
+        let inverted_index = InvertedIndex::Ram(
+            InvertedIndexBuilder::new()
+                .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .build(),
+        );
 
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -229,11 +231,13 @@ mod tests {
 
     #[test]
     fn search() {
-        let inverted_index = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .build();
+        let inverted_index = InvertedIndex::Ram(
+            InvertedIndexBuilder::new()
+                .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .build(),
+        );
 
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -265,24 +269,26 @@ mod tests {
 
     #[test]
     fn search_with_hot_key() {
-        let inverted_index = InvertedIndexBuilder::new()
-            .add(
-                1,
-                PostingList::from(vec![
-                    (1, 10.0),
-                    (2, 20.0),
-                    (3, 30.0),
-                    (4, 1.0),
-                    (5, 2.0),
-                    (6, 3.0),
-                    (7, 4.0),
-                    (8, 5.0),
-                    (9, 6.0),
-                ]),
-            )
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .build();
+        let inverted_index = InvertedIndex::Ram(
+            InvertedIndexBuilder::new()
+                .add(
+                    1,
+                    PostingList::from(vec![
+                        (1, 10.0),
+                        (2, 20.0),
+                        (3, 30.0),
+                        (4, 1.0),
+                        (5, 2.0),
+                        (6, 3.0),
+                        (7, 4.0),
+                        (8, 5.0),
+                        (9, 6.0),
+                    ]),
+                )
+                .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .build(),
+        );
 
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -345,24 +351,26 @@ mod tests {
 
     #[test]
     fn prune_test() {
-        let inverted_index = InvertedIndexBuilder::new()
-            .add(
-                1,
-                PostingList::from(vec![
-                    (1, 10.0),
-                    (2, 20.0),
-                    (3, 30.0),
-                    (4, 1.0),
-                    (5, 2.0),
-                    (6, 3.0),
-                    (7, 4.0),
-                    (8, 5.0),
-                    (9, 6.0),
-                ]),
-            )
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .build();
+        let inverted_index = InvertedIndex::Ram(
+            InvertedIndexBuilder::new()
+                .add(
+                    1,
+                    PostingList::from(vec![
+                        (1, 10.0),
+                        (2, 20.0),
+                        (3, 30.0),
+                        (4, 1.0),
+                        (5, 2.0),
+                        (6, 3.0),
+                        (7, 4.0),
+                        (8, 5.0),
+                        (9, 6.0),
+                    ]),
+                )
+                .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+                .build(),
+        );
 
         let mut search_context = SearchContext::new(
             SparseVector {

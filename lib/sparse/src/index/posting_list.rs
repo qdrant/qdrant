@@ -1,6 +1,6 @@
 use crate::common::types::{DimWeight, RecordId};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PostingElement {
     pub record_id: RecordId,
     pub weight: DimWeight,

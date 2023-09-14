@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use super::InvertedIndex;
 use crate::common::types::DimId;
 use crate::index::posting_list::PostingList;
 
@@ -31,7 +30,7 @@ impl InvertedIndexBuilder {
         self
     }
 
-    pub fn build(&mut self) -> InvertedIndex {
+    pub fn build(&mut self) -> InvertedIndexRam {
         // Get sorted keys
         let mut keys: Vec<u32> = self.postings.keys().copied().collect();
         keys.sort_unstable();
@@ -46,6 +45,6 @@ impl InvertedIndexBuilder {
         for key in keys {
             postings[key as usize] = self.postings.remove(&key).unwrap();
         }
-        InvertedIndex::Ram(InvertedIndexRam { postings })
+        InvertedIndexRam { postings }
     }
 }
