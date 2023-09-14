@@ -15,7 +15,8 @@ use uuid::Uuid;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
-    check_named_vectors, check_stopped, check_vector, check_vector_name, check_vectors, mmap_ops,
+    check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
+    mmap_ops,
 };
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
@@ -754,7 +755,7 @@ impl SegmentEntry for Segment {
     fn search_batch(
         &self,
         vector_name: &str,
-        vectors: &[&QueryVector],
+        query_vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
@@ -762,12 +763,15 @@ impl SegmentEntry for Segment {
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        check_vectors(vector_name, vectors, &self.segment_config)?;
+        check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let internal_results = vector_data
-            .vector_index
-            .borrow()
-            .search(vectors, filter, top, params, is_stopped);
+        let internal_results = vector_data.vector_index.borrow().search(
+            query_vectors,
+            filter,
+            top,
+            params,
+            is_stopped,
+        );
 
         check_stopped(is_stopped)?;
 
@@ -2189,12 +2193,14 @@ mod tests {
         let wrong_names = vec!["aa", "bb", ""];
 
         for (vector_name, vector) in wrong_vectors_single.iter() {
-            let vector = vector.to_owned().into();
-            check_vector(vector_name, &vector, &config).err().unwrap();
+            let query_vector = vector.to_owned().into();
+            check_vector(vector_name, &query_vector, &config)
+                .err()
+                .unwrap();
             segment
                 .search(
                     vector_name,
-                    &vector,
+                    &query_vector,
                     &WithPayload {
                         enable: false,
                         payload_selector: None,
@@ -2210,7 +2216,7 @@ mod tests {
             segment
                 .search_batch(
                     vector_name,
-                    &[&vector, &vector],
+                    &[&query_vector, &query_vector],
                     &WithPayload {
                         enable: false,
                         payload_selector: None,

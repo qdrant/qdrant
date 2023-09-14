@@ -1,4 +1,4 @@
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -6,7 +6,7 @@ pub struct QuantizedQueryScorer<'a, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
-    original_query: Vec<VectorElementType>,
+    original_query: VectorType,
     query: TEncodedQuery,
     quantized_data: &'a TEncodedVectors,
     distance: Distance,
@@ -17,11 +17,13 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     pub fn new(
-        original_query: Vec<VectorElementType>,
-        query: TEncodedQuery,
+        raw_query: VectorType,
         quantized_data: &'a TEncodedVectors,
         distance: Distance,
     ) -> Self {
+        let original_query = distance.preprocess_vector(raw_query);
+        let query = quantized_data.encode_query(&original_query);
+
         Self {
             original_query,
             query,
