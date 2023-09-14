@@ -21,10 +21,11 @@ impl<T: Ord> Default for FixedLengthPriorityQueue<T> {
 }
 
 impl<T: Ord> FixedLengthPriorityQueue<T> {
+    /// Creates a new queue with the given length
+    /// Panics if length is 0
     pub fn new(length: usize) -> Self {
-        assert!(length > 0);
         let heap = BinaryHeap::with_capacity(length + 1);
-        let length = NonZeroUsize::new(length).unwrap();
+        let length = NonZeroUsize::new(length).expect("length must be > 0");
         FixedLengthPriorityQueue::<T> { heap, length }
     }
 
