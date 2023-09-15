@@ -31,6 +31,7 @@ fn create_collection_config() -> CollectionConfig {
         shard_number: NonZeroU32::new(1).unwrap(),
         replication_factor: NonZeroU32::new(1).unwrap(),
         write_consistency_factor: NonZeroU32::new(1).unwrap(),
+        read_fan_out_factor: 0,
         on_disk_payload: false,
     };
 

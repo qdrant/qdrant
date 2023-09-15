@@ -1839,6 +1839,7 @@ mod tests {
             shard_number: NonZeroU32::new(4).unwrap(),
             replication_factor: NonZeroU32::new(3).unwrap(),
             write_consistency_factor: NonZeroU32::new(2).unwrap(),
+            read_fan_out_factor: 0,
             on_disk_payload: false,
         };
 

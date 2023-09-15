@@ -68,6 +68,7 @@ fn batch_search_bench(c: &mut Criterion) {
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
         write_consistency_factor: NonZeroU32::new(1).unwrap(),
+        read_fan_out_factor: 0,
         on_disk_payload: false,
     };
 

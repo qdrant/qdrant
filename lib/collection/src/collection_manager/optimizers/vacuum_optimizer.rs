@@ -315,6 +315,7 @@ mod tests {
                 on_disk_payload: false,
                 replication_factor: NonZeroU32::new(1).unwrap(),
                 write_consistency_factor: NonZeroU32::new(1).unwrap(),
+                read_fan_out_factor: 0,
             },
             Default::default(),
             Default::default(),
@@ -420,6 +421,7 @@ mod tests {
             on_disk_payload: false,
             replication_factor: 1.try_into().unwrap(),
             write_consistency_factor: 1.try_into().unwrap(),
+            read_fan_out_factor: 0,
         };
 
         // Base segment
