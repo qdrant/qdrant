@@ -1,7 +1,6 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection
-from .helpers.fixtures import on_disk_vectors
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_euclid'

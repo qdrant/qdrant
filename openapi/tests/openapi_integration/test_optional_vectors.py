@@ -1,7 +1,6 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection, multivec_collection_setup
-from .helpers.fixtures import on_disk_vectors, on_disk_payload
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection'
