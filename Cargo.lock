@@ -4474,6 +4474,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "smol_str",
+ "sparse",
  "sysinfo",
  "tar",
  "tempfile",
@@ -4715,6 +4716,14 @@ checksum = "2538b18701741680e0322a2302176d3253a35388e2e62f172f64f4f16605f877"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "sparse"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "ordered-float 3.9.1",
 ]
 
 [[package]]
