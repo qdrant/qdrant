@@ -25,7 +25,6 @@ use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LockedWal;
-use crate::wal::WalError;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
@@ -503,15 +502,11 @@ impl UpdateHandler {
             };
 
             trace!("Attempting flushing");
-            let wal_flash_job = wal.lock().flush_async();
+            let wal_flash_result = wal.lock().flush();
 
-            if let Err(err) = wal_flash_job.join() {
+            if let Err(err) = wal_flash_result {
                 error!("Failed to flush wal: {:?}", err);
-                segments
-                    .write()
-                    .report_optimizer_error(WalError::WriteWalError(format!(
-                        "WAL flush error: {err:?}"
-                    )));
+                segments.write().report_optimizer_error(err);
                 continue;
             }
 

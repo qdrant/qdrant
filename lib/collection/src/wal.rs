@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::result;
-use std::thread::JoinHandle;
 
 use segment::common::file_operations::{atomic_save_json, read_json};
 use serde::de::DeserializeOwned;
@@ -206,11 +205,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn flush(&mut self) -> Result<()> {
         self.wal
             .flush_open_segment()
-            .map_err(|err| WalError::WriteWalError(format!("{err:?}")))
-    }
-
-    pub fn flush_async(&mut self) -> JoinHandle<std::io::Result<()>> {
-        self.wal.flush_open_segment_async()
+            .map_err(|err| WalError::WriteWalError(format!("WAL flush error: {err:?}")))
     }
 
     pub fn path(&self) -> &Path {
