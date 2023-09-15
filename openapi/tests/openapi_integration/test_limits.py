@@ -1,15 +1,13 @@
-import os
 import pytest
 
-from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.fixtures import on_disk_vectors, on_disk_payload
+from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_limits'
 
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup():
     yield
     drop_collection(collection_name=collection_name)
 

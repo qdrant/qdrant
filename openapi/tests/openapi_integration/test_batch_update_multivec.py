@@ -1,7 +1,6 @@
 import pytest
 
 from .helpers.helpers import request_with_validation
-from .helpers.fixtures import on_disk_vectors
 from .helpers.collection_setup import multivec_collection_setup, drop_collection
 
 from operator import itemgetter

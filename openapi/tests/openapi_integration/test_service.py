@@ -1,8 +1,7 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.fixtures import on_disk_vectors
 from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_telemetry'
