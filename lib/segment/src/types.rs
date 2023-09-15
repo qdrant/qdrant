@@ -1651,8 +1651,43 @@ impl PayloadSelector {
     }
 
     pub fn process(&self, x: Payload) -> Payload {
-        let map: serde_json::Map<String, Value> =
-            x.into_iter().filter(|(key, _)| self.check(key)).collect();
+        let fields = match self {
+            PayloadSelector::Include(selector) => selector.include.clone(),
+            _ => Vec::new(),
+        };
+
+        let mut result: Vec<&Value> = Vec::new();
+
+        for field in &fields {
+            if field.contains('.') {
+                let nested_value = x.get_value(field).values();
+
+                result.extend(nested_value.clone());
+            } else {
+                let top_level_value = x.get_value(field).values();
+
+                result.extend(top_level_value)
+            }
+        }
+
+        let mut map = Map::new();
+        for value in result {
+            match value {
+                Value::Array(inner) => {
+                    for inner_value in inner {
+                        if let Value::Object(ref obj) = inner_value {
+                            map.extend(obj.clone());
+                        }
+                    }
+                }
+                Value::Object(ref obj) => {
+                    map.extend(obj.clone());
+                }
+                _ => {
+                    map.insert("".to_string(), (*value).clone());
+                }
+            }
+        }
         map.into()
     }
 }
