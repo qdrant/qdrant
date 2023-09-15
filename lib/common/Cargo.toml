@@ -9,5 +9,5 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-serde = "~1.0"
+serde = { version = "~1.0", features = ["derive"] }
 validator = { version = "0.16", features = ["derive"] }
