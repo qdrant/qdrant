@@ -122,8 +122,8 @@ impl<'a> PostingListIterator<'a> {
         if self.current_index >= self.posting_list.elements.len() {
             return None;
         }
-        // Use binary search to find the next element with ID > id
 
+        // Use binary search to find the next element with ID > id
         let next_element = self.posting_list.elements[self.current_index..]
             .binary_search_by(|e| e.record_id.cmp(&id));
 
