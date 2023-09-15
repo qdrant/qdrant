@@ -159,14 +159,26 @@ where
     let mut vector_names_per_collection: HashMap<_, HashSet<String>> = Default::default();
 
     for request in &request_batch.searches {
-        if request.positive.is_empty()
-            && matches!(request.strategy, RecommendStrategy::AverageVector)
-        {
-            return Err(CollectionError::BadRequest {
-                description: "At least one positive vector ID required with this strategy"
-                    .to_owned(),
-            });
+        // Validate amount of examples
+        match request.strategy {
+            RecommendStrategy::AverageVector => {
+                if request.positive.is_empty() {
+                    return Err(CollectionError::BadRequest {
+                        description: "At least one positive vector ID required with this strategy"
+                            .to_owned(),
+                    });
+                }
+            }
+            RecommendStrategy::TakeBestScore => {
+                if request.positive.is_empty() && request.negative.is_empty() {
+                    return Err(CollectionError::BadRequest {
+                        description: "At least one positive or negative vector ID required with this strategy"
+                            .to_owned(),
+                    });
+                }
+            }
         }
+
         let collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
 
         let reference_vectors_ids = all_reference_vectors_ids
@@ -336,12 +348,12 @@ fn batch_by_strategy(
                 // start new batch
                 let strategy = req.strategy.clone();
                 let mut batch = vec![req];
-                
+
                 // continue until we see a different strategy
                 batch.extend(iter.take_while_ref(|req| req.strategy == strategy));
-        
+
                 Some((strategy, batch))
-            },
+            }
         }
     })
 }
