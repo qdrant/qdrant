@@ -354,6 +354,7 @@ pub struct PointRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum RecommendStrategy {
     #[default]
     AverageVector,

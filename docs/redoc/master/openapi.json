@@ -6282,12 +6282,12 @@
         "description": "Recommendation request. Provides positive and negative examples of the vectors, which are already stored in the collection.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.",
         "type": "object",
         "required": [
-          "limit",
-          "positive"
+          "limit"
         ],
         "properties": {
           "positive": {
             "description": "Look for vectors closest to those",
+            "default": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
@@ -6300,6 +6300,9 @@
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
             }
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/RecommendStrategy"
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
@@ -6390,6 +6393,13 @@
             ]
           }
         }
+      },
+      "RecommendStrategy": {
+        "type": "string",
+        "enum": [
+          "average_vector",
+          "take_best_score"
+        ]
       },
       "UsingVector": {
         "anyOf": [
@@ -9079,12 +9089,12 @@
         "required": [
           "group_by",
           "group_size",
-          "limit",
-          "positive"
+          "limit"
         ],
         "properties": {
           "positive": {
             "description": "Look for vectors closest to those",
+            "default": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
@@ -9097,6 +9107,9 @@
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
             }
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/RecommendStrategy"
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",

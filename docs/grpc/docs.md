@@ -166,6 +166,7 @@
   
     - [FieldType](#qdrant-FieldType)
     - [ReadConsistencyType](#qdrant-ReadConsistencyType)
+    - [RecommendStrategy](#qdrant-RecommendStrategy)
     - [UpdateStatus](#qdrant-UpdateStatus)
     - [WriteOrderingType](#qdrant-WriteOrderingType)
   
@@ -2269,6 +2270,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
+| strategy | [RecommendStrategy](#qdrant-RecommendStrategy) | optional | How to use the example vectors to find the results |
 
 
 
@@ -2296,6 +2298,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| strategy | [RecommendStrategy](#qdrant-RecommendStrategy) | optional | How to use the example vectors to find the results |
 
 
 
@@ -2867,6 +2870,18 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | All | 0 | Send request to all nodes and return points which are present on all of them |
 | Majority | 1 | Send requests to all nodes and return points which are present on majority of them |
 | Quorum | 2 | Send requests to half &#43; 1 nodes, return points which are present on all of them |
+
+
+
+<a name="qdrant-RecommendStrategy"></a>
+
+### RecommendStrategy
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| AverageVector | 0 |  |
+| TakeBestScore | 1 |  |
 
 
 
