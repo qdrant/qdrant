@@ -1,7 +1,6 @@
 import pytest
 
 from .helpers.collection_setup import drop_collection
-from .helpers.fixtures import on_disk_vectors, on_disk_payload
 from .helpers.helpers import request_with_validation
 from .test_nested_payload_indexing import nested_payload_collection_setup
 

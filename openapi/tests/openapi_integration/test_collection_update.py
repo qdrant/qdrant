@@ -1,8 +1,6 @@
-import os
 import pytest
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.fixtures import on_disk_vectors, on_disk_payload
 from .helpers.helpers import request_with_validation
 
 default_name = ""

@@ -1,4 +1,3 @@
-import os
 
 from .helpers import request_with_validation
 
