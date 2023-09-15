@@ -750,12 +750,12 @@ impl ShardReplicaSet {
     pub async fn execute_read_operation<Res, F>(
         &self,
         read_operation: F,
-        is_external: bool,
+        local_only: bool,
     ) -> CollectionResult<Res>
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
-        if !is_external {
+        if local_only {
             return self.execute_local_read_operation(read_operation).await;
         }
 
@@ -823,7 +823,7 @@ impl ShardReplicaSet {
             .execute_cluster_read_operation(
                 read_operation,
                 required_successful_results,
-                remotes.into(),
+                Some(remotes),
             )
             .await?;
 
@@ -1696,9 +1696,12 @@ impl ShardReplicaSet {
         .await
     }
 
-    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        self.execute_local_read_operation(|shard| async move { shard.info().await }.boxed())
-            .await
+    pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
+        self.execute_read_operation(
+            |shard| async move { shard.info().await }.boxed(),
+            local_only,
+        )
+        .await
     }
 
     // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
@@ -1750,11 +1753,18 @@ impl ShardReplicaSet {
         }
     }
 
-    pub async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
-        self.execute_local_read_operation(|shard| {
-            let request = request.clone();
-            async move { shard.count(request).await }.boxed()
-        })
+    pub async fn count(
+        &self,
+        request: Arc<CountRequest>,
+        local_only: bool,
+    ) -> CollectionResult<CountResult> {
+        self.execute_read_operation(
+            |shard| {
+                let request = request.clone();
+                async move { shard.count(request).await }.boxed()
+            },
+            local_only,
+        )
         .await
     }
 
