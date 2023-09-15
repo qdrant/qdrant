@@ -19,13 +19,13 @@ const MIN_DIM_SIZE_AVX: usize = 32;
 const MIN_DIM_SIZE_SIMD: usize = 16;
 
 #[derive(Clone)]
-pub struct DotProductMetric {}
+pub struct DotProductMetric;
 
 #[derive(Clone)]
-pub struct CosineMetric {}
+pub struct CosineMetric;
 
 #[derive(Clone)]
-pub struct EuclidMetric {}
+pub struct EuclidMetric;
 
 impl Metric for EuclidMetric {
     fn distance() -> Distance {

@@ -566,9 +566,9 @@ impl CollectionError {
         }
     }
 
-    pub fn service_error(error: String) -> CollectionError {
+    pub fn service_error(error: impl Into<String>) -> CollectionError {
         CollectionError::ServiceError {
-            error,
+            error: error.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }

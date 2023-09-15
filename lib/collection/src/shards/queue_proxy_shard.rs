@@ -100,7 +100,7 @@ impl QueueProxyShard {
         };
 
         // Normally, we immediately release the update lock to allow new updates.
-        // On the last batch we keep the lock to prevent accumalating more updates on the WAL,
+        // On the last batch we keep the lock to prevent accumulating more updates on the WAL,
         // so we can finalize the transfer after this batch, before accepting new updates.
         let last_batch = pending_count <= BATCH_SIZE as u64 || batch.is_empty();
         if !last_batch {

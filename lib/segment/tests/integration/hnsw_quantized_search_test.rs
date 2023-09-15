@@ -124,7 +124,7 @@ fn hnsw_quantized_search_test(
 
     // check oversampling
     for _i in 0..attempts {
-        let ef_oversamling = ef / 8;
+        let ef_oversampling = ef / 8;
         let oversampling_query = random_vector(&mut rnd, dim).into();
 
         let oversampling_1_result = hnsw_index.search(
@@ -132,7 +132,7 @@ fn hnsw_quantized_search_test(
             None,
             top,
             Some(&SearchParams {
-                hnsw_ef: Some(ef_oversamling),
+                hnsw_ef: Some(ef_oversampling),
                 quantization: Some(QuantizationSearchParams {
                     rescore: true,
                     ..Default::default()
@@ -149,7 +149,7 @@ fn hnsw_quantized_search_test(
             None,
             top,
             Some(&SearchParams {
-                hnsw_ef: Some(ef_oversamling),
+                hnsw_ef: Some(ef_oversampling),
                 quantization: Some(QuantizationSearchParams {
                     oversampling: Some(4.0),
                     rescore: true,

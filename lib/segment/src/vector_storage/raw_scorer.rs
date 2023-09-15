@@ -2,8 +2,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
+use super::query_scorer::reco_query_scorer::RecoQueryScorer;
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::QueryVector;
+use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
@@ -78,26 +80,20 @@ pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer> {
 }
 
 pub fn new_stoppable_raw_scorer<'a>(
-    vector: QueryVector,
+    query: QueryVector,
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     match vector_storage {
-        VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted, is_stopped),
+        VectorStorageEnum::Simple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
 
         VectorStorageEnum::Memmap(vs) => {
             if vs.has_async_reader() {
                 #[cfg(target_os = "linux")]
                 {
-                    let scorer_result = match vector {
-                        QueryVector::Nearest(ref vector) => super::async_raw_scorer::new(
-                            vector.clone(),
-                            vs,
-                            point_deleted,
-                            is_stopped,
-                        ),
-                    };
+                    let scorer_result =
+                        super::async_raw_scorer::new(query.clone(), vs, point_deleted, is_stopped);
                     match scorer_result {
                         Ok(raw_scorer) => return raw_scorer,
                         Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
@@ -108,11 +104,11 @@ pub fn new_stoppable_raw_scorer<'a>(
                 log::warn!("async raw scorer is only supported on Linux");
             }
 
-            raw_scorer_impl(vector, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
 
         VectorStorageEnum::AppendableMemmap(vs) => {
-            raw_scorer_impl(vector, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
     }
 }
@@ -128,40 +124,49 @@ pub fn new_raw_scorer<'a>(
 }
 
 pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
-    vector: QueryVector,
+    query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
-    match vector {
-        QueryVector::Nearest(vector) => {
-            new_metric_scorer(vector.to_vec(), vector_storage, point_deleted, is_stopped)
-        }
+    match vector_storage.distance() {
+        Distance::Cosine => new_scorer_with_metric::<CosineMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Euclid => new_scorer_with_metric::<EuclidMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Dot => new_scorer_with_metric::<DotProductMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
     }
 }
 
-pub fn new_metric_scorer<'a, TVectorStorage: VectorStorage>(
-    vector: Vec<VectorElementType>,
+fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: VectorStorage>(
+    query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> Box<dyn RawScorer + 'a> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
-    match vector_storage.distance() {
-        Distance::Cosine => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<CosineMetric, TVectorStorage>::new(vector, vector_storage),
+    match query {
+        QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
+            MetricQueryScorer::<TMetric, TVectorStorage>::new(vector, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
         ),
-        Distance::Euclid => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<EuclidMetric, TVectorStorage>::new(vector, vector_storage),
-            point_deleted,
-            vec_deleted,
-            is_stopped,
-        ),
-        Distance::Dot => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<DotProductMetric, TVectorStorage>::new(vector, vector_storage),
+        QueryVector::Recommend(reco_query) => raw_scorer_from_query_scorer(
+            RecoQueryScorer::<TMetric, TVectorStorage>::new(reco_query, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,

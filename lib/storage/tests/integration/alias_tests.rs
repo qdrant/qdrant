@@ -1,4 +1,4 @@
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
 
 use collection::operations::types::VectorParams;
@@ -55,6 +55,8 @@ fn test_alias_operation() {
         handle_collection_load_errors: false,
         recovery_mode: None,
         async_scorer: false,
+        update_concurrency: Some(NonZeroUsize::new(2).unwrap()),
+        // update_concurrency: None,
     };
 
     let search_runtime = Runtime::new().unwrap();

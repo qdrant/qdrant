@@ -245,6 +245,7 @@ mod tests {
     use super::*;
     use crate::common::mmap_ops::transmute_to_u8_slice;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::data_types::vectors::QueryVector;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::types::{PointIdType, ScalarQuantizationConfig};
@@ -663,11 +664,11 @@ mod tests {
             .quantize(dir.path(), &config, 1, &stopped)
             .unwrap();
 
-        let query = [0.5, 0.5, 0.5, 0.5].into();
+        let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
         {
             let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-                &query,
+                query.clone(),
                 borrowed_id_tracker.deleted_point_bitslice(),
                 borrowed_storage.deleted_vector_bitslice(),
                 &stopped,
@@ -692,7 +693,7 @@ mod tests {
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-            &query,
+            query.clone(),
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
             &stopped,

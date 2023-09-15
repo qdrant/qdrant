@@ -18,7 +18,7 @@ tempfile = "3.8.0"
 criterion = "0.5"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
-walkdir = "2.3.3"
+walkdir = "2.4.0"
 rstest = "0.18.2"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
@@ -58,7 +58,7 @@ semver = "1.0.18"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
-chrono = { version = "0.4.28", features = ["serde"] }
+chrono = { version = "0.4.30", features = ["serde"] }
 smol_str = "0.2.0"
 
 sysinfo = "0.29"

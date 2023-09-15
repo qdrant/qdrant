@@ -19,6 +19,7 @@ mod tests;
 mod async_io;
 mod async_io_mock;
 pub mod common;
+pub mod query;
 mod query_scorer;
 
 pub use raw_scorer::*;

@@ -35,7 +35,9 @@ jobs:
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
-    
+        
+  # After tests are run, this hacky script will process the JUnit output of nextest
+  # and will create a GH Issue if there is a test marked as flaky
   process-results:
     runs-on: ubuntu-latest
     needs: test
@@ -74,6 +76,7 @@ jobs:
           sparse-checkout-cone-mode: false
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
       - name: Create issue for flaky tests
+        id: create-issue
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
         uses: JasonEtco/create-an-issue@v2
         env:

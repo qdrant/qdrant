@@ -34,12 +34,22 @@ pub fn check_vector_name(vector_name: &str, segment_config: &SegmentConfig) -> O
 /// Returns an error if incompatible.
 pub fn check_vector(
     vector_name: &str,
-    vector: &QueryVector,
+    query_vector: &QueryVector,
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
-    match vector {
+    _check_query_vector(query_vector, vector_config)
+}
+
+fn _check_query_vector(
+    query_vector: &QueryVector,
+    vector_config: &VectorDataConfig,
+) -> OperationResult<()> {
+    match query_vector {
         QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
+        QueryVector::Recommend(reco_query) => reco_query
+            .iter_all()
+            .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
     }
 
     Ok(())
@@ -48,17 +58,15 @@ pub fn check_vector(
 /// Check that the given vector name and elements are compatible with the given segment config.
 ///
 /// Returns an error if incompatible.
-pub fn check_vectors(
+pub fn check_query_vectors(
     vector_name: &str,
-    vectors: &[&QueryVector],
+    query_vectors: &[&QueryVector],
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
-    for vector in vectors {
-        match vector {
-            QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
-        }
-    }
+    query_vectors
+        .iter()
+        .try_for_each(|qv| _check_query_vector(qv, vector_config))?;
     Ok(())
 }
 

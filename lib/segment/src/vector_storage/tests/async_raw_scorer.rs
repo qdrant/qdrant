@@ -1,20 +1,20 @@
 use std::sync::atomic::AtomicBool;
-use std::{error, result};
 
 use bitvec::slice::BitSlice;
+use itertools::Itertools;
 use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
 
+use super::utils::{delete_random_vectors, insert_distributed_vectors, sampler, score, Result};
 use crate::common::rocksdb_wrapper;
+use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
-use crate::types::{Distance, PointOffsetType};
+use crate::types::Distance;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{
-    async_raw_scorer, new_raw_scorer, RawScorer, ScoredPointOffset, VectorStorageEnum,
-};
+use crate::vector_storage::{async_raw_scorer, new_raw_scorer, VectorStorageEnum};
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
@@ -78,43 +78,12 @@ fn test_async_raw_scorer(
 
     Ok(())
 }
-
 fn insert_random_vectors(
     rng: &mut impl rand::Rng,
     storage: &mut impl VectorStorage,
     vectors: usize,
 ) -> Result<()> {
-    let start = storage.total_vector_count() as u32;
-    let end = start + vectors as u32;
-
-    let mut vector = vec![0.; storage.vector_dim()];
-    let mut sampler = sampler(rng);
-
-    for offset in start..end {
-        for (item, value) in vector.iter_mut().zip(&mut sampler) {
-            *item = value;
-        }
-
-        storage.insert_vector(offset, &vector)?;
-    }
-
-    Ok(())
-}
-
-fn delete_random_vectors(
-    rng: &mut impl rand::Rng,
-    storage: &mut impl VectorStorage,
-    id_tracker: &mut impl IdTracker,
-    vectors: usize,
-) -> Result<()> {
-    let offsets = (0..storage.total_vector_count() as _).choose_multiple(rng, vectors);
-
-    for offset in offsets {
-        storage.delete_vector(offset)?;
-        id_tracker.drop(crate::types::ExtendedPointId::NumId(offset.into()))?;
-    }
-
-    Ok(())
+    insert_distributed_vectors(storage, vectors, &mut sampler(rng))
 }
 
 fn test_random_score(
@@ -122,9 +91,12 @@ fn test_random_score(
     storage: &VectorStorageEnum,
     deleted_points: &BitSlice,
 ) -> Result<()> {
-    let query: Vec<_> = sampler(&mut rng).take(storage.vector_dim()).collect();
+    let query: QueryVector = sampler(&mut rng)
+        .take(storage.vector_dim())
+        .collect_vec()
+        .into();
 
-    let raw_scorer = new_raw_scorer(query.clone().into(), storage, deleted_points);
+    let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points);
 
     let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::Memmap(storage) = storage {
@@ -143,17 +115,3 @@ fn test_random_score(
 
     Ok(())
 }
-
-fn score(scorer: &dyn RawScorer, points: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
-    let mut scores = vec![Default::default(); points.len()];
-    let scored = scorer.score_points(points, &mut scores);
-    scores.resize_with(scored, Default::default);
-    scores
-}
-
-fn sampler(rng: impl rand::Rng) -> impl Iterator<Item = f32> {
-    rng.sample_iter(rand::distributions::Uniform::new_inclusive(-1., 1.))
-}
-
-type Result<T, E = Error> = result::Result<T, E>;
-type Error = Box<dyn error::Error>;

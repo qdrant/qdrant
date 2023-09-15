@@ -7,10 +7,25 @@ service QdrantInternal {
   Get HTTP port for remote host.
    */
   rpc GetHttpPort (HttpPortRequest) returns (HttpPortResponse) {}
+
+  /*
+  Wait until the target node reached the given commit ID.
+   */
+  rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
 }
 
 message HttpPortRequest {}
 
 message HttpPortResponse {
   int32 port = 1;
+}
+
+message WaitOnConsensusCommitRequest {
+  int64 commit = 1; // Raft commit as u64
+  int64 term = 2; // Raft term as u64
+  int64 timeout = 3; // Timeout in seconds
+}
+
+message WaitOnConsensusCommitResponse {
+  bool ok = 1; // False if commit/term is diverged and never reached or if timed out.
 }
