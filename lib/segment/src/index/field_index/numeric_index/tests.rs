@@ -14,7 +14,7 @@ fn get_index() -> (TempDir, NumericIndex<f64>) {
         .tempdir()
         .unwrap();
     let db = open_db_with_existing_cf(temp_dir.path()).unwrap();
-    let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME);
+    let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME, true);
     index.recreate().unwrap();
     (temp_dir, index)
 }
@@ -29,6 +29,7 @@ fn random_index(num_points: usize, values_per_point: usize) -> (TempDir, Numeric
             NumericIndex::Mutable(index) => index
                 .add_many_to_list(i as PointOffsetType, values)
                 .unwrap(),
+            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
         }
     }
 
@@ -170,6 +171,7 @@ fn test_payload_blocks_small() {
             NumericIndex::Mutable(index) => index
                 .add_many_to_list(idx as PointOffsetType + 1, values)
                 .unwrap(),
+            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
         });
 
     let blocks = index
@@ -201,12 +203,13 @@ fn test_numeric_index_load_from_disk() {
             NumericIndex::Mutable(index) => index
                 .add_many_to_list(idx as PointOffsetType + 1, values)
                 .unwrap(),
+            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
         });
 
     index.flusher()().unwrap();
 
     let db_ref = index.get_db_wrapper().database.clone();
-    let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME);
+    let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, true);
     new_index.load().unwrap();
 
     test_cond(
@@ -244,6 +247,7 @@ fn test_numeric_index() {
             NumericIndex::Mutable(index) => index
                 .add_many_to_list(idx as PointOffsetType + 1, values)
                 .unwrap(),
+            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
         });
 
     test_cond(

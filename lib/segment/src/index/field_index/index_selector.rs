@@ -31,11 +31,15 @@ pub fn index_selector(
             }
             PayloadSchemaType::Integer => vec![
                 FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field, is_appendable)),
-                FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field)),
+                FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
+                    db,
+                    field,
+                    is_appendable,
+                )),
             ],
             PayloadSchemaType::Float => {
                 vec![FieldIndex::FloatIndex(
-                    NumericIndex::<FloatPayloadType>::new(db, field),
+                    NumericIndex::<FloatPayloadType>::new(db, field, is_appendable),
                 )]
             }
             PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(db, field))],

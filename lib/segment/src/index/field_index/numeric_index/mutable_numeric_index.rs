@@ -38,8 +38,8 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         &self.db_wrapper
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<T>> {
-        self.point_to_values.get(idx as usize)
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
+        self.point_to_values.get(idx as usize).map(|v| v.as_slice())
     }
 
     pub fn get_values_count(&self) -> usize {
