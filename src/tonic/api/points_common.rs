@@ -844,6 +844,7 @@ pub async fn recommend(
         collection_name,
         positive,
         negative,
+        strategy,
         filter,
         limit,
         offset,
@@ -865,6 +866,7 @@ pub async fn recommend(
             .into_iter()
             .map(|p| p.try_into())
             .collect::<Result<_, _>>()?,
+        strategy: strategy.try_into()?,
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,

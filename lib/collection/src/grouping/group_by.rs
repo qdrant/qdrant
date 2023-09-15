@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 
 use itertools::Itertools;
-use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use segment::data_types::vectors::{Named, DEFAULT_VECTOR_NAME};
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
     WithVector,
@@ -216,6 +216,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
         let RecommendGroupsRequest {
             positive,
             negative,
+            strategy,
             filter,
             params,
             with_payload,
@@ -235,6 +236,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
         let recommend = RecommendRequest {
             positive,
             negative,
+            strategy,
             filter,
             params,
             limit: 0,

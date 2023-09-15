@@ -3268,6 +3268,9 @@ pub struct RecommendPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// How to use the example vectors to find the results
+    #[prost(enumeration = "RecommendStrategy", optional, tag = "16")]
+    pub strategy: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3340,6 +3343,9 @@ pub struct RecommendPointGroups {
     /// Options for specifying how to use the group id to lookup points in another collection
     #[prost(message, optional, tag = "15")]
     pub with_lookup: ::core::option::Option<WithLookup>,
+    /// How to use the example vectors to find the results
+    #[prost(enumeration = "RecommendStrategy", optional, tag = "17")]
+    pub strategy: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -4031,6 +4037,33 @@ impl FieldType {
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
             "FieldTypeBool" => Some(Self::Bool),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RecommendStrategy {
+    AverageVector = 0,
+    TakeBestScore = 1,
+}
+impl RecommendStrategy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            RecommendStrategy::AverageVector => "AverageVector",
+            RecommendStrategy::TakeBestScore => "TakeBestScore",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AverageVector" => Some(Self::AverageVector),
+            "TakeBestScore" => Some(Self::TakeBestScore),
             _ => None,
         }
     }
@@ -6013,8 +6046,17 @@ pub struct SearchBatchPointsInternal {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecoQuery {
+    #[prost(message, repeated, tag = "1")]
+    pub positives: ::prost::alloc::vec::Vec<Vector>,
+    #[prost(message, repeated, tag = "2")]
+    pub negatives: ::prost::alloc::vec::Vec<Vector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryEnum {
-    #[prost(oneof = "query_enum::Query", tags = "1")]
+    #[prost(oneof = "query_enum::Query", tags = "1, 2")]
     pub query: ::core::option::Option<query_enum::Query>,
 }
 /// Nested message and enum types in `QueryEnum`.
@@ -6026,6 +6068,9 @@ pub mod query_enum {
         /// ANN
         #[prost(message, tag = "1")]
         NearestNeighbors(super::Vector),
+        /// Recommend points with higher similarity to positive examples
+        #[prost(message, tag = "2")]
+        RecommendBestScore(super::RecoQuery),
     }
 }
 /// This is only used internally, so it makes more sense to add it here rather than in points.proto

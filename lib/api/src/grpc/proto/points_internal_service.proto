@@ -97,21 +97,17 @@ message SearchBatchPointsInternal {
   optional uint32 shard_id = 3;
 }
 
-/* Lets not bother with this yet
 message RecoQuery {
   repeated Vector positives = 1;
   repeated Vector negatives = 2;
 }
-*/
 
 message QueryEnum {
-  reserved 2;
   oneof query {
     Vector nearest_neighbors = 1; // ANN
-    // RecoQuery recommend_best_score = 2; // Recommend points with higher similarity to positive examples
+    RecoQuery recommend_best_score = 2; // Recommend points with higher similarity to positive examples
   }
 }
-
 
 // This is only used internally, so it makes more sense to add it here rather than in points.proto
 message CoreSearchPoints {
