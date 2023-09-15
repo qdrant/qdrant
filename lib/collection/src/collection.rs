@@ -1169,7 +1169,7 @@ impl Collection {
         let request = Arc::new(request);
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
-            // `count` requests recevied through internal gRPC *always* have `shard_selection`
+            // `count` requests received through internal gRPC *always* have `shard_selection`
             .map(|shard| shard.count(request.clone(), shard_selection.is_some()))
             .collect();
 
@@ -1407,7 +1407,7 @@ impl Collection {
 
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
-            // `info` requests recevied through internal gRPC *always* have `shard_selection`
+            // `info` requests received through internal gRPC *always* have `shard_selection`
             .map(|shard| shard.info(shard_selection.is_some()))
             .collect();
 
