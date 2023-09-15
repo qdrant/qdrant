@@ -159,9 +159,12 @@ where
     let mut vector_names_per_collection: HashMap<_, HashSet<String>> = Default::default();
 
     for request in &request_batch.searches {
-        if request.positive.is_empty() {
+        if request.positive.is_empty()
+            && matches!(request.strategy, RecommendStrategy::AverageVector)
+        {
             return Err(CollectionError::BadRequest {
-                description: "At least one positive vector ID required".to_owned(),
+                description: "At least one positive vector ID required with this strategy"
+                    .to_owned(),
             });
         }
         let collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
@@ -322,25 +325,23 @@ where
     Ok(results)
 }
 
+/// Groups the consecutive requests of the same strategy into separate batches
 fn batch_by_strategy(
     requests: &[RecommendRequest],
 ) -> impl Iterator<Item = (RecommendStrategy, Vec<&RecommendRequest>)> {
     requests.iter().batching(|iter| {
-        let mut iter = iter.peekable();
-
-        let strategy = match iter.peek() {
-            Some(req) => req.strategy.clone(),
-            None => return None,
-        };
-
-        let batch = iter
-            .peeking_take_while(|req| req.strategy == strategy)
-            .collect_vec();
-
-        if batch.is_empty() {
-            None
-        } else {
-            Some((strategy, batch))
+        match iter.next() {
+            None => None,
+            Some(req) => {
+                // start new batch
+                let strategy = req.strategy.clone();
+                let mut batch = vec![req];
+                
+                // continue until we see a different strategy
+                batch.extend(iter.take_while_ref(|req| req.strategy == strategy));
+        
+                Some((strategy, batch))
+            },
         }
     })
 }
@@ -474,4 +475,53 @@ fn map_ids_to_vectors<'a>(
             .unwrap();
         rec.get_vector_by_name(vector_name)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::operations::types::RecommendStrategy;
+
+    #[test]
+    fn test_batch_by_strategy() {
+        let requests = vec![
+            RecommendRequest {
+                strategy: RecommendStrategy::AverageVector,
+                ..Default::default()
+            },
+            RecommendRequest {
+                strategy: RecommendStrategy::AverageVector,
+                ..Default::default()
+            },
+            RecommendRequest {
+                strategy: RecommendStrategy::TakeBestScore,
+                ..Default::default()
+            },
+            RecommendRequest {
+                strategy: RecommendStrategy::TakeBestScore,
+                ..Default::default()
+            },
+            RecommendRequest {
+                strategy: RecommendStrategy::TakeBestScore,
+                ..Default::default()
+            },
+            RecommendRequest {
+                strategy: RecommendStrategy::AverageVector,
+                ..Default::default()
+            },
+        ];
+
+        let batches: Vec<_> = batch_by_strategy(&requests)
+            .map(|(strategy, batch)| (strategy, batch.len()))
+            .collect();
+
+        assert_eq!(
+            batches,
+            vec![
+                (RecommendStrategy::AverageVector, 2),
+                (RecommendStrategy::TakeBestScore, 3),
+                (RecommendStrategy::AverageVector, 1),
+            ]
+        );
+    }
 }
