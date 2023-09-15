@@ -50,20 +50,18 @@ impl PostingBuilder {
         // Check for duplicates
         #[cfg(debug_assertions)]
         {
-            for i in 1..self.elements.len() {
-                if self.elements[i].record_id == self.elements[i - 1].record_id {
-                    panic!(
-                        "Duplicate id {} in posting list",
-                        self.elements[i].record_id
-                    );
-                }
+            if let Some(e) = self
+                .elements
+                .windows(2)
+                .find(|e| e[0].record_id == e[1].record_id)
+            {
+                panic!("Duplicate id {} in posting list", e[0].record_id);
             }
         }
 
         // Calculate max_next_weight
         let mut max_next_weight = f32::NEG_INFINITY;
-        for i in (0..self.elements.len()).rev() {
-            let element = &mut self.elements[i];
+        for element in self.elements.iter_mut().rev() {
             element.max_next_weight = max_next_weight;
             max_next_weight = max_next_weight.max(element.weight);
         }
