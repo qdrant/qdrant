@@ -835,7 +835,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                         .into(),
                         None => vector.data.into(),
                     })
-                },
+                }
                 api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                     QueryEnum::RecommendBestScore(NamedRecoQuery {
                         query: RecoQuery::new(
