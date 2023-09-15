@@ -98,7 +98,7 @@ impl<'a> SearchContext<'a> {
         })
     }
 
-    pub fn next_min(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
+    fn next_min(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
         let mut min_record_id = None;
 
         // Iterate first time to find min record id at the head of the posting lists
@@ -114,7 +114,7 @@ impl<'a> SearchContext<'a> {
     }
 
     /// Make sure the longest posting list is at the head of the posting list iterators
-    pub fn sort_posting_lists_by_len(&mut self) {
+    fn sort_posting_lists_by_len(&mut self) {
         // decreasing order
         self.postings_iterators.sort_by(|a, b| {
             b.posting_list_iterator
