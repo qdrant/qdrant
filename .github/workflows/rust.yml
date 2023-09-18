@@ -1,4 +1,4 @@
-name: Tests
+name: Rust tests
 
 on:
   push:
@@ -11,7 +11,6 @@ env:
 
 jobs:
   test:
-
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -26,12 +25,71 @@ jobs:
       uses: arduino/setup-protoc@v2
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Run tests
-      run: cargo test --workspace
-
-#   build:
-#     runs-on: ubuntu-latest
-#     steps:
-#     - uses: actions/checkout@v4
-#     - name: Build
-#       run: docker build . --tag=qdrant
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
+    - name: Build and run tests
+      # Profile "ci" is configured in .config/nextest.toml
+      run: cargo nextest run --workspace --profile ci
+    - name: Upload test report
+      uses: actions/upload-artifact@v3
+      with:
+        name: junit-${{ matrix.os }}.xml
+        path: target/nextest/ci/junit.xml
+        
+  # After tests are run, this hacky script will process the JUnit output of nextest
+  # and will create a GH Issue if there is a test marked as flaky
+  process-results:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      issues: write 
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest  ]
+    steps:
+      - name: Download test report
+        uses: actions/download-artifact@v3
+        with:
+          name: junit-${{ matrix.os }}.xml
+      - name: Process test report
+        id: process-test-report
+        run: |
+          pip install yq
+          xq '.. | select(type == "object") | select(has("flakyFailure"))' junit.xml > flaky_tests.json
+          echo has_flaky_tests=$(jq '. | has("flakyFailure")' flaky_tests.json) >> $GITHUB_OUTPUT
+      - name: Get flaky test details
+        id: get-flaky-tests
+        if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
+        run: |
+          echo "Flaky tests found"
+          echo test=$(jq '.["@name"]' flaky_tests.json -r ) >> $GITHUB_OUTPUT
+          delimiter="###r###" 
+          echo "content<<$delimiter" >> $GITHUB_OUTPUT
+          echo "$(jq '[.flakyFailure] | flatten | .[0]["system-err"]' flaky_tests.json -r)" >> $GITHUB_OUTPUT
+          echo $delimiter >> $GITHUB_OUTPUT
+      - name: pull issue template
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/ISSUE_TEMPLATE/flaky_test.md
+          sparse-checkout-cone-mode: false
+        if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
+      - name: Create issue for flaky tests
+        id: create-issue
+        if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
+        uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TEST_NAME: ${{ steps.get-flaky-tests.outputs.test }}
+          SYSTEM_ERROR: ${{ steps.get-flaky-tests.outputs.content }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          WORKFLOW: ${{ github.workflow }}
+          JOB: ${{ github.job }}
+          BRANCH: ${{ github.ref }}
+          OS: ${{ matrix.os }}
+        with:
+          filename: .github/ISSUE_TEMPLATE/flaky_test.md
+          update_existing: true

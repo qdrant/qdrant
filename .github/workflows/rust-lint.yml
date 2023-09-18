@@ -18,7 +18,6 @@ jobs:
     - name: Install minimal nightly (only for fmt)
       uses: dtolnay/rust-toolchain@nightly
       with:
-        profile: minimal
         components: rustfmt
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
