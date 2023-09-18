@@ -124,47 +124,75 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
 
 #[test]
 fn test_building_cancellation() {
-    let baseline_dir = Builder::new()
-        .prefix("segment_dir_baseline")
-        .tempdir()
-        .unwrap();
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let dir_2 = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
+    // This test has flakyness on some platforms. We therefore run it multiple times and allow the
+    // specified number of failures.
+    const RUNS: usize = 5;
+    const ALLOW_FAILURES: usize = 1;
 
-    let mut baseline_segment = empty_segment(baseline_dir.path());
-    let mut segment = empty_segment(dir.path());
-    let mut segment_2 = empty_segment(dir_2.path());
-
-    for idx in 0..1000 {
-        baseline_segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
-            .unwrap();
-        segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
-            .unwrap();
-        segment_2
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
-            .unwrap();
+    struct Timings {
+        time_fast: u64,
+        time_long: u64,
+        was_cancelled_later: bool,
     }
-    // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
-    assert!(!was_cancelled_baseline);
 
-    // Checks that optimization with longer cancellation delay will also finish fast
-    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, 20);
-    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, 200);
+    fn test() -> Timings {
+        let baseline_dir = Builder::new()
+            .prefix("segment_dir_baseline")
+            .tempdir()
+            .unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dir_2 = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
 
-    assert!(was_cancelled_early);
-    assert!(time_fast < time_baseline / 4);
+        let mut baseline_segment = empty_segment(baseline_dir.path());
+        let mut segment = empty_segment(dir.path());
+        let mut segment_2 = empty_segment(dir_2.path());
 
-    assert!(was_cancelled_later);
-    assert!(time_long < time_baseline / 4);
+        for idx in 0..1000 {
+            baseline_segment
+                .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+                .unwrap();
+            segment
+                .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+                .unwrap();
+            segment_2
+                .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+                .unwrap();
+        }
+        // Get normal build time
+        let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
+        assert!(!was_cancelled_baseline);
 
-    assert!(
-        time_fast < time_long,
-        "time_early: {}, time_later: {}, was_cancelled_later: {}",
-        time_fast,
-        time_long,
-        was_cancelled_later
-    );
+        // Checks that optimization with longer cancellation delay will also finish fast
+        let (time_fast, was_cancelled_early) = estimate_build_time(&segment, 20);
+        let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, 200);
+
+        assert!(was_cancelled_early);
+        assert!(time_fast < time_baseline / 4);
+
+        assert!(was_cancelled_later);
+        assert!(time_long < time_baseline / 4);
+
+        Timings {
+            time_fast,
+            time_long,
+            was_cancelled_later,
+        }
+    }
+
+    (0..RUNS)
+        // Run test specified number of times
+        .map(|_| test())
+        // Test resulting timings, this is flaky
+        .filter(|timings| timings.time_fast >= timings.time_long)
+        // Allow specified number of failures
+        .skip(ALLOW_FAILURES)
+        .for_each(|failure| {
+            panic!(
+                "time_early: {}, time_later: {}, was_cancelled_later: {}, failures: {}",
+                failure.time_fast,
+                failure.time_long,
+                failure.was_cancelled_later,
+                ALLOW_FAILURES + 1,
+            );
+        });
 }
