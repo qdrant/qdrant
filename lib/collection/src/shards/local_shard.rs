@@ -23,6 +23,7 @@ use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
+use uuid::Uuid;
 use wal::{Wal, WalOptions};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
@@ -563,7 +564,8 @@ impl LocalShard {
             rx.await?;
         }
 
-        let temp_path = temp_path.to_owned();
+        let temp_path = temp_path.join(format!("shard-{}", Uuid::new_v4()));
+        create_dir_all(&temp_path).await?;
 
         tokio::task::spawn_blocking(move || {
             let segments_read = segments.read();
