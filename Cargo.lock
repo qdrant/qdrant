@@ -3690,7 +3690,6 @@ dependencies = [
  "actix-web-validator",
  "anyhow",
  "api",
- "atty",
  "chrono",
  "clap",
  "collection",
