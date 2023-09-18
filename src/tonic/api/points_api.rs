@@ -55,7 +55,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let mut request = request.into_inner();
-        request.read_consistency.get_or_insert(Default::default()); // *Have* to be `Some`!
+        request
+            .read_consistency
+            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
 
         get(self.toc.as_ref(), request, None).await
     }
