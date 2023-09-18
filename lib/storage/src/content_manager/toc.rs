@@ -395,7 +395,7 @@ impl TableOfContent {
                     description: "`write_consistency_factor` cannot be 0".to_string(),
                 },
             )?,
-            read_fan_out_factor: 0, // TODO!
+            read_fan_out_factor: 0, // Default `read_fan_out_factor` is `0`
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),

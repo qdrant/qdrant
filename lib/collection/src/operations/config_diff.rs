@@ -99,6 +99,8 @@ pub struct CollectionParamsDiff {
     pub replication_factor: Option<NonZeroU32>,
     /// Minimal number successful responses from replicas to consider operation successful
     pub write_consistency_factor: Option<NonZeroU32>,
+    /// TODO
+    pub read_fan_out_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
