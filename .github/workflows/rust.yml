@@ -27,7 +27,9 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install nextest
       uses: taiki-e/install-action@nextest
-    - name: Build and run tests
+    - name: Build
+      run: cargo build --tests --workspace
+    - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci
     - name: Upload test report
@@ -90,6 +92,7 @@ jobs:
           JOB: ${{ github.job }}
           BRANCH: ${{ github.ref }}
           OS: ${{ matrix.os }}
+          PR: "#${{ github.event.pull_request.number }}"
         with:
           filename: .github/ISSUE_TEMPLATE/flaky_test.md
           update_existing: true
