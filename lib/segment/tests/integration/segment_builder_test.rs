@@ -124,7 +124,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
 
 #[test]
 fn test_building_cancellation() {
-    // This test has flakyness on some platforms. We therefore run it multiple times and allow the
+    // This test has flakiness on some platforms. We therefore run it multiple times and allow the
     // specified number of failures.
     const RUNS: usize = 5;
     const ALLOW_FAILURES: usize = 1;
