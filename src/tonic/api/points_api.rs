@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
-    ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
+    read_consistency, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, GetPoints,
-    GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
-    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
-    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    GetResponse, PointsOperationResponse, ReadConsistency, RecommendBatchPoints,
+    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
+    SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
+    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
@@ -139,7 +139,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let mut request = request.into_inner();
-        request.read_consistency.get_or_insert(Default::default()); // *Have* to be `Some`!
+        request
+            .read_consistency
+            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
 
         search(self.toc.as_ref(), request, None).await
     }
@@ -159,7 +161,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             collection_name,
             search_points,
-            Some(read_consistency.unwrap_or_default()), // *Have* to be `Some`!
+            Some(read_consistency.unwrap_or(default_read_consistency())), // *Have* to be `Some`!
             None,
         )
         .await
@@ -172,7 +174,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let mut request = request.into_inner();
-        request.read_consistency.get_or_insert(Default::default()); // *Have* to be `Some`!
+        request
+            .read_consistency
+            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
 
         search_groups(self.toc.as_ref(), request, None).await
     }
@@ -184,7 +188,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let mut request = request.into_inner();
-        request.read_consistency.get_or_insert(Default::default()); // *Have* to be `Some`!
+        request
+            .read_consistency
+            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
 
         scroll(self.toc.as_ref(), request, None).await
     }
@@ -196,7 +202,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let mut request = request.into_inner();
-        request.read_consistency.get_or_insert(Default::default()); // *Have* to be `Some`!
+        request
+            .read_consistency
+            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
 
         recommend(self.toc.as_ref(), request).await
     }
@@ -216,7 +224,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             collection_name,
             recommend_points,
-            Some(read_consistency.unwrap_or_default()), // *Have* to be `Some`!
+            Some(read_consistency.unwrap_or(default_read_consistency())), // *Have* to be `Some`!
         )
         .await
     }
@@ -228,7 +236,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let mut request = request.into_inner();
-        request.read_consistency.get_or_insert(Default::default()); // *Have* to be `Some`!
+        request
+            .read_consistency
+            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
 
         recommend_groups(self.toc.as_ref(), request).await
     }
@@ -239,5 +249,11 @@ impl Points for PointsService {
     ) -> Result<Response<CountResponse>, Status> {
         validate(request.get_ref())?;
         count(self.toc.as_ref(), request.into_inner(), None).await
+    }
+}
+
+fn default_read_consistency() -> ReadConsistency {
+    ReadConsistency {
+        value: Some(read_consistency::Value::Factor(1)),
     }
 }
