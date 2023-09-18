@@ -923,7 +923,7 @@ impl ShardReplicaSet {
 
         // If `local` shard is not ready, *fan-out to at least 1 other node*
         if !is_local_ready {
-            read_fan_out_factor = read_fan_out_factor.clamp(1, usize::MAX); // TODO: `cmp::max(2, read_fan_out_factor)`? 🤔
+            read_fan_out_factor = read_fan_out_factor.clamp(1, usize::MAX); // TODO: `cmp::max(1, read_fan_out_factor)`? 🤔
         }
 
         let initial_concurrent_operations = required_successful_results + read_fan_out_factor;
