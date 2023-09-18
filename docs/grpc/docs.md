@@ -410,7 +410,7 @@
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
-| read_fan_out_factor | [uint32](#uint32) | optional | TODO |
+| read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
 
 
 
@@ -428,7 +428,7 @@
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
-| read_fan_out_factor | [uint32](#uint32) | optional | TODO |
+| read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
 
 
 

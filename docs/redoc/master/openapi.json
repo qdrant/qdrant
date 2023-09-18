@@ -4978,7 +4978,6 @@
             "minimum": 1
           },
           "read_fan_out_factor": {
-            "description": "TODO",
             "default": 0,
             "type": "integer",
             "format": "uint32",
@@ -6831,7 +6830,6 @@
             "nullable": true
           },
           "read_fan_out_factor": {
-            "description": "TODO",
             "type": "integer",
             "format": "uint32",
             "minimum": 0,
