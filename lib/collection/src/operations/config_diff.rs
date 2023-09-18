@@ -351,6 +351,7 @@ mod tests {
         let diff = CollectionParamsDiff {
             replication_factor: None,
             write_consistency_factor: Some(NonZeroU32::new(2).unwrap()),
+            read_fan_out_factor: None,
             on_disk_payload: None,
         };
 
