@@ -36,7 +36,7 @@ async fn recommend_points(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        params.consistency,
+        Some(params.consistency.unwrap_or_default()),
     )
     .await;
 
@@ -66,7 +66,7 @@ async fn recommend_batch_points(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        params.consistency,
+        Some(params.consistency.unwrap_or_default()),
     )
     .await;
 
@@ -86,7 +86,7 @@ async fn recommend_point_groups(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        params.consistency,
+        Some(params.consistency.unwrap_or_default()),
     )
     .await;
 
