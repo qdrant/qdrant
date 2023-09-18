@@ -98,25 +98,25 @@ message SearchBatchPointsInternal {
 }
 
 /* Lets not bother with this yet
-
 message RecoQuery {
   repeated Vector positives = 1;
   repeated Vector negatives = 2;
 }
+*/
 
-All searches that are not regular kNN
 message QueryEnum {
-  reserved 1;
+  reserved 2;
   oneof query {
-    RecoQuery recommend_best_score = 2; // Recommend points with higher similarity to positive examples
+    Vector nearest_neighbors = 1; // ANN
+    // RecoQuery recommend_best_score = 2; // Recommend points with higher similarity to positive examples
   }
 }
-*/
+
 
 // This is only used internally, so it makes more sense to add it here rather than in points.proto
 message CoreSearchPoints {
   string collection_name = 1;
-  reserved 2; // QueryEnum query = 2; // Will add this logic later
+  QueryEnum query = 2;
   Filter filter = 3;
   uint64 limit = 4; 
   WithPayloadSelector with_payload = 5;

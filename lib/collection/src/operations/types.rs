@@ -264,20 +264,12 @@ pub struct Batch<T> {
 #[derive(Debug, Clone)]
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
-    Other, // Just a placeholder while add recommend query
-
-           // PositiveNegative {
-           //     positive: Vec<PointIdType>,
-           //     negative: Vec<PointIdType>,
-           //     using: UsingVector,
-           // },
 }
 
 impl QueryEnum {
     pub fn get_vector_name(&self) -> &str {
         match self {
             QueryEnum::Nearest(vector) => vector.get_name(),
-            QueryEnum::Other => DEFAULT_VECTOR_NAME,
             // QueryEnum::PositiveNegative { using: UsingVector::Name(name), .. } => name
         }
     }
@@ -1198,7 +1190,6 @@ impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
             QueryEnum::Nearest(named_vector) => QueryVector::Nearest(named_vector.to_vector()),
-            QueryEnum::Other => todo!(),
         }
     }
 }

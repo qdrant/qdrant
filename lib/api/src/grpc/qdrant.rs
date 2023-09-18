@@ -6010,6 +6010,24 @@ pub struct SearchBatchPointsInternal {
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryEnum {
+    #[prost(oneof = "query_enum::Query", tags = "1")]
+    pub query: ::core::option::Option<query_enum::Query>,
+}
+/// Nested message and enum types in `QueryEnum`.
+pub mod query_enum {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Query {
+        /// ANN
+        #[prost(message, tag = "1")]
+        NearestNeighbors(super::Vector),
+    }
+}
 /// This is only used internally, so it makes more sense to add it here rather than in points.proto
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -6019,6 +6037,8 @@ pub struct CoreSearchPoints {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub query: ::core::option::Option<QueryEnum>,
     #[prost(message, optional, tag = "3")]
     pub filter: ::core::option::Option<Filter>,
     #[prost(uint64, tag = "4")]
