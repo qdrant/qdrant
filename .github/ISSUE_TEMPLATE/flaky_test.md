@@ -19,3 +19,5 @@ title: Flaky test `{{ env.TEST_NAME }}`
 OS: {{ env.OS }}
 
 Branch: {{ env.BRANCH }}
+
+{{ env.PR }}
