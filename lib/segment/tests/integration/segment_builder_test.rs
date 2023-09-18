@@ -135,7 +135,7 @@ fn test_building_cancellation() {
     let mut segment = empty_segment(dir.path());
     let mut segment_2 = empty_segment(dir_2.path());
 
-    for idx in 0..1000 {
+    for idx in 0..5000 {
         baseline_segment
             .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
