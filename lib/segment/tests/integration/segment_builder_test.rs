@@ -129,13 +129,7 @@ fn test_building_cancellation() {
     const RUNS: usize = 5;
     const ALLOW_FAILURES: usize = 1;
 
-    struct Timings {
-        time_fast: u64,
-        time_long: u64,
-        was_cancelled_later: bool,
-    }
-
-    fn test() -> Timings {
+    fn test() -> (u64, u64, bool) {
         let baseline_dir = Builder::new()
             .prefix("segment_dir_baseline")
             .tempdir()
@@ -172,26 +166,19 @@ fn test_building_cancellation() {
         assert!(was_cancelled_later);
         assert!(time_long < time_baseline / 4);
 
-        Timings {
-            time_fast,
-            time_long,
-            was_cancelled_later,
-        }
+        (time_fast, time_long, was_cancelled_later)
     }
 
     (0..RUNS)
         // Run test specified number of times
         .map(|_| test())
         // Test resulting timings, this is flaky
-        .filter(|timings| timings.time_fast >= timings.time_long)
+        .filter(|(time_fast, time_long, _)| time_fast >= time_long)
         // Allow specified number of failures
         .skip(ALLOW_FAILURES)
-        .for_each(|failure| {
+        .for_each(|(time_fast, time_long, was_cancelled_later)| {
             panic!(
-                "time_early: {}, time_later: {}, was_cancelled_later: {}, failures: {}",
-                failure.time_fast,
-                failure.time_long,
-                failure.was_cancelled_later,
+                "time_early: {time_fast}, time_later: {time_long}, was_cancelled_later: {was_cancelled_later}, failures: {}",
                 ALLOW_FAILURES + 1,
             );
         });
