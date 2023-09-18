@@ -281,6 +281,13 @@ message ScrollPoints {
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
 }
 
+message RecommendExample {
+  oneof example {
+    PointId id = 1; // Point id
+    Vector vector = 2; // Vector
+  }
+}
+
 // How to use positive and negative vectors to find the results, default is `AverageVector`:
 enum RecommendStrategy {
   // Average positive and negative vectors and create a single query with the formula 
@@ -300,8 +307,8 @@ message LookupLocation {
 
 message RecommendPoints {
   string collection_name = 1; // name of the collection
-  repeated PointId positive = 2; // Look for vectors closest to those
-  repeated PointId negative = 3; // Try to avoid vectors like this
+  repeated PointId positive = 2; // Will be deprecated in next version, use positive_examples instead.
+  repeated PointId negative = 3; // Will be deprecated in next version, use negative_examples instead.
   Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
   uint64 limit = 5; // Max number of result
   reserved 6; // deprecated "with_vector" field
@@ -314,6 +321,8 @@ message RecommendPoints {
   optional LookupLocation lookup_from = 13; // Name of the collection to use for points lookup, if not specified - use current collection
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
   optional RecommendStrategy strategy = 16; // How to use the example vectors to find the results
+  repeated RecommendExample positive_examples = 17; // Look for vectors closest to those
+  repeated RecommendExample negative_examples = 18; // Try to avoid vectors like this
 }
 
 message RecommendBatchPoints {
@@ -324,8 +333,8 @@ message RecommendBatchPoints {
 
 message RecommendPointGroups {
   string collection_name = 1; // Name of the collection
-  repeated PointId positive = 2; // Look for vectors closest to those
-  repeated PointId negative = 3; // Try to avoid vectors like this
+  repeated PointId positive = 2; // Will be deprecated in next version, use positive_examples instead.
+  repeated PointId negative = 3; // Will be deprecated in next version, use negative_examples instead.
   Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
   uint32 limit = 5; // Max number of groups in result
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
@@ -339,6 +348,8 @@ message RecommendPointGroups {
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
   optional WithLookup with_lookup = 15; // Options for specifying how to use the group id to lookup points in another collection
   optional RecommendStrategy strategy = 17; // How to use the example vectors to find the results
+  repeated RecommendExample positive_examples = 18; // Look for vectors closest to those
+  repeated RecommendExample negative_examples = 19; // Try to avoid vectors like this
 }
 
 message CountPoints {

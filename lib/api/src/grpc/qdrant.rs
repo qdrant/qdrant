@@ -3221,6 +3221,27 @@ pub struct ScrollPoints {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendExample {
+    #[prost(oneof = "recommend_example::Example", tags = "1, 2")]
+    pub example: ::core::option::Option<recommend_example::Example>,
+}
+/// Nested message and enum types in `RecommendExample`.
+pub mod recommend_example {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Example {
+        /// Point id
+        #[prost(message, tag = "1")]
+        Id(super::PointId),
+        /// Vector
+        #[prost(message, tag = "2")]
+        Vector(super::Vector),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LookupLocation {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
@@ -3237,10 +3258,10 @@ pub struct RecommendPoints {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// Look for vectors closest to those
+    /// Will be deprecated in next version, use positive_examples instead.
     #[prost(message, repeated, tag = "2")]
     pub positive: ::prost::alloc::vec::Vec<PointId>,
-    /// Try to avoid vectors like this
+    /// Will be deprecated in next version, use negative_examples instead.
     #[prost(message, repeated, tag = "3")]
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
@@ -3277,6 +3298,12 @@ pub struct RecommendPoints {
     /// How to use the example vectors to find the results
     #[prost(enumeration = "RecommendStrategy", optional, tag = "16")]
     pub strategy: ::core::option::Option<i32>,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "17")]
+    pub positive_examples: ::prost::alloc::vec::Vec<RecommendExample>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "18")]
+    pub negative_examples: ::prost::alloc::vec::Vec<RecommendExample>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3303,10 +3330,10 @@ pub struct RecommendPointGroups {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// Look for vectors closest to those
+    /// Will be deprecated in next version, use positive_examples instead.
     #[prost(message, repeated, tag = "2")]
     pub positive: ::prost::alloc::vec::Vec<PointId>,
-    /// Try to avoid vectors like this
+    /// Will be deprecated in next version, use negative_examples instead.
     #[prost(message, repeated, tag = "3")]
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
@@ -3352,6 +3379,12 @@ pub struct RecommendPointGroups {
     /// How to use the example vectors to find the results
     #[prost(enumeration = "RecommendStrategy", optional, tag = "17")]
     pub strategy: ::core::option::Option<i32>,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "18")]
+    pub positive_examples: ::prost::alloc::vec::Vec<RecommendExample>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "19")]
+    pub negative_examples: ::prost::alloc::vec::Vec<RecommendExample>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

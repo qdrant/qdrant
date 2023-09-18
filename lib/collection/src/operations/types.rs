@@ -353,6 +353,28 @@ pub struct PointRequest {
     pub with_vector: WithVector,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum RecommendExample {
+    PointId(PointIdType),
+    Vector(VectorType),
+}
+
+impl RecommendExample {
+    pub fn as_point_id(&self) -> Option<PointIdType> {
+        match self {
+            RecommendExample::PointId(id) => Some(*id),
+            _ => None,
+        }
+    }
+}
+
+impl From<u64> for RecommendExample {
+    fn from(id: u64) -> Self {
+        RecommendExample::PointId(id.into())
+    }
+}
+
 /// How to use positive and negative vectors to find the results, default is `AverageVector`:
 /// - `AverageVector` - Average positive and negative vectors and create a single query
 ///   with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
@@ -405,11 +427,11 @@ pub struct LookupLocation {
 pub struct RecommendRequest {
     /// Look for vectors closest to those
     #[serde(default)]
-    pub positive: Vec<PointIdType>,
+    pub positive: Vec<RecommendExample>,
 
     /// Try to avoid vectors like this
     #[serde(default)]
-    pub negative: Vec<PointIdType>,
+    pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative vectors to find the results
     #[serde(default)]
@@ -467,11 +489,11 @@ pub struct RecommendRequestBatch {
 pub struct RecommendGroupsRequest {
     /// Look for vectors closest to those
     #[serde(default)]
-    pub positive: Vec<PointIdType>,
+    pub positive: Vec<RecommendExample>,
 
     /// Try to avoid vectors like this
     #[serde(default)]
-    pub negative: Vec<PointIdType>,
+    pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative vectors to find the results
     #[serde(default)]

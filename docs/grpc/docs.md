@@ -129,6 +129,7 @@
     - [ReadConsistency](#qdrant-ReadConsistency)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
     - [RecommendBatchResponse](#qdrant-RecommendBatchResponse)
+    - [RecommendExample](#qdrant-RecommendExample)
     - [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse)
     - [RecommendPointGroups](#qdrant-RecommendPointGroups)
     - [RecommendPoints](#qdrant-RecommendPoints)
@@ -2233,6 +2234,22 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-RecommendExample"></a>
+
+### RecommendExample
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [PointId](#qdrant-PointId) |  | Point id |
+| vector | [Vector](#qdrant-Vector) |  | Vector |
+
+
+
+
+
+
 <a name="qdrant-RecommendGroupsResponse"></a>
 
 ### RecommendGroupsResponse
@@ -2258,8 +2275,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
-| positive | [PointId](#qdrant-PointId) | repeated | Look for vectors closest to those |
-| negative | [PointId](#qdrant-PointId) | repeated | Try to avoid vectors like this |
+| positive | [PointId](#qdrant-PointId) | repeated | Will be deprecated in next version, use positive_examples instead. |
+| negative | [PointId](#qdrant-PointId) | repeated | Will be deprecated in next version, use negative_examples instead. |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
 | limit | [uint32](#uint32) |  | Max number of groups in result |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
@@ -2273,6 +2290,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
 | strategy | [RecommendStrategy](#qdrant-RecommendStrategy) | optional | How to use the example vectors to find the results |
+| positive_examples | [RecommendExample](#qdrant-RecommendExample) | repeated | Look for vectors closest to those |
+| negative_examples | [RecommendExample](#qdrant-RecommendExample) | repeated | Try to avoid vectors like this |
 
 
 
@@ -2288,8 +2307,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | name of the collection |
-| positive | [PointId](#qdrant-PointId) | repeated | Look for vectors closest to those |
-| negative | [PointId](#qdrant-PointId) | repeated | Try to avoid vectors like this |
+| positive | [PointId](#qdrant-PointId) | repeated | Will be deprecated in next version, use positive_examples instead. |
+| negative | [PointId](#qdrant-PointId) | repeated | Will be deprecated in next version, use negative_examples instead. |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
 | limit | [uint64](#uint64) |  | Max number of result |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
@@ -2301,6 +2320,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | strategy | [RecommendStrategy](#qdrant-RecommendStrategy) | optional | How to use the example vectors to find the results |
+| positive_examples | [RecommendExample](#qdrant-RecommendExample) | repeated | Look for vectors closest to those |
+| negative_examples | [RecommendExample](#qdrant-RecommendExample) | repeated | Try to avoid vectors like this |
 
 
 
