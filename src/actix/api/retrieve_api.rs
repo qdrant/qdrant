@@ -74,7 +74,7 @@ async fn get_point(
         toc.get_ref(),
         &collection.name,
         point_id,
-        Some(params.consistency.unwrap_or_default()),
+        Some(params.consistency.unwrap_or_default()), // *Have* to be `Some`!
     )
     .await;
 
@@ -103,7 +103,7 @@ async fn get_points(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        Some(params.consistency.unwrap_or_default()),
+        Some(params.consistency.unwrap_or_default()), // *Have* to be `Some`!
         None,
     )
     .await;
@@ -123,7 +123,7 @@ async fn scroll_points(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        Some(params.consistency.unwrap_or_default()),
+        Some(params.consistency.unwrap_or_default()), // *Have* to be `Some`!
     )
     .await;
     process_response(response, timing)

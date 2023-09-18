@@ -22,7 +22,7 @@ async fn search_points(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        Some(params.consistency.unwrap_or_default()),
+        Some(params.consistency.unwrap_or_default()), // *Have* to be `Some`!
         None,
     )
     .await;
@@ -43,7 +43,7 @@ async fn batch_search_points(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        Some(params.consistency.unwrap_or_default()),
+        Some(params.consistency.unwrap_or_default()), // *Have* to be `Some`!
         None,
     )
     .await;
@@ -64,7 +64,7 @@ async fn search_point_groups(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
-        Some(params.consistency.unwrap_or_default()),
+        Some(params.consistency.unwrap_or_default()), // *Have* to be `Some`!
         None,
     )
     .await;

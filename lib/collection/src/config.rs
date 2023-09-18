@@ -71,7 +71,7 @@ pub struct CollectionParams {
     /// Does not have any performance impact.
     #[serde(default = "default_write_consistency_factor")]
     pub write_consistency_factor: NonZeroU32,
-    /// TODO
+    // Fan-out every read request to these many additional remote nodes (and return first available response)
     #[serde(default = "default_read_fan_out_ratio")]
     pub read_fan_out_factor: u32,
     /// If true - point's payload will not be stored in memory.
