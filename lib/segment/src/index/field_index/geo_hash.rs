@@ -242,7 +242,6 @@ fn create_hashes(
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole circle.
-// pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
 pub fn circle_hashes(
     circle: &GeoRadius,
     max_regions: usize,
