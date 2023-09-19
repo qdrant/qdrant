@@ -938,8 +938,9 @@ impl Collection {
             try_join_all(all_searches).await?
         };
 
-        // TODO(luis): see if we can avoid this clone by removing the Arc
-        let request: CoreSearchRequestBatch = request.as_ref().clone().into();
+        let request = Arc::into_inner(request)
+            .expect("We have already dropped all of the Arc clones at this point")
+            .into();
 
         self.merge_from_shards(all_searches_res, request, shard_selection)
             .await
@@ -963,7 +964,8 @@ impl Collection {
             try_join_all(all_searches).await?
         };
 
-        let request: CoreSearchRequestBatch = request.as_ref().clone(); // TODO(luis): see if we can avoid this clone by removing the Arc
+        let request = Arc::into_inner(request)
+            .expect("We have already dropped all of the Arc clones at this point");
 
         self.merge_from_shards(all_searches_res, request, shard_selection)
             .await
