@@ -1008,12 +1008,15 @@ impl VectorsConfig {
 
     // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
     pub fn check_compatible(&self, other: &Self) -> CollectionResult<()> {
-        if self.vectors_num() != other.vectors_num() {
-            return Err(incompatible_vectors_error(
-                self.params_iter().map(|(name, _)| name),
-                other.params_iter().map(|(name, _)| name),
-            ));
-        }
+        match (self, other) {
+            (Self::Single(_), Self::Single(_)) | (Self::Multi(_), Self::Multi(_)) => (),
+            _ => {
+                return Err(incompatible_vectors_error(
+                    self.params_iter().map(|(name, _)| name),
+                    other.params_iter().map(|(name, _)| name),
+                ));
+            }
+        };
 
         for (vector_name, this) in self.params_iter() {
             let Some(other) = other.get_params(vector_name) else {
@@ -1030,9 +1033,13 @@ impl VectorsConfig {
     pub fn check_compatible_with_segment_config(
         &self,
         other: &HashMap<String, segment::types::VectorDataConfig>,
+        exact: bool,
     ) -> CollectionResult<()> {
-        if self.vectors_num() != other.len() {
-            todo!();
+        if exact && self.vectors_num() != other.len() {
+            return Err(incompatible_vectors_error(
+                self.params_iter().map(|(name, _)| name),
+                other.keys().map(String::as_str),
+            ));
         }
 
         for (vector_name, this) in self.params_iter() {
@@ -1047,9 +1054,9 @@ impl VectorsConfig {
     }
 }
 
-fn incompatible_vectors_error(
-    this: impl Iterator<Item = impl Borrow<str>>,
-    other: impl Iterator<Item = impl Borrow<str>>,
+fn incompatible_vectors_error<'a, 'b>(
+    this: impl Iterator<Item = &'a str>,
+    other: impl Iterator<Item = &'b str>,
 ) -> CollectionError {
     let this_vectors = this.collect::<Vec<_>>().join(", ");
     let other_vectors = other.collect::<Vec<_>>().join(", ");

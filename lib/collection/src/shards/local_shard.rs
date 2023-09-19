@@ -230,7 +230,7 @@ impl LocalShard {
                 collection_config
                     .params
                     .vectors
-                    .check_compatible_with_segment_config(&segment.config().vector_data)?;
+                    .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
 
                 segment_holder.add(segment);
             }
