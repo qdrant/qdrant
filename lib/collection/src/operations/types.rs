@@ -1,5 +1,4 @@
 use std::backtrace::Backtrace;
-use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::Write as _;
