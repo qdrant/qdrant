@@ -70,7 +70,7 @@ jobs:
       - name: Install requests python lib
         run: pip install requests
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Docker build
         uses: docker/build-push-action@v4
         with:
@@ -94,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Docker build
         uses: docker/build-push-action@v4
         with:
@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Docker build
         uses: docker/build-push-action@v4
         with:
@@ -157,7 +157,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Docker build
         uses: docker/build-push-action@v4
         with:
@@ -188,7 +188,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Docker build
         uses: docker/build-push-action@v4
         with:
