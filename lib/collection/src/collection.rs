@@ -1494,33 +1494,33 @@ impl Collection {
             snapshot_path
         );
 
-        // Dedicated temporary directory for this snapshot (deleted on drop)
+        // Dedicated temporary directory for this snapshot, deleted at end of function
         let snapshot_temp_dir = tempfile::Builder::new()
             .prefix(&format!("{snapshot_name}-temp-"))
             .tempdir_in(global_temp_dir)?;
-        let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
+
         // Create snapshot of each shard
         {
             let shards_holder = self.shards_holder.read().await;
             // Create snapshot of each shard
             for (shard_id, replica_set) in shards_holder.get_shards() {
                 let shard_snapshot_path =
-                    versioned_shard_path(&snapshot_temp_dir_path, *shard_id, 0);
+                    versioned_shard_path(snapshot_temp_dir.path(), *shard_id, 0);
                 create_dir_all(&shard_snapshot_path).await?;
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
-                    .create_snapshot(&snapshot_temp_dir_path, &shard_snapshot_path, save_wal)
+                    .create_snapshot(snapshot_temp_dir.path(), &shard_snapshot_path, save_wal)
                     .await?;
             }
         }
 
         // Save collection config and version
-        CollectionVersion::save(&snapshot_temp_dir_path)?;
+        CollectionVersion::save(snapshot_temp_dir.path())?;
         self.collection_config
             .read()
             .await
-            .save(&snapshot_temp_dir_path)?;
+            .save(snapshot_temp_dir.path())?;
 
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
         let mut snapshot_temp_arc_file = tempfile::Builder::new()
@@ -1528,25 +1528,28 @@ impl Collection {
             .tempfile_in(global_temp_dir)?;
 
         // Archive snapshot folder into a single file
-        log::debug!("Archiving snapshot {:?}", &snapshot_temp_dir_path);
+        log::debug!("Archiving snapshot {}", snapshot_temp_dir.path().display());
         let archiving = tokio::task::spawn_blocking(move || {
             let mut builder = TarBuilder::new(snapshot_temp_arc_file.as_file_mut());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
-            builder.append_dir_all(".", &snapshot_temp_dir_path)?;
+            builder.append_dir_all(".", snapshot_temp_dir.path())?;
             builder.finish()?;
             drop(builder);
-            // return ownership of the file
-            Ok::<_, CollectionError>(snapshot_temp_arc_file)
+            // return ownership of the files
+            Ok::<_, CollectionError>((snapshot_temp_dir, snapshot_temp_arc_file))
         });
-        snapshot_temp_arc_file = archiving.await??;
+        let (snapshot_temp_dir, snapshot_temp_arc_file) = archiving.await??;
 
         // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
         // We can't copy to the target location directly, because copy is not atomic.
         // So we copy to the final location with a temporary name and then rename atomically.
         let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
-        copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
+        copy(snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
         rename(&snapshot_path_tmp_move, &snapshot_path).await?;
+
+        // We're done with temporary directories, drop them to unlink
+        drop((snapshot_temp_dir, snapshot_temp_arc_file));
 
         log::info!(
             "Collection snapshot {} completed into {:?}",
