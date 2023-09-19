@@ -1747,9 +1747,7 @@ impl PayloadSelector {
                 Value::Object(ref obj) => {
                     map.extend(obj.clone());
                 }
-                _ => {
-                    map.insert("".to_string(), (*value).clone());
-                }
+                _ => {}
             }
         }
         map.into()
