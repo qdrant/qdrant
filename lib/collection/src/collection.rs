@@ -1480,18 +1480,16 @@ impl Collection {
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
-            "{}-{}-{}.snapshot",
+            "{}-{this_peer_id}-{}.snapshot",
             self.name(),
-            this_peer_id,
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
         // Final location of snapshot
         let snapshot_path = self.snapshots_path.join(&snapshot_name);
         log::info!(
-            "Creating collection snapshot {} into {:?}",
-            snapshot_name,
-            snapshot_path
+            "Creating collection snapshot {snapshot_name} into {}",
+            snapshot_path.display(),
         );
 
         // Dedicated temporary directory for this snapshot, deleted at end of function
@@ -1552,9 +1550,8 @@ impl Collection {
         drop((snapshot_temp_dir, snapshot_temp_arc_file));
 
         log::info!(
-            "Collection snapshot {} completed into {:?}",
-            snapshot_name,
-            snapshot_path
+            "Collection snapshot {snapshot_name} completed into {:?}",
+            snapshot_path.display(),
         );
         get_snapshot_description(&snapshot_path).await
     }
