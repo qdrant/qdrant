@@ -7,6 +7,8 @@ use geo::{Intersects, Polygon};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
 
+use crate::entry::entry_point::OperationError;
+use crate::entry::entry_point::OperationError::ServiceError;
 use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 
 pub type GeoHash = String;
@@ -221,66 +223,81 @@ fn check_polygon_intersection(geohash: &str, polygon: &GeoPolygon) -> bool {
     rect.intersects(&polygon)
 }
 
+fn create_hashes(
+    mapping_fn: impl Fn(usize) -> Option<Vec<GeoHash>>,
+) -> Result<Vec<GeoHash>, OperationError> {
+    (0..=GEOHASH_MAX_LENGTH)
+        .map(mapping_fn)
+        .take_while(|hashes| hashes.is_some())
+        .last()
+        .ok_or_else(|| ServiceError {
+            description: String::from("no hash coverage for any precision"),
+            backtrace: None,
+        })?
+        .ok_or_else(|| ServiceError {
+            description: String::from("geo-hash coverage is empty"),
+            backtrace: None,
+        })
+}
+
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole circle.
-pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
+// pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
+pub fn circle_hashes(
+    circle: &GeoRadius,
+    max_regions: usize,
+) -> Result<Vec<GeoHash>, OperationError> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
-    (0..=GEOHASH_MAX_LENGTH)
-        .map(|precision| {
-            full_geohash_bounding_box
-                .geohash_regions(precision, max_regions)
-                .map(|hashes| {
-                    hashes
-                        .into_iter()
-                        .filter(|hash| check_circle_intersection(hash, circle))
-                        .collect_vec()
-                })
-        })
-        .take_while(|hashes| hashes.is_some())
-        .last()
-        .expect("no hash coverage for any precision")
-        .expect("geo-hash coverage is empty")
+    let mapping_fn = |precision| {
+        full_geohash_bounding_box
+            .geohash_regions(precision, max_regions)
+            .map(|hashes| {
+                hashes
+                    .into_iter()
+                    .filter(|hash| check_circle_intersection(hash, circle))
+                    .collect_vec()
+            })
+    };
+    create_hashes(mapping_fn)
 }
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole rectangle.
-pub fn rectangle_hashes(rectangle: &GeoBoundingBox, max_regions: usize) -> Vec<GeoHash> {
+pub fn rectangle_hashes(
+    rectangle: &GeoBoundingBox,
+    max_regions: usize,
+) -> Result<Vec<GeoHash>, OperationError> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let full_geohash_bounding_box: GeohashBoundingBox = rectangle.clone().into();
 
-    (0..=GEOHASH_MAX_LENGTH)
-        .map(|precision| full_geohash_bounding_box.geohash_regions(precision, max_regions))
-        .take_while(|hashes| hashes.is_some())
-        .last()
-        .expect("no hash coverage for any precision")
-        .expect("geo-hash coverage is empty")
+    let mapping_fn = |precision| full_geohash_bounding_box.geohash_regions(precision, max_regions);
+    create_hashes(mapping_fn)
 }
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole polygon.
-pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> Vec<GeoHash> {
+pub fn polygon_hashes(
+    polygon: &GeoPolygon,
+    max_regions: usize,
+) -> Result<Vec<GeoHash>, OperationError> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let geo_bounding_box = minimum_bounding_rectangle_for_polygon(polygon);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
-    (0..=GEOHASH_MAX_LENGTH)
-        .map(|precision| {
-            full_geohash_bounding_box
-                .geohash_regions(precision, max_regions)
-                .map(|hashes| {
-                    hashes
-                        .into_iter()
-                        .filter(|hash| check_polygon_intersection(hash, polygon))
-                        .collect_vec()
-                })
-        })
-        .take_while(|hashes| hashes.is_some())
-        .last()
-        .expect("no hash coverage for any precision")
-        .expect("geo-hash coverage is empty")
+    let mapping_fn = |precision| {
+        full_geohash_bounding_box
+            .geohash_regions(precision, max_regions)
+            .map(|hashes| {
+                hashes
+                    .into_iter()
+                    .filter(|hash| check_polygon_intersection(hash, polygon))
+                    .collect_vec()
+            })
+    };
+    create_hashes(mapping_fn)
 }
 
 /// A globally-average value is usually considered to be 6,371 kilometres (3,959 mi) with a 0.3% variability (±10 km).
@@ -495,18 +512,21 @@ mod tests {
             bottom_right,
         };
 
-        let nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 200);
+        let nyc_hashes_result = rectangle_hashes(&near_nyc_rectangle, 200);
+        assert!(nyc_hashes_result.is_ok());
+        let nyc_hashes = nyc_hashes_result.unwrap();
         assert_eq!(nyc_hashes.len(), 168);
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
 
-        let mut nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 10);
-        nyc_hashes.sort_unstable();
+        let mut nyc_hashes_result = rectangle_hashes(&near_nyc_rectangle, 10);
+        nyc_hashes_result.as_mut().unwrap().sort_unstable();
         let mut expected = vec![
             "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
         ];
         expected.sort_unstable();
 
-        assert_eq!(nyc_hashes, expected);
+        assert!(nyc_hashes_result.is_ok());
+        assert_eq!(nyc_hashes_result.unwrap(), expected);
 
         // Graphical proof using https://www.movable-type.co.uk/scripts/geohash.html
 
@@ -525,8 +545,9 @@ mod tests {
         // XXXXXX XXXXXX XXXXXX XXXXXX
 
         // falls back to finest region that encompasses the whole area
-        let nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 7);
-        assert_eq!(nyc_hashes, ["dr5ru"]);
+        let nyc_hashes_result = rectangle_hashes(&near_nyc_rectangle, 7);
+        assert!(nyc_hashes_result.is_ok());
+        assert_eq!(nyc_hashes_result.unwrap(), ["dr5ru"]);
     }
 
     #[test]
@@ -558,22 +579,26 @@ mod tests {
             ],
         };
 
-        let nyc_hashes = polygon_hashes(&near_nyc_polygon, 200);
+        let nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 200);
+        assert!(nyc_hashes_result.is_ok());
+        let nyc_hashes = nyc_hashes_result.unwrap();
         assert_eq!(nyc_hashes.len(), 168);
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
 
-        let mut nyc_hashes = polygon_hashes(&near_nyc_polygon, 10);
-        nyc_hashes.sort_unstable();
+        let mut nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 10);
+        nyc_hashes_result.as_mut().unwrap().sort_unstable();
         let mut expected = vec![
             "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
         ];
         expected.sort_unstable();
 
-        assert_eq!(nyc_hashes, expected);
+        assert!(nyc_hashes_result.is_ok());
+        assert_eq!(nyc_hashes_result.unwrap(), expected);
 
         // falls back to finest region that encompasses the whole area
-        let nyc_hashes = polygon_hashes(&near_nyc_polygon, 7);
-        assert_eq!(nyc_hashes, ["dr5ru"]);
+        let nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 7);
+        assert!(nyc_hashes_result.is_ok());
+        assert_eq!(nyc_hashes_result.unwrap(), ["dr5ru"]);
     }
 
     #[test]
@@ -590,7 +615,8 @@ mod tests {
             };
             let max_hashes = rnd.gen_range(1..32);
             let hashes = circle_hashes(&query, max_hashes);
-            assert!(hashes.len() <= max_hashes);
+            assert!(hashes.is_ok());
+            assert!(hashes.unwrap().len() <= max_hashes);
         }
     }
 
@@ -753,7 +779,8 @@ mod tests {
 
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
-        assert_eq!(hashes, vec!["zbp", "b00", "xzz", "8pb"]);
+        assert!(hashes.is_ok());
+        assert_eq!(hashes.unwrap(), vec!["zbp", "b00", "xzz", "8pb"]);
     }
 
     #[test]
@@ -768,8 +795,10 @@ mod tests {
 
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
-        assert!(hashes.len() <= max_hashes);
-        assert_eq!(hashes, ["b", "c", "f", "g", "u", "v", "y", "z"]);
+        assert!(hashes.is_ok());
+        let vec = hashes.unwrap();
+        assert!(vec.len() <= max_hashes);
+        assert_eq!(vec, ["b", "c", "f", "g", "u", "v", "y", "z"]);
     }
 
     #[test]
@@ -783,7 +812,9 @@ mod tests {
         };
 
         let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
+        let hashes_result = circle_hashes(&query, max_hashes);
+        assert!(hashes_result.is_ok());
+        let hashes = hashes_result.unwrap();
         assert!(hashes.len() <= max_hashes);
         assert_eq!(hashes, ["fz", "gp", "gr", "gx", "gz", "up"]);
     }
@@ -798,7 +829,9 @@ mod tests {
             radius: 7133.775526733084,
         };
         let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
+        let hashes_result = circle_hashes(&query, max_hashes);
+        assert!(hashes_result.is_ok());
+        let hashes = hashes_result.unwrap();
         assert!(hashes.len() <= max_hashes);
         assert_eq!(hashes, ["p6yd", "p6yf", "p6y9", "p6yc"]);
     }
@@ -813,7 +846,9 @@ mod tests {
             radius: 1000.0,
         };
         let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
+        let hashes_result = circle_hashes(&query, max_hashes);
+        assert!(hashes_result.is_ok());
+        let hashes = hashes_result.unwrap();
         assert!(hashes.len() <= max_hashes);
         assert_eq!(hashes, ["p6ycc", "p6ycf", "p6ycg"]);
     }
@@ -825,20 +860,23 @@ mod tests {
             radius: 800.0,
         };
 
-        let nyc_hashes = circle_hashes(&near_nyc_circle, 200);
-        assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
+        let nyc_hashes_result = circle_hashes(&near_nyc_circle, 200);
+        assert!(nyc_hashes_result.is_ok());
+        assert!(nyc_hashes_result.unwrap().iter().all(|h| h.len() == 7)); // geohash precision
 
-        let mut nyc_hashes = circle_hashes(&near_nyc_circle, 10);
-        nyc_hashes.sort_unstable();
+        let mut nyc_hashes_result = circle_hashes(&near_nyc_circle, 10);
+        nyc_hashes_result.as_mut().unwrap().sort_unstable();
         let mut expected = [
             "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
         ];
         expected.sort_unstable();
-        assert_eq!(nyc_hashes, expected);
+        assert!(nyc_hashes_result.is_ok());
+        assert_eq!(nyc_hashes_result.unwrap(), expected);
 
         // falls back to finest region that encompasses the whole area
-        let nyc_hashes = circle_hashes(&near_nyc_circle, 7);
-        assert_eq!(nyc_hashes, ["dr5ru"]);
+        let nyc_hashes_result = circle_hashes(&near_nyc_circle, 7);
+        assert!(nyc_hashes_result.is_ok());
+        assert_eq!(nyc_hashes_result.unwrap(), ["dr5ru"]);
     }
 
     #[test]
