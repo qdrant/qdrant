@@ -1723,15 +1723,9 @@ impl PayloadSelector {
         let mut result: Vec<&Value> = Vec::new();
 
         for field in &fields {
-            if field.contains('.') {
-                let nested_value = x.get_value(field).values();
+            let value = x.get_value(field).values();
 
-                result.extend(nested_value.clone());
-            } else {
-                let top_level_value = x.get_value(field).values();
-
-                result.extend(top_level_value)
-            }
+            result.extend(value.clone());
         }
 
         let mut map = Map::new();
