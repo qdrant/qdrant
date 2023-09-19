@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::ops::{Bound, Range};
 use std::sync::Arc;
 
@@ -6,6 +5,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::mutable_numeric_index::MutableNumericIndex;
+use super::numeric_index_key::NumericIndexKey;
 use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::OperationResult;
@@ -13,7 +13,7 @@ use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::types::PointOffsetType;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable> {
-    pub(super) map: BTreeMap<Vec<u8>, u32>,
+    pub(super) map: Vec<NumericIndexKey<T>>,
     pub(super) db_wrapper: DatabaseColumnWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
@@ -27,7 +27,7 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         let store_cf_name = NumericIndex::<T>::storage_cf_name(field);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
         Self {
-            map: BTreeMap::new(),
+            map: Default::default(),
             db_wrapper,
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
@@ -53,10 +53,28 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
 
     pub fn values_range(
         &self,
-        start_bound: Bound<Vec<u8>>,
-        end_bound: Bound<Vec<u8>>,
+        start_bound: Bound<NumericIndexKey<T>>,
+        end_bound: Bound<NumericIndexKey<T>>,
     ) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.map.range((start_bound, end_bound)).map(|(_, v)| *v)
+        let start_index = self.find_bound_index(start_bound, 0);
+        let end_index = self.find_bound_index(end_bound, self.map.len());
+        self.map[start_index..end_index]
+            .iter()
+            .map(|NumericIndexKey { idx, .. }| *idx)
+    }
+
+    fn find_bound_index(&self, bound: Bound<NumericIndexKey<T>>, unbounded_value: usize) -> usize {
+        match bound {
+            Bound::Included(bound) => self
+                .map
+                .binary_search_by(|key| match key.cmp(&bound) {
+                    std::cmp::Ordering::Equal => std::cmp::Ordering::Greater,
+                    ord => ord,
+                })
+                .unwrap_or_else(|idx| idx),
+            Bound::Excluded(bound) => self.map.binary_search(&bound).unwrap_or_else(|idx| idx),
+            Bound::Unbounded => unbounded_value,
+        }
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
@@ -78,7 +96,11 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
             ..
         } = mutable;
 
-        self.map = map;
+        self.map = map
+            .keys()
+            .cloned()
+            .map(|b| NumericIndexKey::<T>::decode(&b))
+            .collect();
         self.histogram = histogram;
         self.points_count = points_count;
         self.max_values_per_point = max_values_per_point;
@@ -110,10 +132,10 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         for value_index in removed_values_range {
             // Actually remove value from container and get it
             let value = self.point_to_values_container[value_index as usize];
-            let encoded = value.encode_key(idx);
-            self.map.remove(&encoded);
+            // TODO(ivan): remove value from map
 
             // update db
+            let encoded = value.encode_key(idx);
             self.db_wrapper.remove(encoded)?;
         }
 

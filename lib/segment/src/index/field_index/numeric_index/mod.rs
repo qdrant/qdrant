@@ -3,6 +3,7 @@ mod tests;
 
 mod immutable_numeric_index;
 mod mutable_numeric_index;
+mod numeric_index_key;
 
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
@@ -306,11 +307,17 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
                 let v: T = T::from_f64(*gt);
-                Excluded(v.encode_key(PointOffsetType::MAX))
+                Excluded(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MAX,
+                })
             }
             Range { gte: Some(gte), .. } => {
                 let v: T = T::from_f64(*gte);
-                Included(v.encode_key(PointOffsetType::MIN))
+                Included(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MIN,
+                })
             }
             _ => Unbounded,
         };
@@ -318,11 +325,17 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let end_bound = match cond_range {
             Range { lt: Some(lt), .. } => {
                 let v: T = T::from_f64(*lt);
-                Excluded(v.encode_key(PointOffsetType::MIN))
+                Excluded(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MIN,
+                })
             }
             Range { lte: Some(lte), .. } => {
                 let v: T = T::from_f64(*lte);
-                Included(v.encode_key(PointOffsetType::MAX))
+                Included(NumericIndexKey {
+                    key: v,
+                    idx: PointOffsetType::MAX,
+                })
             }
             _ => Unbounded,
         };
