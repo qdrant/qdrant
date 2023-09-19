@@ -58,7 +58,7 @@ semver = "1.0.18"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
-chrono = { version = "0.4.30", features = ["serde"] }
+chrono = { version = "0.4.31", features = ["serde"] }
 smol_str = "0.2.0"
 
 sysinfo = "0.29"
