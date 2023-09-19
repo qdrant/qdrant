@@ -1546,8 +1546,9 @@ impl Collection {
         copy(snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
         rename(&snapshot_path_tmp_move, &snapshot_path).await?;
 
-        // We're done with temporary directories, drop them to unlink
-        drop((snapshot_temp_dir, snapshot_temp_arc_file));
+        // We're done with temporary directories, explicitly close and unlink
+        let _ = snapshot_temp_dir.close();
+        let _ = snapshot_temp_arc_file.close();
 
         log::info!(
             "Collection snapshot {snapshot_name} completed into {:?}",
