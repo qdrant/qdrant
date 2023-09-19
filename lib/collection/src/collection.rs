@@ -694,7 +694,7 @@ impl Collection {
 
         let res = match shard_holder_guard.get_shard(&shard_selection) {
             None => None,
-            Some(target_shard) => target_shard.update_local(operation.clone(), wait).await?,
+            Some(target_shard) => target_shard.update_local(operation, wait).await?,
         };
 
         if let Some(res) = res {
