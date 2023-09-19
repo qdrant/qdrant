@@ -135,7 +135,7 @@ fn test_building_cancellation() {
     let mut segment = empty_segment(dir.path());
     let mut segment_2 = empty_segment(dir_2.path());
 
-    for idx in 0..2000 {
+    for idx in 0..5000 {
         baseline_segment
             .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
@@ -146,13 +146,14 @@ fn test_building_cancellation() {
             .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
     }
+
     // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 30000);
+    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
     assert!(!was_cancelled_baseline);
 
     // Checks that optimization with longer cancellation delay will also finish fast
-    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, 30);
-    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, 300);
+    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, 20);
+    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, 200);
 
     assert!(was_cancelled_early);
     assert!(time_fast < time_baseline / 4);
@@ -165,6 +166,6 @@ fn test_building_cancellation() {
         "time_early: {}, time_later: {}, was_cancelled_later: {}",
         time_fast,
         time_long,
-        was_cancelled_later
+        was_cancelled_later,
     );
 }
