@@ -2,12 +2,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::slice::BitSlice;
+use io::file_operations::{atomic_save_json, read_json};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
-use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::entry::entry_point::OperationResult;

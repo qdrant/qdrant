@@ -1051,6 +1051,7 @@ dependencies = [
  "futures",
  "hashring",
  "indicatif",
+ "io",
  "itertools 0.11.0",
  "log",
  "merge",
@@ -2363,6 +2364,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "io"
+version = "0.0.0"
+dependencies = [
+ "atomicwrites",
+ "bincode",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -4452,6 +4464,7 @@ dependencies = [
  "futures",
  "geo",
  "geohash",
+ "io",
  "io-uring",
  "itertools 0.11.0",
  "log",
@@ -4770,6 +4783,7 @@ dependencies = [
  "env_logger",
  "futures",
  "http",
+ "io",
  "itertools 0.11.0",
  "log",
  "num_cpus",

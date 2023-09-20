@@ -6,10 +6,10 @@ use std::result;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomicwrites::Error as AtomicIoError;
+use io::file_operations::FileStorageError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
-use crate::common::file_operations::FileStorageError;
 use crate::common::mmap_type::Error as MmapError;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorElementType};

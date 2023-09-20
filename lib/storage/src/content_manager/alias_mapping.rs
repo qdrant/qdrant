@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use collection::shards::CollectionId;
-use segment::common::file_operations::{atomic_save_json, read_json};
+use io::file_operations::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::errors::StorageError;
