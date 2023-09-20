@@ -137,92 +137,6 @@ pub struct Settings {
     pub load_errors: Vec<LogMsg>,
 }
 
-#[derive(Clone, Debug)]
-pub enum LogMsg {
-    Warn(String),
-    Error(String),
-}
-
-impl LogMsg {
-    fn log(&self) {
-        match self {
-            Self::Warn(msg) => log::warn!("{msg}"),
-            Self::Error(msg) => log::error!("{msg}"),
-        }
-    }
-}
-
-impl Settings {
-    pub fn tls(&self) -> io::Result<&TlsConfig> {
-        self.tls
-            .as_ref()
-            .ok_or_else(Self::tls_config_is_undefined_error)
-    }
-
-    pub fn tls_config_is_undefined_error() -> io::Error {
-        io::Error::new(
-            io::ErrorKind::Other,
-            "TLS config is not defined in the Qdrant config file",
-        )
-    }
-
-    #[allow(dead_code)]
-    pub fn validate_and_warn(&self) {
-        // Print any load error messages we had
-        self.load_errors.iter().for_each(LogMsg::log);
-
-        if let Err(ref errs) = self.validate() {
-            validation::warn_validation_errors("Settings configuration file", errs);
-        }
-    }
-}
-
-const fn default_telemetry_disabled() -> bool {
-    false
-}
-
-const fn default_cors() -> bool {
-    true
-}
-
-fn default_log_level() -> String {
-    "INFO".to_string()
-}
-
-const fn default_timeout_ms() -> u64 {
-    DEFAULT_GRPC_TIMEOUT.as_millis() as u64
-}
-
-const fn default_connection_timeout_ms() -> u64 {
-    DEFAULT_CONNECT_TIMEOUT.as_millis() as u64
-}
-
-const fn default_tick_period_ms() -> u64 {
-    100
-}
-
-// Should not be less than `DEFAULT_META_OP_WAIT` as bootstrapping perform sync. consensus meta operations.
-const fn default_bootstrap_timeout_sec() -> u64 {
-    15
-}
-
-const fn default_max_message_queue_size() -> usize {
-    100
-}
-
-const fn default_connection_pool_size() -> usize {
-    DEFAULT_POOL_SIZE
-}
-
-const fn default_message_timeout_tics() -> u64 {
-    10
-}
-
-const fn default_tls_cert_ttl() -> Option<u64> {
-    // Default one hour
-    Some(3600)
-}
-
 impl Settings {
     #[allow(dead_code)]
     pub fn new(custom_config_path: Option<String>) -> Result<Self, ConfigError> {
@@ -276,6 +190,29 @@ impl Settings {
         settings.load_errors.extend(load_errors);
         Ok(settings)
     }
+
+    pub fn tls(&self) -> io::Result<&TlsConfig> {
+        self.tls
+            .as_ref()
+            .ok_or_else(Self::tls_config_is_undefined_error)
+    }
+
+    pub fn tls_config_is_undefined_error() -> io::Error {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "TLS config is not defined in the Qdrant config file",
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn validate_and_warn(&self) {
+        // Print any load error messages we had
+        self.load_errors.iter().for_each(LogMsg::log);
+
+        if let Err(ref errs) = self.validate() {
+            validation::warn_validation_errors("Settings configuration file", errs);
+        }
+    }
 }
 
 /// Returns the number of maximum actix workers.
@@ -288,6 +225,67 @@ pub fn max_web_workers(settings: &Settings) -> usize {
         Some(max_workers) => max_workers,
         None => settings.storage.performance.max_search_threads,
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum LogMsg {
+    Warn(String),
+    Error(String),
+}
+
+impl LogMsg {
+    fn log(&self) {
+        match self {
+            Self::Warn(msg) => log::warn!("{msg}"),
+            Self::Error(msg) => log::error!("{msg}"),
+        }
+    }
+}
+
+const fn default_telemetry_disabled() -> bool {
+    false
+}
+
+const fn default_cors() -> bool {
+    true
+}
+
+fn default_log_level() -> String {
+    "INFO".to_string()
+}
+
+const fn default_timeout_ms() -> u64 {
+    DEFAULT_GRPC_TIMEOUT.as_millis() as u64
+}
+
+const fn default_connection_timeout_ms() -> u64 {
+    DEFAULT_CONNECT_TIMEOUT.as_millis() as u64
+}
+
+const fn default_tick_period_ms() -> u64 {
+    100
+}
+
+// Should not be less than `DEFAULT_META_OP_WAIT` as bootstrapping perform sync. consensus meta operations.
+const fn default_bootstrap_timeout_sec() -> u64 {
+    15
+}
+
+const fn default_max_message_queue_size() -> usize {
+    100
+}
+
+const fn default_connection_pool_size() -> usize {
+    DEFAULT_POOL_SIZE
+}
+
+const fn default_message_timeout_tics() -> u64 {
+    10
+}
+
+const fn default_tls_cert_ttl() -> Option<u64> {
+    // Default one hour
+    Some(3600)
 }
 
 #[cfg(test)]
