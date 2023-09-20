@@ -1100,11 +1100,15 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "serde",
  "validator",
 ]
+
+[[package]]
+name = "common-workspace-stub"
+version = "0.0.0"
 
 [[package]]
 name = "config"

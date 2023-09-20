@@ -89,7 +89,7 @@ slog-stdlog = "4.1.1"
 prost = "0.11.9"
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
-common = { path = "lib/common" }
+common = { path = "lib/common/common" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
@@ -124,7 +124,7 @@ test = false
 bench = false
 
 [workspace]
-members = ["lib/*"]
+members = ["lib/*", "lib/common/*"]
 exclude = ["benches/search-points"]
 
 [profile.release]
