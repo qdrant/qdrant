@@ -7,8 +7,7 @@ use geo::{Intersects, Polygon};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
 
-use crate::entry::entry_point::OperationError::ServiceError;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 
 pub type GeoHash = String;
@@ -230,14 +229,8 @@ fn create_hashes(
         .map(mapping_fn)
         .take_while(|hashes| hashes.is_some())
         .last()
-        .ok_or_else(|| ServiceError {
-            description: String::from("no hash coverage for any precision"),
-            backtrace: None,
-        })?
-        .ok_or_else(|| ServiceError {
-            description: String::from("geo-hash coverage is empty"),
-            backtrace: None,
-        })
+        .ok_or_else(|| OperationError::service_error("no hash coverage for any precision"))?
+        .ok_or_else(|| OperationError::service_error("geo-hash coverage is empty"))
 }
 
 /// Return as-high-as-possible with maximum of `max_regions`
