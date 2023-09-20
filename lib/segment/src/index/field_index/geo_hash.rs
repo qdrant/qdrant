@@ -7,8 +7,8 @@ use geo::{Intersects, Polygon};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
 
-use crate::entry::entry_point::OperationError;
 use crate::entry::entry_point::OperationError::ServiceError;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 
 pub type GeoHash = String;
@@ -225,7 +225,7 @@ fn check_polygon_intersection(geohash: &str, polygon: &GeoPolygon) -> bool {
 
 fn create_hashes(
     mapping_fn: impl Fn(usize) -> Option<Vec<GeoHash>>,
-) -> Result<Vec<GeoHash>, OperationError> {
+) -> OperationResult<Vec<GeoHash>> {
     (0..=GEOHASH_MAX_LENGTH)
         .map(mapping_fn)
         .take_while(|hashes| hashes.is_some())
@@ -242,10 +242,7 @@ fn create_hashes(
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole circle.
-pub fn circle_hashes(
-    circle: &GeoRadius,
-    max_regions: usize,
-) -> Result<Vec<GeoHash>, OperationError> {
+pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
@@ -268,7 +265,7 @@ pub fn circle_hashes(
 pub fn rectangle_hashes(
     rectangle: &GeoBoundingBox,
     max_regions: usize,
-) -> Result<Vec<GeoHash>, OperationError> {
+) -> OperationResult<Vec<GeoHash>> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let full_geohash_bounding_box: GeohashBoundingBox = rectangle.clone().into();
 
@@ -278,10 +275,7 @@ pub fn rectangle_hashes(
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole polygon.
-pub fn polygon_hashes(
-    polygon: &GeoPolygon,
-    max_regions: usize,
-) -> Result<Vec<GeoHash>, OperationError> {
+pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let geo_bounding_box = minimum_bounding_rectangle_for_polygon(polygon);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
