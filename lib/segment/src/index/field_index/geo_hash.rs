@@ -499,7 +499,6 @@ mod tests {
         };
 
         let nyc_hashes_result = rectangle_hashes(&near_nyc_rectangle, 200);
-        assert!(nyc_hashes_result.is_ok());
         let nyc_hashes = nyc_hashes_result.unwrap();
         assert_eq!(nyc_hashes.len(), 168);
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
@@ -511,7 +510,6 @@ mod tests {
         ];
         expected.sort_unstable();
 
-        assert!(nyc_hashes_result.is_ok());
         assert_eq!(nyc_hashes_result.unwrap(), expected);
 
         // Graphical proof using https://www.movable-type.co.uk/scripts/geohash.html
@@ -532,7 +530,6 @@ mod tests {
 
         // falls back to finest region that encompasses the whole area
         let nyc_hashes_result = rectangle_hashes(&near_nyc_rectangle, 7);
-        assert!(nyc_hashes_result.is_ok());
         assert_eq!(nyc_hashes_result.unwrap(), ["dr5ru"]);
     }
 
@@ -566,7 +563,6 @@ mod tests {
         };
 
         let nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 200);
-        assert!(nyc_hashes_result.is_ok());
         let nyc_hashes = nyc_hashes_result.unwrap();
         assert_eq!(nyc_hashes.len(), 168);
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
@@ -578,12 +574,10 @@ mod tests {
         ];
         expected.sort_unstable();
 
-        assert!(nyc_hashes_result.is_ok());
         assert_eq!(nyc_hashes_result.unwrap(), expected);
 
         // falls back to finest region that encompasses the whole area
         let nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 7);
-        assert!(nyc_hashes_result.is_ok());
         assert_eq!(nyc_hashes_result.unwrap(), ["dr5ru"]);
     }
 
@@ -601,7 +595,6 @@ mod tests {
             };
             let max_hashes = rnd.gen_range(1..32);
             let hashes = circle_hashes(&query, max_hashes);
-            assert!(hashes.is_ok());
             assert!(hashes.unwrap().len() <= max_hashes);
         }
     }
@@ -765,7 +758,6 @@ mod tests {
 
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
-        assert!(hashes.is_ok());
         assert_eq!(hashes.unwrap(), vec!["zbp", "b00", "xzz", "8pb"]);
     }
 
@@ -781,7 +773,6 @@ mod tests {
 
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
-        assert!(hashes.is_ok());
         let vec = hashes.unwrap();
         assert!(vec.len() <= max_hashes);
         assert_eq!(vec, ["b", "c", "f", "g", "u", "v", "y", "z"]);
@@ -799,7 +790,6 @@ mod tests {
 
         let max_hashes = 10;
         let hashes_result = circle_hashes(&query, max_hashes);
-        assert!(hashes_result.is_ok());
         let hashes = hashes_result.unwrap();
         assert!(hashes.len() <= max_hashes);
         assert_eq!(hashes, ["fz", "gp", "gr", "gx", "gz", "up"]);
@@ -816,7 +806,6 @@ mod tests {
         };
         let max_hashes = 10;
         let hashes_result = circle_hashes(&query, max_hashes);
-        assert!(hashes_result.is_ok());
         let hashes = hashes_result.unwrap();
         assert!(hashes.len() <= max_hashes);
         assert_eq!(hashes, ["p6yd", "p6yf", "p6y9", "p6yc"]);
@@ -833,7 +822,6 @@ mod tests {
         };
         let max_hashes = 10;
         let hashes_result = circle_hashes(&query, max_hashes);
-        assert!(hashes_result.is_ok());
         let hashes = hashes_result.unwrap();
         assert!(hashes.len() <= max_hashes);
         assert_eq!(hashes, ["p6ycc", "p6ycf", "p6ycg"]);
@@ -846,9 +834,8 @@ mod tests {
             radius: 800.0,
         };
 
-        let nyc_hashes_result = circle_hashes(&near_nyc_circle, 200);
-        assert!(nyc_hashes_result.is_ok());
-        assert!(nyc_hashes_result.unwrap().iter().all(|h| h.len() == 7)); // geohash precision
+        let nyc_hashes_result = circle_hashes(&near_nyc_circle, 200).unwrap();
+        assert!(nyc_hashes_result.iter().all(|h| h.len() == 7)); // geohash precision
 
         let mut nyc_hashes_result = circle_hashes(&near_nyc_circle, 10);
         nyc_hashes_result.as_mut().unwrap().sort_unstable();
@@ -856,12 +843,10 @@ mod tests {
             "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
         ];
         expected.sort_unstable();
-        assert!(nyc_hashes_result.is_ok());
         assert_eq!(nyc_hashes_result.unwrap(), expected);
 
         // falls back to finest region that encompasses the whole area
         let nyc_hashes_result = circle_hashes(&near_nyc_circle, 7);
-        assert!(nyc_hashes_result.is_ok());
         assert_eq!(nyc_hashes_result.unwrap(), ["dr5ru"]);
     }
 
@@ -935,7 +920,7 @@ mod tests {
 
         let common_prefix = common_hash_prefix(&geo_hashes);
 
-        assert_eq!(common_prefix, "abcd".to_string());
+        assert_eq!(&common_prefix, "abcd");
 
         let geo_hashes = vec![
             "abcd123".to_string(),
@@ -946,6 +931,6 @@ mod tests {
 
         let common_prefix = common_hash_prefix(&geo_hashes);
 
-        assert_eq!(common_prefix, "".to_string());
+        assert_eq!(&common_prefix, "");
     }
 }
