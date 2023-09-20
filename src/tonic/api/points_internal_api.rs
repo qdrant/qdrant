@@ -215,7 +215,7 @@ impl PointsInternal for PointsInternalService {
             self.toc.as_ref(),
             collection_name,
             search_points,
-            None, // *Have* to be `None`!
+            None, // *Has* to be `None`!
             shard_id,
         )
         .await
@@ -232,7 +232,7 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        // Individual `read_consistency` values are ignored by `search_batch`...
+        // Individual `read_consistency` values are ignored by `core_search_batch`...
         //
         // search_points
         //     .iter_mut()
@@ -242,7 +242,7 @@ impl PointsInternal for PointsInternalService {
             self.toc.as_ref(),
             collection_name,
             search_points,
-            None, // *Have* to be `None`!
+            None, // *Has* to be `None`!
             shard_id,
         )
         .await

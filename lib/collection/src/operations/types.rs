@@ -257,9 +257,6 @@ pub struct SearchRequestBatch {
     #[validate]
     pub searches: Vec<SearchRequest>,
 }
-pub struct Batch<T> {
-    pub searches: Vec<T>,
-}
 
 #[derive(Debug, Clone)]
 pub enum QueryEnum {
