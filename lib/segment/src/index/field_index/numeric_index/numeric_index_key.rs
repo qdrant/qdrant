@@ -51,7 +51,7 @@ mod tests {
     use crate::types::FloatPayloadType;
 
     #[test]
-    fn test_sorting() {
+    fn test_numeric_index_key_sorting() {
         let pairs = [
             NumericIndexKey::new(0.0, 1),
             NumericIndexKey::new(0.0, 3),
