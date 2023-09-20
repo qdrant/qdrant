@@ -211,29 +211,24 @@ impl LocalShard {
             );
         }
 
-        {
-            // TODO: Is it fine to hold read-lock on `collection_config` here? 🤔
-            let collection_config = collection_config.read().await;
+        for handler in load_handlers {
+            let segment = handler.join().map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't join segment load thread: {:?}",
+                    err.type_id()
+                ))
+            })??;
 
-            for handler in load_handlers {
-                let segment = handler.join().map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Can't join segment load thread: {:?}",
-                        err.type_id()
-                    ))
-                })??;
+            let Some(segment) = segment else {
+                continue;
+            };
 
-                let Some(segment) = segment else {
-                    continue;
-                };
+            collection_config_read
+                .params
+                .vectors
+                .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
 
-                collection_config
-                    .params
-                    .vectors
-                    .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
-
-                segment_holder.add(segment);
-            }
+            segment_holder.add(segment);
         }
 
         let res = segment_holder.deduplicate_points()?;
