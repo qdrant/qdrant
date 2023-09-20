@@ -146,25 +146,30 @@ fn test_building_cancellation() {
             .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
     }
+
     // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 30000);
+    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
     assert!(!was_cancelled_baseline);
 
     // Checks that optimization with longer cancellation delay will also finish fast
-    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, 30);
-    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, 300);
+    let early_stop_delay = time_baseline / 20;
+    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, early_stop_delay);
+    let late_stop_delay = time_baseline / 5;
+    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, late_stop_delay);
+
+    let acceptable_stopping_delay = 400; // millis
 
     assert!(was_cancelled_early);
-    assert!(time_fast < time_baseline / 4);
+    assert!(time_fast < early_stop_delay + acceptable_stopping_delay);
 
     assert!(was_cancelled_later);
-    assert!(time_long < time_baseline / 4);
+    assert!(time_long < late_stop_delay + acceptable_stopping_delay);
 
     assert!(
         time_fast < time_long,
         "time_early: {}, time_later: {}, was_cancelled_later: {}",
         time_fast,
         time_long,
-        was_cancelled_later
+        was_cancelled_later,
     );
 }
