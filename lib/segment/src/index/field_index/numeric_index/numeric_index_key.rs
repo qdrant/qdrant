@@ -1,6 +1,9 @@
 use crate::index::field_index::histogram::Numericable;
-use crate::index::key_encoding::{encode_i64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending, decode_f64_key_ascending};
-use crate::types::{PointOffsetType, IntPayloadType, FloatPayloadType};
+use crate::index::key_encoding::{
+    decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
+    encode_i64_key_ascending,
+};
+use crate::types::{FloatPayloadType, IntPayloadType, PointOffsetType};
 
 pub trait Encodable: Copy {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
@@ -82,7 +85,8 @@ impl<T: PartialEq + PartialOrd + Encodable> Eq for NumericIndexKey<T> {}
 
 impl<T: PartialEq + PartialOrd + Encodable> Ord for NumericIndexKey<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).expect("Numeric index key is not comparable")
+        self.partial_cmp(other)
+            .expect("Numeric index key is not comparable")
     }
 }
 
