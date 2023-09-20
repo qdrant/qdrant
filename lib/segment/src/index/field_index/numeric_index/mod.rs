@@ -26,38 +26,11 @@ use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardin
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
-use crate::index::key_encoding::{
-    decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
-    encode_i64_key_ascending,
-};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range};
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
-
-pub trait Encodable: Copy {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
-}
-
-impl Encodable for IntPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i64_key_ascending(*self, id)
-    }
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_i64_key_ascending(key)
-    }
-}
-
-impl Encodable for FloatPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_f64_key_ascending(*self, id)
-    }
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_f64_key_ascending(key)
-    }
-}
 
 pub enum NumericIndex<T: Encodable + Numericable> {
     Mutable(MutableNumericIndex<T>),

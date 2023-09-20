@@ -4,6 +4,7 @@ use rand::{Rng, SeedableRng};
 use tempfile::{Builder, TempDir};
 
 use super::*;
+use super::numeric_index_key::Encodable;
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 
 const COLUMN_NAME: &str = "test";
