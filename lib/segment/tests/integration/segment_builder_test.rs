@@ -149,7 +149,6 @@ fn test_building_cancellation() {
 
     // Get normal build time
     let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
-    dbg!(time_baseline);
     assert!(!was_cancelled_baseline);
 
     // Checks that optimization with longer cancellation delay will also finish fast
