@@ -524,48 +524,45 @@ impl PayloadFieldIndex for GeoMapIndex {
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_bounding_box.clone();
-            return Some(Box::new(
-                self.get_iterator(geo_hashes.unwrap_or(vec![]))
-                    .filter(move |point| {
-                        self.point_to_values
-                            .get(*point as usize)
-                            .unwrap()
-                            .iter()
-                            .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
-                    }),
-            ));
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    self.point_to_values
+                        .get(*point as usize)
+                        .unwrap()
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                },
+            )));
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
-            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION);
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_radius.clone();
-            return Some(Box::new(
-                self.get_iterator(geo_hashes.unwrap_or(vec![]))
-                    .filter(move |point| {
-                        self.point_to_values
-                            .get(*point as usize)
-                            .unwrap()
-                            .iter()
-                            .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
-                    }),
-            ));
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    self.point_to_values
+                        .get(*point as usize)
+                        .unwrap()
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                },
+            )));
         }
 
         if let Some(geo_polygon) = &condition.geo_polygon {
-            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION);
+            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_polygon.clone();
-            return Some(Box::new(
-                self.get_iterator(geo_hashes.unwrap_or(vec![]))
-                    .filter(move |point| {
-                        self.point_to_values
-                            .get(*point as usize)
-                            .unwrap()
-                            .iter()
-                            .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
-                    }),
-            ));
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    self.point_to_values
+                        .get(*point as usize)
+                        .unwrap()
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                },
+            )));
         }
 
         None
@@ -573,8 +570,8 @@ impl PayloadFieldIndex for GeoMapIndex {
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
-            let mut estimation = self.match_cardinality(&geo_hashes.unwrap_or(vec![]));
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
+            let mut estimation = self.match_cardinality(&geo_hashes);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(condition.clone()));
@@ -582,7 +579,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
-            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).unwrap_or(vec![]);
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
             let mut estimation = self.match_cardinality(&geo_hashes);
             estimation
                 .primary_clauses
@@ -683,7 +680,6 @@ mod tests {
         let field_index = build_random_index(500, 20);
 
         let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION);
-        assert!(nyc_hashes.is_ok());
         let exact_points_for_hashes = field_index.get_iterator(nyc_hashes.unwrap()).collect_vec();
         let real_cardinality = exact_points_for_hashes.len();
 
