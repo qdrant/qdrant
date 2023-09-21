@@ -17,8 +17,8 @@ use super::points_common::core_search_batch;
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload,
-    delete_vectors, get, overwrite_payload, recommend, scroll, search, search_batch, set_payload,
-    sync, update_vectors, upsert,
+    delete_vectors, get, overwrite_payload, recommend, scroll, search, set_payload, sync,
+    update_vectors, upsert,
 };
 
 /// This API is intended for P2P communication within a distributed deployment.
@@ -198,27 +198,10 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<SearchBatchPointsInternal>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
-        validate_and_log(request.get_ref());
-        let SearchBatchPointsInternal {
-            collection_name,
-            search_points,
-            shard_id,
-        } = request.into_inner();
-
-        // Individual `read_consistency` values are ignored by `search_batch`...
-        //
-        // search_points
-        //     .iter_mut()
-        //     .for_each(|search_points| search_points.read_consistency = None);
-
-        search_batch(
-            self.toc.as_ref(),
-            collection_name,
-            search_points,
-            None, // *Has* to be `None`!
-            shard_id,
-        )
-        .await
+        // Transform legacy search request into newer core type
+        let (metadata, extensions, message) = request.into_parts();
+        let core_request = Request::from_parts(metadata, extensions, message.into());
+        self.core_search_batch(core_request).await
     }
 
     async fn core_search_batch(

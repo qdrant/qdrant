@@ -8,7 +8,11 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{BinaryQuantization, CompressionRatio, GroupId};
+use super::qdrant::query_enum::Query;
+use super::qdrant::{
+    BinaryQuantization, CompressionRatio, CoreSearchBatchPointsInternal, CoreSearchPoints, GroupId,
+    QueryEnum, SearchBatchPointsInternal, SearchPoints,
+};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -1092,6 +1096,38 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             max_indexing_threads: hnsw_config.max_indexing_threads.unwrap_or_default() as usize,
             on_disk: hnsw_config.on_disk,
             payload_m: hnsw_config.payload_m.map(|x| x as usize),
+        }
+    }
+}
+
+impl From<SearchBatchPointsInternal> for CoreSearchBatchPointsInternal {
+    fn from(legacy: SearchBatchPointsInternal) -> Self {
+        CoreSearchBatchPointsInternal {
+            collection_name: legacy.collection_name,
+            search_points: legacy.search_points.into_iter().map(Into::into).collect(),
+            shard_id: legacy.shard_id,
+        }
+    }
+}
+
+impl From<SearchPoints> for CoreSearchPoints {
+    fn from(legacy: SearchPoints) -> Self {
+        CoreSearchPoints {
+            collection_name: legacy.collection_name,
+            query: Some(QueryEnum {
+                query: Some(Query::NearestNeighbors(Vector {
+                    data: legacy.vector,
+                })),
+            }),
+            filter: legacy.filter,
+            limit: legacy.limit,
+            with_payload: legacy.with_payload,
+            params: legacy.params,
+            score_threshold: legacy.score_threshold,
+            offset: legacy.offset,
+            vector_name: legacy.vector_name,
+            with_vectors: legacy.with_vectors,
+            read_consistency: legacy.read_consistency,
         }
     }
 }
