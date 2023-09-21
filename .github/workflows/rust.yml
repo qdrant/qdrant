@@ -17,6 +17,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
+    - run: echo ${{ github.event.pull_request.author_association }}
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
     - uses: actions/checkout@v4
@@ -47,7 +48,7 @@ jobs:
     permissions:
       contents: read
       issues: write 
-    if: ${{ contains(fromJSON('["MEMBER", "OWNER"]'), github.event.pull_request.author_association) || github.event.pull_request == null }}
+    if: ${{ contains(fromJSON('["COLLABORATOR", "OWNER"]'), github.event.pull_request.author_association) || github.event.pull_request == null }}
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest  ]
