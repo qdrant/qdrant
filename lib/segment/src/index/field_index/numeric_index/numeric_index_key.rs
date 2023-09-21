@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::index::field_index::histogram::Numericable;
 use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
@@ -5,7 +7,7 @@ use crate::index::key_encoding::{
 };
 use crate::types::{FloatPayloadType, IntPayloadType, PointOffsetType};
 
-pub trait Encodable: Copy {
+pub trait Encodable: Copy + Default {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
@@ -50,7 +52,7 @@ impl Encodable for FloatPayloadType {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct NumericIndexKey<T: PartialEq + PartialOrd> {
     pub key: T,
     pub idx: PointOffsetType,

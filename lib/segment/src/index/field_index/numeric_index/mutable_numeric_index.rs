@@ -12,7 +12,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable};
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
-    pub(super) map: BTreeMap<Vec<u8>, u32>,
+    pub(super) map: BTreeMap<Vec<u8>, PointOffsetType>,
     pub(super) db_wrapper: DatabaseColumnWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::ops::{Bound, Range};
 use std::sync::Arc;
 
@@ -13,13 +14,93 @@ use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::types::PointOffsetType;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable> {
-    pub(super) map: Vec<NumericIndexKey<T>>,
-    pub(super) db_wrapper: DatabaseColumnWrapper,
+    map: NumericKeySortedVec<T>,
+    db_wrapper: DatabaseColumnWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
     pub(super) max_values_per_point: usize,
-    pub(super) point_to_values: Vec<Range<u32>>,
-    pub(super) point_to_values_container: Vec<T>,
+    point_to_values: Vec<Range<u32>>,
+    point_to_values_container: Vec<T>,
+}
+
+#[derive(Default)]
+struct NumericKeySortedVec<T: Encodable + Numericable> {
+    data: Vec<NumericIndexKey<T>>,
+    deleted_count: usize,
+}
+
+struct NumericKeySortedVecIterator<'a, T: Encodable + Numericable> {
+    set: &'a NumericKeySortedVec<T>,
+    start_index: usize,
+    end_index: usize,
+}
+
+impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
+    fn from_btree_map(map: BTreeMap<Vec<u8>, u32>) -> Self {
+        Self {
+            data: map
+                .keys()
+                .cloned()
+                .map(|b| NumericIndexKey::<T>::decode(&b))
+                .collect(),
+            deleted_count: 0,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.data.len() - self.deleted_count
+    }
+
+    fn remove(&mut self, key: NumericIndexKey<T>) {
+        if let Ok(index) = self.data.binary_search(&key) {
+            self.data[index].idx = PointOffsetType::MAX;
+            self.deleted_count += 1;
+        }
+    }
+
+    fn values_range(
+        &self,
+        start_bound: Bound<NumericIndexKey<T>>,
+        end_bound: Bound<NumericIndexKey<T>>,
+    ) -> impl Iterator<Item = NumericIndexKey<T>> + '_ {
+        let start_index = self.find_bound_index(start_bound, 0);
+        let end_index = self.find_bound_index(end_bound, self.data.len());
+        NumericKeySortedVecIterator {
+            set: self,
+            start_index,
+            end_index,
+        }
+    }
+
+    fn find_bound_index(&self, bound: Bound<NumericIndexKey<T>>, unbounded_value: usize) -> usize {
+        match bound {
+            Bound::Included(bound) => self
+                .data
+                .binary_search_by(|key| match key.cmp(&bound) {
+                    std::cmp::Ordering::Equal => std::cmp::Ordering::Greater,
+                    ord => ord,
+                })
+                .unwrap_or_else(|idx| idx),
+            Bound::Excluded(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
+            Bound::Unbounded => unbounded_value,
+        }
+    }
+}
+
+impl<'a, T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'a, T> {
+    type Item = NumericIndexKey<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.start_index < self.end_index {
+            let key = self.set.data[self.start_index].clone();
+            self.start_index += 1;
+            if key.idx == PointOffsetType::MAX {
+                continue;
+            }
+            return Some(key);
+        }
+        None
+    }
 }
 
 impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
@@ -56,25 +137,9 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         start_bound: Bound<NumericIndexKey<T>>,
         end_bound: Bound<NumericIndexKey<T>>,
     ) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let start_index = self.find_bound_index(start_bound, 0);
-        let end_index = self.find_bound_index(end_bound, self.map.len());
-        self.map[start_index..end_index]
-            .iter()
-            .map(|NumericIndexKey { idx, .. }| *idx)
-    }
-
-    fn find_bound_index(&self, bound: Bound<NumericIndexKey<T>>, unbounded_value: usize) -> usize {
-        match bound {
-            Bound::Included(bound) => self
-                .map
-                .binary_search_by(|key| match key.cmp(&bound) {
-                    std::cmp::Ordering::Equal => std::cmp::Ordering::Greater,
-                    ord => ord,
-                })
-                .unwrap_or_else(|idx| idx),
-            Bound::Excluded(bound) => self.map.binary_search(&bound).unwrap_or_else(|idx| idx),
-            Bound::Unbounded => unbounded_value,
-        }
+        self.map
+            .values_range(start_bound, end_bound)
+            .map(|NumericIndexKey { idx, .. }| idx)
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
@@ -96,11 +161,7 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
             ..
         } = mutable;
 
-        self.map = map
-            .keys()
-            .cloned()
-            .map(|b| NumericIndexKey::<T>::decode(&b))
-            .collect();
+        self.map = NumericKeySortedVec::from_btree_map(map);
         self.histogram = histogram;
         self.points_count = points_count;
         self.max_values_per_point = max_values_per_point;
@@ -130,9 +191,8 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         }
 
         for value_index in removed_values_range {
-            // Actually remove value from container and get it
             let value = self.point_to_values_container[value_index as usize];
-            // TODO(ivan): remove value from map
+            self.map.remove(NumericIndexKey::new(value, idx));
 
             // update db
             let encoded = value.encode_key(idx);
@@ -140,5 +200,95 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Bound;
+    use std::ops::Bound::{Excluded, Included, Unbounded};
+
+    use super::*;
+    use crate::types::FloatPayloadType;
+
+    fn check_range(
+        key_set: &NumericKeySortedVec<FloatPayloadType>,
+        encoded_map: &BTreeMap<Vec<u8>, PointOffsetType>,
+        start_bound: Bound<NumericIndexKey<FloatPayloadType>>,
+        end_bound: Bound<NumericIndexKey<FloatPayloadType>>,
+    ) {
+        let set1 = key_set
+            .values_range(start_bound.clone(), end_bound.clone())
+            .collect::<Vec<_>>();
+
+        let start_bound = match start_bound {
+            Included(k) => Included(k.encode()),
+            Excluded(k) => Excluded(k.encode()),
+            Unbounded => Unbounded,
+        };
+        let end_bound = match end_bound {
+            Included(k) => Included(k.encode()),
+            Excluded(k) => Excluded(k.encode()),
+            Unbounded => Unbounded,
+        };
+        let set2 = encoded_map
+            .range((start_bound, end_bound))
+            .map(|(b, _)| NumericIndexKey::<FloatPayloadType>::decode(b))
+            .collect::<Vec<_>>();
+
+        for (k1, k2) in set1.iter().zip(set2.iter()) {
+            if k1.key.is_nan() && k2.key.is_nan() {
+                assert_eq!(k1.idx, k2.idx);
+            } else {
+                assert_eq!(k1, k2);
+            }
+        }
+    }
+
+    fn check_ranges(
+        key_set: &NumericKeySortedVec<FloatPayloadType>,
+        encoded_map: &BTreeMap<Vec<u8>, PointOffsetType>,
+    ) {
+        check_range(&key_set, &encoded_map, Bound::Unbounded, Bound::Unbounded);
+    }
+
+    #[test]
+    fn test_numeric_index_key_set() {
+        let pairs = [
+            NumericIndexKey::new(0.0, 1),
+            NumericIndexKey::new(0.0, 3),
+            NumericIndexKey::new(-0.0, 2),
+            NumericIndexKey::new(-0.0, 4),
+            NumericIndexKey::new(0.4, 2),
+            NumericIndexKey::new(-0.4, 3),
+            NumericIndexKey::new(5.0, 1),
+            NumericIndexKey::new(-5.0, 1),
+            NumericIndexKey::new(f64::NAN, 0),
+            NumericIndexKey::new(f64::NAN, 2),
+            NumericIndexKey::new(f64::NAN, 3),
+            NumericIndexKey::new(f64::INFINITY, 0),
+            NumericIndexKey::new(f64::NEG_INFINITY, 1),
+            NumericIndexKey::new(f64::NEG_INFINITY, 2),
+            NumericIndexKey::new(f64::NEG_INFINITY, 3),
+        ];
+
+        let encoded: Vec<(Vec<u8>, PointOffsetType)> = pairs
+            .iter()
+            .map(|k| (FloatPayloadType::encode_key(&k.key, k.idx), k.idx))
+            .collect();
+
+        let mut set_byte: BTreeMap<Vec<u8>, PointOffsetType> =
+            BTreeMap::from_iter(encoded.iter().cloned());
+        let mut set_keys =
+            NumericKeySortedVec::<FloatPayloadType>::from_btree_map(set_byte.clone());
+
+        check_ranges(&set_keys, &set_byte);
+
+        // test deletion and ranges after deletion
+        let deleted_key = NumericIndexKey::new(0.4, 2);
+        set_keys.remove(deleted_key.clone());
+        set_byte.remove(&deleted_key.encode());
+
+        check_ranges(&set_keys, &set_byte);
     }
 }
