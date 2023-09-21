@@ -327,14 +327,14 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
-            })) => Some(self.get_iterator(keyword.as_str())),
+            })) => Ok(self.get_iterator(keyword.as_str())),
             Some(Match::Any(MatchAny {
                 any: AnyVariants::Keywords(keywords),
-            })) => Some(Box::new(
+            })) => Ok(Box::new(
                 keywords
                     .iter()
                     .flat_map(|keyword| self.get_iterator(keyword.as_str()))
@@ -342,8 +342,8 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
             )),
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Some(self.except_iterator(keywords)),
-            _ => None,
+            })) => Ok(self.except_iterator(keywords)),
+            _ => Err(OperationError::service_error("failed to filter")),
         }
     }
 
@@ -419,14 +419,14 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
-            })) => Some(self.get_iterator(integer)),
+            })) => Ok(self.get_iterator(integer)),
             Some(Match::Any(MatchAny {
                 any: AnyVariants::Integers(integers),
-            })) => Some(Box::new(
+            })) => Ok(Box::new(
                 integers
                     .iter()
                     .flat_map(|integer| self.get_iterator(integer))
@@ -434,8 +434,8 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             )),
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => Some(self.except_iterator(integers)),
-            _ => None,
+            })) => Ok(self.except_iterator(integers)),
+            _ => Err(OperationError::service_error("failed to filter")),
         }
     }
 

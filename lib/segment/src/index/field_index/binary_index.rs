@@ -231,18 +231,18 @@ impl PayloadFieldIndex for BinaryIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
                 if *value {
-                    Some(Box::new(self.memory.iter_has_true()))
+                    Ok(Box::new(self.memory.iter_has_true()))
                 } else {
-                    Some(Box::new(self.memory.iter_has_false()))
+                    Ok(Box::new(self.memory.iter_has_false()))
                 }
             }
-            _ => None,
+            _ => Err(OperationError::service_error("failed to filter")),
         }
     }
 

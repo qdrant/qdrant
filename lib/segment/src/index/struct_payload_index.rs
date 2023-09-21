@@ -88,7 +88,7 @@ impl StructPayloadIndex {
                 indexes
                     .iter()
                     .map(|field_index| field_index.filter(field_condition))
-                    .find_map(|filter_iter| filter_iter)
+                    .find_map(|filter_iter| filter_iter.ok())
             });
         indexes
     }

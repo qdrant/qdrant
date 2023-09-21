@@ -203,12 +203,12 @@ impl PayloadFieldIndex for FullTextIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(self.inverted_index.filter(&parsed_query));
+            return Ok(self.inverted_index.filter(&parsed_query));
         }
-        None
+        Err(OperationError::service_error("failed to filter"))
     }
 
     fn estimate_cardinality(

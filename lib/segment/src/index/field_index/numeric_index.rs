@@ -325,8 +325,13 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let cond_range = condition.range.as_ref()?;
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        let cond_range = condition
+            .range
+            .as_ref()
+            .ok_or(OperationError::service_error(
+                "failed to get condition range",
+            ))?;
 
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
@@ -357,16 +362,16 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         match (&start_bound, &end_bound) {
             (Excluded(s), Excluded(e)) if s == e => {
                 // range start and end are equal and excluded in BTreeMap
-                return Some(Box::new(vec![].into_iter()));
+                return Ok(Box::new(vec![].into_iter()));
             }
             (Included(s) | Excluded(s), Included(e) | Excluded(e)) if s > e => {
                 //range start is greater than range end
-                return Some(Box::new(vec![].into_iter()));
+                return Ok(Box::new(vec![].into_iter()));
             }
             _ => {}
         }
 
-        Some(Box::new(
+        Ok(Box::new(
             self.map.range((start_bound, end_bound)).map(|(_, v)| *v),
         ))
     }
