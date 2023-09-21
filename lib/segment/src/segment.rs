@@ -7,12 +7,12 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
+use io::file_operations::{atomic_save_json, read_json};
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
 use uuid::Uuid;
 
-use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,

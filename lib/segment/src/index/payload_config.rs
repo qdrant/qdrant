@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use io::file_operations::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 
-use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PayloadFieldSchema, PayloadKeyType};
 

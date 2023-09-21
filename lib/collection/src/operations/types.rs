@@ -8,11 +8,10 @@ use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
 use common::validation::validate_range_generic;
-use futures::io;
+use io::file_operations::FileStorageError;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::common::file_operations::FileStorageError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
     NamedVectorStruct, QueryVector, VectorElementType, VectorStruct, VectorType,
@@ -723,8 +722,8 @@ impl From<JsonError> for CollectionError {
     }
 }
 
-impl From<io::Error> for CollectionError {
-    fn from(err: io::Error) -> Self {
+impl From<futures::io::Error> for CollectionError {
+    fn from(err: futures::io::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("File IO error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
