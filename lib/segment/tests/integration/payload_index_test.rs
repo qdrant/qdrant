@@ -24,9 +24,9 @@ use segment::segment_constructor::build_segment;
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
-    Indexes, IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, PointOffsetType, Range,
-    SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
+    AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon,
+    GeoRadius, Indexes, IsEmptyCondition, Match, Payload, PayloadField, PayloadSchemaType,
+    PointOffsetType, Range, SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
 };
 use serde_json::json;
 use tempfile::Builder;
@@ -62,7 +62,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
 
     let mut opnum = 0;
     struct_segment
-        .create_field_index(opnum, INT_KEY_2, Some(&PayloadSchemaType::Integer.into()))
+        .create_field_index(opnum, INT_KEY_2, Some(&Integer.into()))
         .unwrap();
 
     opnum += 1;
@@ -88,7 +88,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
     }
 
     struct_segment
-        .create_field_index(opnum, STR_KEY, Some(&PayloadSchemaType::Keyword.into()))
+        .create_field_index(opnum, STR_KEY, Some(&Keyword.into()))
         .unwrap();
     struct_segment
         .create_field_index(opnum, INT_KEY, None)
@@ -100,11 +100,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
         .create_field_index(opnum, TEXT_KEY, Some(&PayloadSchemaType::Text.into()))
         .unwrap();
     struct_segment
-        .create_field_index(
-            opnum,
-            FLICKING_KEY,
-            Some(&PayloadSchemaType::Integer.into()),
-        )
+        .create_field_index(opnum, FLICKING_KEY, Some(&Integer.into()))
         .unwrap();
 
     for _ in 0..points_to_clear {
@@ -176,27 +172,15 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     let mut opnum = 0;
     struct_segment
-        .create_field_index(
-            opnum,
-            &nested_str_key,
-            Some(&PayloadSchemaType::Keyword.into()),
-        )
+        .create_field_index(opnum, &nested_str_key, Some(&Keyword.into()))
         .unwrap();
 
     struct_segment
-        .create_field_index(
-            opnum,
-            &nested_str_proj_key,
-            Some(&PayloadSchemaType::Keyword.into()),
-        )
+        .create_field_index(opnum, &nested_str_proj_key, Some(&Keyword.into()))
         .unwrap();
 
     struct_segment
-        .create_field_index(
-            opnum,
-            &deep_nested_str_proj_key,
-            Some(&PayloadSchemaType::Keyword.into()),
-        )
+        .create_field_index(opnum, &deep_nested_str_proj_key, Some(&Keyword.into()))
         .unwrap();
 
     eprintln!("{}", deep_nested_str_proj_key);
@@ -794,4 +778,59 @@ fn test_update_payload_index_type() {
     let field_index = index.field_indexes.get("field").unwrap();
     assert_eq!(field_index[0].count_indexed_points(), point_num);
     assert_eq!(field_index[1].count_indexed_points(), point_num);
+}
+
+#[test]
+fn test_any_matcher_cardinality_estimation() {
+    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+
+    let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
+
+    let any_match = FieldCondition::new_match(
+        STR_KEY,
+        Match::new_any(AnyVariants::Keywords(vec![
+            "value1".to_string(),
+            "value2".to_string(),
+        ])),
+    );
+
+    let filter = Filter::new_must(Condition::Field(any_match.clone()));
+
+    let estimation = struct_segment
+        .payload_index
+        .borrow()
+        .estimate_cardinality(&filter);
+
+    // each `any` keyword generates a separate primary clause
+    assert_eq!(estimation.primary_clauses.len(), 2);
+    for (index, clause) in estimation.primary_clauses.iter().enumerate() {
+        let expected_primary_clause = FieldCondition::new_match(
+            STR_KEY.to_owned(),
+            format!("value{}", index + 1).to_string().into(),
+        );
+
+        match clause {
+            PrimaryCondition::Condition(field_condition) => {
+                assert_eq!(field_condition, &expected_primary_clause);
+            }
+            o => panic!("unexpected primary clause: {:?}", o),
+        }
+    }
+
+    let payload_index = struct_segment.payload_index.borrow();
+    let filter_context = payload_index.filter_context(&filter);
+    let exact = struct_segment
+        .id_tracker
+        .borrow()
+        .iter_ids()
+        .filter(|x| filter_context.check(*x))
+        .collect_vec()
+        .len();
+
+    eprintln!("exact = {exact:#?}");
+    eprintln!("estimation = {estimation:#?}");
+
+    assert!(exact <= estimation.max);
+    assert!(exact >= estimation.min);
 }
