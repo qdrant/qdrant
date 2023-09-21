@@ -4,7 +4,7 @@ use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
 
-use segment::common::file_operations::{atomic_save_json, read_json};
+use io::file_operations::{atomic_save_json, read_json};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

@@ -66,6 +66,7 @@ futures = "0.3.28"
 charabia = { version = "0.8.3", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 common = { path = "../common/common" }
+io = { path = "../common/io" }
 sparse = { path = "../sparse" }
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }

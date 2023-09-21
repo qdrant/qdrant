@@ -2,7 +2,7 @@ use std::backtrace::Backtrace;
 use std::io::Error as IoError;
 
 use collection::operations::types::CollectionError;
-use segment::common::file_operations::FileStorageError;
+use io::file_operations::FileStorageError;
 use tempfile::PersistError;
 use thiserror::Error;
 
