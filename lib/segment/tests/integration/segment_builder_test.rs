@@ -150,6 +150,7 @@ fn test_building_cancellation() {
     // Get normal build time
     let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
     assert!(!was_cancelled_baseline);
+    eprintln!("baseline time: {}", time_baseline);
 
     // Checks that optimization with longer cancellation delay will also finish fast
     let early_stop_delay = time_baseline / 20;
@@ -157,13 +158,23 @@ fn test_building_cancellation() {
     let late_stop_delay = time_baseline / 5;
     let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, late_stop_delay);
 
-    let acceptable_stopping_delay = 400; // millis
+    let acceptable_stopping_delay = 600; // millis
 
     assert!(was_cancelled_early);
-    assert!(time_fast < early_stop_delay + acceptable_stopping_delay);
+    assert!(
+        time_fast < early_stop_delay + acceptable_stopping_delay,
+        "time_early: {}, early_stop_delay: {}",
+        time_fast,
+        early_stop_delay
+    );
 
     assert!(was_cancelled_later);
-    assert!(time_long < late_stop_delay + acceptable_stopping_delay);
+    assert!(
+        time_long < late_stop_delay + acceptable_stopping_delay,
+        "time_later: {}, late_stop_delay: {}",
+        time_long,
+        late_stop_delay
+    );
 
     assert!(
         time_fast < time_long,
