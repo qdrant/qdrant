@@ -17,7 +17,6 @@ jobs:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
-    - run: echo ${{ github.event.pull_request.author_association }}
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
     - uses: actions/checkout@v4
