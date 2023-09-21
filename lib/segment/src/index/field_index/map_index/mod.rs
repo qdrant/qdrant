@@ -363,7 +363,14 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
             })) => {
                 let estimations = keywords
                     .iter()
-                    .map(|keyword| self.match_cardinality(keyword.as_str()))
+                    .map(|keyword| {
+                        let keyword_condition = FieldCondition::new_match(
+                            condition.key.clone(),
+                            keyword.to_owned().into(),
+                        );
+                        self.match_cardinality(keyword.as_str())
+                            .with_primary_clause(PrimaryCondition::Condition(keyword_condition))
+                    })
                     .collect::<Vec<_>>();
                 Some(combine_should_estimations(
                     &estimations,
@@ -450,7 +457,14 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             })) => {
                 let estimations = integers
                     .iter()
-                    .map(|integer| self.match_cardinality(integer))
+                    .map(|integer| {
+                        let integer_condition = FieldCondition::new_match(
+                            condition.key.clone(),
+                            integer.to_owned().into(),
+                        );
+                        self.match_cardinality(integer)
+                            .with_primary_clause(PrimaryCondition::Condition(integer_condition))
+                    })
                     .collect::<Vec<_>>();
                 Some(combine_should_estimations(
                     &estimations,

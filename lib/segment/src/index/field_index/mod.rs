@@ -46,7 +46,6 @@ pub struct CardinalityEstimation {
 }
 
 impl CardinalityEstimation {
-    #[allow(dead_code)]
     pub fn exact(count: usize) -> Self {
         CardinalityEstimation {
             primary_clauses: vec![],
