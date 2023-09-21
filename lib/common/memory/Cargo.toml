@@ -11,5 +11,6 @@ publish = false
 
 [dependencies]
 memmap2 = "0.7.1"
+log = "0.4"
 parking_lot = "0.12.1"
 serde = { version = "1", features = ["derive"] }
