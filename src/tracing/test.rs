@@ -24,7 +24,50 @@ fn deserialize_empty_config() {
     assert_eq!(config, LoggerConfig::default());
 }
 
+#[test]
+fn deserialize_logger_config_diff() {
+    let diff = deserialize_diff(config());
+
+    let expected = LoggerConfigDiff {
+        default: default::ConfigDiff {
+            log_level: Some(Some("debug".into())),
+            span_events: Some((fmt::format::FmtSpan::NEW | fmt::format::FmtSpan::CLOSE).into()),
+            color: Some(config::Color::Enable),
+        },
+    };
+
+    assert_eq!(diff, expected);
+}
+
+#[test]
+fn deserialize_empty_diff() {
+    let diff = deserialize_diff(empty_config());
+    assert_eq!(diff, LoggerConfigDiff::default());
+}
+
+#[test]
+fn deserialize_diff_with_explicit_nulls() {
+    let diff = deserialize_diff(json!({
+        "log_level": null,
+        "span_events": null,
+        "color": null,
+    }));
+
+    let expected = LoggerConfigDiff {
+        default: default::ConfigDiff {
+            log_level: Some(None),
+            ..Default::default()
+        },
+    };
+
+    assert_eq!(diff, expected);
+}
+
 fn deserialize_config(json: serde_json::Value) -> LoggerConfig {
+    serde_json::from_value(json).unwrap()
+}
+
+fn deserialize_diff(json: serde_json::Value) -> LoggerConfigDiff {
     serde_json::from_value(json).unwrap()
 }
 

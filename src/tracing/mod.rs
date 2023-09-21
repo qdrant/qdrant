@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod default;
+pub mod handle;
 
 #[cfg(test)]
 mod test;
@@ -10,10 +11,11 @@ use std::fmt::Write as _;
 use std::str::FromStr as _;
 
 use serde::Deserialize;
-use tracing_subscriber::filter;
 use tracing_subscriber::prelude::*;
+use tracing_subscriber::{filter, reload};
 
-pub use self::config::LoggerConfig;
+pub use self::config::{LoggerConfig, LoggerConfigDiff};
+pub use self::handle::LoggerHandle;
 
 const DEFAULT_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Info;
 
@@ -26,10 +28,14 @@ const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
     ("raft", log::LevelFilter::Warn),
 ];
 
-pub fn setup(config: &config::LoggerConfig) -> anyhow::Result<()> {
+pub fn setup(config: &config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
     let config = config.clone();
 
-    let reg = tracing_subscriber::registry().with(default::new(&config.default));
+    let default_logger = default::new(&config.default);
+    let (default_logger, default_logger_handle) = reload::Layer::new(default_logger);
+    let reg = tracing_subscriber::registry().with(default_logger);
+
+    let logger_handle = LoggerHandle::new(config, default_logger_handle);
 
     // Use `console` or `console-subscriber` feature to enable `console-subscriber`
     //
@@ -59,7 +65,7 @@ pub fn setup(config: &config::LoggerConfig) -> anyhow::Result<()> {
     tracing::subscriber::set_global_default(reg)?;
     tracing_log::LogTracer::init()?;
 
-    Ok(())
+    Ok(logger_handle)
 }
 
 fn filter(user_filters: &str) -> filter::EnvFilter {

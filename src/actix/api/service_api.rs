@@ -11,6 +11,7 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
@@ -22,6 +23,7 @@ use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
 use crate::common::telemetry::TelemetryCollector;
+use crate::tracing;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct TelemetryParam {
@@ -170,6 +172,29 @@ async fn kubernetes_healthz() -> impl Responder {
         .body("healthz check passed")
 }
 
+#[get("/logger")]
+async fn get_logger_config(handle: web::Data<tracing::LoggerHandle>) -> impl Responder {
+    let timing = Instant::now();
+    let result = handle.get_config().await;
+    helpers::process_response(Ok(result), timing)
+}
+
+#[post("/logger")]
+async fn update_logger_config(
+    handle: web::Data<tracing::LoggerHandle>,
+    config: web::Json<tracing::LoggerConfigDiff>,
+) -> impl Responder {
+    let timing = Instant::now();
+
+    let result = handle
+        .update_config(config.into_inner())
+        .await
+        .map(|_| true)
+        .map_err(|err| StorageError::service_error(err.to_string()));
+
+    helpers::process_response(result, timing)
+}
+
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
@@ -179,5 +204,7 @@ pub fn config_service_api(cfg: &mut web::ServiceConfig) {
         .service(get_stacktrace)
         .service(healthz)
         .service(livez)
-        .service(readyz);
+        .service(readyz)
+        .service(get_logger_config)
+        .service(update_logger_config);
 }

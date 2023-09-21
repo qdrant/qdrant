@@ -39,6 +39,7 @@ use crate::common::health;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
+use crate::tracing::LoggerHandle;
 
 const DEFAULT_STATIC_DIR: &str = "./static";
 const WEB_UI_PATH: &str = "/dashboard";
@@ -54,6 +55,7 @@ pub fn init(
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     health_checker: Option<Arc<health::HealthChecker>>,
     settings: Settings,
+    logger_handle: LoggerHandle,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let auth_keys = AuthKeys::try_create(
@@ -71,6 +73,7 @@ pub fn init(
             .actix_telemetry_collector
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
+        let logger_handle_data = web::Data::new(logger_handle);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
         let static_folder = settings
@@ -145,6 +148,7 @@ pub fn init(
                 ))
                 .app_data(dispatcher_data.clone())
                 .app_data(telemetry_collector_data.clone())
+                .app_data(logger_handle_data.clone())
                 .app_data(http_client.clone())
                 .app_data(health_checker.clone())
                 .app_data(validate_path_config)

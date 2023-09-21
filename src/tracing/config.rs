@@ -1,10 +1,10 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use tracing_subscriber::fmt;
 
 use super::*;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct LoggerConfig {
     #[serde(flatten)]
@@ -23,10 +23,27 @@ impl LoggerConfig {
         self.default.log_level = self.default.log_level.take().or(log_level);
         self
     }
+
+    pub fn update(&mut self, diff: LoggerConfigDiff) {
+        self.default.update(diff.default);
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, SmartDefault)]
-#[serde(from = "helpers::SpanEvents")]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct LoggerConfigDiff {
+    #[serde(flatten)]
+    pub default: default::ConfigDiff,
+}
+
+impl LoggerConfigDiff {
+    pub fn filter(&mut self, config: &LoggerConfig) {
+        self.default.filter(&config.default);
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, SmartDefault)]
+#[serde(from = "helpers::SpanEvents", into = "helpers::SpanEvents")]
 pub struct SpanEvents {
     #[default(fmt::format::FmtSpan::NONE)]
     events: fmt::format::FmtSpan,
@@ -44,8 +61,8 @@ impl From<SpanEvents> for fmt::format::FmtSpan {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, SmartDefault)]
-#[serde(from = "helpers::Color")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, SmartDefault)]
+#[serde(from = "helpers::Color", into = "helpers::Color")]
 pub enum Color {
     #[default]
     Auto,
@@ -66,7 +83,7 @@ impl Color {
 mod helpers {
     use super::*;
 
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize, Serialize)]
     #[serde(untagged)]
     pub enum SpanEvents {
         Some(Vec<SpanEvent>),
@@ -75,6 +92,16 @@ mod helpers {
     }
 
     impl SpanEvents {
+        pub fn from_fmt_span(events: fmt::format::FmtSpan) -> Self {
+            let events = SpanEvent::from_fmt_span(events);
+
+            if !events.is_empty() {
+                Self::Some(events)
+            } else {
+                Self::None(NoneTag::None)
+            }
+        }
+
         pub fn to_fmt_span(&self) -> fmt::format::FmtSpan {
             self.as_slice()
                 .iter()
@@ -92,13 +119,19 @@ mod helpers {
         }
     }
 
+    impl From<super::SpanEvents> for SpanEvents {
+        fn from(events: super::SpanEvents) -> Self {
+            Self::from_fmt_span(events.into())
+        }
+    }
+
     impl From<SpanEvents> for super::SpanEvents {
         fn from(events: SpanEvents) -> Self {
             events.to_fmt_span().into()
         }
     }
 
-    #[derive(Copy, Clone, Debug, Deserialize)]
+    #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
     #[serde(rename_all = "lowercase")]
     pub enum SpanEvent {
         New,
@@ -108,6 +141,21 @@ mod helpers {
     }
 
     impl SpanEvent {
+        pub fn from_fmt_span(events: fmt::format::FmtSpan) -> Vec<Self> {
+            const EVENTS: &[SpanEvent] = &[
+                SpanEvent::New,
+                SpanEvent::Enter,
+                SpanEvent::Exit,
+                SpanEvent::Close,
+            ];
+
+            EVENTS
+                .iter()
+                .copied()
+                .filter(|event| events.clone() & event.to_fmt_span() == event.to_fmt_span())
+                .collect()
+        }
+
         pub fn to_fmt_span(self) -> fmt::format::FmtSpan {
             match self {
                 SpanEvent::New => fmt::format::FmtSpan::NEW,
@@ -118,17 +166,27 @@ mod helpers {
         }
     }
 
-    #[derive(Copy, Clone, Debug, Deserialize)]
+    #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
     #[serde(rename_all = "lowercase")]
     pub enum NoneTag {
         None,
     }
 
-    #[derive(Copy, Clone, Debug, Deserialize)]
+    #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
     #[serde(untagged)]
     pub enum Color {
         Auto(AutoTag),
         Bool(bool),
+    }
+
+    impl From<super::Color> for Color {
+        fn from(color: super::Color) -> Self {
+            match color {
+                super::Color::Auto => Self::Auto(AutoTag::Auto),
+                super::Color::Enable => Self::Bool(true),
+                super::Color::Disable => Self::Bool(false),
+            }
+        }
     }
 
     impl From<Color> for super::Color {
@@ -141,7 +199,7 @@ mod helpers {
         }
     }
 
-    #[derive(Copy, Clone, Debug, Deserialize)]
+    #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
     #[serde(rename_all = "lowercase")]
     pub enum AutoTag {
         Auto,
