@@ -371,14 +371,22 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         ))
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        condition.range.as_ref().map(|range| {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
+        match condition.range.as_ref().map(|range| {
             let mut cardinality = self.range_cardinality(range);
             cardinality
                 .primary_clauses
                 .push(PrimaryCondition::Condition(condition.clone()));
             cardinality
-        })
+        }) {
+            Some(cardinality) => Ok(cardinality),
+            None => Err(OperationError::service_error(
+                "failed to estimate cardinality",
+            )),
+        }
     }
 
     fn payload_blocks(

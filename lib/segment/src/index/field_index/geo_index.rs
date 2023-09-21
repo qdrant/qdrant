@@ -568,26 +568,30 @@ impl PayloadFieldIndex for GeoMapIndex {
         None
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
             let mut estimation = self.match_cardinality(&geo_hashes);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(condition.clone()));
-            return Some(estimation);
+            return Ok(estimation);
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
-            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
             let mut estimation = self.match_cardinality(&geo_hashes);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(condition.clone()));
-            return Some(estimation);
+            return Ok(estimation);
         }
-
-        None
+        Err(OperationError::service_error(
+            "failed to estimate cardinality",
+        ))
     }
 
     fn payload_blocks(

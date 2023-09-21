@@ -68,7 +68,7 @@ impl StructPayloadIndex {
             };
             let mut result_estimation: Option<CardinalityEstimation> = None;
             for index in indexes {
-                result_estimation = index.estimate_cardinality(&full_path_condition);
+                result_estimation = index.estimate_cardinality(&full_path_condition).ok();
                 if result_estimation.is_some() {
                     break;
                 }
