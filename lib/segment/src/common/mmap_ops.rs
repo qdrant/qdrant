@@ -6,10 +6,10 @@ use std::sync::Arc;
 use std::{mem, ops, time};
 
 use memmap2::{Mmap, MmapMut};
+use memory::madvise;
+use memory::madvise::Madviseable;
 
 use crate::entry::entry_point::OperationResult;
-use crate::madvise;
-use crate::madvise::Madviseable;
 
 pub fn create_and_ensure_length(path: &Path, length: usize) -> OperationResult<()> {
     let file = OpenOptions::new()

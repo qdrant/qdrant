@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use memmap2::{Mmap, MmapMut};
-
-use crate::madvise;
+use memory::madvise;
 
 pub struct QuantizedMmapStorage {
     mmap: Mmap,

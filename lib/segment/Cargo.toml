@@ -67,6 +67,7 @@ charabia = { version = "0.8.3", default-features = false, features = ["greek", "
 
 common = { path = "../common/common" }
 io = { path = "../common/io" }
+memory = { path = "../common/memory" }
 sparse = { path = "../sparse" }
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }
