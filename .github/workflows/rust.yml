@@ -41,14 +41,13 @@ jobs:
         
   # After tests are run, this hacky script will process the JUnit output of nextest
   # and will create a GH Issue if there is a test marked as flaky, 
-  # only if the PR is from a member of qdrant team, otherwise, permissions to edit issues will fail.
+  # Failure of updating an issue is ignored because it fails for external contributors.
   process-results:
     runs-on: ubuntu-latest
     needs: test
     permissions:
       contents: read
       issues: write 
-    if: ${{ contains(fromJSON('["COLLABORATOR", "OWNER"]'), github.event.pull_request.author_association) || github.event.pull_request == null }}
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest  ]
@@ -81,6 +80,7 @@ jobs:
             .github/ISSUE_TEMPLATE/flaky_test.md
           sparse-checkout-cone-mode: false
       - name: Create issue for flaky tests
+        continue-on-error: true
         id: create-issue
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
         uses: JasonEtco/create-an-issue@v2
