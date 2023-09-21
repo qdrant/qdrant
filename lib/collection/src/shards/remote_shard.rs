@@ -7,7 +7,7 @@ use api::grpc::qdrant::points_internal_client::PointsInternalClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    InitiateShardTransferRequest, ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal,
+    InitiateShardTransferRequest, ScrollPoints, ScrollPointsInternal,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -485,51 +485,10 @@ impl ShardOperation for RemoteShard {
         batch_request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
-        timer.set_success(false);
-
-        let search_points = batch_request
-            .searches
-            .iter()
-            .map(|s| CollectionSearchRequest((self.collection_id.clone(), s)).into())
-            .collect();
-
-        let request = &SearchBatchPointsInternal {
-            collection_name: self.collection_id.clone(),
-            search_points,
-            shard_id: Some(self.id),
-        };
-        let search_batch_response = self
-            .with_points_client(|mut client| async move {
-                client
-                    .search_batch(tonic::Request::new(request.clone()))
-                    .await
-            })
-            .await?
-            .into_inner();
-
-        let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_batch_response
-            .result
-            .into_iter()
-            .zip(batch_request.searches.iter())
-            .map(|(batch_result, request)| {
-                let is_payload_required = request
-                    .with_payload
-                    .as_ref()
-                    .map_or(false, |with_payload| with_payload.is_required());
-
-                batch_result
-                    .result
-                    .into_iter()
-                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
-                    .collect()
-            })
-            .collect();
-        let result = result.map_err(|e| e.into());
-        if result.is_ok() {
-            timer.set_success(true);
-        }
-        result
+        // Transform legacy search request into newer core type, this does clone
+        let core_batch_request = Arc::new(batch_request.as_ref().into());
+        self.core_search(core_batch_request, search_runtime_handle)
+            .await
     }
 
     async fn core_search(

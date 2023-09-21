@@ -1159,10 +1159,18 @@ pub struct BaseGroupRequest {
 impl From<SearchRequestBatch> for CoreSearchRequestBatch {
     fn from(batch: SearchRequestBatch) -> Self {
         CoreSearchRequestBatch {
+            searches: batch.searches.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&SearchRequestBatch> for CoreSearchRequestBatch {
+    fn from(batch: &SearchRequestBatch) -> Self {
+        CoreSearchRequestBatch {
             searches: batch
                 .searches
-                .into_iter()
-                .map(CoreSearchRequest::from)
+                .iter()
+                .map(|search| search.clone().into())
                 .collect(),
         }
     }
