@@ -236,7 +236,12 @@ fn create_hashes(
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole circle.
 pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
-    assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
+    if max_regions == 0 {
+        return Err(OperationError::service_error(
+            "max_regions cannot be equal to zero",
+        ));
+    }
+
     let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
@@ -259,7 +264,11 @@ pub fn rectangle_hashes(
     rectangle: &GeoBoundingBox,
     max_regions: usize,
 ) -> OperationResult<Vec<GeoHash>> {
-    assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
+    if max_regions == 0 {
+        return Err(OperationError::service_error(
+            "max_regions cannot be equal to zero",
+        ));
+    }
     let full_geohash_bounding_box: GeohashBoundingBox = rectangle.clone().into();
 
     let mapping_fn = |precision| full_geohash_bounding_box.geohash_regions(precision, max_regions);
@@ -269,7 +278,11 @@ pub fn rectangle_hashes(
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole polygon.
 pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
-    assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
+    if max_regions == 0 {
+        return Err(OperationError::service_error(
+            "max_regions cannot be equal to zero",
+        ));
+    }
     let geo_bounding_box = minimum_bounding_rectangle_for_polygon(polygon);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
@@ -932,5 +945,47 @@ mod tests {
         let common_prefix = common_hash_prefix(&geo_hashes);
 
         assert_eq!(&common_prefix, "");
+    }
+
+    #[test]
+    fn max_regions_cannot_be_equal_to_zero() {
+        let invalid_max_hashes = 0;
+
+        // circle
+        let sample_circle = GeoRadius {
+            center: GeoPoint {
+                lon: 179.987181,
+                lat: 44.9811609411936,
+            },
+            radius: 100000.,
+        };
+        let circle_hashes = circle_hashes(&sample_circle, invalid_max_hashes);
+        assert!(circle_hashes.is_err());
+
+        // rectangle
+        let top_left = GeoPoint {
+            lon: -74.00101399,
+            lat: 40.76517460,
+        };
+
+        let bottom_right = GeoPoint {
+            lon: -73.98201792,
+            lat: 40.75078539,
+        };
+
+        let sample_rectangle = GeoBoundingBox {
+            top_left: top_left.clone(),
+            bottom_right: bottom_right.clone(),
+        };
+        let rectangle_hashes = rectangle_hashes(&sample_rectangle, invalid_max_hashes);
+        assert!(rectangle_hashes.is_err());
+
+        // polygon
+        let sample_polygon = GeoPolygon {
+            points: vec![top_left, bottom_right],
+        };
+
+        let polygon_hashes = polygon_hashes(&sample_polygon, invalid_max_hashes);
+        assert!(polygon_hashes.is_err());
     }
 }
