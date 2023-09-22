@@ -257,7 +257,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     replication_factor: Some(config.params.replication_factor.get()),
                     on_disk_payload: config.params.on_disk_payload,
                     write_consistency_factor: Some(config.params.write_consistency_factor.get()),
-                    read_fan_out_factor: Some(config.params.read_fan_out_factor),
+                    read_fan_out_factor: config.params.read_fan_out_factor,
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
@@ -502,7 +502,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         Status::invalid_argument("`write_consistency_factor` cannot be zero")
                     })?,
 
-                    read_fan_out_factor: params.read_fan_out_factor.unwrap_or(0), // Default `read_fan_out_factor` is `0`
+                    read_fan_out_factor: params.read_fan_out_factor,
                 },
             },
             hnsw_config: match config.hnsw_config {

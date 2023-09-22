@@ -918,6 +918,7 @@ impl ShardReplicaSet {
             .await
             .params
             .read_fan_out_factor
+            .unwrap_or_default()
             .try_into()
             .expect("u32 can be converted into usize");
 
@@ -1794,7 +1795,7 @@ impl ShardReplicaSet {
 
 #[cfg(test)]
 mod tests {
-    use std::num::{NonZeroU32, NonZeroU64};
+    use std::num::NonZeroU64;
 
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
@@ -1836,11 +1837,7 @@ mod tests {
                 quantization_config: None,
                 on_disk: None,
             }),
-            shard_number: NonZeroU32::new(4).unwrap(),
-            replication_factor: NonZeroU32::new(3).unwrap(),
-            write_consistency_factor: NonZeroU32::new(2).unwrap(),
-            read_fan_out_factor: 0,
-            on_disk_payload: false,
+            ..CollectionParams::empty()
         };
 
         let config = CollectionConfig {
