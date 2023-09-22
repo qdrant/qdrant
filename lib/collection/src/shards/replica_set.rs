@@ -780,7 +780,7 @@ impl ShardReplicaSet {
             return self.execute_local_read_operation(read_operation).await;
         }
 
-        let read_consistency =  read_consistency.unwrap_or_default();
+        let read_consistency = read_consistency.unwrap_or_default();
 
         let local_count = usize::from(self.peer_state(&self.this_peer_id()).is_some());
         let active_local_count = usize::from(self.peer_is_active(&self.this_peer_id()));
@@ -1705,7 +1705,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
-            local_only
+            local_only,
         )
         .await
     }
@@ -1804,7 +1804,7 @@ impl ShardReplicaSet {
                 async move { shard.retrieve(request, &with_payload, &with_vector).await }.boxed()
             },
             read_consistency,
-            local_only
+            local_only,
         )
         .await
     }

@@ -938,13 +938,9 @@ impl Collection {
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
-            let all_searches = target_shards
-                .iter()
-                .map(|shard| shard.search(
-                    request.clone(),
-                    read_consistency,
-                    shard_selection.is_some()
-                ));
+            let all_searches = target_shards.iter().map(|shard| {
+                shard.search(request.clone(), read_consistency, shard_selection.is_some())
+            });
             try_join_all(all_searches).await?
         };
 
@@ -1137,7 +1133,7 @@ impl Collection {
                     &with_vector,
                     request.filter.as_ref(),
                     read_consistency,
-                    shard_selection.is_some()
+                    shard_selection.is_some(),
                 )
             });
 
@@ -1208,7 +1204,7 @@ impl Collection {
                     &with_payload,
                     &request.with_vector,
                     read_consistency,
-                    shard_selection.is_some()
+                    shard_selection.is_some(),
                 )
             });
             try_join_all(retrieve_futures).await?
