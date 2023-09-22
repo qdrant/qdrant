@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing_subscriber::{reload, Registry};
+use tracing_subscriber::{layer, reload, Registry};
 
 use super::*;
 
@@ -9,19 +9,37 @@ use super::*;
 pub struct LoggerHandle {
     config: Arc<RwLock<config::LoggerConfig>>,
     default: DefaultLoggerReloadHandle,
+    on_disk: OnDiskLoggerReloadHandle,
 }
 
 #[rustfmt::skip] // `rustfmt` formats this into unreadable single line
-type DefaultLoggerReloadHandle<S = Registry> = reload::Handle<
+type DefaultLoggerReloadHandle<S = DefaultLoggerSubscriber> = reload::Handle<
     default::Logger<S>,
     S,
 >;
 
+#[rustfmt::skip] // `rustfmt` formats this into unreadable single line
+type DefaultLoggerSubscriber<S = Registry> = layer::Layered<
+    reload::Layer<on_disk::Logger<S>, S>,
+    S,
+>;
+
+#[rustfmt::skip] // `rustfmt` formats this into unreadable single line
+type OnDiskLoggerReloadHandle<S = Registry> = reload::Handle<
+    on_disk::Logger<S>,
+    S,
+>;
+
 impl LoggerHandle {
-    pub fn new(config: config::LoggerConfig, default: DefaultLoggerReloadHandle) -> Self {
+    pub fn new(
+        config: config::LoggerConfig,
+        default: DefaultLoggerReloadHandle,
+        on_disk: OnDiskLoggerReloadHandle,
+    ) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
             default,
+            on_disk,
         }
     }
 
@@ -46,6 +64,18 @@ impl LoggerHandle {
 
         let mut merged_config = config.clone();
         merged_config.merge(new_config);
+
+        if merged_config.on_disk != config.on_disk {
+            let new_layer = on_disk::new_layer(&merged_config.on_disk)?;
+            let new_filter = on_disk::new_filter(&merged_config.on_disk);
+
+            self.on_disk.modify(move |logger| {
+                *logger.inner_mut() = new_layer;
+                *logger.filter_mut() = new_filter;
+            })?;
+
+            config.on_disk = merged_config.on_disk;
+        }
 
         if merged_config.default != config.default {
             let new_layer = default::new_layer(&merged_config.default);
