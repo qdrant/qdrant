@@ -21,6 +21,76 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
 
+impl LocalShard {
+    async fn do_search(
+        &self,
+        core_request: Arc<CoreSearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let (collection_params, indexing_threshold_kb) = {
+            let collection_config = self.collection_config.read().await;
+            (
+                collection_config.params.clone(),
+                collection_config
+                    .optimizer_config
+                    .indexing_threshold
+                    .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
+            )
+        };
+
+        // check vector names existing
+        for req in &core_request.searches {
+            collection_params.get_vector_params(req.query.get_vector_name())?;
+        }
+
+        let is_stopped = StoppingGuard::new();
+
+        let search_request = SegmentsSearcher::search(
+            self.segments(),
+            core_request.clone(),
+            search_runtime_handle,
+            true,
+            is_stopped.get_is_stopped(),
+            indexing_threshold_kb,
+        );
+        let timeout = self.shared_storage_config.search_timeout;
+        let res: Vec<Vec<ScoredPoint>> = tokio::select! {
+            res = search_request => res,
+            _ = tokio::time::sleep(timeout) => {
+                is_stopped.stop();
+                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
+                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
+            }
+        }?;
+
+        let top_results = res
+            .into_iter()
+            .zip(core_request.searches.iter())
+            .map(|(vector_res, req)| {
+                let vector_name = req.query.get_vector_name();
+                let distance = collection_params
+                    .get_vector_params(vector_name)
+                    .unwrap()
+                    .distance;
+                let processed_res = vector_res.into_iter().map(|mut scored_point| {
+                    scored_point.score = distance.postprocess_score(scored_point.score);
+                    scored_point
+                });
+
+                if let Some(threshold) = req.score_threshold {
+                    processed_res
+                        .take_while(|scored_point| {
+                            distance.check_threshold(scored_point.score, threshold)
+                        })
+                        .collect()
+                } else {
+                    processed_res.collect()
+                }
+            })
+            .collect();
+        Ok(top_results)
+    }
+}
 #[async_trait]
 impl ShardOperation for LocalShard {
     /// Imply interior mutability.
@@ -116,75 +186,28 @@ impl ShardOperation for LocalShard {
         Ok(self.local_shard_info().await)
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn search(
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let (collection_params, indexing_threshold_kb) = {
-            let collection_config = self.collection_config.read().await;
-            (
-                collection_config.params.clone(),
-                collection_config
-                    .optimizer_config
-                    .indexing_threshold
-                    .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
-            )
-        };
-
-        let core_request = Arc::new(CoreSearchRequestBatch::from(request.as_ref().clone()));
-
-        // check vector names existing
-        for req in &core_request.searches {
-            collection_params.get_vector_params(req.query.get_vector_name())?;
-        }
-
-        let is_stopped = StoppingGuard::new();
-
-        let search_request = SegmentsSearcher::search(
-            self.segments(),
-            core_request.clone(),
+        self.do_search(
+            Arc::new(request.as_ref().clone().into()),
             search_runtime_handle,
-            true,
-            is_stopped.get_is_stopped(),
-            indexing_threshold_kb,
-        );
-        let timeout = self.shared_storage_config.search_timeout;
-        let res: Vec<Vec<ScoredPoint>> = tokio::select! {
-            res = search_request => res,
-            _ = tokio::time::sleep(timeout) => {
-                is_stopped.stop();
-                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
-                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
-            }
-        }?;
+        )
+        .await
+    }
 
-        let top_results = res
-            .into_iter()
-            .zip(core_request.searches.iter())
-            .map(|(vector_res, req)| {
-                let vector_name = req.query.get_vector_name();
-                let distance = collection_params
-                    .get_vector_params(vector_name)
-                    .unwrap()
-                    .distance;
-                let processed_res = vector_res.into_iter().map(|mut scored_point| {
-                    scored_point.score = distance.postprocess_score(scored_point.score);
-                    scored_point
-                });
-
-                if let Some(threshold) = req.score_threshold {
-                    processed_res
-                        .take_while(|scored_point| {
-                            distance.check_threshold(scored_point.score, threshold)
-                        })
-                        .collect()
-                } else {
-                    processed_res.collect()
-                }
-            })
-            .collect();
-        Ok(top_results)
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
+    async fn core_search(
+        &self,
+        request: Arc<CoreSearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        self.do_search(request, search_runtime_handle).await
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {

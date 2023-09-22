@@ -14,14 +14,14 @@ use validator::Validate;
 /// Validate the given request and fail on error.
 ///
 /// Returns validation error on failure.
-fn validate(request: &dyn Validate) -> Result<(), Status> {
+fn validate(request: &impl Validate) -> Result<(), Status> {
     request.validate().map_err(|ref err| {
         Status::invalid_argument(validation::label_errors("Validation error in body", err))
     })
 }
 
 /// Validate the given request. Returns validation error on failure.
-fn validate_and_log(request: &dyn Validate) {
+fn validate_and_log(request: &impl Validate) {
     if let Err(ref err) = request.validate() {
         validation::warn_validation_errors("Internal gRPC", err);
     }
