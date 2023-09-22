@@ -131,6 +131,7 @@ mod group_by {
 
         let request = GroupRequest::with_limit_from_request(
             SourceRequest::Recommend(RecommendRequest {
+                strategy: Default::default(),
                 filter: None,
                 params: None,
                 limit: 4,

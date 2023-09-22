@@ -281,6 +281,18 @@ message ScrollPoints {
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
 }
 
+// How to use positive and negative vectors to find the results, default is `AverageVector`:
+enum RecommendStrategy {
+  // Average positive and negative vectors and create a single query with the formula 
+  // `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
+  AverageVector = 0;
+
+  // Uses custom search objective. Each candidate is compared against all 
+  // examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. 
+  // If the `max_neg_score` is chosen then it is squared and negated.
+  BestScore = 1;
+}
+
 message LookupLocation {
   string collection_name = 1;
   optional string vector_name = 2; // Which vector to use for search, if not specified - use default vector
@@ -301,6 +313,7 @@ message RecommendPoints {
   optional WithVectorsSelector with_vectors = 12; // Options for specifying which vectors to include into response
   optional LookupLocation lookup_from = 13; // Name of the collection to use for points lookup, if not specified - use current collection
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
+  optional RecommendStrategy strategy = 16; // How to use the example vectors to find the results
 }
 
 message RecommendBatchPoints {
@@ -325,6 +338,7 @@ message RecommendPointGroups {
   uint32 group_size = 13; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
   optional WithLookup with_lookup = 15; // Options for specifying how to use the group id to lookup points in another collection
+  optional RecommendStrategy strategy = 17; // How to use the example vectors to find the results
 }
 
 message CountPoints {
