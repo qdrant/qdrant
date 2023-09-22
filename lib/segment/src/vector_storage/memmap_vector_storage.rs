@@ -7,10 +7,11 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
+use memory::mmap_ops;
 
 use super::quantized::quantized_vectors::QuantizedVectors;
 use super::VectorStorageEnum;
-use crate::common::{mmap_ops, Flusher};
+use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
@@ -240,10 +241,10 @@ fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
 mod tests {
     use std::mem::transmute;
 
+    use memory::mmap_ops::transmute_to_u8_slice;
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::mmap_ops::transmute_to_u8_slice;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::data_types::vectors::QueryVector;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;

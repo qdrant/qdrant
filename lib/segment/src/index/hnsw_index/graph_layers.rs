@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use io::file_operations::{atomic_save_bin, read_bin, FileStorageError};
 use itertools::Itertools;
+use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
 use super::graph_links::{GraphLinks, GraphLinksMmap};
-use crate::common::mmap_ops;
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;

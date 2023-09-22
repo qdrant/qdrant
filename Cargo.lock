@@ -2914,6 +2914,7 @@ dependencies = [
 name = "memory"
 version = "0.0.0"
 dependencies = [
+ "log",
  "memmap2 0.7.1",
  "parking_lot",
  "serde",

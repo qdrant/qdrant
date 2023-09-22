@@ -473,12 +473,12 @@ mod tests {
     use std::fmt::Debug;
     use std::iter;
 
+    use memory::mmap_ops;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use tempfile::{Builder, NamedTempFile};
 
     use super::*;
-    use crate::common::mmap_ops;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
         let tempfile = Builder::new()

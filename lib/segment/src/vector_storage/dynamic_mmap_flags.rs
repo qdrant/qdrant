@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use crate::common::mmap_type::{MmapBitSlice, MmapType};
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -72,7 +72,8 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
         let mmap = open_write_mmap(&status_file)?;
         Ok(mmap)
     } else {
-        open_write_mmap(&status_file)
+        let mmap = open_write_mmap(&status_file)?;
+        Ok(mmap)
     }
 }
 
