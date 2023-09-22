@@ -1745,6 +1745,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
@@ -1753,7 +1754,8 @@ impl ShardReplicaSet {
 
                 async move { shard.core_search(request, &search_runtime).await }.boxed()
             },
-            read_consistency.unwrap_or_default(),
+            read_consistency,
+            local_only,
         )
         .await
     }

@@ -966,9 +966,9 @@ impl Collection {
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
-            let all_searches = target_shards
-                .iter()
-                .map(|shard| shard.core_search(request.clone(), read_consistency));
+            let all_searches = target_shards.iter().map(|shard| {
+                shard.core_search(request.clone(), read_consistency, shard_selection.is_some())
+            });
             try_join_all(all_searches).await?
         };
 
