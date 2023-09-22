@@ -278,12 +278,14 @@ message CollectionParams {
   optional VectorsConfig vectors_config = 5; // Configuration for vectors
   optional uint32 replication_factor = 6; // Number of replicas of each shard that network tries to maintain
   optional uint32 write_consistency_factor = 7; // How many replicas should apply the operation for us to consider it successful
+  optional uint32 read_fan_out_factor = 8; // Fan-out every read request to these many additional remote nodes (and return first available response)
 }
 
 message CollectionParamsDiff {
   optional uint32 replication_factor = 1; // Number of replicas of each shard that network tries to maintain
   optional uint32 write_consistency_factor = 2; // How many replicas should apply the operation for us to consider it successful
   optional bool on_disk_payload = 3; // If true - point's payload will not be stored in memory
+  optional uint32 read_fan_out_factor = 4; // Fan-out every read request to these many additional remote nodes (and return first available response)
 }
 
 message CollectionConfig {

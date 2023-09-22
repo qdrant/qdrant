@@ -489,6 +489,9 @@ pub struct CollectionParams {
     /// How many replicas should apply the operation for us to consider it successful
     #[prost(uint32, optional, tag = "7")]
     pub write_consistency_factor: ::core::option::Option<u32>,
+    /// Fan-out every read request to these many additional remote nodes (and return first available response)
+    #[prost(uint32, optional, tag = "8")]
+    pub read_fan_out_factor: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -504,6 +507,9 @@ pub struct CollectionParamsDiff {
     /// If true - point's payload will not be stored in memory
     #[prost(bool, optional, tag = "3")]
     pub on_disk_payload: ::core::option::Option<bool>,
+    /// Fan-out every read request to these many additional remote nodes (and return first available response)
+    #[prost(uint32, optional, tag = "4")]
+    pub read_fan_out_factor: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

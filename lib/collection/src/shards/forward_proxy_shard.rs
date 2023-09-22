@@ -140,6 +140,10 @@ impl ForwardProxyShard {
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         self.wrapped_shard.get_telemetry_data()
     }
+
+    pub fn is_update_in_progress(&self) -> bool {
+        self.wrapped_shard.is_update_in_progress()
+    }
 }
 
 #[async_trait]

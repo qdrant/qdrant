@@ -1,7 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
@@ -65,10 +65,7 @@ fn batch_search_bench(c: &mut Criterion) {
             on_disk: None,
         }
         .into(),
-        shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
-        replication_factor: NonZeroU32::new(1).unwrap(),
-        write_consistency_factor: NonZeroU32::new(1).unwrap(),
-        on_disk_payload: false,
+        ..CollectionParams::empty()
     };
 
     let collection_config = CollectionConfig {

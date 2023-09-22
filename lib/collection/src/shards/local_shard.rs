@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
 use uuid::Uuid;
 use wal::{Wal, WalOptions};
 
+use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
@@ -58,6 +59,7 @@ pub struct LocalShard {
     pub(super) wal: LockedWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
+    pub(super) update_tracker: UpdateTracker,
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
@@ -66,6 +68,10 @@ pub struct LocalShard {
 
 /// Shard holds information about segments and WAL.
 impl LocalShard {
+    pub fn is_update_in_progress(&self) -> bool {
+        self.update_tracker.is_update_in_progress()
+    }
+
     pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
         let wal_from = Self::wal_path(from);
         let wal_to = Self::wal_path(to);
@@ -132,6 +138,8 @@ impl LocalShard {
             mpsc::channel(shared_storage_config.update_queue_size);
         update_handler.run_workers(update_receiver);
 
+        let update_tracker = segment_holder.read().update_tracker();
+
         drop(config); // release `shared_config` from borrow checker
 
         Self {
@@ -141,6 +149,7 @@ impl LocalShard {
             wal: locked_wal,
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
+            update_tracker,
             path: shard_path.to_owned(),
             update_runtime,
             optimizers,

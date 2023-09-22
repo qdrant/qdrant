@@ -239,7 +239,7 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::num::{NonZeroU32, NonZeroU64};
+    use std::num::NonZeroU64;
     use std::ops::Deref;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -317,10 +317,7 @@ mod tests {
             segments_temp_dir.path().to_owned(),
             CollectionParams {
                 vectors: VectorsConfig::Multi(vectors_config),
-                shard_number: NonZeroU32::new(1).unwrap(),
-                replication_factor: NonZeroU32::new(1).unwrap(),
-                write_consistency_factor: NonZeroU32::new(1).unwrap(),
-                on_disk_payload: false,
+                ..CollectionParams::empty()
             },
             Default::default(),
             Default::default(),
@@ -421,10 +418,7 @@ mod tests {
                     quantization_config: None,
                     on_disk: None,
                 }),
-                shard_number: NonZeroU32::new(1).unwrap(),
-                replication_factor: NonZeroU32::new(1).unwrap(),
-                write_consistency_factor: NonZeroU32::new(1).unwrap(),
-                on_disk_payload: false,
+                ..CollectionParams::empty()
             },
             Default::default(),
             Default::default(),

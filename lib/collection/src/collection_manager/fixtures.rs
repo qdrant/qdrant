@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -219,10 +219,7 @@ pub(crate) fn get_merge_optimizer(
                 quantization_config: None,
                 on_disk: None,
             }),
-            shard_number: NonZeroU32::new(1).unwrap(),
-            on_disk_payload: false,
-            replication_factor: NonZeroU32::new(1).unwrap(),
-            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
         },
         Default::default(),
         Default::default(),
@@ -250,10 +247,7 @@ pub(crate) fn get_indexing_optimizer(
                 quantization_config: None,
                 on_disk: None,
             }),
-            shard_number: NonZeroU32::new(1).unwrap(),
-            on_disk_payload: false,
-            replication_factor: NonZeroU32::new(1).unwrap(),
-            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
         },
         Default::default(),
         Default::default(),

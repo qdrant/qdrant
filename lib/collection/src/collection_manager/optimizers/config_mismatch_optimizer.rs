@@ -287,10 +287,7 @@ mod tests {
                 quantization_config: None,
                 on_disk: None,
             }),
-            shard_number: 1.try_into().unwrap(),
-            on_disk_payload: false,
-            replication_factor: 1.try_into().unwrap(),
-            write_consistency_factor: 1.try_into().unwrap(),
+            ..CollectionParams::empty()
         };
 
         // Base segment
@@ -434,10 +431,7 @@ mod tests {
                     },
                 ),
             ])),
-            shard_number: 1.try_into().unwrap(),
-            on_disk_payload: false,
-            replication_factor: 1.try_into().unwrap(),
-            write_consistency_factor: 1.try_into().unwrap(),
+            ..CollectionParams::empty()
         };
 
         // Base segment
@@ -602,10 +596,7 @@ mod tests {
                     },
                 ),
             ])),
-            shard_number: 1.try_into().unwrap(),
-            on_disk_payload: false,
-            replication_factor: 1.try_into().unwrap(),
-            write_consistency_factor: 1.try_into().unwrap(),
+            ..CollectionParams::empty()
         };
 
         // Base segment
