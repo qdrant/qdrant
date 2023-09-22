@@ -1210,6 +1210,8 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+    // ! please replicate any changes to both methods
     pub async fn core_search_batch(
         &self,
         collection_name: &str,

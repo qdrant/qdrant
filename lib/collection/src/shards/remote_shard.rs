@@ -480,6 +480,8 @@ impl ShardOperation for RemoteShard {
         result.map_err(|e| e.into())
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn search(
         &self,
         batch_request: Arc<SearchRequestBatch>,
@@ -532,6 +534,8 @@ impl ShardOperation for RemoteShard {
         result
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         batch_request: Arc<CoreSearchRequestBatch>,

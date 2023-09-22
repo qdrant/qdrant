@@ -80,6 +80,8 @@ impl ShardOperation for DummyShard {
         self.dummy()
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn search(
         &self,
         _: Arc<SearchRequestBatch>,
@@ -88,6 +90,8 @@ impl ShardOperation for DummyShard {
         self.dummy()
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         _: Arc<CoreSearchRequestBatch>,

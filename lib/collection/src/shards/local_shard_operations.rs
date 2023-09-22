@@ -22,7 +22,7 @@ use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
 
 impl LocalShard {
-    async fn _search(
+    async fn do_search(
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
@@ -186,24 +186,28 @@ impl ShardOperation for LocalShard {
         Ok(self.local_shard_info().await)
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn search(
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self._search(
+        self.do_search(
             Arc::new(request.as_ref().clone().into()),
             search_runtime_handle,
         )
         .await
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self._search(request, search_runtime_handle).await
+        self.do_search(request, search_runtime_handle).await
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {

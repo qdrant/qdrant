@@ -204,6 +204,8 @@ impl ShardOperation for QueueProxyShard {
     }
 
     /// Forward read-only `search` to `wrapped_shard`
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn search(
         &self,
         request: Arc<SearchRequestBatch>,
@@ -213,6 +215,8 @@ impl ShardOperation for QueueProxyShard {
         local_shard.search(request, search_runtime_handle).await
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,

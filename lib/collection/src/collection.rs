@@ -762,6 +762,8 @@ impl Collection {
         }
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     pub async fn search_batch(
         &self,
         request: SearchRequestBatch,
@@ -818,7 +820,7 @@ impl Collection {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
-                ._search_batch(without_payload_batch, read_consistency, shard_selection)
+                .do_search_batch(without_payload_batch, read_consistency, shard_selection)
                 .await?;
             let filled_results = without_payload_results
                 .into_iter()
@@ -835,12 +837,14 @@ impl Collection {
             try_join_all(filled_results).await
         } else {
             let result = self
-                ._search_batch(request, read_consistency, shard_selection)
+                .do_search_batch(request, read_consistency, shard_selection)
                 .await?;
             Ok(result)
         }
     }
 
+    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
+    // ! please replicate any changes to both methods
     pub async fn core_search_batch(
         &self,
         request: CoreSearchRequestBatch,
@@ -897,7 +901,7 @@ impl Collection {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
-                ._core_search_batch(without_payload_batch, read_consistency, shard_selection)
+                .do_core_search_batch(without_payload_batch, read_consistency, shard_selection)
                 .await?;
             let filled_results = without_payload_results
                 .into_iter()
@@ -914,13 +918,15 @@ impl Collection {
             try_join_all(filled_results).await
         } else {
             let result = self
-                ._core_search_batch(request, read_consistency, shard_selection)
+                .do_core_search_batch(request, read_consistency, shard_selection)
                 .await?;
             Ok(result)
         }
     }
 
-    pub async fn _search_batch(
+    // ! COPY-PASTE: `do_core_search_batch` is a copy-paste of `do_search_batch` with different request type
+    // ! please replicate any changes to both methods
+    pub async fn do_search_batch(
         &self,
         request: SearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
@@ -946,7 +952,9 @@ impl Collection {
             .await
     }
 
-    pub async fn _core_search_batch(
+    // ! COPY-PASTE: `do_core_search_batch` is a copy-paste of `do_search_batch` with different request type
+    // ! please replicate any changes to both methods
+    pub async fn do_core_search_batch(
         &self,
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
@@ -960,7 +968,7 @@ impl Collection {
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards
                 .iter()
-                .map(|shard| shard.custom_search(request.clone(), read_consistency));
+                .map(|shard| shard.core_search(request.clone(), read_consistency));
             try_join_all(all_searches).await?
         };
 
@@ -1083,7 +1091,7 @@ impl Collection {
             searches: vec![request],
         };
         let results = self
-            ._search_batch(request_batch, read_consistency, shard_selection)
+            .do_search_batch(request_batch, read_consistency, shard_selection)
             .await?;
         Ok(results.into_iter().next().unwrap())
     }

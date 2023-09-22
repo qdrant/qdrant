@@ -718,6 +718,8 @@ pub async fn search(
     Ok(Response::new(response))
 }
 
+// ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+// ! please replicate any changes to both methods
 pub async fn search_batch(
     toc: &TableOfContent,
     collection_name: String,
@@ -758,6 +760,8 @@ pub async fn search_batch(
     Ok(Response::new(response))
 }
 
+// ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+// ! please replicate any changes to both methods
 pub async fn core_search_batch(
     toc: &TableOfContent,
     collection_name: String,

@@ -194,6 +194,8 @@ impl PointsInternal for PointsInternalService {
         search(self.toc.as_ref(), search_points, shard_id).await
     }
 
+    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+    // ! please replicate any changes to both methods
     async fn search_batch(
         &self,
         request: Request<SearchBatchPointsInternal>,
@@ -221,6 +223,8 @@ impl PointsInternal for PointsInternalService {
         .await
     }
 
+    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+    // ! please replicate any changes to both methods
     async fn core_search_batch(
         &self,
         request: Request<CoreSearchBatchPointsInternal>,
