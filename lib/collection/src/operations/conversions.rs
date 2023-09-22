@@ -986,23 +986,18 @@ impl TryFrom<Option<i32>> for RecommendStrategy {
         Ok(strategy.into())
     }
 }
-impl TryFrom<api::grpc::qdrant::RecommendExample> for RecommendExample {
+
+impl TryFrom<api::grpc::qdrant::PointId> for RecommendExample {
     type Error = Status;
 
-    fn try_from(value: api::grpc::qdrant::RecommendExample) -> Result<Self, Self::Error> {
-        value
-            .example
-            .map(|item| match item {
-                api::grpc::qdrant::recommend_example::Example::Id(id) => {
-                    Ok(RecommendExample::PointId(id.try_into()?))
-                }
-                api::grpc::qdrant::recommend_example::Example::Vector(vector) => {
-                    Ok(RecommendExample::Vector(vector.data))
-                }
-            })
-            .ok_or(Status::invalid_argument(
-                "RecommendExample must contain item",
-            ))?
+    fn try_from(value: api::grpc::qdrant::PointId) -> Result<Self, Self::Error> {
+        Ok(Self::PointId(value.try_into()?))
+    }
+}
+
+impl From<api::grpc::qdrant::Vector> for RecommendExample {
+    fn from(value: api::grpc::qdrant::Vector) -> Self {
+        Self::Vector(value.data)
     }
 }
 
@@ -1013,28 +1008,20 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
         let positive_ids = value
             .positive
             .into_iter()
-            .map(|id| Ok(RecommendExample::PointId(id.try_into()?)))
+            .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let positive_examples = value
-            .positive_examples
-            .into_iter()
-            .map(TryInto::try_into)
-            .collect::<Result<_, _>>()?;
-        let positive = [positive_ids, positive_examples].concat();
+        let positive_vectors = value.positive_vectors.into_iter().map(Into::into).collect();
+        let positive = [positive_ids, positive_vectors].concat();
 
         let negative_ids = value
             .negative
             .into_iter()
-            .map(|id| Ok(RecommendExample::PointId(id.try_into()?)))
+            .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let negative_examples = value
-            .negative_examples
-            .into_iter()
-            .map(TryInto::try_into)
-            .collect::<Result<_, _>>()?;
-        let negative = [negative_ids, negative_examples].concat();
+        let negative_vectors = value.negative_vectors.into_iter().map(Into::into).collect();
+        let negative = [negative_ids, negative_vectors].concat();
 
         Ok(RecommendRequest {
             positive,
@@ -1077,8 +1064,8 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             limit: 0,
             offset: None,
             collection_name: String::new(),
-            positive_examples: value.positive_examples,
-            negative_examples: value.negative_examples,
+            positive_vectors: value.positive_vectors,
+            negative_vectors: value.negative_vectors,
         };
 
         let RecommendRequest {

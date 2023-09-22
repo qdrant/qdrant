@@ -844,8 +844,8 @@ pub async fn recommend(
         collection_name,
         positive,
         negative,
-        positive_examples,
-        negative_examples,
+        positive_vectors,
+        negative_vectors,
         strategy,
         filter,
         limit,
@@ -861,25 +861,23 @@ pub async fn recommend(
 
     let positive_ids = positive
         .into_iter()
-        .map(|id| Ok(RecommendExample::PointId(id.try_into()?)))
+        .map(TryInto::try_into)
         .collect::<Result<Vec<RecommendExample>, Status>>()?;
 
-    let positive_examples = positive_examples
-        .into_iter()
-        .map(TryInto::try_into)
-        .collect::<Result<_, _>>()?;
+    let positive_examples = positive_vectors.into_iter().map(Into::into).collect();
+
     let positive = [positive_ids, positive_examples].concat();
 
     let negative_ids = negative
         .into_iter()
-        .map(|id| Ok(RecommendExample::PointId(id.try_into()?)))
+        .map(TryInto::try_into)
         .collect::<Result<Vec<RecommendExample>, Status>>()?;
 
-    let negative_examples = negative_examples
+    let negative_vectors = negative_vectors
         .into_iter()
-        .map(TryInto::try_into)
-        .collect::<Result<_, _>>()?;
-    let negative = [negative_ids, negative_examples].concat();
+        .map(|v| RecommendExample::Vector(v.data))
+        .collect();
+    let negative = [negative_ids, negative_vectors].concat();
 
     let request = collection::operations::types::RecommendRequest {
         positive,
