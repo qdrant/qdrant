@@ -169,7 +169,7 @@ where
                     });
                 }
             }
-            RecommendStrategy::TakeBestScore => {
+            RecommendStrategy::BestScore => {
                 if request.positive.is_empty() && request.negative.is_empty() {
                     return Err(CollectionError::BadRequest {
                         description: "At least one positive or negative vector ID required with this strategy"
@@ -263,7 +263,7 @@ where
         let mut core_searches = Vec::new();
         match strategy {
             RecommendStrategy::AverageVector => searches.reserve_exact(run.len()),
-            RecommendStrategy::TakeBestScore => core_searches.reserve_exact(run.len()),
+            RecommendStrategy::BestScore => core_searches.reserve_exact(run.len()),
         }
 
         for request in run {
@@ -303,7 +303,7 @@ where
                     );
                     searches.push(search);
                 }
-                RecommendStrategy::TakeBestScore => {
+                RecommendStrategy::BestScore => {
                     let core_search = recommend_by_best_score(
                         request.clone(),
                         &all_vectors_records_map,
@@ -506,15 +506,15 @@ mod tests {
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::TakeBestScore,
+                strategy: RecommendStrategy::BestScore,
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::TakeBestScore,
+                strategy: RecommendStrategy::BestScore,
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::TakeBestScore,
+                strategy: RecommendStrategy::BestScore,
                 ..Default::default()
             },
             RecommendRequest {
@@ -531,7 +531,7 @@ mod tests {
             batches,
             vec![
                 (RecommendStrategy::AverageVector, 2),
-                (RecommendStrategy::TakeBestScore, 3),
+                (RecommendStrategy::BestScore, 3),
                 (RecommendStrategy::AverageVector, 1),
             ]
         );

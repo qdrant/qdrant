@@ -4041,12 +4041,18 @@ impl FieldType {
         }
     }
 }
+/// How to use positive and negative vectors to find the results, default is `AverageVector`:
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum RecommendStrategy {
+    /// Average positive and negative vectors and create a single query with the formula
+    /// `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
     AverageVector = 0,
-    TakeBestScore = 1,
+    /// Uses custom search objective. Each candidate is compared against all
+    /// examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
+    /// If the `max_neg_score` is chosen then it is squared and negated.
+    BestScore = 1,
 }
 impl RecommendStrategy {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -4056,14 +4062,14 @@ impl RecommendStrategy {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             RecommendStrategy::AverageVector => "AverageVector",
-            RecommendStrategy::TakeBestScore => "TakeBestScore",
+            RecommendStrategy::BestScore => "BestScore",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "AverageVector" => Some(Self::AverageVector),
-            "TakeBestScore" => Some(Self::TakeBestScore),
+            "BestScore" => Some(Self::BestScore),
             _ => None,
         }
     }

@@ -353,12 +353,19 @@ pub struct PointRequest {
     pub with_vector: WithVector,
 }
 
+/// How to use positive and negative vectors to find the results, default is `AverageVector`:
+/// - `AverageVector` - Average positive and negative vectors and create a single query
+///   with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
+///
+/// - `BestScore` - Uses custom search objective. Each candidate is compared against all
+///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
+///   If the `max_neg_score` is chosen then it is squared and negated.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendStrategy {
     #[default]
     AverageVector,
-    TakeBestScore,
+    BestScore,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -392,7 +399,7 @@ pub struct LookupLocation {
 ///
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
-/// is up to implementation in `segment` crate.
+/// is up to the `strategy` chosen.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {

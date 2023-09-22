@@ -68,20 +68,20 @@ def test_single_vs_batch():
             # no negative because it's optional with this strategy
             "negative": [4, 5],
             "exact": True,
-            "strategy": "take_best_score",
+            "strategy": "best_score",
             "limit": 1,
         },
         {
             "positive": [2, 3],
             "negative": [4, 5],
-            "strategy": "take_best_score",
+            "strategy": "best_score",
             "limit": 1,
         },
         {
             "positive": [2, 3],
             "negative": [4, 5],
             "exact": True,
-            "strategy": "take_best_score",
+            "strategy": "best_score",
             "limit": 1,
         },
         {
@@ -146,18 +146,18 @@ def test_without_positives():
     response = req_with_positives([], "average_vector")
     assert response.status_code == 400
     
-    # Also no negative and no positive is invalid with take_best_score
-    response = req_with_positives([], "take_best_score")
+    # Also no negative and no positive is invalid with best_score
+    response = req_with_positives([], "best_score")
     assert response.status_code == 400
     
-def test_take_best_score_works_with_only_negatives():
+def test_best_score_works_with_only_negatives():
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
             "negative": [1, 2],
-            "strategy": "take_best_score",
+            "strategy": "best_score",
             "limit": 5,
         },
     )
@@ -168,7 +168,7 @@ def test_take_best_score_works_with_only_negatives():
     for result in response.json()["result"]:
         assert result["score"] < 0
         
-def test_only_1_positive_in_take_best_score_is_equivalent_to_normal_search():
+def test_only_1_positive_in_best_score_is_equivalent_to_normal_search():
     limit = 4
     
     # recommendation response
@@ -178,7 +178,7 @@ def test_only_1_positive_in_take_best_score_is_equivalent_to_normal_search():
         path_params={"collection_name": collection_name},
         body={
             "positive": [1],
-            "strategy": "take_best_score",
+            "strategy": "best_score",
             "limit": limit,
             "exact": True,
         },

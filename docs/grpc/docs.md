@@ -2876,12 +2876,12 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 <a name="qdrant-RecommendStrategy"></a>
 
 ### RecommendStrategy
-
+How to use positive and negative vectors to find the results, default is `AverageVector`:
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| AverageVector | 0 |  |
-| TakeBestScore | 1 |  |
+| AverageVector | 0 | Average positive and negative vectors and create a single query with the formula `query = avg_pos &#43; avg_pos - avg_neg`. Then performs normal search. |
+| BestScore | 1 | Uses custom search objective. Each candidate is compared against all examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. If the `max_neg_score` is chosen then it is squared and negated. |
 
 
 

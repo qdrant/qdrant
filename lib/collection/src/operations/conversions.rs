@@ -964,7 +964,7 @@ impl From<api::grpc::qdrant::RecommendStrategy> for RecommendStrategy {
     fn from(value: api::grpc::qdrant::RecommendStrategy) -> Self {
         match value {
             api::grpc::qdrant::RecommendStrategy::AverageVector => RecommendStrategy::AverageVector,
-            api::grpc::qdrant::RecommendStrategy::TakeBestScore => RecommendStrategy::TakeBestScore,
+            api::grpc::qdrant::RecommendStrategy::BestScore => RecommendStrategy::BestScore,
         }
     }
 }
