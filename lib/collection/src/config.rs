@@ -160,7 +160,6 @@ impl CollectionConfig {
 }
 
 impl CollectionParams {
-
     pub fn empty() -> Self {
         CollectionParams {
             vectors: VectorsConfig::empty(),
