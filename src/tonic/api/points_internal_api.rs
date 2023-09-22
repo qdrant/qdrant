@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
-    ClearPayloadPointsInternal, CountPointsInternal, CountResponse,
+    ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
     GetResponse, PointsOperationResponse, RecommendPointsInternal, RecommendResponse,
@@ -13,6 +13,7 @@ use api::grpc::qdrant::{
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
+use super::points_common::core_search_batch;
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload,
@@ -193,6 +194,8 @@ impl PointsInternal for PointsInternalService {
         search(self.toc.as_ref(), search_points, shard_id).await
     }
 
+    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+    // ! please replicate any changes to both methods
     async fn search_batch(
         &self,
         request: Request<SearchBatchPointsInternal>,
@@ -214,7 +217,36 @@ impl PointsInternal for PointsInternalService {
             self.toc.as_ref(),
             collection_name,
             search_points,
-            None, // *Have* to be `None`!
+            None, // *Has* to be `None`!
+            shard_id,
+        )
+        .await
+    }
+
+    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+    // ! please replicate any changes to both methods
+    async fn core_search_batch(
+        &self,
+        request: Request<CoreSearchBatchPointsInternal>,
+    ) -> Result<Response<SearchBatchResponse>, Status> {
+        validate_and_log(request.get_ref());
+        let CoreSearchBatchPointsInternal {
+            collection_name,
+            search_points,
+            shard_id,
+        } = request.into_inner();
+
+        // Individual `read_consistency` values are ignored by `core_search_batch`...
+        //
+        // search_points
+        //     .iter_mut()
+        //     .for_each(|search_points| search_points.read_consistency = None);
+
+        core_search_batch(
+            self.toc.as_ref(),
+            collection_name,
+            search_points,
+            None, // *Has* to be `None`!
             shard_id,
         )
         .await

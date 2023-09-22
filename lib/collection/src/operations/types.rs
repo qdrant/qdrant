@@ -260,11 +260,6 @@ pub struct SearchRequestBatch {
 #[derive(Debug, Clone)]
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
-    // PositiveNegative {
-    //     positive: Vec<PointIdType>,
-    //     negative: Vec<PointIdType>,
-    //     using: UsingVector,
-    // },
 }
 
 impl QueryEnum {
