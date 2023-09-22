@@ -72,3 +72,9 @@ impl From<bincode::Error> for Error {
         Self::Bincode(*err)
     }
 }
+
+impl From<Error> for io::Error {
+    fn from(err: Error) -> Self {
+        io::Error::new(io::ErrorKind::Other, err.to_string())
+    }
+}

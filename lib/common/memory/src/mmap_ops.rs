@@ -91,6 +91,9 @@ where
         instant.elapsed()
     );
 }
+pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
+    unsafe { &*(v.as_ptr() as *const T) }
+}
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v as *const T as *const u8, mem::size_of_val(v)) }
