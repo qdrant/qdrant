@@ -71,6 +71,12 @@ pub struct CollectionParams {
     /// Does not have any performance impact.
     #[serde(default = "default_write_consistency_factor")]
     pub write_consistency_factor: NonZeroU32,
+    /// Defines how many additional replicas should be processing read request at the same time.
+    /// Default value is Auto, which means that fan-out will be determined automatically based on
+    /// the busyness of the local replica.
+    /// Having more than 0 might be useful to smooth latency spikes of individual nodes.
+    #[serde(default)]
+    pub read_fan_out_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -86,6 +92,7 @@ impl Anonymize for CollectionParams {
             shard_number: self.shard_number,
             replication_factor: self.replication_factor,
             write_consistency_factor: self.write_consistency_factor,
+            read_fan_out_factor: self.read_fan_out_factor,
             on_disk_payload: self.on_disk_payload,
         }
     }
@@ -154,6 +161,17 @@ impl CollectionConfig {
 }
 
 impl CollectionParams {
+    pub fn empty() -> Self {
+        CollectionParams {
+            vectors: VectorsConfig::empty(),
+            shard_number: default_shard_number(),
+            replication_factor: default_replication_factor(),
+            write_consistency_factor: default_write_consistency_factor(),
+            read_fan_out_factor: None,
+            on_disk_payload: default_on_disk_payload(),
+        }
+    }
+
     pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
         self.vectors
             .get_params(vector_name)

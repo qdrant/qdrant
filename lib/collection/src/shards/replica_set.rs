@@ -1,5 +1,3 @@
-use std::cmp;
-use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::ops::Deref as _;
@@ -7,11 +5,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::{BoxFuture, Either};
+use futures::future::{self, BoxFuture, Either};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
-use rand::seq::SliceRandom;
+use rand::seq::SliceRandom as _;
 use schemars::JsonSchema;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
@@ -50,8 +48,6 @@ pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
-
-const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
@@ -173,9 +169,6 @@ pub struct ShardReplicaSet {
     locally_disabled_peers: parking_lot::RwLock<HashSet<PeerId>>,
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
-    /// Number of remote replicas to send read requests to.
-    /// If actual number of peers is less than this, then read request will be sent to all of them.
-    read_remote_replicas: u32,
     notify_peer_failure_cb: ChangePeerState,
     channel_service: ChannelService,
     collection_id: CollectionId,
@@ -360,8 +353,6 @@ impl ShardReplicaSet {
             replica_state: replica_state.into(),
             locally_disabled_peers: Default::default(),
             shard_path,
-            // TODO: move to collection config
-            read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
@@ -582,7 +573,6 @@ impl ShardReplicaSet {
             // TODO: move to collection config
             locally_disabled_peers: Default::default(),
             shard_path: shard_path.to_path_buf(),
-            read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
@@ -757,139 +747,57 @@ impl ShardReplicaSet {
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
     /// It does not report failing peer_ids to the consensus.
-    pub async fn execute_read_operation<F, Res>(&self, read_operation: F) -> CollectionResult<Res>
+    pub async fn execute_read_operation<Res, F>(
+        &self,
+        read_operation: F,
+        local_only: bool,
+    ) -> CollectionResult<Res>
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
-        let remotes = self.remotes.read().await;
-        let local = self.local.read().await;
-
-        let mut local_result = None;
-        // 1 - prefer the local shard if it is active
-        if let Some(local) = local.deref() {
-            if self.peer_is_active(&self.this_peer_id()) {
-                let read_operation_res = read_operation(local.get()).await;
-                match &read_operation_res {
-                    Ok(_) => return read_operation_res,
-                    Err(error) => {
-                        if error.is_transient() {
-                            log::debug!("Local read op. failed: {}", error);
-                            local_result = Some(read_operation_res);
-                        } else {
-                            return read_operation_res;
-                        }
-                    }
-                }
-            }
+        if local_only {
+            return self.execute_local_read_operation(read_operation).await;
         }
 
-        // 2 - try a subset of active remote shards in parallel for fast response
-        let mut active_remote_shards: Vec<_> = remotes
-            .iter()
-            .filter(|rs| self.peer_is_active(&rs.peer_id))
-            .collect();
+        let mut responses = self
+            .execute_cluster_read_operation(read_operation, 1, None)
+            .await?;
 
-        if active_remote_shards.is_empty() {
-            if let Some(local_result) = local_result {
-                return local_result;
-            }
-
-            return Err(CollectionError::service_error(format!(
-                "The replica set for shard {} on peer {} has no active replica",
-                self.shard_id,
-                self.this_peer_id()
-            )));
-        }
-
-        // Shuffle the list of active remote shards to avoid biasing the first ones
-        active_remote_shards.shuffle(&mut rand::thread_rng());
-
-        let fan_out_selection = cmp::min(
-            active_remote_shards.len(),
-            self.read_remote_replicas as usize,
-        );
-
-        let mut futures = FuturesUnordered::new();
-        for remote in &active_remote_shards[0..fan_out_selection] {
-            let fut = read_operation(*remote);
-            futures.push(fut);
-        }
-
-        // shortcut at first successful result
-        let mut captured_error = None;
-        while let Some(result) = futures.next().await {
-            match &result {
-                Ok(_) => return result,
-                Err(error) => {
-                    if error.is_transient() {
-                        log::debug!("Local read op. failed: {}", error);
-                        captured_error = Some(result);
-                    } else {
-                        return result;
-                    }
-                }
-            }
-        }
-        debug_assert!(
-            captured_error.is_some(),
-            "there must be at least one failure"
-        );
-
-        // 3 - fallback to remaining remote shards as last chance
-        let mut futures = FuturesUnordered::new();
-        for remote in &active_remote_shards[fan_out_selection..] {
-            let fut = read_operation(*remote);
-            futures.push(fut);
-        }
-
-        // shortcut at first successful result
-        while let Some(result) = futures.next().await {
-            match &result {
-                Ok(_) => return result,
-                Err(error) => {
-                    if error.is_transient() {
-                        log::debug!("Local read op. failed: {}", error);
-                        captured_error = Some(result);
-                    } else {
-                        return result;
-                    }
-                }
-            }
-        }
-        captured_error.expect("at this point `captured_error` must be defined by construction")
+        Ok(responses.pop().unwrap())
     }
 
-    pub async fn execute_and_resolve_read_operation<F, Res>(
+    pub async fn execute_and_resolve_read_operation<Res, F>(
         &self,
         read_operation: F,
-        read_consistency: ReadConsistency,
+        read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Res>
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
         Res: Resolve,
     {
-        let remotes = self.remotes.read().await;
+        if local_only {
+            return self.execute_local_read_operation(read_operation).await;
+        }
 
-        let (local, is_local_ready) = match self.local.try_read() {
-            Ok(local) => (futures::future::ready(local).left_future(), true),
-            Err(_) => (self.local.read().right_future(), false),
-        };
+        let read_consistency = read_consistency.unwrap_or_default();
 
         let local_count = usize::from(self.peer_state(&self.this_peer_id()).is_some());
         let active_local_count = usize::from(self.peer_is_active(&self.this_peer_id()));
 
+        let remotes = self.remotes.read().await;
+
         let remotes_count = remotes.len();
 
-        let active_remotes_iter = remotes
+        let active_remotes_count = remotes
             .iter()
-            .filter(|remote| self.peer_is_active(&remote.peer_id));
-
-        let active_remotes_count = active_remotes_iter.clone().count();
+            .filter(|remote| self.peer_is_active(&remote.peer_id))
+            .count();
 
         let total_count = local_count + remotes_count;
         let active_count = active_local_count + active_remotes_count;
 
-        let (factor, condition) = match read_consistency {
+        let (required_successful_results, condition) = match read_consistency {
             ReadConsistency::Type(ReadConsistencyType::All) => (total_count, ResolveCondition::All),
 
             ReadConsistency::Type(ReadConsistencyType::Majority) => {
@@ -905,7 +813,7 @@ impl ShardReplicaSet {
             }
         };
 
-        if active_count < factor {
+        if active_count < required_successful_results {
             return Err(CollectionError::service_error(format!(
                 "The replica set for shard {} on peer {} does not have enough active replicas",
                 self.shard_id,
@@ -913,10 +821,70 @@ impl ShardReplicaSet {
             )));
         }
 
-        let mut active_remotes: Vec<_> = active_remotes_iter.collect();
-        active_remotes.shuffle(&mut rand::thread_rng());
+        let mut responses = self
+            .execute_cluster_read_operation(
+                read_operation,
+                required_successful_results,
+                Some(remotes),
+            )
+            .await?;
 
-        let local_operation = if active_local_count > 0 {
+        if responses.len() == 1 {
+            Ok(responses.pop().unwrap())
+        } else {
+            Ok(Res::resolve(responses, condition))
+        }
+    }
+
+    pub async fn execute_local_read_operation<Res, F>(
+        &self,
+        read_operation: F,
+    ) -> CollectionResult<Res>
+    where
+        F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
+    {
+        let local = self.local.read().await;
+
+        let Some(local) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
+                "Local shard {} not found",
+                self.shard_id
+            )));
+        };
+
+        read_operation(local.get()).await
+    }
+
+    async fn execute_cluster_read_operation<Res, F>(
+        &self,
+        read_operation: F,
+        required_successful_results: usize,
+        remotes: Option<tokio::sync::RwLockReadGuard<'_, Vec<RemoteShard>>>,
+    ) -> CollectionResult<Vec<Res>>
+    where
+        F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
+    {
+        let remotes = match remotes {
+            Some(remotes) => remotes,
+            None => self.remotes.read().await,
+        };
+
+        let (local, is_local_ready) = match self.local.try_read() {
+            Ok(local) => {
+                let is_local_ready = local
+                    .deref()
+                    .as_ref()
+                    .map_or(false, |local| !local.is_update_in_progress());
+
+                (future::ready(local).left_future(), is_local_ready)
+            }
+
+            Err(_) => (self.local.read().right_future(), false),
+        };
+
+        let local_is_active = self.peer_is_active(&self.this_peer_id());
+
+        let local_operation = if local_is_active {
             let local_operation = async {
                 let local = local.await;
 
@@ -935,87 +903,94 @@ impl ShardReplicaSet {
             None
         };
 
-        let local_operation = local_operation.into_iter();
+        let mut active_remotes: Vec<_> = remotes
+            .iter()
+            .filter(|remote| self.peer_is_active(&remote.peer_id))
+            .collect();
+
+        active_remotes.shuffle(&mut rand::thread_rng());
 
         let remote_operations = active_remotes
             .into_iter()
             .map(|remote| read_operation(remote).right_future());
 
-        let mut operations = local_operation.chain(remote_operations);
+        let mut operations = local_operation.into_iter().chain(remote_operations);
 
-        let mut required_reads = if active_local_count > 0 {
-            // If there is a local shard, we can ignore fan-out `read_remote_replicas` param,
-            // as we already know that the local peer is working.
-            factor
+        // Possible scenarios:
+        //
+        // - Local is available: default fan-out is 0 (no fan-out, unless explicitly requested)
+        // - Local is not available: default fan-out is 1
+        // - There is no local: default fan-out is 1
+
+        let default_fan_out = if local_is_active && is_local_ready {
+            0
         } else {
-            max(factor, usize::try_from(self.read_remote_replicas).unwrap())
+            1
         };
 
-        if !is_local_ready {
-            required_reads += 1;
-        }
+        let read_fan_out_factor: usize = self
+            .collection_config
+            .read()
+            .await
+            .params
+            .read_fan_out_factor
+            .unwrap_or(default_fan_out)
+            .try_into()
+            .expect("u32 can be converted into usize");
 
-        let mut pending_operations: FuturesUnordered<_> =
-            operations.by_ref().take(required_reads).collect();
+        let initial_concurrent_operations = required_successful_results + read_fan_out_factor;
+
+        let mut pending_operations: FuturesUnordered<_> = operations
+            .by_ref()
+            .take(initial_concurrent_operations)
+            .collect();
 
         let mut responses = Vec::new();
         let mut errors = Vec::new();
 
         while let Some(result) = pending_operations.next().await {
             match result {
-                Ok(resp) => responses.push(resp),
+                Ok(response) => {
+                    responses.push(response);
 
-                Err(err) => {
-                    let is_transient = err.is_transient();
+                    if responses.len() >= required_successful_results {
+                        break;
+                    }
+                }
 
-                    if is_transient {
-                        log::debug!("Read operation failed: {err}");
-                        errors.push(err);
+                Err(error) => {
+                    if error.is_transient() {
+                        log::debug!("Read operation failed: {error}");
+                        errors.push(error);
                     } else {
-                        return Err(err);
+                        return Err(error);
+                    }
+
+                    pending_operations.extend(operations.next());
+
+                    if responses.len() + pending_operations.len() < required_successful_results {
+                        break;
                     }
                 }
             }
-
-            if responses.len() >= factor {
-                break;
-            }
-
-            let maybe_responses = responses.len() + pending_operations.len();
-
-            let schedule = factor.saturating_sub(maybe_responses);
-            pending_operations.extend(operations.by_ref().take(schedule));
-
-            let maybe_responses = responses.len() + pending_operations.len();
-
-            if maybe_responses < factor {
-                break;
-            }
         }
 
-        if responses.len() >= factor {
-            if factor == 1 {
-                Ok(responses.into_iter().next().unwrap())
-            } else {
-                Ok(Res::resolve(responses, condition))
-            }
+        if responses.len() >= required_successful_results {
+            Ok(responses)
         } else {
-            let success_count = responses.len();
-            let error_count = errors.len();
+            let errors_count = errors.len();
+            let operations_count = responses.len() + errors.len();
+            let errors_separator = if !errors.is_empty() { ":" } else { "" };
 
-            Err(CollectionError::service_error(format!(
-                "{error_count} of {} shards failed with: {}",
-                success_count + error_count,
-                errors.into_iter().fold(String::new(), |mut msg, err| {
-                    if msg.is_empty() {
-                        msg = err.to_string();
-                    } else {
-                        write!(&mut msg, ", {err}").unwrap(); // Writing into `String` never fails
-                    }
+            let mut message = format!(
+                "{errors_count} of {operations_count} read operations failed{errors_separator}"
+            );
 
-                    msg
-                })
-            )))
+            for error in errors {
+                write!(&mut message, "\n  {error}").expect("writing into String always succeeds");
+            }
+
+            Err(CollectionError::service_error(message))
         }
     }
 
@@ -1702,6 +1677,7 @@ impl ShardReplicaSet {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -1728,14 +1704,18 @@ impl ShardReplicaSet {
                 }
                 .boxed()
             },
-            read_consistency.unwrap_or_default(),
+            read_consistency,
+            local_only,
         )
         .await
     }
 
-    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        self.execute_read_operation(|shard| async move { shard.info().await }.boxed())
-            .await
+    pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
+        self.execute_read_operation(
+            |shard| async move { shard.info().await }.boxed(),
+            local_only,
+        )
+        .await
     }
 
     // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
@@ -1744,6 +1724,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<SearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
@@ -1752,7 +1733,8 @@ impl ShardReplicaSet {
 
                 async move { shard.search(request, &search_runtime).await }.boxed()
             },
-            read_consistency.unwrap_or_default(),
+            read_consistency,
+            local_only,
         )
         .await
     }
@@ -1763,6 +1745,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
@@ -1771,7 +1754,8 @@ impl ShardReplicaSet {
 
                 async move { shard.core_search(request, &search_runtime).await }.boxed()
             },
-            read_consistency.unwrap_or_default(),
+            read_consistency,
+            local_only,
         )
         .await
     }
@@ -1787,11 +1771,18 @@ impl ShardReplicaSet {
         }
     }
 
-    pub async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
-        self.execute_read_operation(|shard| {
-            let request = request.clone();
-            async move { shard.count(request).await }.boxed()
-        })
+    pub async fn count(
+        &self,
+        request: Arc<CountRequest>,
+        local_only: bool,
+    ) -> CollectionResult<CountResult> {
+        self.execute_read_operation(
+            |shard| {
+                let request = request.clone();
+                async move { shard.count(request).await }.boxed()
+            },
+            local_only,
+        )
         .await
     }
 
@@ -1801,6 +1792,7 @@ impl ShardReplicaSet {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload = Arc::new(with_payload.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -1813,7 +1805,8 @@ impl ShardReplicaSet {
 
                 async move { shard.retrieve(request, &with_payload, &with_vector).await }.boxed()
             },
-            read_consistency.unwrap_or_default(),
+            read_consistency,
+            local_only,
         )
         .await
     }
@@ -1866,7 +1859,7 @@ mod tests {
             shard_number: NonZeroU32::new(4).unwrap(),
             replication_factor: NonZeroU32::new(3).unwrap(),
             write_consistency_factor: NonZeroU32::new(2).unwrap(),
-            on_disk_payload: false,
+            ..CollectionParams::empty()
         };
 
         let config = CollectionConfig {

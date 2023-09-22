@@ -1,4 +1,4 @@
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -33,10 +33,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             quantization_config: None,
             on_disk: None,
         }),
-        shard_number: NonZeroU32::new(1).unwrap(),
-        replication_factor: NonZeroU32::new(1).unwrap(),
-        write_consistency_factor: NonZeroU32::new(1).unwrap(),
-        on_disk_payload: false,
+        ..CollectionParams::empty()
     };
 
     let config = CollectionConfig {

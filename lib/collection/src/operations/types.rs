@@ -909,6 +909,10 @@ pub enum VectorsConfig {
 }
 
 impl VectorsConfig {
+    pub fn empty() -> Self {
+        VectorsConfig::Multi(BTreeMap::new())
+    }
+
     pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
         match self {
             VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),

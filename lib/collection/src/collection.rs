@@ -1,5 +1,4 @@
-use std::cmp::max;
-use std::collections::hash_map::Entry;
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Deref;
@@ -8,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::future::{join_all, try_join_all};
+use futures::TryStreamExt as _;
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
@@ -938,9 +938,9 @@ impl Collection {
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
-            let all_searches = target_shards
-                .iter()
-                .map(|shard| shard.search(request.clone(), read_consistency));
+            let all_searches = target_shards.iter().map(|shard| {
+                shard.search(request.clone(), read_consistency, shard_selection.is_some())
+            });
             try_join_all(all_searches).await?
         };
 
@@ -966,9 +966,9 @@ impl Collection {
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
-            let all_searches = target_shards
-                .iter()
-                .map(|shard| shard.core_search(request.clone(), read_consistency));
+            let all_searches = target_shards.iter().map(|shard| {
+                shard.core_search(request.clone(), read_consistency, shard_selection.is_some())
+            });
             try_join_all(all_searches).await?
         };
 
@@ -1133,6 +1133,7 @@ impl Collection {
                     &with_vector,
                     request.filter.as_ref(),
                     read_consistency,
+                    shard_selection.is_some(),
                 )
             });
 
@@ -1163,20 +1164,23 @@ impl Collection {
         request: CountRequest,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<CountResult> {
+        let shards_holder = self.shards_holder.read().await;
+        let shards = shards_holder.target_shard(shard_selection)?;
+
         let request = Arc::new(request);
+        let mut requests: futures::stream::FuturesUnordered<_> = shards
+            .into_iter()
+            // `count` requests received through internal gRPC *always* have `shard_selection`
+            .map(|shard| shard.count(request.clone(), shard_selection.is_some()))
+            .collect();
 
-        let counts: Vec<_> = {
-            let shards_holder = self.shards_holder.read().await;
-            let target_shards = shards_holder.target_shard(shard_selection)?;
-            let count_futures = target_shards
-                .into_iter()
-                .map(|shard| shard.count(request.clone()));
-            try_join_all(count_futures).await?.into_iter().collect()
-        };
+        let mut count = 0;
 
-        let total_count = counts.iter().map(|x| x.count).sum::<usize>();
-        let aggregated_count = CountResult { count: total_count };
-        Ok(aggregated_count)
+        while let Some(response) = requests.try_next().await? {
+            count += response.count;
+        }
+
+        Ok(CountResult { count })
     }
 
     pub async fn retrieve(
@@ -1200,6 +1204,7 @@ impl Collection {
                     &with_payload,
                     &request.with_vector,
                     read_consistency,
+                    shard_selection.is_some(),
                 )
             });
             try_join_all(retrieve_futures).await?
@@ -1399,44 +1404,33 @@ impl Collection {
     }
 
     pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
-        let (all_shard_collection_results, mut info) = {
-            let shards_holder = self.shards_holder.read().await;
+        let shards_holder = self.shards_holder.read().await;
+        let shards = shards_holder.target_shard(shard_selection)?;
 
-            let target_shards = shards_holder.target_shard(shard_selection)?;
-
-            let first_shard = *target_shards.first().ok_or_else(|| {
-                CollectionError::service_error(
-                    "There are no shards for selected collection".to_string(),
-                )
-            })?;
-
-            let info = first_shard.info().await?;
-            let info_futures = target_shards.into_iter().skip(1).map(|shard| shard.info());
-
-            (try_join_all(info_futures).await?, info)
-        };
-
-        all_shard_collection_results
+        let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
-            .for_each(|shard_info| {
-                info.status = max(info.status, shard_info.status);
-                info.optimizer_status =
-                    max(info.optimizer_status.clone(), shard_info.optimizer_status);
-                info.vectors_count += shard_info.vectors_count;
-                info.indexed_vectors_count += shard_info.indexed_vectors_count;
-                info.points_count += shard_info.points_count;
-                info.segments_count += shard_info.segments_count;
-                for (key, schema) in shard_info.payload_schema {
-                    match info.payload_schema.entry(key) {
-                        Entry::Occupied(o) => {
-                            o.into_mut().points += schema.points;
-                        }
-                        Entry::Vacant(v) => {
-                            v.insert(schema);
-                        }
-                    };
-                }
-            });
+            // `info` requests received through internal gRPC *always* have `shard_selection`
+            .map(|shard| shard.info(shard_selection.is_some()))
+            .collect();
+
+        let mut info = requests.try_next().await?.expect("TODO");
+
+        while let Some(response) = requests.try_next().await? {
+            info.status = cmp::max(info.status, response.status);
+            info.optimizer_status = cmp::max(info.optimizer_status, response.optimizer_status);
+            info.vectors_count += response.vectors_count;
+            info.indexed_vectors_count += response.indexed_vectors_count;
+            info.points_count += response.points_count;
+            info.segments_count += response.segments_count;
+
+            for (key, response_schema) in response.payload_schema {
+                info.payload_schema
+                    .entry(key)
+                    .and_modify(|info_schema| info_schema.points += response_schema.points)
+                    .or_insert(response_schema);
+            }
+        }
+
         Ok(info)
     }
 
