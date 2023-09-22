@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
-    read_consistency, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
+    ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, GetPoints,
-    GetResponse, PointsOperationResponse, ReadConsistency, RecommendBatchPoints,
-    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
-    SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
-    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
+    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
+    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
+    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
+    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
@@ -53,13 +53,7 @@ impl Points for PointsService {
 
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
-
-        let mut request = request.into_inner();
-        request
-            .read_consistency
-            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
-
-        get(self.toc.as_ref(), request, None).await
+        get(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn update_vectors(
@@ -139,13 +133,7 @@ impl Points for PointsService {
         request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
-
-        let mut request = request.into_inner();
-        request
-            .read_consistency
-            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
-
-        search(self.toc.as_ref(), request, None).await
+        search(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn search_batch(
@@ -158,12 +146,11 @@ impl Points for PointsService {
             search_points,
             read_consistency,
         } = request.into_inner();
-
         search_batch(
             self.toc.as_ref(),
             collection_name,
             search_points,
-            Some(read_consistency.unwrap_or(default_read_consistency())), // *Have* to be `Some`!
+            read_consistency,
             None,
         )
         .await
@@ -174,13 +161,7 @@ impl Points for PointsService {
         request: Request<SearchPointGroups>,
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
-
-        let mut request = request.into_inner();
-        request
-            .read_consistency
-            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
-
-        search_groups(self.toc.as_ref(), request, None).await
+        search_groups(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn scroll(
@@ -188,13 +169,7 @@ impl Points for PointsService {
         request: Request<ScrollPoints>,
     ) -> Result<Response<ScrollResponse>, Status> {
         validate(request.get_ref())?;
-
-        let mut request = request.into_inner();
-        request
-            .read_consistency
-            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
-
-        scroll(self.toc.as_ref(), request, None).await
+        scroll(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn recommend(
@@ -202,13 +177,7 @@ impl Points for PointsService {
         request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
-
-        let mut request = request.into_inner();
-        request
-            .read_consistency
-            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
-
-        recommend(self.toc.as_ref(), request).await
+        recommend(self.toc.as_ref(), request.into_inner()).await
     }
 
     async fn recommend_batch(
@@ -221,12 +190,11 @@ impl Points for PointsService {
             recommend_points,
             read_consistency,
         } = request.into_inner();
-
         recommend_batch(
             self.toc.as_ref(),
             collection_name,
             recommend_points,
-            Some(read_consistency.unwrap_or(default_read_consistency())), // *Have* to be `Some`!
+            read_consistency,
         )
         .await
     }
@@ -236,13 +204,7 @@ impl Points for PointsService {
         request: Request<RecommendPointGroups>,
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
-
-        let mut request = request.into_inner();
-        request
-            .read_consistency
-            .get_or_insert(default_read_consistency()); // *Have* to be `Some`!
-
-        recommend_groups(self.toc.as_ref(), request).await
+        recommend_groups(self.toc.as_ref(), request.into_inner()).await
     }
 
     async fn count(
@@ -251,11 +213,5 @@ impl Points for PointsService {
     ) -> Result<Response<CountResponse>, Status> {
         validate(request.get_ref())?;
         count(self.toc.as_ref(), request.into_inner(), None).await
-    }
-}
-
-fn default_read_consistency() -> ReadConsistency {
-    ReadConsistency {
-        value: Some(read_consistency::Value::Factor(1)),
     }
 }
