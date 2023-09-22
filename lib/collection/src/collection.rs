@@ -1418,17 +1418,16 @@ impl Collection {
         while let Some(response) = requests.try_next().await? {
             info.status = cmp::max(info.status, response.status);
             info.optimizer_status = cmp::max(info.optimizer_status, response.optimizer_status);
-            info.vectors_count = response.vectors_count;
-            info.indexed_vectors_count = response.indexed_vectors_count;
-            info.points_count = response.points_count;
-            info.segments_count = response.segments_count;
+            info.vectors_count += response.vectors_count;
+            info.indexed_vectors_count += response.indexed_vectors_count;
+            info.points_count += response.points_count;
+            info.segments_count += response.segments_count;
 
             for (key, response_schema) in response.payload_schema {
-                if let Some(info_schema) = info.payload_schema.get_mut(&key) {
-                    info_schema.points += response_schema.points;
-                } else {
-                    info.payload_schema.insert(key, response_schema);
-                }
+                info.payload_schema
+                    .entry(key)
+                    .and_modify(|info_schema| info_schema.points += response_schema.points)
+                    .or_insert(response_schema);
             }
         }
 
