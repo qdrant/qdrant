@@ -72,7 +72,8 @@ pub struct CollectionParams {
     #[serde(default = "default_write_consistency_factor")]
     pub write_consistency_factor: NonZeroU32,
     /// Defines how many additional replicas should be processing read request at the same time.
-    /// Default value is 0, which means only minimal amount of replicas will process read request.
+    /// Default value is Auto, which means that fan-out will be determined automatically based on
+    /// the busyness of the local replica.
     /// Having more than 0 might be useful to smooth latency spikes of individual nodes.
     #[serde(default)]
     pub read_fan_out_factor: Option<u32>,
