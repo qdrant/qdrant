@@ -770,15 +770,17 @@ impl ShardReplicaSet {
         &self,
         read_operation: F,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Res>
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
         Res: Resolve,
     {
-        let read_consistency = match read_consistency {
-            Some(read_consistency) => read_consistency,
-            None => return self.execute_local_read_operation(read_operation).await,
-        };
+        if local_only {
+            return self.execute_local_read_operation(read_operation).await;
+        }
+
+        let read_consistency =  read_consistency.unwrap_or_default();
 
         let local_count = usize::from(self.peer_state(&self.this_peer_id()).is_some());
         let active_local_count = usize::from(self.peer_is_active(&self.this_peer_id()));
@@ -880,7 +882,9 @@ impl ShardReplicaSet {
             Err(_) => (self.local.read().right_future(), false),
         };
 
-        let local_operation = if self.peer_is_active(&self.this_peer_id()) {
+        let local_is_active = self.peer_is_active(&self.this_peer_id());
+
+        let local_operation = if local_is_active {
             let local_operation = async {
                 let local = local.await;
 
@@ -912,20 +916,27 @@ impl ShardReplicaSet {
 
         let mut operations = local_operation.into_iter().chain(remote_operations);
 
-        let mut read_fan_out_factor: usize = self
+        // Possible scenarios:
+        //
+        // - Local is available: default fan-out is 0 (no fan-out, unless explicitly requested)
+        // - Local is not available: default fan-out is 1
+        // - There is no local: default fan-out is 1
+
+        let default_fan_out = if local_is_active && is_local_ready {
+            0
+        } else {
+            1
+        };
+
+        let read_fan_out_factor: usize = self
             .collection_config
             .read()
             .await
             .params
             .read_fan_out_factor
-            .unwrap_or_default()
+            .unwrap_or(default_fan_out)
             .try_into()
             .expect("u32 can be converted into usize");
-
-        // If `local` shard is not ready, *fan-out to at least 1 other node*
-        if !is_local_ready {
-            read_fan_out_factor = read_fan_out_factor.clamp(1, usize::MAX); // TODO: `cmp::max(1, read_fan_out_factor)`? 🤔
-        }
 
         let initial_concurrent_operations = required_successful_results + read_fan_out_factor;
 
@@ -1666,6 +1677,7 @@ impl ShardReplicaSet {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -1693,6 +1705,7 @@ impl ShardReplicaSet {
                 .boxed()
             },
             read_consistency,
+            local_only
         )
         .await
     }
@@ -1711,6 +1724,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<SearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
@@ -1720,6 +1734,7 @@ impl ShardReplicaSet {
                 async move { shard.search(request, &search_runtime).await }.boxed()
             },
             read_consistency,
+            local_only,
         )
         .await
     }
@@ -1775,6 +1790,7 @@ impl ShardReplicaSet {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         read_consistency: Option<ReadConsistency>,
+        local_only: bool,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload = Arc::new(with_payload.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -1788,6 +1804,7 @@ impl ShardReplicaSet {
                 async move { shard.retrieve(request, &with_payload, &with_vector).await }.boxed()
             },
             read_consistency,
+            local_only
         )
         .await
     }
