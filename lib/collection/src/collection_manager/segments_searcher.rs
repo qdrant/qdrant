@@ -328,14 +328,14 @@ impl SegmentsSearcher {
 pub enum SearchType {
     #[default]
     Nearest,
-    // Recommend,
+    RecommendBestScore,
 }
 
 impl From<&QueryEnum> for SearchType {
     fn from(query: &QueryEnum) -> Self {
         match query {
             QueryEnum::Nearest(_) => Self::Nearest,
-            // QueryEnum::PositiveNegative { .. } => Self::Recommend,
+            QueryEnum::RecommendBestScore(_) => Self::RecommendBestScore,
         }
     }
 }

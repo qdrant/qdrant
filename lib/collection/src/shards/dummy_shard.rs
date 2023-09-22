@@ -55,10 +55,6 @@ impl DummyShard {
 
 #[async_trait]
 impl ShardOperation for DummyShard {
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
-        self.dummy()
-    }
-
     async fn update(
         &self,
         _: CollectionUpdateOperations,
@@ -77,6 +73,10 @@ impl ShardOperation for DummyShard {
         _: Option<&Filter>,
         _: &Handle,
     ) -> CollectionResult<Vec<Record>> {
+        self.dummy()
+    }
+
+    async fn info(&self) -> CollectionResult<CollectionInfo> {
         self.dummy()
     }
 

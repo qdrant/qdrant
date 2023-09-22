@@ -135,15 +135,20 @@ impl From<NamedVector> for NamedVectorStruct {
         NamedVectorStruct::Named(v)
     }
 }
+pub trait Named {
+    fn get_name(&self) -> &str;
+}
 
-impl NamedVectorStruct {
-    pub fn get_name(&self) -> &str {
+impl Named for NamedVectorStruct {
+    fn get_name(&self) -> &str {
         match self {
             NamedVectorStruct::Default(_) => DEFAULT_VECTOR_NAME,
             NamedVectorStruct::Named(v) => &v.name,
         }
     }
+}
 
+impl NamedVectorStruct {
     pub fn get_vector(&self) -> &VectorType {
         match self {
             NamedVectorStruct::Default(v) => v,
@@ -208,6 +213,18 @@ impl BatchVectorStruct {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NamedRecoQuery {
+    pub query: RecoQuery<VectorType>,
+    pub using: Option<String>,
+}
+
+impl Named for NamedRecoQuery {
+    fn get_name(&self) -> &str {
+        self.using.as_deref().unwrap_or(DEFAULT_VECTOR_NAME)
     }
 }
 
