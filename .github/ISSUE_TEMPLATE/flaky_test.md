@@ -12,7 +12,9 @@ title: Flaky test `{{ env.TEST_NAME }}`
 
 ### Context
 
-[Flaky failure run](https://github.com/{{ env.REPOSITORY }}/actions/runs/{{ env.RUN_ID }})
+Date: {{ date | date('DD.MM.YYYY HH:mm') }}
+
+[Flaky failure run](https://github.com/{{ env.REPOSITORY }}/actions/runs/{{ env.RUN_ID }}/job/{{ env.JOB_ID }})
 
 [Commit](https://github.com/{{ env.REPOSITORY }}/tree/{{ env.SHA }})
 

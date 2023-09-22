@@ -39,7 +39,8 @@ jobs:
         path: target/nextest/ci/junit.xml
         
   # After tests are run, this hacky script will process the JUnit output of nextest
-  # and will create a GH Issue if there is a test marked as flaky
+  # and will create a GH Issue if there is a test marked as flaky, 
+  # Failure of updating an issue is ignored because it fails for external contributors.
   process-results:
     runs-on: ubuntu-latest
     needs: test
@@ -71,13 +72,14 @@ jobs:
           echo "$(jq '[.flakyFailure] | flatten | .[0]["system-err"]' flaky_tests.json -r)" >> $GITHUB_OUTPUT
           echo $delimiter >> $GITHUB_OUTPUT
       - name: pull issue template
+        if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
             .github/ISSUE_TEMPLATE/flaky_test.md
           sparse-checkout-cone-mode: false
-        if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
       - name: Create issue for flaky tests
+        continue-on-error: true
         id: create-issue
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
         uses: JasonEtco/create-an-issue@v2
@@ -87,6 +89,7 @@ jobs:
           SYSTEM_ERROR: ${{ steps.get-flaky-tests.outputs.content }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
+          JOB_ID: ${{ github.job }}
           SHA: ${{ github.sha }}
           WORKFLOW: ${{ github.workflow }}
           JOB: ${{ github.job }}

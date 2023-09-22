@@ -1,6 +1,6 @@
 [profile.ci]
 # Retry tests before failing them.
-retries = { backoff = "exponential", count = 3, delay = "2s" }
+retries = { backoff = "exponential", count = 2, delay = "2s" }
 # Do not cancel the test run on the first failure.
 fail-fast = false
 # Print out output for failing tests as soon as they fail, and also at the end
