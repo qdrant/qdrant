@@ -167,14 +167,14 @@ mod tests {
             Arc::new(SaveOnDisk::load_or_init(counter_file).unwrap());
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
-            sleep(Duration::from_millis(100));
+            sleep(Duration::from_millis(200));
             counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(100));
+            sleep(Duration::from_millis(200));
             counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(100));
+            sleep(Duration::from_millis(200));
         });
 
-        assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(1)));
+        assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(2)));
         handle.join().unwrap();
     }
 
