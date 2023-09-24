@@ -14,6 +14,7 @@ def setup(on_disk_vectors):
     yield
     drop_collection(collection_name=collection_name)
 
+
 def test_default_is_avg_vector():
     params = {
             "positive": [1, 2],
@@ -116,6 +117,7 @@ def test_single_vs_batch():
         assert single_response.ok
         assert single_response.json()["result"] == batch_response.json()["result"][i]
 
+
 def test_without_positives():   
     def req_with_positives(positive, strategy= None):
         if strategy is None:
@@ -187,17 +189,7 @@ def test_only_1_positive_in_best_score_is_equivalent_to_normal_search():
     assert len(reco_response.json()["result"]) == limit
     
     # Get vector from point 1
-    response = request_with_validation(
-        api="/collections/{collection_name}/points",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "ids": [1],
-            "with_vector": True,
-        },
-    )
-    assert response.ok
-    vector = response.json()["result"][0]["vector"]
+    vector = get_points([1])[0]["vector"]
     
     # Use normal search with that vector
     search_response = request_with_validation(
@@ -223,4 +215,61 @@ def test_only_1_positive_in_best_score_is_equivalent_to_normal_search():
     
     assert reco_response.json()["result"] == search_response.json()["result"]
 
+
+def get_points(ids: list):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "ids": ids,
+            "with_vector": True,
+        },
+    )
+    assert response.ok
+    return response.json()["result"]
+
+
+def test_raw_vectors():
+    points = get_points([1,2,3,4,5,6,7,8])
+    
+    print(points[0])
+    
+    # Assert using ids is the same as using the raw vectors
+    response_ids = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [point["id"] for point in points[:2]],
+            "negative": [point["id"] for point in points[2:4]],
+            "limit": 8,
+        },
+    )
+    assert response_ids.ok
+    assert len(response_ids.json()["result"]) == 4
+    
+    response_raw = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [point["vector"] for point in points[:2]],
+            "negative": [point["vector"] for point in points[2:4]],
+            "limit": 8,
+            "filter": {
+                "must_not": [
+                    {
+                        # simulate using ids behavior
+                        "has_id": [point["id"] for point in points[:4]]
+                    }
+                ]
+            }
+        },
+    )
+    assert response_raw.ok
+    assert len(response_raw.json()["result"]) == 4
+    
+    assert response_ids.json()["result"] == response_raw.json()["result"]
+    
     

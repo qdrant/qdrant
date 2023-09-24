@@ -19,8 +19,8 @@ use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation,
 };
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequestBatch, PointRequest, RecommendRequestBatch,
-    ScrollRequest, SearchRequest, SearchRequestBatch,
+    default_exact_count, CoreSearchRequestBatch, PointRequest, RecommendExample,
+    RecommendRequestBatch, ScrollRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -844,6 +844,8 @@ pub async fn recommend(
         collection_name,
         positive,
         negative,
+        positive_vectors,
+        negative_vectors,
         strategy,
         filter,
         limit,
@@ -857,15 +859,29 @@ pub async fn recommend(
         read_consistency,
     } = recommend_points;
 
+    let positive_ids = positive
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<Vec<RecommendExample>, Status>>()?;
+
+    let positive_examples = positive_vectors.into_iter().map(Into::into).collect();
+
+    let positive = [positive_ids, positive_examples].concat();
+
+    let negative_ids = negative
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<Vec<RecommendExample>, Status>>()?;
+
+    let negative_vectors = negative_vectors
+        .into_iter()
+        .map(|v| RecommendExample::Vector(v.data))
+        .collect();
+    let negative = [negative_ids, negative_vectors].concat();
+
     let request = collection::operations::types::RecommendRequest {
-        positive: positive
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
-        negative: negative
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
+        positive,
+        negative,
         strategy: strategy.try_into()?,
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),

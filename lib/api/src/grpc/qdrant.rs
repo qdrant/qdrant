@@ -3237,10 +3237,10 @@ pub struct RecommendPoints {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// Look for vectors closest to those
+    /// Look for vectors closest to the vectors from these points
     #[prost(message, repeated, tag = "2")]
     pub positive: ::prost::alloc::vec::Vec<PointId>,
-    /// Try to avoid vectors like this
+    /// Try to avoid vectors like the vector from these points
     #[prost(message, repeated, tag = "3")]
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
@@ -3277,6 +3277,12 @@ pub struct RecommendPoints {
     /// How to use the example vectors to find the results
     #[prost(enumeration = "RecommendStrategy", optional, tag = "16")]
     pub strategy: ::core::option::Option<i32>,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "17")]
+    pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "18")]
+    pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3303,10 +3309,10 @@ pub struct RecommendPointGroups {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// Look for vectors closest to those
+    /// Look for vectors closest to the vectors from these points
     #[prost(message, repeated, tag = "2")]
     pub positive: ::prost::alloc::vec::Vec<PointId>,
-    /// Try to avoid vectors like this
+    /// Try to avoid vectors like the vector from these points
     #[prost(message, repeated, tag = "3")]
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
@@ -3352,6 +3358,12 @@ pub struct RecommendPointGroups {
     /// How to use the example vectors to find the results
     #[prost(enumeration = "RecommendStrategy", optional, tag = "17")]
     pub strategy: ::core::option::Option<i32>,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "18")]
+    pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "19")]
+    pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
