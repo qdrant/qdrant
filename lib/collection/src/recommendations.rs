@@ -283,13 +283,7 @@ where
                 .positive
                 .iter()
                 .chain(&request.negative)
-                .filter_map(|example| {
-                    if let RecommendExample::PointId(point_id) = example {
-                        Some(*point_id)
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(|example| example.as_point_id())
                 .collect_vec();
 
             let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
