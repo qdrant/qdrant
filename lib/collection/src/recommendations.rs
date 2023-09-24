@@ -17,8 +17,8 @@ use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, PointRequest,
-    QueryEnum, RecommendRequest, RecommendRequestBatch, RecommendStrategy, Record, SearchRequest,
-    SearchRequestBatch, UsingVector,
+    QueryEnum, RecommendExample, RecommendRequest, RecommendRequestBatch, RecommendStrategy,
+    Record, SearchRequest, SearchRequestBatch, UsingVector,
 };
 
 fn avg_vectors<'a>(
@@ -191,15 +191,20 @@ where
 
         vector_names.insert(get_search_vector_name(request));
 
-        for point_id in request.positive.iter().chain(&request.negative) {
-            reference_vectors_ids.insert(*point_id);
-        }
+        request
+            .positive
+            .iter()
+            .chain(&request.negative)
+            .filter_map(|example| example.as_point_id())
+            .for_each(|point_id| {
+                reference_vectors_ids.insert(point_id);
+            });
     }
 
     debug_assert!(all_reference_vectors_ids.len() == vector_names_per_collection.len());
 
-    let mut collections_names: Vec<_> = Default::default();
-    let mut vector_retrieves: Vec<_> = Default::default();
+    let mut collections_names = Vec::new();
+    let mut vector_retrieves = Vec::new();
     for (collection_name, reference_vectors_ids) in all_reference_vectors_ids.into_iter() {
         collections_names.push(collection_name);
         let points: Vec<_> = reference_vectors_ids.into_iter().collect();
@@ -278,7 +283,7 @@ where
                 .positive
                 .iter()
                 .chain(&request.negative)
-                .cloned()
+                .filter_map(|example| example.as_point_id())
                 .collect_vec();
 
             let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
@@ -291,13 +296,26 @@ where
                 }
             }
 
+            let positive_vectors = convert_to_vectors(
+                request.positive.iter(),
+                &all_vectors_records_map,
+                &lookup_vector_name,
+                lookup_collection_name,
+            );
+
+            let negative_vectors = convert_to_vectors(
+                request.negative.iter(),
+                &all_vectors_records_map,
+                &lookup_vector_name,
+                lookup_collection_name,
+            );
+
             match strategy {
                 RecommendStrategy::AverageVector => {
                     let search = recommend_by_avg_vector(
                         request.clone(),
-                        &all_vectors_records_map,
-                        lookup_collection_name,
-                        lookup_vector_name,
+                        positive_vectors,
+                        negative_vectors,
                         vector_name,
                         reference_vectors_ids,
                     );
@@ -306,9 +324,8 @@ where
                 RecommendStrategy::BestScore => {
                     let core_search = recommend_by_best_score(
                         request.clone(),
-                        &all_vectors_records_map,
-                        lookup_collection_name,
-                        lookup_vector_name,
+                        positive_vectors,
+                        negative_vectors,
                         reference_vectors_ids,
                     );
                     core_searches.push(core_search);
@@ -357,17 +374,14 @@ fn batch_by_strategy(
         }
     })
 }
-fn recommend_by_avg_vector(
+fn recommend_by_avg_vector<'a>(
     request: RecommendRequest,
-    all_vectors_records_map: &HashMap<(Option<&String>, ExtendedPointId), Record>,
-    lookup_collection_name: Option<&String>,
-    lookup_vector_name: String,
+    positive: impl Iterator<Item = &'a VectorType>,
+    negative: impl Iterator<Item = &'a VectorType>,
     vector_name: &str,
     reference_vectors_ids: Vec<ExtendedPointId>,
 ) -> SearchRequest {
     let RecommendRequest {
-        positive,
-        negative,
         filter,
         with_payload,
         with_vector,
@@ -378,21 +392,13 @@ fn recommend_by_avg_vector(
         ..
     } = request;
 
-    let avg_positive = avg_vectors(map_ids_to_vectors(
-        positive,
-        all_vectors_records_map,
-        &lookup_vector_name,
-        lookup_collection_name,
-    ));
+    let avg_positive = avg_vectors(positive);
+    let negative = negative.collect_vec();
+
     let search_vector = if negative.is_empty() {
         avg_positive
     } else {
-        let avg_negative = avg_vectors(map_ids_to_vectors(
-            negative,
-            all_vectors_records_map,
-            &lookup_vector_name,
-            lookup_collection_name,
-        ));
+        let avg_negative = avg_vectors(negative.into_iter());
 
         avg_positive
             .iter()
@@ -423,29 +429,14 @@ fn recommend_by_avg_vector(
     }
 }
 
-fn recommend_by_best_score(
+fn recommend_by_best_score<'a>(
     request: RecommendRequest,
-    all_vectors_records_map: &HashMap<(Option<&String>, PointIdType), Record>,
-    lookup_collection_name: Option<&String>,
-    lookup_vector_name: String,
+    positive: impl Iterator<Item = &'a VectorType>,
+    negative: impl Iterator<Item = &'a VectorType>,
     reference_vectors_ids: Vec<PointIdType>,
 ) -> CoreSearchRequest {
-    let positive = map_ids_to_vectors(
-        request.positive,
-        all_vectors_records_map,
-        &lookup_vector_name,
-        lookup_collection_name,
-    )
-    .cloned()
-    .collect();
-    let negative = map_ids_to_vectors(
-        request.negative,
-        all_vectors_records_map,
-        &lookup_vector_name,
-        lookup_collection_name,
-    )
-    .cloned()
-    .collect();
+    let positive = positive.cloned().collect();
+    let negative = negative.cloned().collect();
 
     let query = QueryEnum::RecommendBestScore(NamedRecoQuery {
         query: RecoQuery::new(positive, negative),
@@ -475,17 +466,20 @@ fn recommend_by_best_score(
     }
 }
 
-fn map_ids_to_vectors<'a>(
-    examples: Vec<PointIdType>,
+fn convert_to_vectors<'a>(
+    examples: impl Iterator<Item = &'a RecommendExample> + 'a,
     all_vectors_records_map: &'a HashMap<(Option<&String>, PointIdType), Record>,
     vector_name: &'a str,
     collection_name: Option<&'a String>,
 ) -> impl Iterator<Item = &'a VectorType> + 'a {
-    examples.into_iter().filter_map(move |vid| {
-        let rec = all_vectors_records_map
-            .get(&(collection_name, vid))
-            .unwrap();
-        rec.get_vector_by_name(vector_name)
+    examples.filter_map(move |example| match example {
+        RecommendExample::Vector(vector) => Some(vector),
+        RecommendExample::PointId(vid) => {
+            let rec = all_vectors_records_map
+                .get(&(collection_name, *vid))
+                .unwrap();
+            rec.get_vector_by_name(vector_name)
+        }
     })
 }
 
