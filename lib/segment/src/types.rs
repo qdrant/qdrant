@@ -284,9 +284,9 @@ pub struct QuantizationSearchParams {
 
     /// If true, use original vectors to re-score top-k results.
     /// Might require more time in case if original vectors are stored on disk.
-    /// Default is false.
-    #[serde(default = "default_quantization_rescore_value")]
-    pub rescore: bool,
+    /// If not set, qdrant decides automatically apply rescoring or not.
+    #[serde(default)]
+    pub rescore: Option<bool>,
 
     /// Oversampling factor for quantization. Default is 1.0.
     ///
@@ -301,10 +301,6 @@ pub struct QuantizationSearchParams {
 }
 
 pub const fn default_quantization_ignore_value() -> bool {
-    false
-}
-
-pub const fn default_quantization_rescore_value() -> bool {
     false
 }
 

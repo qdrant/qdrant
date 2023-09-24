@@ -233,7 +233,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         // - and `params.quantization.ignore` is `false`
         let quantization_params = params.and_then(|p| p.quantization).unwrap_or_default();
 
-        let (raw_scorer, quantized) = match quantized_storage {
+        let (raw_scorer, do_oversampling) = match quantized_storage {
             // If `quantization_params` is `Some`, then quantization is *not* ignored
             Some(quantized_storage) if !quantization_params.ignore => {
                 let scorer = quantized_storage.raw_scorer(
@@ -243,7 +243,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     is_stopped,
                 );
 
-                (scorer, true)
+                let do_oversampling = quantization_params
+                    .rescore
+                    .unwrap_or_else(|| quantized_storage.default_rescoring());
+
+                (scorer, do_oversampling)
             }
 
             _ => {
@@ -266,7 +270,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             return Vec::new();
         };
 
-        if quantized && quantization_params.rescore {
+        if do_oversampling {
             let oversampling = quantization_params.oversampling.unwrap_or(1.0);
 
             let oversampled_top = if oversampling > 1.0 {
@@ -432,7 +436,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         let mut params = *params;
                         params.quantization = Some(QuantizationSearchParams {
                             ignore: true,
-                            rescore: false,
+                            rescore: Some(false),
                             oversampling: None,
                         }); // disable quantization for exact search
                         params

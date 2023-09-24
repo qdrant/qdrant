@@ -48,6 +48,13 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
+    pub fn default_rescoring(&self) -> bool {
+        matches!(
+            self.storage_impl,
+            QuantizedVectorStorage::BinaryRam(_) | QuantizedVectorStorage::BinaryMmap(_)
+        )
+    }
+
     pub fn raw_scorer<'a>(
         &'a self,
         query: QueryVector,

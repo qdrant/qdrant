@@ -134,7 +134,7 @@ fn hnsw_quantized_search_test(
             Some(&SearchParams {
                 hnsw_ef: Some(ef_oversampling),
                 quantization: Some(QuantizationSearchParams {
-                    rescore: true,
+                    rescore: Some(true),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -152,7 +152,7 @@ fn hnsw_quantized_search_test(
                 hnsw_ef: Some(ef_oversampling),
                 quantization: Some(QuantizationSearchParams {
                     oversampling: Some(4.0),
-                    rescore: true,
+                    rescore: Some(true),
                     ..Default::default()
                 }),
                 ..Default::default()
