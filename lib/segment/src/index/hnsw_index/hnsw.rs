@@ -243,9 +243,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     is_stopped,
                 );
 
-                let do_oversampling = quantization_params.rescore.unwrap_or_else(|| {
-                    quantized_storage.default_rescoring()
-                });
+                let do_oversampling = quantization_params
+                    .rescore
+                    .unwrap_or_else(|| quantized_storage.default_rescoring());
 
                 (scorer, do_oversampling)
             }
