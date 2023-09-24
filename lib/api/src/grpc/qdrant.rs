@@ -3025,7 +3025,7 @@ pub struct QuantizationSearchParams {
     #[prost(bool, optional, tag = "1")]
     pub ignore: ::core::option::Option<bool>,
     ///
-    /// If true, use original vectors to re-score top-k results. Default is true.
+    /// If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not.
     #[prost(bool, optional, tag = "2")]
     pub rescore: ::core::option::Option<bool>,
     ///

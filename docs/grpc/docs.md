@@ -2154,7 +2154,7 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | ignore | [bool](#bool) | optional | If set to true, search will ignore quantized vector data |
-| rescore | [bool](#bool) | optional | If true, use original vectors to re-score top-k results. Default is true. |
+| rescore | [bool](#bool) | optional | If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not. |
 | oversampling | [double](#double) | optional | Oversampling factor for quantization.
 
 Defines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.
