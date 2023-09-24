@@ -1717,7 +1717,15 @@ impl PayloadSelector {
     pub fn process(&self, x: Payload) -> Payload {
         let fields = match self {
             PayloadSelector::Include(selector) => selector.include.clone(),
-            _ => Vec::new(),
+            PayloadSelector::Exclude(selector) => {
+                //let v = selector.exclude.clone();
+                let f =
+                    x.0.keys()
+                        .filter(|&k| !selector.exclude.contains(k))
+                        .cloned()
+                        .collect();
+                f
+            }
         };
 
         let mut result: Vec<&Value> = Vec::new();
@@ -2483,6 +2491,187 @@ mod tests {
         assert!(merged.must.as_ref().unwrap().contains(&condition1));
         assert!(merged.must.as_ref().unwrap().contains(&condition2));
         assert!(merged.should.as_ref().unwrap().contains(&condition1));
+    }
+
+    #[test]
+    fn test_nested_payload_dict() {
+        let payload: Payload = serde_json::from_str(
+            r#"
+        {
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ],
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "y": 3,
+                            "d": 4
+                        }
+                    ]
+                }
+            }
+        }
+        "#,
+        )
+        .unwrap();
+        let include_payload_selector_0 = PayloadSelector::new_include(vec!["b.e".to_string()]);
+
+        let dict_0: Payload = serde_json::from_str(
+            r#"{
+            "f": [1,2,3],
+            "g": 7,
+            "h": [
+                {
+                    "j": 1,
+                    "k": 2
+
+                },
+                {
+                    "j": 3,
+                    "k": 4
+                }
+            ],
+            "i": [
+                {
+                    "j": 1,
+                    "k": 2
+
+                },
+                {
+                    "y": 3,
+                    "d": 4
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+
+        let nested_ops_0 = include_payload_selector_0.process(payload.clone());
+        assert_eq!(nested_ops_0, dict_0);
+
+        let dict_1: Payload = serde_json::from_str(r#"{"d": 4, "j": 1, "k": 2, "y": 3}"#).unwrap();
+
+        let include_payload_selector_1 = PayloadSelector::new_include(vec!["b.e.i".to_string()]);
+
+        // Retreive inner dict in Array
+        let nested_ops_1 = include_payload_selector_1.process(payload.clone());
+        assert_eq!(nested_ops_1, dict_1);
+
+        let dict_2: Payload = serde_json::from_str(r#"{"j": 3, "k": 4}"#).unwrap();
+
+        let include_payload_selector_2 = PayloadSelector::new_include(vec!["b.e.h".to_string()]);
+
+        // Retreive inner array dict with similar keys
+        let nested_ops_2 = include_payload_selector_2.process(payload.clone());
+        assert_eq!(nested_ops_2, dict_2);
+    }
+
+    #[test]
+    fn test_payload_selector_exclude() {
+        let payload: Payload = serde_json::from_str(
+            r#"
+        {
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ],
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "y": 3,
+                            "d": 4
+                        }
+                    ]
+                }
+            }
+        }
+        "#,
+        )
+        .unwrap();
+        let exclude_payload_selector_0 = PayloadSelector::Exclude(PayloadSelectorExclude {
+            exclude: vec!["a".to_string(), "b".to_string()],
+        });
+
+        // Exclude all keys
+        // Note: We retreive object only
+        let ops = exclude_payload_selector_0.process(payload.clone());
+        assert_eq!(ops, Payload::default());
+
+        let exclude_payload_selector_1 = PayloadSelector::Exclude(PayloadSelectorExclude {
+            exclude: vec!["b.e".to_string()],
+        });
+
+        let top_object: Payload = serde_json::from_str(
+            r#"{
+            "c": 123,
+            "e": {
+                "f": [1,2,3],
+                "g": 7,
+                "h": [
+                    {
+                        "j": 1,
+                        "k": 2
+
+                    },
+                    {
+                        "j": 3,
+                        "k": 4
+                    }
+                ],
+                "i": [
+                    {
+                        "j": 1,
+                        "k": 2
+
+                    },
+                    {
+                        "y": 3,
+                        "d": 4
+                    }
+                ]
+            }
+        }"#,
+        )
+        .unwrap();
+
+        // No nested exclude
+        let nested_ops = exclude_payload_selector_1.process(payload.clone());
+        assert_eq!(nested_ops, top_object);
     }
 }
 
