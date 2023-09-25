@@ -1,27 +1,20 @@
 #version 450
 
-#define VECTOR_STORAGE_LAYOUT_SET 0
-#define LINKS_LAYOUT_SET 1
-#define SEARCHER_LAYOUT_SET 2
-#define BUILDER_LAYOUT_SET 3
+#extension GL_KHR_shader_subgroup_arithmetic: enable
 
-#include "vector_storage.comp"
-#include "links.comp"
-#include "searcher.comp"
-#include "builder.comp"
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding=0) buffer layout_foo {
+  uint foo[];
+};
+
+layout(std430, set=0, binding=1) buffer layout_bar {
+  uint bar;
+};
 
 void main() {
-    uint thread_index = gl_GlobalInvocationID.x;
-
-    searcher_init();
-
-    POINT_ID point_id = link_points.data[thread_index];
-    atomicExchange(generations.data[point_id], GENERATION);
-
-    ScoredPoint entry = {
-        requests.data[point_id],
-        similarity(point_id, requests.data[point_id])
-    };
-
-    search(point_id, entry);
+  uint value = subgroupMax(foo[gl_GlobalInvocationID.x]);
+  if (subgroupElect()) {
+    atomicMax(bar, value);
+  }
 }

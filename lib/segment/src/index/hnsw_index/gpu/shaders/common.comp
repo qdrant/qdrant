@@ -1,6 +1,9 @@
 #ifndef COMMON_HEADER
 #define COMMON_HEADER
 
+#define LOCAL_SIZE 32
+#define DIMENSION 32
+
 #define CONCAT(a, b) a##_##b
 
 #define POINT_ID uint

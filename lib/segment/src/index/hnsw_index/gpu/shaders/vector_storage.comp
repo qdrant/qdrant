@@ -41,6 +41,14 @@ VECTOR_STORAGE_DEFINE(3)
 
 uint similarity_counter = 0;
 
+void set_request_vector(uint idx) {
+    
+}
+
+float similarity2(uint idx) {
+    return 0.0;
+}
+
 float similarity(uint a, uint b) {
     similarity_counter += 1;
 
