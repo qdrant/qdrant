@@ -73,7 +73,11 @@ impl FileCleaner {
     pub fn delete(&mut self) {
         if let Some(path) = &self.path {
             // Ignore errors, because file can be already deleted.
-            let _ = std::fs::remove_file(path);
+            if path.is_dir() {
+                let _ = std::fs::remove_dir_all(path);
+            } else {
+                let _ = std::fs::remove_file(path);
+            }
         }
     }
 
