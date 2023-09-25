@@ -122,7 +122,7 @@ WORKDIR ${APP}
 ARG USER_ID=0
 
 # Create the user
-RUN if [[ "$USER_ID" != "0" ]]; then (groupadd --gid $USER_ID qdrant \
+RUN if [ "$USER_ID" != "0" ]; then (groupadd --gid $USER_ID qdrant \
     && useradd --uid $USER_ID --gid $USER_ID -m qdrant \
     && chown -R $USER_ID:$USER_ID ${APP}); fi
 
