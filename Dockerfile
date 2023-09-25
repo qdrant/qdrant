@@ -98,9 +98,9 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
-
 # Download and extract web UI
 RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
+
 
 FROM debian:12-slim AS qdrant
 
@@ -110,28 +110,30 @@ RUN apt-get update \
 
 ARG APP=/qdrant
 
-RUN mkdir -p ${APP}
+RUN mkdir -p "$APP"
 
-COPY --from=builder /qdrant/qdrant ${APP}/qdrant
-COPY --from=builder /qdrant/config ${APP}/config
-COPY --from=builder /qdrant/tools/entrypoint.sh ${APP}/entrypoint.sh
-COPY --from=builder /static ${APP}/static
+COPY --from=builder /qdrant/qdrant "$APP"/qdrant
+COPY --from=builder /qdrant/config "$APP"/config
+COPY --from=builder /qdrant/tools/entrypoint.sh "$APP"/entrypoint.sh
+COPY --from=builder /static "$APP"/static
 
-WORKDIR ${APP}
+WORKDIR "$APP"
 
 ARG USER_ID=0
 
-# Create the user
-RUN if [[ "$USER_ID" != "0" ]]; then (groupadd --gid $USER_ID qdrant \
-    && useradd --uid $USER_ID --gid $USER_ID -m qdrant \
-    && chown -R $USER_ID:$USER_ID ${APP}); fi
+RUN if [ "$USER_ID" != 0 ]; then \
+        groupadd --gid "$USER_ID" qdrant; \
+        useradd --uid "$USER_ID" --gid "$USER_ID" -m qdrant; \
+        chown -R "$USER_ID:$USER_ID" "$APP"; \
+    fi
+
+USER "$USER_ID:$USER_ID"
 
 ENV TZ=Etc/UTC \
     RUN_MODE=production
 
 EXPOSE 6333
 EXPOSE 6334
-USER $USER_ID:$USER_ID
 
 LABEL org.opencontainers.image.title="Qdrant"
 LABEL org.opencontainers.image.description="Official Qdrant image"
