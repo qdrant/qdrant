@@ -7,12 +7,13 @@ use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::Mmap;
+use memory::mmap_ops;
 use parking_lot::Mutex;
 
 use super::div_ceil;
 use crate::common::error_logging::LogError;
 use crate::common::mmap_type::MmapBitSlice;
-use crate::common::{mmap_ops, Flusher};
+use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};

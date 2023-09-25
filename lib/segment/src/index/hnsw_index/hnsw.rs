@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use log::debug;
+use memory::mmap_ops;
 use parking_lot::Mutex;
 use rand::thread_rng;
 use rayon::prelude::*;
@@ -14,7 +15,7 @@ use super::graph_links::{GraphLinks, GraphLinksMmap};
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use crate::common::{mmap_ops, BYTES_IN_KB};
+use crate::common::BYTES_IN_KB;
 use crate::data_types::vectors::QueryVector;
 use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;

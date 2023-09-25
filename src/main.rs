@@ -134,7 +134,7 @@ fn main() -> anyhow::Result<()> {
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
-    segment::madvise::set_global(settings.storage.mmap_advice);
+    memory::madvise::set_global(settings.storage.mmap_advice);
     segment::vector_storage::common::set_async_scorer(settings.storage.async_scorer);
 
     welcome(&settings);

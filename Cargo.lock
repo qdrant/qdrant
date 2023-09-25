@@ -2911,6 +2911,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "memory"
+version = "0.0.0"
+dependencies = [
+ "log",
+ "memmap2 0.7.1",
+ "parking_lot",
+ "serde",
+]
+
+[[package]]
 name = "merge"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3719,6 +3729,7 @@ dependencies = [
  "futures-util",
  "itertools 0.11.0",
  "log",
+ "memory",
  "num-traits",
  "num_cpus",
  "parking_lot",
@@ -4469,6 +4480,7 @@ dependencies = [
  "itertools 0.11.0",
  "log",
  "memmap2 0.7.1",
+ "memory",
  "num-derive",
  "num-traits",
  "num_cpus",
@@ -4786,6 +4798,7 @@ dependencies = [
  "io",
  "itertools 0.11.0",
  "log",
+ "memory",
  "num_cpus",
  "parking_lot",
  "proptest",

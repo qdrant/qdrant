@@ -3,7 +3,6 @@ pub mod entry;
 pub mod fixtures;
 pub mod id_tracker;
 pub mod index;
-pub mod madvise;
 pub mod payload_storage;
 pub mod rocksdb_backup;
 pub mod segment;
