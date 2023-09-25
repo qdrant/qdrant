@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use collection::operations::types::VectorParams;
 use collection::optimizers_builder::OptimizersConfig;
-use segment::madvise;
+use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,

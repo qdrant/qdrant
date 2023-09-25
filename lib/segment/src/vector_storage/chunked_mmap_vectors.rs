@@ -4,9 +4,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use memmap2::MmapMut;
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use serde::{Deserialize, Serialize};
 
-use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use crate::common::mmap_type::MmapType;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -60,7 +60,8 @@ impl ChunkedMmapVectors {
             let mmap = open_write_mmap(&status_file)?;
             Ok(mmap)
         } else {
-            open_write_mmap(&status_file)
+            let mmap = open_write_mmap(&status_file)?;
+            Ok(mmap)
         }
     }
 

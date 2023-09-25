@@ -6,11 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use memmap2::{Mmap, MmapMut};
+use memory::{madvise, mmap_ops};
 
-use crate::common::mmap_ops;
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::madvise;
 use crate::types::PointOffsetType;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";

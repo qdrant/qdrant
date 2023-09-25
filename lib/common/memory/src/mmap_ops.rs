@@ -3,15 +3,14 @@ use std::hint::black_box;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{mem, ops, time};
+use std::{io, mem, ops, time};
 
 use memmap2::{Mmap, MmapMut};
 
-use crate::entry::entry_point::OperationResult;
 use crate::madvise;
 use crate::madvise::Madviseable;
 
-pub fn create_and_ensure_length(path: &Path, length: usize) -> OperationResult<()> {
+pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<()> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -22,7 +21,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> OperationResult<(
     Ok(())
 }
 
-pub fn open_read_mmap(path: &Path) -> OperationResult<Mmap> {
+pub fn open_read_mmap(path: &Path) -> io::Result<Mmap> {
     let file = OpenOptions::new()
         .read(true)
         .write(false)
@@ -36,7 +35,7 @@ pub fn open_read_mmap(path: &Path) -> OperationResult<Mmap> {
     Ok(mmap)
 }
 
-pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
+pub fn open_write_mmap(path: &Path) -> io::Result<MmapMut> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
