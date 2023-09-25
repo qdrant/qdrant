@@ -6311,7 +6311,15 @@
             }
           },
           "strategy": {
-            "$ref": "#/components/schemas/RecommendStrategy"
+            "description": "How to use positive and negative vectors to find the results",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendStrategy"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
@@ -9139,7 +9147,16 @@
             }
           },
           "strategy": {
-            "$ref": "#/components/schemas/RecommendStrategy"
+            "description": "How to use positive and negative vectors to find the results",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendStrategy"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",

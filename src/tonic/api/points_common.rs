@@ -882,7 +882,7 @@ pub async fn recommend(
     let request = collection::operations::types::RecommendRequest {
         positive,
         negative,
-        strategy: strategy.try_into()?,
+        strategy: strategy.map(|s| s.try_into()).transpose()?,
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
