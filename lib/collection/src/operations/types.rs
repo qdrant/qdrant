@@ -382,7 +382,7 @@ impl From<u64> for RecommendExample {
 /// - `BestScore` - Uses custom search objective. Each candidate is compared against all
 ///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
 ///   If the `max_neg_score` is chosen then it is squared and negated.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendStrategy {
     #[default]
@@ -434,8 +434,7 @@ pub struct RecommendRequest {
     pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative vectors to find the results
-    #[serde(default)]
-    pub strategy: RecommendStrategy,
+    pub strategy: Option<RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
@@ -497,7 +496,7 @@ pub struct RecommendGroupsRequest {
 
     /// How to use positive and negative vectors to find the results
     #[serde(default)]
-    pub strategy: RecommendStrategy,
+    pub strategy: Option<RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,

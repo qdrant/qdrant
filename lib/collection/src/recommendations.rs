@@ -160,7 +160,7 @@ where
 
     for request in &request_batch.searches {
         // Validate amount of examples
-        match request.strategy {
+        match request.strategy.unwrap_or_default() {
             RecommendStrategy::AverageVector => {
                 if request.positive.is_empty() {
                     return Err(CollectionError::BadRequest {
@@ -363,11 +363,13 @@ fn batch_by_strategy(
             None => None,
             Some(req) => {
                 // start new batch
-                let strategy = req.strategy.clone();
+                let strategy = req.strategy.unwrap_or_default();
                 let mut batch = vec![req];
 
                 // continue until we see a different strategy
-                batch.extend(iter.take_while_ref(|req| req.strategy == strategy));
+                batch.extend(
+                    iter.take_while_ref(|req| req.strategy.unwrap_or_default() == strategy),
+                );
 
                 Some((strategy, batch))
             }
@@ -492,27 +494,27 @@ mod tests {
     fn test_batch_by_strategy() {
         let requests = vec![
             RecommendRequest {
-                strategy: RecommendStrategy::AverageVector,
+                strategy: Some(RecommendStrategy::AverageVector),
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::AverageVector,
+                strategy: None,
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::BestScore,
+                strategy: Some(RecommendStrategy::BestScore),
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::BestScore,
+                strategy: Some(RecommendStrategy::BestScore),
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::BestScore,
+                strategy: Some(RecommendStrategy::BestScore),
                 ..Default::default()
             },
             RecommendRequest {
-                strategy: RecommendStrategy::AverageVector,
+                strategy: Some(RecommendStrategy::AverageVector),
                 ..Default::default()
             },
         ];

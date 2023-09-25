@@ -973,16 +973,13 @@ impl From<api::grpc::qdrant::RecommendStrategy> for RecommendStrategy {
     }
 }
 
-impl TryFrom<Option<i32>> for RecommendStrategy {
+impl TryFrom<i32> for RecommendStrategy {
     type Error = Status;
 
-    fn try_from(value: Option<i32>) -> Result<Self, Self::Error> {
-        let strategy = match value {
-            None => api::grpc::qdrant::RecommendStrategy::AverageVector,
-            Some(i) => api::grpc::qdrant::RecommendStrategy::from_i32(i).ok_or_else(|| {
-                Status::invalid_argument(format!("Unknown recommend strategy: {}", i))
-            })?,
-        };
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        let strategy = api::grpc::qdrant::RecommendStrategy::from_i32(value).ok_or_else(|| {
+            Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
+        })?;
         Ok(strategy.into())
     }
 }
@@ -1026,7 +1023,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
         Ok(RecommendRequest {
             positive,
             negative,
-            strategy: value.strategy.try_into()?,
+            strategy: value.strategy.map(|s| s.try_into()).transpose()?,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
             limit: value.limit as usize,
