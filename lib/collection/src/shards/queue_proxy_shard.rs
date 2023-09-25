@@ -10,6 +10,7 @@ use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
+use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest, CountResult,
@@ -158,8 +159,8 @@ impl QueueProxyShard {
         self.wrapped_shard.get_telemetry_data()
     }
 
-    pub fn is_update_in_progress(&self) -> bool {
-        self.wrapped_shard.is_update_in_progress()
+    pub fn update_tracker(&self) -> &UpdateTracker {
+        self.wrapped_shard.update_tracker()
     }
 }
 

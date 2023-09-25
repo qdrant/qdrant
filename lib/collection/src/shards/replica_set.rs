@@ -869,17 +869,23 @@ impl ShardReplicaSet {
             None => self.remotes.read().await,
         };
 
-        let (local, is_local_ready) = match self.local.try_read() {
+        let (local, is_local_ready, update_watcher) = match self.local.try_read() {
             Ok(local) => {
                 let is_local_ready = local
                     .deref()
                     .as_ref()
                     .map_or(false, |local| !local.is_update_in_progress());
 
-                (future::ready(local).left_future(), is_local_ready)
+                let update_watcher = local.deref().as_ref().map(|local| local.watch_for_update());
+
+                (
+                    future::ready(local).left_future(),
+                    is_local_ready,
+                    update_watcher,
+                )
             }
 
-            Err(_) => (self.local.read().right_future(), false),
+            Err(_) => (self.local.read().right_future(), false, None),
         };
 
         let local_is_active = self.peer_is_active(&self.this_peer_id());
@@ -948,7 +954,30 @@ impl ShardReplicaSet {
         let mut responses = Vec::new();
         let mut errors = Vec::new();
 
-        while let Some(result) = pending_operations.next().await {
+        let update_watcher = async move {
+            match update_watcher {
+                Some(update_watcher) => update_watcher.fuse().await,
+                None => future::pending().await,
+            }
+        };
+
+        futures::pin_mut!(update_watcher);
+
+        loop {
+            let operation_result_or_update_notification =
+                future::select(pending_operations.next(), &mut update_watcher);
+
+            let result = match operation_result_or_update_notification.await {
+                Either::Left((Some(result), _)) => result,
+
+                Either::Left((None, _)) => break,
+
+                Either::Right(_) => {
+                    pending_operations.extend(operations.next());
+                    continue;
+                }
+            };
+
             match result {
                 Ok(response) => {
                     responses.push(response);

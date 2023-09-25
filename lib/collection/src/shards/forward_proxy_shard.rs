@@ -9,6 +9,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
+use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
@@ -141,8 +142,8 @@ impl ForwardProxyShard {
         self.wrapped_shard.get_telemetry_data()
     }
 
-    pub fn is_update_in_progress(&self) -> bool {
-        self.wrapped_shard.is_update_in_progress()
+    pub fn update_tracker(&self) -> &UpdateTracker {
+        self.wrapped_shard.update_tracker()
     }
 }
 
