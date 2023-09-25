@@ -6,7 +6,7 @@ use rocksdb::DB;
 use self::memory::{BinaryItem, BinaryMemory};
 use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
@@ -231,22 +231,25 @@ impl PayloadFieldIndex for BinaryIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
                 if *value {
-                    Some(Box::new(self.memory.iter_has_true()))
+                    Ok(Box::new(self.memory.iter_has_true()))
                 } else {
-                    Some(Box::new(self.memory.iter_has_false()))
+                    Ok(Box::new(self.memory.iter_has_false()))
                 }
             }
-            _ => None,
+            _ => Err(OperationError::service_error("failed to filter")),
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
@@ -260,9 +263,11 @@ impl PayloadFieldIndex for BinaryIndex {
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(condition.clone()));
 
-                Some(estimation)
+                Ok(estimation)
             }
-            _ => None,
+            _ => Err(OperationError::service_error(
+                "failed to estimate cardinality",
+            )),
         }
     }
 
