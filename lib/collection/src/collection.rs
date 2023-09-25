@@ -23,6 +23,7 @@ use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use validator::Validate;
 
 use crate::collection_state::{ShardInfo, State};
+use crate::common::file_utils::FileCleaner;
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
@@ -1664,6 +1665,9 @@ impl Collection {
         // We can't copy to the target location directly, because copy is not atomic.
         // So we copy to the final location with a temporary name and then rename atomically.
         let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
+
+        // Ensure that the temporary file is deleted on error
+        let _file_cleaner = FileCleaner::new(&snapshot_path_tmp_move);
         copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
         rename(&snapshot_path_tmp_move, &snapshot_path).await?;
 
