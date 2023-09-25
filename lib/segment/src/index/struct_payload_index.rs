@@ -66,14 +66,10 @@ impl StructPayloadIndex {
                 key: full_path.path,
                 ..condition.clone()
             };
-            let mut result_estimation: Option<CardinalityEstimation> = None;
-            for index in indexes {
-                result_estimation = index.estimate_cardinality(&full_path_condition);
-                if result_estimation.is_some() {
-                    break;
-                }
-            }
-            result_estimation
+
+            indexes
+                .iter()
+                .find_map(|index| index.estimate_cardinality(&full_path_condition).ok())
         })
     }
 
@@ -87,8 +83,7 @@ impl StructPayloadIndex {
             .and_then(|indexes| {
                 indexes
                     .iter()
-                    .map(|field_index| field_index.filter(field_condition))
-                    .find_map(|filter_iter| filter_iter)
+                    .find_map(|field_index| field_index.filter(field_condition).ok())
             });
         indexes
     }
