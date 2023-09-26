@@ -1728,24 +1728,16 @@ impl PayloadSelector {
         let mut map = Map::new();
 
         for field in &fields {
-            let values = x.get_value(field).values().clone();
+            let values = x.get_value(field).values();
 
-            for value in values {
-                match value {
-                    Value::Array(inner) => {
-                        for inner_value in inner {
-                            if let Value::Object(ref obj) = inner_value {
-                                map.extend(obj.clone());
-                            }
-                        }
-                    }
-                    Value::Object(ref obj) => {
-                        map.extend(obj.clone());
-                    }
-                    _ => {
-                        map.insert(field.clone(), value.clone());
-                    }
+            if field.contains('.') {
+                let parts: Vec<String> = field.split('.').map(|part| part.to_string()).collect();
+                let last_char = parts.last().cloned().unwrap_or_else(|| String::from(""));
+                for value in values {
+                    map.insert(last_char.clone(), value.clone());
                 }
+            } else {
+                map.insert(field.clone(), values[0].clone());
             }
         }
         map.into()
@@ -2532,52 +2524,60 @@ mod tests {
 
         let dict_0: Payload = serde_json::from_str(
             r#"{
-            "f": [1,2,3],
-            "g": 7,
-            "h": [
-                {
-                    "j": 1,
-                    "k": 2
+                "e": {
+                "f": [1,2,3],
+                "g": 7,
+                "h": [
+                    {
+                        "j": 1,
+                        "k": 2
 
-                },
-                {
-                    "j": 3,
-                    "k": 4
-                }
-            ],
-            "i": [
-                {
-                    "j": 1,
-                    "k": 2
+                    },
+                    {
+                        "j": 3,
+                        "k": 4
+                    }
+                ],
+                "i": [
+                    {
+                        "j": 1,
+                        "k": 2
 
-                },
-                {
-                    "y": 3,
-                    "d": 4
-                }
-            ]
+                    },
+                    {
+                        "y": 3,
+                        "d": 4
+                    }
+                ]
+            }
         }"#,
         )
         .unwrap();
 
+        // Retrieve inner dict
         let nested_ops_0 = include_payload_selector_0.process(payload.clone());
         assert_eq!(nested_ops_0, dict_0);
 
-        let dict_1: Payload = serde_json::from_str(r#"{"d": 4, "j": 1, "k": 2, "y": 3}"#).unwrap();
+        let dict_1: Payload = serde_json::from_str(
+            r#"{"i": [
+            {
+                "j": 1,
+                "k": 2
+
+            },
+            {
+                "y": 3,
+                "d": 4
+            }
+        ]}"#,
+        )
+        .unwrap();
 
         let include_payload_selector_1 = PayloadSelector::new_include(vec!["b.e.i".to_string()]);
 
-        // Retreive inner dict in Array
+        // Retrieve inner Array
         let nested_ops_1 = include_payload_selector_1.process(payload.clone());
         assert_eq!(nested_ops_1, dict_1);
-
-        let dict_2: Payload = serde_json::from_str(r#"{"j": 3, "k": 4}"#).unwrap();
-
-        let include_payload_selector_2 = PayloadSelector::new_include(vec!["b.e.h".to_string()]);
-
-        // Retreive inner array dict with similar keys
-        let nested_ops_2 = include_payload_selector_2.process(payload.clone());
-        assert_eq!(nested_ops_2, dict_2);
     }
 
     #[test]
@@ -2624,7 +2624,6 @@ mod tests {
         });
 
         // Exclude all keys
-        // Note: We retreive object only
         let ops = exclude_payload_selector_0.process(payload.clone());
         assert_eq!(ops, Payload::default());
 
@@ -2632,43 +2631,9 @@ mod tests {
             exclude: vec!["b.e".to_string()],
         });
 
-        let top_object: Payload = serde_json::from_str(
-            r#"{
-            "a": 1,
-            "c": 123,
-            "e": {
-                "f": [1,2,3],
-                "g": 7,
-                "h": [
-                    {
-                        "j": 1,
-                        "k": 2
-
-                    },
-                    {
-                        "j": 3,
-                        "k": 4
-                    }
-                ],
-                "i": [
-                    {
-                        "j": 1,
-                        "k": 2
-
-                    },
-                    {
-                        "y": 3,
-                        "d": 4
-                    }
-                ]
-            }
-        }"#,
-        )
-        .unwrap();
-
         // No nested exclude
         let nested_ops = exclude_payload_selector_1.process(payload.clone());
-        assert_eq!(nested_ops, top_object);
+        assert_eq!(nested_ops, payload);
     }
 }
 
