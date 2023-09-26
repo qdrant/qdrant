@@ -871,12 +871,12 @@ impl ShardReplicaSet {
 
         let (local, is_local_ready, update_watcher) = match self.local.try_read() {
             Ok(local) => {
+                let update_watcher = local.deref().as_ref().map(Shard::watch_for_update);
+
                 let is_local_ready = local
                     .deref()
                     .as_ref()
                     .map_or(false, |local| !local.is_update_in_progress());
-
-                let update_watcher = local.deref().as_ref().map(Shard::watch_for_update);
 
                 (
                     future::ready(local).left_future(),
