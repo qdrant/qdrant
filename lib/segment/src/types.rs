@@ -1718,38 +1718,34 @@ impl PayloadSelector {
         let fields = match self {
             PayloadSelector::Include(selector) => selector.include.clone(),
             PayloadSelector::Exclude(selector) => {
-                //let v = selector.exclude.clone();
-                let f =
-                    x.0.keys()
-                        .filter(|&k| !selector.exclude.contains(k))
-                        .cloned()
-                        .collect();
-                f
+                x.0.keys()
+                    .filter(|&k| !selector.exclude.contains(k))
+                    .cloned()
+                    .collect()
             }
         };
 
-        let mut result: Vec<&Value> = Vec::new();
+        let mut map = Map::new();
 
         for field in &fields {
-            let value = x.get_value(field).values();
+            let values = x.get_value(field).values().clone();
 
-            result.extend(value.clone());
-        }
-
-        let mut map = Map::new();
-        for value in result {
-            match value {
-                Value::Array(inner) => {
-                    for inner_value in inner {
-                        if let Value::Object(ref obj) = inner_value {
-                            map.extend(obj.clone());
+            for value in values {
+                match value {
+                    Value::Array(inner) => {
+                        for inner_value in inner {
+                            if let Value::Object(ref obj) = inner_value {
+                                map.extend(obj.clone());
+                            }
                         }
                     }
+                    Value::Object(ref obj) => {
+                        map.extend(obj.clone());
+                    }
+                    _ => {
+                        map.insert(field.clone(), value.clone());
+                    }
                 }
-                Value::Object(ref obj) => {
-                    map.extend(obj.clone());
-                }
-                _ => {}
             }
         }
         map.into()
@@ -2638,6 +2634,7 @@ mod tests {
 
         let top_object: Payload = serde_json::from_str(
             r#"{
+            "a": 1,
             "c": 123,
             "e": {
                 "f": [1,2,3],
