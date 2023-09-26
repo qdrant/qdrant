@@ -27,10 +27,10 @@ impl UpdateTracker {
     }
 
     pub fn watch_for_update(&self) -> impl Future<Output = ()> {
-        let mut update_notifier = self.update_notifier.subscribe();
+        let mut update_subscriber = self.update_notifier.subscribe();
 
         async move {
-            match update_notifier.changed().await {
+            match update_subscriber.changed().await {
                 Ok(()) => (),
                 Err(_) => future::pending().await,
             }

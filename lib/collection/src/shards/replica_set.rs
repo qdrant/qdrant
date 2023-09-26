@@ -876,7 +876,7 @@ impl ShardReplicaSet {
                     .as_ref()
                     .map_or(false, |local| !local.is_update_in_progress());
 
-                let update_watcher = local.deref().as_ref().map(|local| local.watch_for_update());
+                let update_watcher = local.deref().as_ref().map(Shard::watch_for_update);
 
                 (
                     future::ready(local).left_future(),
@@ -904,7 +904,7 @@ impl ShardReplicaSet {
                 read_operation(local.get()).await
             };
 
-            Some(local_operation.left_future())
+            Some(local_operation.map(|result| (result, true)).left_future())
         } else {
             None
         };
@@ -916,9 +916,11 @@ impl ShardReplicaSet {
 
         active_remotes.shuffle(&mut rand::thread_rng());
 
-        let remote_operations = active_remotes
-            .into_iter()
-            .map(|remote| read_operation(remote).right_future());
+        let remote_operations = active_remotes.into_iter().map(|remote| {
+            read_operation(remote)
+                .map(|result| (result, false))
+                .right_future()
+        });
 
         let mut operations = local_operation.into_iter().chain(remote_operations);
 
@@ -928,7 +930,7 @@ impl ShardReplicaSet {
         // - Local is not available: default fan-out is 1
         // - There is no local: default fan-out is 1
 
-        let default_fan_out = if local_is_active && is_local_ready {
+        let default_fan_out = if is_local_ready && local_is_active {
             0
         } else {
             1
@@ -954,29 +956,42 @@ impl ShardReplicaSet {
         let mut responses = Vec::new();
         let mut errors = Vec::new();
 
+        let mut is_local_operation_resolved = false;
+
         let update_watcher = async move {
             match update_watcher {
-                Some(update_watcher) => update_watcher.fuse().await,
+                Some(update_watcher) => update_watcher.await,
                 None => future::pending().await,
             }
         };
 
-        futures::pin_mut!(update_watcher);
+        let update_watcher = update_watcher.fuse();
+
+        tokio::pin!(update_watcher);
 
         loop {
-            let operation_result_or_update_notification =
-                future::select(pending_operations.next(), &mut update_watcher);
+            let result;
 
-            let result = match operation_result_or_update_notification.await {
-                Either::Left((Some(result), _)) => result,
+            tokio::select! {
+                operation_result = pending_operations.next() => {
+                    let Some(operation_result) = operation_result else {
+                        break;
+                    };
 
-                Either::Left((None, _)) => break,
+                    let (operation_result, is_local_operation) = operation_result;
 
-                Either::Right(_) => {
+                    result = operation_result;
+
+                    if is_local_operation {
+                        is_local_operation_resolved = true;
+                    }
+                }
+
+                _ = &mut update_watcher, if local_is_active && !is_local_operation_resolved => {
                     pending_operations.extend(operations.next());
                     continue;
                 }
-            };
+            }
 
             match result {
                 Ok(response) => {
