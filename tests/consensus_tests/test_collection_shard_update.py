@@ -134,5 +134,5 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
     assert r.status_code == 400
     error = r.json()["status"]["error"]
     assert error.__contains__("Wrong input: 1 out of 2 shards failed to apply operation")
-    assert error.__contains__("Wrong input: InvalidArgument")
+    assert error.__contains__("Wrong input: Vector inserting error: expected dim")
 
