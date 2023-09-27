@@ -370,18 +370,9 @@ impl<'s> SegmentHolder {
         }
 
         let mut rng = rand::thread_rng();
-        let mut timeout = Duration::from_nanos(100);
-        loop {
-            let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
-            let opt_segment_guard = segment_lock.try_write_for(timeout);
-
-            match opt_segment_guard {
-                None => timeout = timeout.saturating_mul(2), // Wait longer next time
-                Some(mut lock) => {
-                    return apply(*segment_id, &mut lock);
-                }
-            }
-        }
+        let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+        let mut segment_write = segment_lock.write();
+        apply(*segment_id, &mut segment_write)
     }
 
     /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
