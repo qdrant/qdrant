@@ -1600,15 +1600,6 @@ impl ShardReplicaSet {
             }
 
             let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
-            for remote in active_remote_shards {
-                let operation = operation.clone();
-                update_futures.push(Either::Left(async move {
-                    remote
-                        .update(operation, wait)
-                        .await
-                        .map_err(|err| (remote.peer_id, err))
-                }));
-            }
 
             if let Some(local) = local.deref() {
                 if self.peer_is_active_or_pending(&this_peer_id) {
@@ -1619,10 +1610,12 @@ impl ShardReplicaSet {
                             wait
                         };
 
+                    let operation = operation.clone();
+
                     let local_update = async move {
                         local
                             .get()
-                            .update(operation.clone(), local_wait)
+                            .update(operation, local_wait)
                             .await
                             .map_err(|err| {
                                 let peer_id = err.remote_peer_id().unwrap_or(this_peer_id);
@@ -1630,13 +1623,25 @@ impl ShardReplicaSet {
                                 (peer_id, err)
                             })
                     };
+
                     update_futures.push(Either::Right(local_update));
                 }
             }
+
+            for remote in active_remote_shards {
+                let operation = operation.clone();
+                update_futures.push(Either::Left(async move {
+                    remote
+                        .update(operation, wait)
+                        .await
+                        .map_err(|err| (remote.peer_id, err))
+                }));
+            }
+
             match self.shared_storage_config.update_concurrency {
                 Some(concurrency) => {
                     futures::stream::iter(update_futures)
-                        .buffered(concurrency.get())
+                        .buffer_unordered(concurrency.get())
                         .collect::<Vec<_>>()
                         .await
                 }
