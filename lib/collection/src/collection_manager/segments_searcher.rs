@@ -157,65 +157,66 @@ impl SegmentsSearcher {
         is_stopped: Arc<AtomicBool>,
         indexing_threshold_kb: usize,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let task = {
             let segments = segments.clone();
-            let batch_request = batch_request.clone();
-            let runtime_handle = runtime_handle.clone();
-            let is_stopped = is_stopped.clone();
 
-            tokio::task::spawn_blocking(move || -> CollectionResult<_> {
+            tokio::task::spawn_blocking(move || {
                 let segments = segments.read();
 
-                let some_segment = segments.iter().next();
+                if !segments.is_empty() {
+                    let available_point_count = segments
+                        .iter()
+                        .map(|(_, segment)| segment.get().read().available_point_count())
+                        .sum();
 
-                if some_segment.is_none() {
-                    return Ok(None);
+                    Some(available_point_count)
+                } else {
+                    None
                 }
-
-                // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
-                // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
-                // With probabilistic sampling we determine a smaller sampling limit for each segment.
-                // Use probabilistic sampling if:
-                // - sampling is enabled
-                // - more than 1 segment
-                // - segments are not empty
-                let available_points_segments = segments
-                    .iter()
-                    .map(|(_, segment)| segment.get().read().available_point_count())
-                    .sum();
-                let use_sampling =
-                    sampling_enabled && segments.len() > 1 && available_points_segments > 0;
-
-                let result = segments
-                    .iter()
-                    .map(|(_id, segment)| {
-                        let search = runtime_handle.spawn_blocking({
-                            let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                            let is_stopped_clone = is_stopped.clone();
-                            move || {
-                                search_in_segment(
-                                    segment,
-                                    batch_request,
-                                    available_points_segments,
-                                    use_sampling,
-                                    &is_stopped_clone,
-                                    indexing_threshold_kb,
-                                )
-                            }
-                        });
-                        (segment.clone(), search)
-                    })
-                    .unzip();
-
-                Ok(Some(result))
             })
         };
 
-        let Some(task_result) = task.await?? else {
+        let Some(available_point_count) = task.await? else {
             return Ok(Vec::new());
         };
 
-        let (locked_segments, searches): (Vec<_>, Vec<_>) = task_result;
+        // Using block to ensure `segments` variable is dropped in the end of it
+        let (locked_segments, searches): (Vec<_>, Vec<_>) = {
+            // Unfortunately, we have to do `segments.read()` twice, once in blocking task
+            // and once here, due to `Send` bounds :/
+            let segments = segments.read();
+
+            // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
+            // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
+            // With probabilistic sampling we determine a smaller sampling limit for each segment.
+            // Use probabilistic sampling if:
+            // - sampling is enabled
+            // - more than 1 segment
+            // - segments are not empty
+            let use_sampling = sampling_enabled && segments.len() > 1 && available_point_count > 0;
+
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    let search = runtime_handle.spawn_blocking({
+                        let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                        let is_stopped_clone = is_stopped.clone();
+                        move || {
+                            search_in_segment(
+                                segment,
+                                batch_request,
+                                available_point_count,
+                                use_sampling,
+                                &is_stopped_clone,
+                                indexing_threshold_kb,
+                            )
+                        }
+                    });
+                    (segment.clone(), search)
+                })
+                .unzip()
+        };
 
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
@@ -671,7 +672,7 @@ mod tests {
         };
 
         let result = SegmentsSearcher::search(
-            &segment_holder,
+            Arc::new(segment_holder),
             Arc::new(batch_request),
             &Handle::current(),
             true,
@@ -704,7 +705,7 @@ mod tests {
         let _sid1 = holder.add(segment1);
         let _sid2 = holder.add(segment2);
 
-        let segment_holder = RwLock::new(holder);
+        let segment_holder = Arc::new(RwLock::new(holder));
 
         let mut rnd = rand::thread_rng();
 
@@ -734,9 +735,11 @@ mod tests {
                 searches: vec![req1.into(), req2.into()],
             };
 
+            let batch_request = Arc::new(batch_request);
+
             let result_no_sampling = SegmentsSearcher::search(
-                &segment_holder,
-                Arc::new(batch_request.clone()),
+                segment_holder.clone(),
+                batch_request.clone(),
                 &Handle::current(),
                 false,
                 Arc::new(false.into()),
@@ -748,8 +751,8 @@ mod tests {
             assert!(!result_no_sampling.is_empty());
 
             let result_sampling = SegmentsSearcher::search(
-                &segment_holder,
-                Arc::new(batch_request),
+                segment_holder.clone(),
+                batch_request,
                 &Handle::current(),
                 true,
                 Arc::new(false.into()),
