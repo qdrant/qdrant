@@ -370,18 +370,9 @@ impl<'s> SegmentHolder {
         }
 
         let mut rng = rand::thread_rng();
-        let mut timeout = Duration::from_nanos(100);
-        loop {
-            let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
-            let opt_segment_guard = segment_lock.try_write_for(timeout);
-
-            match opt_segment_guard {
-                None => timeout = timeout.saturating_mul(2), // Wait longer next time
-                Some(mut lock) => {
-                    return apply(*segment_id, &mut lock);
-                }
-            }
-        }
+        let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+        let mut segment_write = segment_lock.write();
+        apply(*segment_id, &mut segment_write)
     }
 
     /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
@@ -695,7 +686,6 @@ impl<'s> SegmentHolder {
 #[cfg(test)]
 mod tests {
     use std::fs::read_dir;
-    use std::{thread, time};
 
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
@@ -724,41 +714,6 @@ mod tests {
         replaced_segments
             .into_iter()
             .for_each(|s| s.drop_data().unwrap());
-    }
-
-    #[test]
-    fn test_aloha_locking() {
-        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-        let segment1 = build_segment_1(dir.path());
-        let segment2 = build_segment_2(dir.path());
-
-        let mut holder = SegmentHolder::default();
-
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(segment2);
-
-        let locked_segment1 = holder.get(sid1).unwrap().get();
-        let locked_segment2 = holder.get(sid2).unwrap().clone();
-
-        let _read_lock_1 = locked_segment1.read();
-
-        let handler = thread::spawn(move || {
-            let lc = locked_segment2.get();
-            let _guard = lc.read();
-            thread::sleep(time::Duration::from_millis(100));
-        });
-
-        thread::sleep(time::Duration::from_millis(10));
-
-        holder
-            .aloha_random_write(&[sid1, sid2], |idx, _seg| {
-                assert_eq!(idx, sid2);
-                Ok(true)
-            })
-            .unwrap();
-
-        handler.join().unwrap();
     }
 
     #[test]
