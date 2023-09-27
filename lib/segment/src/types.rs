@@ -7,6 +7,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
 
+use common::types::ScoreType;
 use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, Point, Polygon};
 use itertools::Itertools;
@@ -25,14 +26,10 @@ use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 
-/// Type of point index inside a segment
-pub type PointOffsetType = u32;
 pub type PayloadKeyType = String;
 pub type PayloadKeyTypeRef<'a> = &'a str;
-pub type SeqNumberType = u64;
 /// Sequential number of modification, applied to segment
-pub type ScoreType = f32;
-/// Type of vector matching score
+pub type SeqNumberType = u64;
 pub type TagType = u64;
 /// Type of float point payload
 pub type FloatPayloadType = f64;

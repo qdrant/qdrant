@@ -6,6 +6,7 @@ use std::hash::Hash;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use immutable_map_index::ImmutableMapIndex;
 use itertools::Itertools;
 use mutable_map_index::MutableMapIndex;
@@ -25,7 +26,7 @@ use crate::index::query_estimator::combine_should_estimations;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
-    PayloadKeyType, PointOffsetType, ValueVariants,
+    PayloadKeyType, ValueVariants,
 };
 use crate::vector_storage::div_ceil;
 

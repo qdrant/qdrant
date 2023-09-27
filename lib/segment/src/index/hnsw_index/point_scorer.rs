@@ -1,6 +1,7 @@
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+
 use crate::payload_storage::FilterContext;
-use crate::types::{PointOffsetType, ScoreType};
-use crate::vector_storage::{RawScorer, ScoredPointOffset};
+use crate::vector_storage::RawScorer;
 
 pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,

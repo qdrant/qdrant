@@ -1,8 +1,9 @@
+use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
+use crate::types::{Filter, Payload, PayloadKeyTypeRef};
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {

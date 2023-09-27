@@ -1103,6 +1103,7 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "ordered-float 3.9.1",
  "serde",
  "validator",
 ]
@@ -4752,7 +4753,6 @@ name = "sparse"
 version = "0.1.0"
 dependencies = [
  "common",
- "ordered-float 3.9.1",
 ]
 
 [[package]]

@@ -1,5 +1,7 @@
+use common::types::{PointOffsetType, ScoreType};
+
 use crate::data_types::vectors::{VectorElementType, VectorType};
-use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::types::Distance;
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
 

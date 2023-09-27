@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 
+use common::types::{PointOffsetType, ScoreType};
+
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
-use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::VectorStorage;
 

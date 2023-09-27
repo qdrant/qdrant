@@ -1,5 +1,6 @@
 use std::cmp::max;
 
+use common::types::ScoredPointOffset;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -11,7 +12,6 @@ use crate::index::hnsw_index::graph_links::GraphLinksRam;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
 use crate::spaces::simple::CosineMetric;
-use crate::vector_storage::ScoredPointOffset;
 
 fn search_in_builder(
     builder: &GraphLayersBuilder,

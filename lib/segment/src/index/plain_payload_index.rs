@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
@@ -24,9 +25,9 @@ use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType, SearchParams,
+    SearchParams,
 };
-use crate::vector_storage::{new_stoppable_raw_scorer, ScoredPointOffset, VectorStorageEnum};
+use crate::vector_storage::{new_stoppable_raw_scorer, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///

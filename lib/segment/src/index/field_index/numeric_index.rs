@@ -4,6 +4,7 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
@@ -21,9 +22,7 @@ use crate::index::key_encoding::{
     encode_i64_key_ascending,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
-};
+use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range};
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;

@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, PayloadKeyType, PointOffsetType};
+use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub struct FullTextIndex {
     inverted_index: InvertedIndex,

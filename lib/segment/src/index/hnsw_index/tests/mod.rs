@@ -2,6 +2,7 @@ mod test_compact_graph_layer;
 
 use std::path::Path;
 
+use common::types::PointOffsetType;
 use rand::Rng;
 
 use super::graph_links::GraphLinksRam;
@@ -10,7 +11,6 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
-use crate::types::PointOffsetType;
 
 pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric, R>(
     num_vectors: usize,

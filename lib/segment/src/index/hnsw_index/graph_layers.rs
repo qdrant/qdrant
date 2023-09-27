@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::path::{Path, PathBuf};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_bin, read_bin, FileStorageError};
 use itertools::Itertools;
 use memory::mmap_ops;
@@ -15,8 +16,6 @@ use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
-use crate::types::PointOffsetType;
-use crate::vector_storage::ScoredPointOffset;
 
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LinkContainerRef<'a> = &'a [PointOffsetType];

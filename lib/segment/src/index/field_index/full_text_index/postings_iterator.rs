@@ -1,5 +1,6 @@
+use common::types::PointOffsetType;
+
 use super::posting_list::PostingList;
-use crate::types::PointOffsetType;
 
 pub fn intersect_postings_iterator<'a>(
     mut postings: Vec<&'a PostingList>,

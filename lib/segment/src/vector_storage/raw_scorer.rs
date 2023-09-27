@@ -1,14 +1,15 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::query_scorer::reco_query_scorer::RecoQueryScorer;
-use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
+use super::{VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::QueryVector;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::types::Distance;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
 

@@ -5,12 +5,12 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use memmap2::{Mmap, MmapMut};
 use memory::{madvise, mmap_ops};
 
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::PointOffsetType;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
 
@@ -581,7 +581,6 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::types::PointOffsetType;
 
     fn to_vec<TGraphLinks: GraphLinks>(links: &TGraphLinks) -> Vec<Vec<Vec<PointOffsetType>>> {
         let mut result = Vec::new();

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -8,14 +9,11 @@ use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueInd
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
-};
+use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 
 mod memory {
     use bitvec::vec::BitVec;
-
-    use crate::types::PointOffsetType;
+    use common::types::PointOffsetType;
 
     pub struct BinaryItem {
         value: u8,

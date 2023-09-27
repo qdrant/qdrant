@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
+use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -18,7 +19,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 /// In-memory vector storage with on-update persistence using `store`

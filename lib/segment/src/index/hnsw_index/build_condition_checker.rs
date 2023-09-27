@@ -1,6 +1,7 @@
+use common::types::PointOffsetType;
+
 use crate::index::visited_pool::VisitedList;
 use crate::payload_storage::FilterContext;
-use crate::types::PointOffsetType;
 
 pub struct BuildConditionChecker<'a> {
     pub filter_list: &'a VisitedList,

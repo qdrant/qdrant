@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::types::{FieldCondition, IsEmptyCondition, IsNullCondition, PointOffsetType};
+use common::types::PointOffsetType;
+
+use crate::types::{FieldCondition, IsEmptyCondition, IsNullCondition};
 
 mod field_index_base;
 pub mod full_text_index;

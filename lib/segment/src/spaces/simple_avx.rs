@@ -1,7 +1,8 @@
 use std::arch::x86_64::*;
 
+use common::types::ScoreType;
+
 use crate::data_types::vectors::{VectorElementType, VectorType};
-use crate::types::ScoreType;
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]

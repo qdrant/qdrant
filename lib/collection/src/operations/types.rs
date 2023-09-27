@@ -7,6 +7,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
+use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
 use itertools::Itertools;
@@ -21,7 +22,7 @@ use segment::data_types::vectors::{
 use segment::entry::entry_point::OperationError;
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};

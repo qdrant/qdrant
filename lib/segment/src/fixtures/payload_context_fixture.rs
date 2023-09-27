@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
+use common::types::PointOffsetType;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
@@ -19,7 +20,7 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberType};
+use crate::types::{PayloadSchemaType, PointIdType, SeqNumberType};
 
 /// Warn: Use for tests only
 ///
