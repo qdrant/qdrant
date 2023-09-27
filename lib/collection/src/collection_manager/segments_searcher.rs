@@ -150,59 +150,73 @@ impl SegmentsSearcher {
     }
 
     pub async fn search(
-        segments: &RwLock<SegmentHolder>,
+        segments: Arc<RwLock<SegmentHolder>>,
         batch_request: Arc<CoreSearchRequestBatch>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
         is_stopped: Arc<AtomicBool>,
         indexing_threshold_kb: usize,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // Using { } block to ensure segments variable is dropped in the end of it
-        // and is not transferred across the all_searches.await? boundary as it
-        // does not impl Send trait
-        let (locked_segments, searches): (Vec<_>, Vec<_>) = {
-            let segments = segments.read();
+        let task = {
+            let segments = segments.clone();
+            let batch_request = batch_request.clone();
+            let runtime_handle = runtime_handle.clone();
+            let is_stopped = is_stopped.clone();
 
-            let some_segment = segments.iter().next();
-            if some_segment.is_none() {
-                return Ok(vec![]);
-            }
+            tokio::task::spawn_blocking(move || -> CollectionResult<_> {
+                let segments = segments.read();
 
-            // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
-            // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
-            // With probabilistic sampling we determine a smaller sampling limit for each segment.
-            // Use probabilistic sampling if:
-            // - sampling is enabled
-            // - more than 1 segment
-            // - segments are not empty
-            let available_points_segments = segments
-                .iter()
-                .map(|(_, segment)| segment.get().read().available_point_count())
-                .sum();
-            let use_sampling =
-                sampling_enabled && segments.len() > 1 && available_points_segments > 0;
+                let some_segment = segments.iter().next();
 
-            segments
-                .iter()
-                .map(|(_id, segment)| {
-                    let search = runtime_handle.spawn_blocking({
-                        let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                        let is_stopped_clone = is_stopped.clone();
-                        move || {
-                            search_in_segment(
-                                segment,
-                                batch_request,
-                                available_points_segments,
-                                use_sampling,
-                                &is_stopped_clone,
-                                indexing_threshold_kb,
-                            )
-                        }
-                    });
-                    (segment.clone(), search)
-                })
-                .unzip()
+                if some_segment.is_none() {
+                    return Ok(None);
+                }
+
+                // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
+                // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
+                // With probabilistic sampling we determine a smaller sampling limit for each segment.
+                // Use probabilistic sampling if:
+                // - sampling is enabled
+                // - more than 1 segment
+                // - segments are not empty
+                let available_points_segments = segments
+                    .iter()
+                    .map(|(_, segment)| segment.get().read().available_point_count())
+                    .sum();
+                let use_sampling =
+                    sampling_enabled && segments.len() > 1 && available_points_segments > 0;
+
+                let result = segments
+                    .iter()
+                    .map(|(_id, segment)| {
+                        let search = runtime_handle.spawn_blocking({
+                            let (segment, batch_request) = (segment.clone(), batch_request.clone());
+                            let is_stopped_clone = is_stopped.clone();
+                            move || {
+                                search_in_segment(
+                                    segment,
+                                    batch_request,
+                                    available_points_segments,
+                                    use_sampling,
+                                    &is_stopped_clone,
+                                    indexing_threshold_kb,
+                                )
+                            }
+                        });
+                        (segment.clone(), search)
+                    })
+                    .unzip();
+
+                Ok(Some(result))
+            })
         };
+
+        let Some(task_result) = task.await?? else {
+            return Ok(Vec::new());
+        };
+
+        let (locked_segments, searches): (Vec<_>, Vec<_>) = task_result;
+
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
         let (all_search_results_per_segment, further_results) =
