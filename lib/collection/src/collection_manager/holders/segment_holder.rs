@@ -345,43 +345,64 @@ impl<'s> SegmentHolder {
     where
         F: FnMut(SegmentId, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
-        if segment_ids.is_empty() {
-            return Err(OperationError::service_error(
-                "No appendable segments exists, expected at least one",
-            ));
-        }
+        let segment_ids = segment_ids.to_vec();
+        let segment_id = segment_ids.choose(&mut rand::thread_rng()).unwrap();
 
-        let mut entries: Vec<_> = Default::default();
+        let segment = self.segments.get(segment_id).unwrap().get();
+        let mut segment_write = segment.write();
+        apply(*segment_id, &mut segment_write)
 
-        // Try to access each segment first without any timeout (fast)
-        for segment_id in segment_ids {
-            let segment_opt = self.segments.get(segment_id).map(|x| x.get());
-            match segment_opt {
-                None => {}
-                Some(segment_lock) => {
-                    match segment_lock.try_write() {
-                        None => {}
-                        Some(mut lock) => return apply(*segment_id, &mut lock),
-                    }
-                    // save segments for further lock attempts
-                    entries.push((*segment_id, segment_lock))
-                }
-            };
-        }
+        // if segment_ids.is_empty() {
+        //     return Err(OperationError::service_error(
+        //         "No appendable segments exists, expected at least one",
+        //     ));
+        // }
 
-        let mut rng = rand::thread_rng();
-        let mut timeout = Duration::from_nanos(100);
-        loop {
-            let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
-            let opt_segment_guard = segment_lock.try_write_for(timeout);
+        // let mut entries: Vec<_> = Default::default();
 
-            match opt_segment_guard {
-                None => timeout = timeout.saturating_mul(2), // Wait longer next time
-                Some(mut lock) => {
-                    return apply(*segment_id, &mut lock);
-                }
-            }
-        }
+        // // Try to access each segment first without any timeout (fast)
+        // for segment_id in segment_ids {
+        //     let segment_opt = self.segments.get(segment_id).map(|x| x.get());
+        //     match segment_opt {
+        //         None => {}
+        //         Some(segment_lock) => {
+        //             match segment_lock.try_write() {
+        //                 None => {}
+        //                 Some(mut lock) => return apply(*segment_id, &mut lock),
+        //             }
+        //             // save segments for further lock attempts
+        //             entries.push((*segment_id, segment_lock))
+        //         }
+        //     };
+        // }
+
+        // let mut rng = rand::thread_rng();
+        // let mut timeout = Duration::from_nanos(100);
+        // loop {
+        //     let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+
+        //     // TODO: remove after debug
+        //     {
+        //         // let guard = segment_lock.try_read_for(timeout);
+        //         let guard = segment_lock.try_read();
+        //         if let Some(segment_guard) = guard {
+        //             dbg!(segment_ids);
+        //             assert!(
+        //                 dbg!(segment_guard.is_appendable()),
+        //                 "random write segment not appendable"
+        //             );
+        //         }
+        //     }
+
+        //     let opt_segment_guard = segment_lock.try_write_for(timeout);
+
+        //     match opt_segment_guard {
+        //         None => timeout = timeout.saturating_mul(2), // Wait longer next time
+        //         Some(mut lock) => {
+        //             return apply(*segment_id, &mut lock);
+        //         }
+        //     }
+        // }
     }
 
     /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
