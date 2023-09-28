@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
+use common::types::ScoredPointOffset;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
@@ -15,7 +16,7 @@ use segment::types::{
     QuantizationSearchParams, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
     VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::{ScoredPointOffset, VectorStorage};
+use segment::vector_storage::VectorStorage;
 use tempfile::Builder;
 
 fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {

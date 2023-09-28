@@ -221,7 +221,7 @@ impl<'a, T> ResolverRecord<'a, T> {
 mod test {
     use std::fmt;
 
-    use segment::types::ScoreType;
+    use common::types::ScoreType;
 
     use super::*;
 

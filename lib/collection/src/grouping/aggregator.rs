@@ -1,13 +1,12 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
+use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use segment::data_types::groups::GroupId;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
-use segment::types::{
-    ExtendedPointId, Order, PayloadContainer, PointIdType, ScoreType, ScoredPoint,
-};
+use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, ScoredPoint};
 use serde_json::Value;
 
 use super::types::AggregatorError::{self, *};
@@ -185,7 +184,7 @@ impl GroupsAggregator {
 #[cfg(test)]
 mod unit_tests {
 
-    use segment::types::{Payload, ScoreType};
+    use segment::types::Payload;
     use serde_json::json;
 
     use super::*;

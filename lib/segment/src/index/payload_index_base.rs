@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::utils::JsonPathPayload;
@@ -10,7 +11,6 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType,
 };
 
 pub trait PayloadIndex {

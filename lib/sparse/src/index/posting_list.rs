@@ -1,8 +1,10 @@
-use crate::common::types::{DimWeight, RecordId};
+use common::types::PointOffsetType;
+
+use crate::common::types::DimWeight;
 
 #[derive(Debug, Copy, Clone)]
 pub struct PostingElement {
-    pub record_id: RecordId,
+    pub record_id: PointOffsetType,
     pub weight: DimWeight,
     pub max_next_weight: DimWeight,
 }
@@ -15,7 +17,7 @@ pub struct PostingList {
 
 impl PostingList {
     #[cfg(test)]
-    pub fn from(records: Vec<(RecordId, DimWeight)>) -> PostingList {
+    pub fn from(records: Vec<(PointOffsetType, DimWeight)>) -> PostingList {
         let mut posting_list = PostingBuilder::new();
         for (id, weight) in records {
             posting_list.add(id, weight);
@@ -35,7 +37,7 @@ impl PostingBuilder {
         }
     }
 
-    pub fn add(&mut self, record_id: RecordId, weight: DimWeight) {
+    pub fn add(&mut self, record_id: PointOffsetType, weight: DimWeight) {
         self.elements.push(PostingElement {
             record_id,
             weight,
@@ -116,7 +118,7 @@ impl<'a> PostingListIterator<'a> {
     /// If the iterator is already at the end, None is returned.
     /// If the iterator skipped to the end, None is returned and current index is set to the length of the list.
     /// Uses binary search.
-    pub fn skip_to(&mut self, id: RecordId) -> Option<&PostingElement> {
+    pub fn skip_to(&mut self, id: PointOffsetType) -> Option<&PostingElement> {
         if self.current_index >= self.posting_list.elements.len() {
             return None;
         }

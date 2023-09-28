@@ -2,10 +2,8 @@ use std::collections::BinaryHeap;
 use std::iter::FromIterator;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::{ScoreType, ScoredPointOffset};
 use num_traits::float::FloatCore;
-
-use crate::types::ScoreType;
-use crate::vector_storage::ScoredPointOffset;
 
 /// Structure that holds context of the search
 pub struct SearchContext {

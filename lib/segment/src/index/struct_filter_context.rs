@@ -1,3 +1,5 @@
+use common::types::PointOffsetType;
+
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
@@ -5,7 +7,7 @@ use crate::index::query_optimization::optimized_filter::{check_optimized_filter,
 use crate::index::query_optimization::optimizer::optimize_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::FilterContext;
-use crate::types::{Condition, Filter, PointOffsetType};
+use crate::types::{Condition, Filter};
 
 pub struct StructFilterContext<'a> {
     optimized_filter: OptimizedFilter<'a>,

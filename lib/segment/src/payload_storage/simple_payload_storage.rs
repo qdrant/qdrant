@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::{Payload, PointOffsetType};
+use crate::types::Payload;
 
 /// In-memory implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, but only uses this storage during the initial load

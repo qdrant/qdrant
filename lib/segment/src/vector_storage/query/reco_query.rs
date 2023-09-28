@@ -1,5 +1,6 @@
+use common::types::ScoreType;
+
 use crate::data_types::vectors::{QueryVector, VectorType};
-use crate::types::ScoreType;
 
 #[derive(Debug, Clone)]
 pub struct RecoQuery<T> {
@@ -70,10 +71,10 @@ impl From<RecoQuery<VectorType>> for QueryVector {
 
 #[cfg(test)]
 mod test {
+    use common::types::ScoreType;
     use rstest::rstest;
 
     use super::RecoQuery;
-    use crate::types::ScoreType;
 
     #[rstest]
     #[case::higher_positive(vec![42], vec![4], 42.0)]

@@ -1,9 +1,8 @@
 use std::cmp::Ordering;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
-
-use crate::types::PointOffsetType;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntryPoint {

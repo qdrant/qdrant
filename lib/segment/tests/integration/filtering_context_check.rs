@@ -1,3 +1,4 @@
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -6,7 +7,6 @@ use segment::fixtures::payload_context_fixture::{
 };
 use segment::fixtures::payload_fixtures::random_filter;
 use segment::index::PayloadIndex;
-use segment::types::PointOffsetType;
 use tempfile::Builder;
 
 const NUM_POINTS: usize = 2000;

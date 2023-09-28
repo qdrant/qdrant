@@ -1,9 +1,8 @@
 use std::cmp::{max, min};
 use std::hash::{Hash, Hasher};
 
+use common::types::{PointOffsetType, ScoreType};
 use seahash::SeaHasher;
-
-use crate::types::{PointOffsetType, ScoreType};
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 struct PointPair {

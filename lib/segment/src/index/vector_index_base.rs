@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use common::types::ScoredPointOffset;
+
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
@@ -8,7 +10,6 @@ use crate::data_types::vectors::QueryVector;
 use crate::entry::entry_point::OperationResult;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
-use crate::vector_storage::ScoredPointOffset;
 
 /// Trait for vector searching
 pub trait VectorIndex {

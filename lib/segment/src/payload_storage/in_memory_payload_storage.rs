@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
+use common::types::PointOffsetType;
+
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Payload, PointOffsetType};
+use crate::types::Payload;
 
 /// Same as `SimplePayloadStorage` but without persistence
 /// Warn: for tests only

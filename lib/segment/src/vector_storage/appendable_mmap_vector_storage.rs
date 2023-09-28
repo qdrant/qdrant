@@ -6,11 +6,12 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
+use common::types::PointOffsetType;
 
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;

@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
+use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
+use crate::types::{Payload, PayloadKeyTypeRef};
 
 impl PayloadStorage for SimplePayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {

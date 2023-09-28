@@ -2,9 +2,10 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::PointOffsetType;
 
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::types::{OwnedPayloadRef, Payload, PointOffsetType};
+use crate::types::{OwnedPayloadRef, Payload};
 
 #[derive(Clone)]
 pub struct PayloadProvider {

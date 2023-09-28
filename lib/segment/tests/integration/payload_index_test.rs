@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -25,8 +26,8 @@ use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon,
-    GeoRadius, Indexes, IsEmptyCondition, Match, Payload, PayloadField, PayloadSchemaType,
-    PointOffsetType, Range, SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
+    GeoRadius, Indexes, IsEmptyCondition, Match, Payload, PayloadField, PayloadSchemaType, Range,
+    SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
 };
 use serde_json::json;
 use tempfile::Builder;
