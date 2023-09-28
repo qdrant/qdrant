@@ -6,6 +6,8 @@ use std::ops::Bound;
 use itertools::Itertools;
 use num_traits::{Num, Signed};
 
+use crate::index::field_index::utils::check_boundaries;
+
 const MIN_BUCKET_SIZE: usize = 10;
 
 #[derive(Debug, Clone)]
@@ -214,10 +216,6 @@ impl<T: Numericable> Histogram<T> {
             Unbounded => T::max_value(),
         };
 
-        if from_val > to_val {
-            return (0, 0, 0);
-        }
-
         let left_border = {
             if matches!(from_, Unbounded) {
                 None
@@ -233,6 +231,10 @@ impl<T: Numericable> Histogram<T> {
                 self.borders.range((to_.clone(), Unbounded)).next()
             }
         };
+
+        if !check_boundaries(&from_, &to_) {
+            return (0, 0, 0);
+        }
 
         let estimation = left_border
             .into_iter()

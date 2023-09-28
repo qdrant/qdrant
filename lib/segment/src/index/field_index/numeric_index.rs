@@ -14,6 +14,7 @@ use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
+use crate::index::field_index::utils::check_boundaries;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
@@ -356,16 +357,8 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
-        match (&start_bound, &end_bound) {
-            (Excluded(s), Excluded(e)) if s == e => {
-                // range start and end are equal and excluded in BTreeMap
-                return Ok(Box::new(vec![].into_iter()));
-            }
-            (Included(s) | Excluded(s), Included(e) | Excluded(e)) if s > e => {
-                //range start is greater than range end
-                return Ok(Box::new(vec![].into_iter()));
-            }
-            _ => {}
+        if !check_boundaries(&start_bound, &end_bound) {
+            return Ok(Box::new(vec![].into_iter()));
         }
 
         Ok(Box::new(

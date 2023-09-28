@@ -17,6 +17,7 @@ mod stat_tools;
 pub mod binary_index;
 #[cfg(test)]
 mod tests;
+mod utils;
 
 pub use field_index_base::*;
 
