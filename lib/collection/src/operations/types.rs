@@ -376,11 +376,12 @@ impl From<u64> for RecommendExample {
     }
 }
 
-/// How to use positive and negative examples to find the results, default is `AverageVector`:
-/// - `AverageVector` - Average positive and negative vectors and create a single query
+/// How to use positive and negative examples to find the results, default is `average_vector`:
+///
+/// * `average_vector` - Average positive and negative vectors and create a single query
 ///   with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
 ///
-/// - `BestScore` - Uses custom search objective. Each candidate is compared against all
+/// * `best_score` - Uses custom search objective. Each candidate is compared against all
 ///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
 ///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
 ///   the `max_pos_score`.
