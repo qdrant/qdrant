@@ -150,23 +150,42 @@ impl SegmentsSearcher {
     }
 
     pub async fn search(
-        segments: &RwLock<SegmentHolder>,
+        segments: Arc<RwLock<SegmentHolder>>,
         batch_request: Arc<CoreSearchRequestBatch>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
         is_stopped: Arc<AtomicBool>,
         indexing_threshold_kb: usize,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // Using { } block to ensure segments variable is dropped in the end of it
-        // and is not transferred across the all_searches.await? boundary as it
-        // does not impl Send trait
-        let (locked_segments, searches): (Vec<_>, Vec<_>) = {
-            let segments = segments.read();
+        // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
+        let task = {
+            let segments = segments.clone();
 
-            let some_segment = segments.iter().next();
-            if some_segment.is_none() {
-                return Ok(vec![]);
-            }
+            tokio::task::spawn_blocking(move || {
+                let segments = segments.read();
+
+                if !segments.is_empty() {
+                    let available_point_count = segments
+                        .iter()
+                        .map(|(_, segment)| segment.get().read().available_point_count())
+                        .sum();
+
+                    Some(available_point_count)
+                } else {
+                    None
+                }
+            })
+        };
+
+        let Some(available_point_count) = task.await? else {
+            return Ok(Vec::new());
+        };
+
+        // Using block to ensure `segments` variable is dropped in the end of it
+        let (locked_segments, searches): (Vec<_>, Vec<_>) = {
+            // Unfortunately, we have to do `segments.read()` twice, once in blocking task
+            // and once here, due to `Send` bounds :/
+            let segments = segments.read();
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
             // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
@@ -175,12 +194,7 @@ impl SegmentsSearcher {
             // - sampling is enabled
             // - more than 1 segment
             // - segments are not empty
-            let available_points_segments = segments
-                .iter()
-                .map(|(_, segment)| segment.get().read().available_point_count())
-                .sum();
-            let use_sampling =
-                sampling_enabled && segments.len() > 1 && available_points_segments > 0;
+            let use_sampling = sampling_enabled && segments.len() > 1 && available_point_count > 0;
 
             segments
                 .iter()
@@ -192,7 +206,7 @@ impl SegmentsSearcher {
                             search_in_segment(
                                 segment,
                                 batch_request,
-                                available_points_segments,
+                                available_point_count,
                                 use_sampling,
                                 &is_stopped_clone,
                                 indexing_threshold_kb,
@@ -203,6 +217,7 @@ impl SegmentsSearcher {
                 })
                 .unzip()
         };
+
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
         let (all_search_results_per_segment, further_results) =
@@ -657,7 +672,7 @@ mod tests {
         };
 
         let result = SegmentsSearcher::search(
-            &segment_holder,
+            Arc::new(segment_holder),
             Arc::new(batch_request),
             &Handle::current(),
             true,
@@ -690,7 +705,7 @@ mod tests {
         let _sid1 = holder.add(segment1);
         let _sid2 = holder.add(segment2);
 
-        let segment_holder = RwLock::new(holder);
+        let segment_holder = Arc::new(RwLock::new(holder));
 
         let mut rnd = rand::thread_rng();
 
@@ -720,9 +735,11 @@ mod tests {
                 searches: vec![req1.into(), req2.into()],
             };
 
+            let batch_request = Arc::new(batch_request);
+
             let result_no_sampling = SegmentsSearcher::search(
-                &segment_holder,
-                Arc::new(batch_request.clone()),
+                segment_holder.clone(),
+                batch_request.clone(),
                 &Handle::current(),
                 false,
                 Arc::new(false.into()),
@@ -734,8 +751,8 @@ mod tests {
             assert!(!result_no_sampling.is_empty());
 
             let result_sampling = SegmentsSearcher::search(
-                &segment_holder,
-                Arc::new(batch_request),
+                segment_holder.clone(),
+                batch_request,
                 &Handle::current(),
                 true,
                 Arc::new(false.into()),

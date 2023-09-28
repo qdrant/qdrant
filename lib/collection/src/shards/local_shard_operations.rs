@@ -46,7 +46,7 @@ impl LocalShard {
         let is_stopped = StoppingGuard::new();
 
         let search_request = SegmentsSearcher::search(
-            self.segments(),
+            self.segments.clone(),
             core_request.clone(),
             search_runtime_handle,
             true,

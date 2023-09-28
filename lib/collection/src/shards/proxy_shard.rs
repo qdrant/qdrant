@@ -13,6 +13,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
 
+use super::update_tracker::UpdateTracker;
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
@@ -120,8 +121,8 @@ impl ProxyShard {
         self.wrapped_shard.get_telemetry_data()
     }
 
-    pub fn is_update_in_progress(&self) -> bool {
-        self.wrapped_shard.is_update_in_progress()
+    pub fn update_tracker(&self) -> &UpdateTracker {
+        self.wrapped_shard.update_tracker()
     }
 }
 

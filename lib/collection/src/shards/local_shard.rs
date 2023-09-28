@@ -67,10 +67,6 @@ pub struct LocalShard {
 
 /// Shard holds information about segments and WAL.
 impl LocalShard {
-    pub fn is_update_in_progress(&self) -> bool {
-        self.update_tracker.is_update_in_progress()
-    }
-
     pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
         let wal_from = Self::wal_path(from);
         let wal_to = Self::wal_path(to);
@@ -801,6 +797,10 @@ impl LocalShard {
             config: collection_config,
             payload_schema: schema,
         }
+    }
+
+    pub fn update_tracker(&self) -> &UpdateTracker {
+        &self.update_tracker
     }
 }
 

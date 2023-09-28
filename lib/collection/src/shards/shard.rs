@@ -1,6 +1,8 @@
 use core::marker::{Send, Sync};
+use std::future::{self, Future};
 use std::path::Path;
 
+use super::update_tracker::UpdateTracker;
 use crate::operations::types::CollectionResult;
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
@@ -106,12 +108,30 @@ impl Shard {
     }
 
     pub fn is_update_in_progress(&self) -> bool {
-        match self {
-            Self::Local(local_shard) => local_shard.is_update_in_progress(),
-            Self::Proxy(proxy_shard) => proxy_shard.is_update_in_progress(),
-            Self::ForwardProxy(proxy_shard) => proxy_shard.is_update_in_progress(),
-            Self::QueueProxy(proxy_shard) => proxy_shard.is_update_in_progress(),
-            Self::Dummy(_) => false,
+        self.update_tracker()
+            .map_or(false, UpdateTracker::is_update_in_progress)
+    }
+
+    pub fn watch_for_update(&self) -> impl Future<Output = ()> {
+        let update_watcher = self.update_tracker().map(UpdateTracker::watch_for_update);
+
+        async move {
+            match update_watcher {
+                Some(update_watcher) => update_watcher.await,
+                None => future::pending().await,
+            }
         }
+    }
+
+    fn update_tracker(&self) -> Option<&UpdateTracker> {
+        let update_tracker = match self {
+            Self::Local(local_shard) => local_shard.update_tracker(),
+            Self::Proxy(proxy_shard) => proxy_shard.update_tracker(),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.update_tracker(),
+            Self::QueueProxy(proxy_shard) => proxy_shard.update_tracker(),
+            Self::Dummy(_) => return None,
+        };
+
+        Some(update_tracker)
     }
 }
