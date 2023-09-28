@@ -6866,6 +6866,7 @@
             "nullable": true
           },
           "read_fan_out_factor": {
+            "description": "Fan-out every read request to these many additional remote nodes (and return first available response)",
             "type": "integer",
             "format": "uint32",
             "minimum": 0,
