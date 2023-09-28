@@ -4,6 +4,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::PointOffsetType;
 
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
@@ -13,7 +14,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
-    PayloadContainer, PayloadKeyType, PointOffsetType,
+    PayloadContainer, PayloadKeyType,
 };
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool

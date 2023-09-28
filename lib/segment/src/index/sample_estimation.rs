@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
 
 const MAX_ESTIMATED_POINTS: usize = 1000;
 

@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::utils::IndexesMap;
@@ -13,8 +14,8 @@ use crate::payload_storage::query_checker::{
 };
 use crate::types::{
     AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match,
-    MatchAny, MatchExcept, MatchText, MatchValue, OwnedPayloadRef, PayloadContainer,
-    PointOffsetType, Range, ValueVariants,
+    MatchAny, MatchExcept, MatchText, MatchValue, OwnedPayloadRef, PayloadContainer, Range,
+    ValueVariants,
 };
 
 pub fn condition_converter<'a>(

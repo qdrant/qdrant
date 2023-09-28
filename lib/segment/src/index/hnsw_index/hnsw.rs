@@ -4,6 +4,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+#[cfg(debug_assertions)]
+use common::types::PointOffsetType;
+use common::types::ScoredPointOffset;
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
@@ -32,14 +35,12 @@ use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
-#[cfg(debug_assertions)]
-use crate::types::PointOffsetType;
 use crate::types::{
     default_quantization_ignore_value, FieldCondition, Filter, HnswConfig,
     QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{
-    new_raw_scorer, new_stoppable_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum,
+    new_raw_scorer, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
 };
 
 const HNSW_USE_HEURISTIC: bool = true;

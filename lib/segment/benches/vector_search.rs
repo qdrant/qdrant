@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::distributions::Standard;
 use rand::Rng;
@@ -9,7 +10,7 @@ use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::VectorElementType;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
-use segment::types::{Distance, PointOffsetType};
+use segment::types::Distance;
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;

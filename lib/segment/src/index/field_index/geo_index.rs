@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -20,9 +21,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
-};
+use crate::types::{FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType};
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?

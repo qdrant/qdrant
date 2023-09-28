@@ -5,13 +5,13 @@ use std::iter;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::MapIndex;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::PointOffsetType;
 
 pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     pub(super) map: HashMap<N, BTreeSet<PointOffsetType>>,

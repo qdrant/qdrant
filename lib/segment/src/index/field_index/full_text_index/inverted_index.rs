@@ -1,11 +1,12 @@
 use std::collections::{BTreeSet, HashMap};
 
+use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
+use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType};
 
 pub type TokenId = u32;
 

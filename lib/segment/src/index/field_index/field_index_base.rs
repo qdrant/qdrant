@@ -1,3 +1,4 @@
+use common::types::PointOffsetType;
 use serde_json::Value;
 use smol_str::SmolStr;
 
@@ -13,7 +14,6 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText, PayloadKeyType,
-    PointOffsetType,
 };
 
 pub trait PayloadFieldIndex {

@@ -1,10 +1,9 @@
-use std::cmp::Ordering;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
-use ordered_float::OrderedFloat;
+use common::types::PointOffsetType;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
 use super::quantized::quantized_vectors::QuantizedVectors;
@@ -12,28 +11,8 @@ use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
+use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
-
-#[derive(Copy, Clone, PartialEq, Debug, Default)]
-pub struct ScoredPointOffset {
-    pub idx: PointOffsetType,
-    pub score: ScoreType,
-}
-
-impl Eq for ScoredPointOffset {}
-
-impl Ord for ScoredPointOffset {
-    fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
-    }
-}
-
-impl PartialOrd for ScoredPointOffset {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
 
 /// Trait for vector storage
 /// El - type of vector element, expected numerical type

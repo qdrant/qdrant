@@ -1,3 +1,5 @@
+use common::types::ScoreType;
+
 use super::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
@@ -6,7 +8,7 @@ use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::simple_sse::*;
 use crate::data_types::vectors::{VectorElementType, VectorType};
-use crate::types::{Distance, ScoreType};
+use crate::types::Distance;
 
 #[cfg(target_arch = "x86_64")]
 const MIN_DIM_SIZE_AVX: usize = 32;

@@ -1,4 +1,4 @@
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
 
 #[derive(Clone, Debug, Default)]
 pub struct PostingList {

@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::mmap_ops;
 use parking_lot::Mutex;
@@ -16,7 +17,7 @@ use crate::common::mmap_type::MmapBitSlice;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{Distance, QuantizationConfig};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -32,7 +33,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
     IsEmptyCondition, IsNullCondition, Payload, PayloadContainer, PayloadField, PayloadFieldSchema,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";

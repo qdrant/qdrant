@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -13,7 +14,6 @@ use super::mutable_map_index::MutableMapIndex;
 use super::MapIndex;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::OperationResult;
-use crate::types::PointOffsetType;
 
 pub struct ImmutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     value_to_points: HashMap<N, Range<u32>>,

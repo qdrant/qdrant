@@ -1,11 +1,11 @@
 use std::{error, result};
 
+use common::types::{PointOffsetType, ScoredPointOffset};
 use rand::seq::IteratorRandom;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::id_tracker::IdTracker;
-use crate::types::PointOffsetType;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage};
+use crate::vector_storage::{RawScorer, VectorStorage};
 
 pub type Result<T, E = Error> = result::Result<T, E>;
 pub type Error = Box<dyn error::Error>;

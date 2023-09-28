@@ -1,10 +1,11 @@
 use bitvec::prelude::BitSlice;
+use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
+use crate::types::{PointIdType, SeqNumberType};
 
 /// Sampling randomness seed
 ///

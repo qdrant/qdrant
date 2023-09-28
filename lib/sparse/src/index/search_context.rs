@@ -1,6 +1,6 @@
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::ScoredPointOffset;
 
-use crate::common::scored_candidate::ScoredCandidate;
 use crate::common::sparse_vector::SparseVector;
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
@@ -14,7 +14,7 @@ pub struct SearchContext<'a> {
     postings_iterators: Vec<IndexedPostingListIterator<'a>>,
     query: SparseVector,
     top: usize,
-    result_queue: FixedLengthPriorityQueue<ScoredCandidate>, // keep the largest elements and peek smallest
+    result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
 }
 
 impl<'a> SearchContext<'a> {
@@ -72,7 +72,7 @@ impl<'a> SearchContext<'a> {
     /// c,  30, 35, 51, 230
     /// b,  21, 34, 60, 200
     /// b,  30, 34, 60, 230
-    fn advance(&mut self) -> Option<ScoredCandidate> {
+    fn advance(&mut self) -> Option<ScoredPointOffset> {
         let min_record_id = Self::next_min(&self.postings_iterators)?;
         let mut score = 0.0;
 
@@ -92,9 +92,9 @@ impl<'a> SearchContext<'a> {
             }
         }
 
-        Some(ScoredCandidate {
+        Some(ScoredPointOffset {
             score,
-            vector_id: min_record_id,
+            idx: min_record_id,
         })
     }
 
@@ -123,7 +123,7 @@ impl<'a> SearchContext<'a> {
         });
     }
 
-    pub fn search(&mut self) -> Vec<ScoredCandidate> {
+    pub fn search(&mut self) -> Vec<ScoredPointOffset> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
@@ -209,23 +209,23 @@ mod tests {
 
         assert_eq!(
             search_context.advance(),
-            Some(ScoredCandidate {
+            Some(ScoredPointOffset {
                 score: 30.0,
-                vector_id: 1
+                idx: 1
             })
         );
         assert_eq!(
             search_context.advance(),
-            Some(ScoredCandidate {
+            Some(ScoredPointOffset {
                 score: 60.0,
-                vector_id: 2
+                idx: 2
             })
         );
         assert_eq!(
             search_context.advance(),
-            Some(ScoredCandidate {
+            Some(ScoredPointOffset {
                 score: 90.0,
-                vector_id: 3
+                idx: 3
             })
         );
     }
@@ -250,17 +250,17 @@ mod tests {
         assert_eq!(
             search_context.search(),
             vec![
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 90.0,
-                    vector_id: 3
+                    idx: 3
                 },
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 60.0,
-                    vector_id: 2
+                    idx: 2
                 },
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 30.0,
-                    vector_id: 1
+                    idx: 1
                 },
             ]
         );
@@ -299,17 +299,17 @@ mod tests {
         assert_eq!(
             search_context.search(),
             vec![
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 90.0,
-                    vector_id: 3
+                    idx: 3
                 },
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 60.0,
-                    vector_id: 2
+                    idx: 2
                 },
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 30.0,
-                    vector_id: 1
+                    idx: 1
                 },
             ]
         );
@@ -326,22 +326,19 @@ mod tests {
         assert_eq!(
             search_context.search(),
             vec![
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 90.0,
-                    vector_id: 3
+                    idx: 3
                 },
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 60.0,
-                    vector_id: 2
+                    idx: 2
                 },
-                ScoredCandidate {
+                ScoredPointOffset {
                     score: 30.0,
-                    vector_id: 1
+                    idx: 1
                 },
-                ScoredCandidate {
-                    score: 6.0,
-                    vector_id: 9
-                },
+                ScoredPointOffset { score: 6.0, idx: 9 },
             ]
         );
     }
@@ -385,9 +382,9 @@ mod tests {
         );
         assert_eq!(
             search_context.advance(),
-            Some(ScoredCandidate {
+            Some(ScoredPointOffset {
                 score: 30.0,
-                vector_id: 1
+                idx: 1
             })
         );
         assert_eq!(
@@ -406,9 +403,9 @@ mod tests {
 
         assert_eq!(
             search_context.advance(),
-            Some(ScoredCandidate {
+            Some(ScoredPointOffset {
                 score: 60.0,
-                vector_id: 2
+                idx: 2
             })
         );
         assert_eq!(
@@ -427,9 +424,9 @@ mod tests {
 
         assert_eq!(
             search_context.advance(),
-            Some(ScoredCandidate {
+            Some(ScoredPointOffset {
                 score: 90.0,
-                vector_id: 3
+                idx: 3
             })
         );
         // pruning can take place

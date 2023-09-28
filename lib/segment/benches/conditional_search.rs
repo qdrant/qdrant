@@ -1,6 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -10,7 +11,6 @@ use segment::fixtures::payload_context_fixture::{
 };
 use segment::fixtures::payload_fixtures::random_must_filter;
 use segment::index::PayloadIndex;
-use segment::types::PointOffsetType;
 use tempfile::Builder;
 
 const NUM_POINTS: usize = 100000;

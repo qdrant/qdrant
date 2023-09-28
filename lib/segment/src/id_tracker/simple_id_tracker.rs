@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use bincode;
 use bitvec::prelude::{BitSlice, BitVec};
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,7 @@ use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VE
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
-use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
+use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 /// Point Id type used for storing ids internally
 /// Should be serializable by `bincode`, therefore is not untagged.

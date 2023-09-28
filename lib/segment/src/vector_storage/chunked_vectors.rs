@@ -5,9 +5,10 @@ use std::io::{Read, Write};
 use std::mem;
 use std::path::Path;
 
+use common::types::PointOffsetType;
+
 use super::div_ceil;
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
-use crate::types::PointOffsetType;
 
 // chunk size in bytes
 const CHUNK_SIZE: usize = 32 * 1024 * 1024;

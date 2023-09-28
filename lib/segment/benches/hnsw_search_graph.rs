@@ -1,6 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::{thread_rng, SeedableRng};
@@ -9,7 +10,6 @@ use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
-use segment::types::PointOffsetType;
 
 const NUM_VECTORS: usize = 100000;
 const DIM: usize = 64;

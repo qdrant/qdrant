@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
+use common::types::PointOffsetType;
 use memory::mmap_ops;
 
 use super::quantized::quantized_vectors::QuantizedVectors;
@@ -14,7 +15,7 @@ use super::VectorStorageEnum;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::VectorStorage;
@@ -241,6 +242,7 @@ fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
 mod tests {
     use std::mem::transmute;
 
+    use common::types::ScoredPointOffset;
     use memory::mmap_ops::transmute_to_u8_slice;
     use tempfile::Builder;
 
@@ -250,8 +252,8 @@ mod tests {
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::types::{PointIdType, ScalarQuantizationConfig};
+    use crate::vector_storage::new_raw_scorer;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-    use crate::vector_storage::{new_raw_scorer, ScoredPointOffset};
 
     #[test]
     fn test_basic_persistence() {

@@ -3,6 +3,7 @@ use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use common::types::PointOffsetType;
 use memmap2::MmapMut;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,6 @@ use crate::common::mmap_type::MmapType;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::PointOffsetType;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
 
 #[cfg(debug_assertions)]
