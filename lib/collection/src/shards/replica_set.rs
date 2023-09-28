@@ -869,17 +869,23 @@ impl ShardReplicaSet {
             None => self.remotes.read().await,
         };
 
-        let (local, is_local_ready) = match self.local.try_read() {
+        let (local, is_local_ready, update_watcher) = match self.local.try_read() {
             Ok(local) => {
+                let update_watcher = local.deref().as_ref().map(Shard::watch_for_update);
+
                 let is_local_ready = local
                     .deref()
                     .as_ref()
                     .map_or(false, |local| !local.is_update_in_progress());
 
-                (future::ready(local).left_future(), is_local_ready)
+                (
+                    future::ready(local).left_future(),
+                    is_local_ready,
+                    update_watcher,
+                )
             }
 
-            Err(_) => (self.local.read().right_future(), false),
+            Err(_) => (self.local.read().right_future(), false, None),
         };
 
         let local_is_active = self.peer_is_active(&self.this_peer_id());
@@ -898,7 +904,7 @@ impl ShardReplicaSet {
                 read_operation(local.get()).await
             };
 
-            Some(local_operation.left_future())
+            Some(local_operation.map(|result| (result, true)).left_future())
         } else {
             None
         };
@@ -910,9 +916,11 @@ impl ShardReplicaSet {
 
         active_remotes.shuffle(&mut rand::thread_rng());
 
-        let remote_operations = active_remotes
-            .into_iter()
-            .map(|remote| read_operation(remote).right_future());
+        let remote_operations = active_remotes.into_iter().map(|remote| {
+            read_operation(remote)
+                .map(|result| (result, false))
+                .right_future()
+        });
 
         let mut operations = local_operation.into_iter().chain(remote_operations);
 
@@ -922,7 +930,7 @@ impl ShardReplicaSet {
         // - Local is not available: default fan-out is 1
         // - There is no local: default fan-out is 1
 
-        let default_fan_out = if local_is_active && is_local_ready {
+        let default_fan_out = if is_local_ready && local_is_active {
             0
         } else {
             1
@@ -948,7 +956,43 @@ impl ShardReplicaSet {
         let mut responses = Vec::new();
         let mut errors = Vec::new();
 
-        while let Some(result) = pending_operations.next().await {
+        let mut is_local_operation_resolved = false;
+
+        let update_watcher = async move {
+            match update_watcher {
+                Some(update_watcher) => update_watcher.await,
+                None => future::pending().await,
+            }
+        };
+
+        let update_watcher = update_watcher.fuse();
+
+        tokio::pin!(update_watcher);
+
+        loop {
+            let result;
+
+            tokio::select! {
+                operation_result = pending_operations.next() => {
+                    let Some(operation_result) = operation_result else {
+                        break;
+                    };
+
+                    let (operation_result, is_local_operation) = operation_result;
+
+                    result = operation_result;
+
+                    if is_local_operation {
+                        is_local_operation_resolved = true;
+                    }
+                }
+
+                _ = &mut update_watcher, if local_is_active && !is_local_operation_resolved => {
+                    pending_operations.extend(operations.next());
+                    continue;
+                }
+            }
+
             match result {
                 Ok(response) => {
                     responses.push(response);
@@ -1556,15 +1600,6 @@ impl ShardReplicaSet {
             }
 
             let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
-            for remote in active_remote_shards {
-                let operation = operation.clone();
-                update_futures.push(Either::Left(async move {
-                    remote
-                        .update(operation, wait)
-                        .await
-                        .map_err(|err| (remote.peer_id, err))
-                }));
-            }
 
             if let Some(local) = local.deref() {
                 if self.peer_is_active_or_pending(&this_peer_id) {
@@ -1575,10 +1610,12 @@ impl ShardReplicaSet {
                             wait
                         };
 
+                    let operation = operation.clone();
+
                     let local_update = async move {
                         local
                             .get()
-                            .update(operation.clone(), local_wait)
+                            .update(operation, local_wait)
                             .await
                             .map_err(|err| {
                                 let peer_id = err.remote_peer_id().unwrap_or(this_peer_id);
@@ -1586,13 +1623,25 @@ impl ShardReplicaSet {
                                 (peer_id, err)
                             })
                     };
+
                     update_futures.push(Either::Right(local_update));
                 }
             }
+
+            for remote in active_remote_shards {
+                let operation = operation.clone();
+                update_futures.push(Either::Left(async move {
+                    remote
+                        .update(operation, wait)
+                        .await
+                        .map_err(|err| (remote.peer_id, err))
+                }));
+            }
+
             match self.shared_storage_config.update_concurrency {
                 Some(concurrency) => {
                     futures::stream::iter(update_futures)
-                        .buffered(concurrency.get())
+                        .buffer_unordered(concurrency.get())
                         .collect::<Vec<_>>()
                         .await
                 }
