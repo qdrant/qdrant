@@ -5,9 +5,8 @@ use std::sync::atomic::AtomicBool;
 
 use super::get_vector_storage_path;
 use crate::common::error_logging::LogError;
-use crate::entry::entry_point::{
-    check_process_stopped, OperationError, OperationResult, SegmentEntry,
-};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::entry::entry_point::SegmentEntry;
 use crate::index::hnsw_index::max_rayon_threads;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::segment::Segment;

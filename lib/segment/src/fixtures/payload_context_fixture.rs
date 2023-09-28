@@ -8,8 +8,8 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 
 use super::payload_fixtures::BOOL_KEY;
+use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
     generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY,
 };

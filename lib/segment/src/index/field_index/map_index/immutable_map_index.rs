@@ -12,8 +12,8 @@ use rocksdb::DB;
 
 use super::mutable_map_index::MutableMapIndex;
 use super::MapIndex;
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::OperationResult;
 
 pub struct ImmutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     value_to_points: HashMap<N, Range<u32>>,

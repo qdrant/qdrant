@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
 use super::VectorStorageEnum;
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 

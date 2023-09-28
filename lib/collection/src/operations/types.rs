@@ -14,12 +14,12 @@ use itertools::Itertools;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
     Named, NamedRecoQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct,
     VectorType, DEFAULT_VECTOR_NAME,
 };
-use segment::entry::entry_point::OperationError;
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
     ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,

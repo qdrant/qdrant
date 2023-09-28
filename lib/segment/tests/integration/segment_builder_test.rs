@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
+use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
-use segment::entry::entry_point::{OperationError, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};

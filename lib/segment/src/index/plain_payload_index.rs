@@ -9,13 +9,13 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
 use crate::data_types::vectors::QueryVector;
-use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;

@@ -10,8 +10,8 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::MapIndex;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::{OperationError, OperationResult};
 
 pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     pub(super) map: HashMap<N, BTreeSet<PointOffsetType>>,

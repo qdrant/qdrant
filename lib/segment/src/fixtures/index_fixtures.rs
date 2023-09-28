@@ -7,9 +7,9 @@ use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use rand::Rng;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::vectors::{VectorElementType, VectorType};
-use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::{Distance, QuantizationConfig};

@@ -10,7 +10,7 @@ use rand::distributions::Uniform;
 use rand::Rng;
 
 use super::graph_links::GraphLinks;
-use crate::entry::entry_point::OperationResult;
+use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
