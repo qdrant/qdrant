@@ -8,6 +8,12 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
+use ::api::grpc::grpc_health_v1::health_check_response::ServingStatus;
+use ::api::grpc::grpc_health_v1::health_server::{Health, HealthServer};
+use ::api::grpc::grpc_health_v1::{
+    HealthCheckRequest as ProtocolHealthCheckRequest,
+    HealthCheckResponse as ProtocolHealthCheckResponse,
+};
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
@@ -49,6 +55,24 @@ impl Qdrant for QdrantService {
         _request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckReply>, Status> {
         Ok(Response::new(VersionInfo::default().into()))
+    }
+}
+
+// Additional health check service that follows gRPC health check protocol as described in #2614
+#[derive(Default)]
+pub struct HealthService {}
+
+#[tonic::async_trait]
+impl Health for HealthService {
+    async fn check(
+        &self,
+        _request: Request<ProtocolHealthCheckRequest>,
+    ) -> Result<Response<ProtocolHealthCheckResponse>, Status> {
+        let response = ProtocolHealthCheckResponse {
+            status: ServingStatus::Serving as i32,
+        };
+
+        Ok(Response::new(response))
     }
 }
 
@@ -125,6 +149,7 @@ pub fn init(
             SocketAddr::from((settings.service.host.parse::<IpAddr>().unwrap(), grpc_port));
 
         let qdrant_service = QdrantService::default();
+        let health_service = HealthService::default();
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.toc().clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
@@ -137,6 +162,7 @@ pub fn init(
             .with_service_name("qdrant.Points")
             .with_service_name("qdrant.Snapshots")
             .with_service_name("qdrant.Qdrant")
+            .with_service_name("grpc.health.v1.Health")
             .build()
             .unwrap();
 
@@ -193,6 +219,12 @@ pub fn init(
             )
             .add_service(
                 SnapshotsServer::new(snapshot_service)
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
+            )
+            .add_service(
+                HealthServer::new(health_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),

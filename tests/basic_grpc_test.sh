@@ -173,9 +173,13 @@ $docker_grpcurl $QDRANT_HOST describe qdrant.Collections
 $docker_grpcurl $QDRANT_HOST describe qdrant.Points
 $docker_grpcurl $QDRANT_HOST describe qdrant.Snapshots
 $docker_grpcurl $QDRANT_HOST describe qdrant.Qdrant
+$docker_grpcurl $QDRANT_HOST describe grpc.health.v1.Health
 
 # use the reflection service to get the shape of a specific message
 $docker_grpcurl $QDRANT_HOST describe qdrant.UpsertPoints
+
+# grpc protocol compliant health check
+$docker_grpcurl $QDRANT_HOST grpc.health.v1.Health/Check
 
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
 #[[ "$SAVED_VECTORS_COUNT" == "6" ]] || {
