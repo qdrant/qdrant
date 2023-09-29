@@ -287,8 +287,9 @@ impl TableOfContent {
                     }
                 };
 
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
                 collection
-                    .start_shard_transfer(transfer, on_finish, on_failure)
+                    .start_shard_transfer(transfer, temp_dir, on_finish, on_failure)
                     .await?;
             }
             ShardTransferOperations::Finish(transfer) => {
