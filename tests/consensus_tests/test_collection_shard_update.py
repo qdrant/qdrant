@@ -134,5 +134,9 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
     assert r.status_code == 400
     error = r.json()["status"]["error"]
     assert error.__contains__("Wrong input: 1 out of 2 shards failed to apply operation")
+    # Update requests are applied on the local shard and propagated to the remote shards in parallel.
+    # These operations may complete (or fail) in arbitrary order, and if request fails, Qdrant returns
+    # error message of the first failed operation.
+    # Local and remote operations return different errors, so we check for both.
     assert error.__contains__("Wrong input: Vector inserting error: expected dim") or error.__contains__("Wrong input: InvalidArgument")
 
