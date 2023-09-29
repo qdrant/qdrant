@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use smol_str::SmolStr;
 use uuid::Uuid;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
@@ -1340,7 +1340,8 @@ impl GeoPolygon {
 }
 
 /// All possible payload filtering conditions
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[validate(schema(function = "validate_field_condition"))]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
     /// Payload key
@@ -1434,6 +1435,25 @@ impl FieldCondition {
             geo_polygon: None,
             values_count: Some(values_count),
         }
+    }
+
+    pub fn all_fields_none(&self) -> bool {
+        self.r#match.is_none()
+            && self.range.is_none()
+            && self.geo_bounding_box.is_none()
+            && self.geo_radius.is_none()
+            && self.geo_polygon.is_none()
+            && self.values_count.is_none()
+    }
+}
+
+pub fn validate_field_condition(field_condition: &FieldCondition) -> Result<(), ValidationError> {
+    if field_condition.all_fields_none() {
+        Err(ValidationError::new(
+            "At least one field condition must be specified",
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -1548,6 +1568,16 @@ impl Condition {
                 filter,
             },
         })
+    }
+}
+
+// The validator crate does not support deriving for enums.
+impl Validate for Condition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            Condition::Field(field_condition) => field_condition.validate(),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -1724,15 +1754,18 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
+    #[validate]
     pub should: Option<Vec<Condition>>,
     /// All conditions must match
+    #[validate]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
+    #[validate]
     pub must_not: Option<Vec<Condition>>,
 }
 

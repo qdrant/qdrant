@@ -227,6 +227,7 @@ pub struct SearchRequest {
     /// Look for vectors closest to this
     pub vector: NamedVectorStruct,
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
     /// Additional search params
     #[validate]
