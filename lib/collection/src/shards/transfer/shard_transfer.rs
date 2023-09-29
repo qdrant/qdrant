@@ -189,20 +189,21 @@ async fn transfer_snapshot(
 ) -> CollectionResult<()> {
     let shard_holder_read = shard_holder.read().await;
 
+    // Ensure we have configured a queue proxy
+    let is_queue_proxy = match shard_holder_read.get_shard(&shard_id) {
+        Some(shard_replica_set) => shard_replica_set.is_queue_proxy_local().await,
+        None => false,
+    };
+    if !is_queue_proxy {
+        return Err(CollectionError::service_error(format!(
+            "Shard {shard_id} is not a queue proxy shard, cannot do shard snapshot transfer",
+        )));
+    }
+
     // Create shard snapshot
     let _snapshot_description = shard_holder_read
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
-
-    // Debug assert we have configured a queue proxy
-    // TODO: error if none, warning if not queue proxy?
-    if let Some(shard_replica_set) = shard_holder_read.get_shard(&shard_id) {
-        let is_queue_proxy = shard_replica_set.is_queue_proxy_local().await;
-        debug_assert!(
-            is_queue_proxy,
-            "shard being snapshot transferred must be a queue proxy"
-        );
-    }
 
     // TODO: instruct remote to download/recover this snapshot
     todo!();
