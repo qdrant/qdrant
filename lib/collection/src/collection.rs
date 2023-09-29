@@ -1749,6 +1749,10 @@ impl Collection {
         snapshot_shard_path: &Path,
         shard_id: ShardId,
     ) -> CollectionResult<bool> {
+        // TODO:
+        //   Check that shard snapshot is compatible with the collection
+        //   (see `VectorsConfig::check_compatible_with_segment_config`)
+
         self.shards_holder
             .read()
             .await

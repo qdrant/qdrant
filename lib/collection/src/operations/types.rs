@@ -974,6 +974,13 @@ impl VectorsConfig {
         VectorsConfig::Multi(BTreeMap::new())
     }
 
+    pub fn vectors_num(&self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Multi(vectors) => vectors.len(),
+        }
+    }
+
     pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
         match self {
             VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
@@ -998,76 +1005,78 @@ impl VectorsConfig {
         }
     }
 
-    fn check_vector_params_compatibility(
-        self_params: &VectorParams,
-        other_params: &VectorParams,
-        vector_name: &str,
-    ) -> Result<(), CollectionError> {
-        if self_params.size != other_params.size {
-            return Err(CollectionError::BadInput {
-                description: format!(
-                    "Vectors configuration is not compatible: origin vector {} size: {}, while other vector size: {}",
-                    vector_name, self_params.size, other_params.size
-                )
-            });
-        }
+    // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
+    pub fn check_compatible(&self, other: &Self) -> CollectionResult<()> {
+        match (self, other) {
+            (Self::Single(_), Self::Single(_)) | (Self::Multi(_), Self::Multi(_)) => (),
+            _ => {
+                return Err(incompatible_vectors_error(
+                    self.params_iter().map(|(name, _)| name),
+                    other.params_iter().map(|(name, _)| name),
+                ));
+            }
+        };
 
-        if self_params.distance != other_params.distance {
-            return Err(CollectionError::BadInput {
-                description: format!(
-                    "Vectors configuration is not compatible: origin vector {} distance: {:?}, while other vector distance: {:?}",
-                    vector_name, self_params.distance, other_params.distance
-                )
-            });
+        for (vector_name, this) in self.params_iter() {
+            let Some(other) = other.get_params(vector_name) else {
+                return Err(missing_vector_error(vector_name));
+            };
+
+            VectorParamsBase::from(this).check_compatibility(&other.into(), vector_name)?;
         }
 
         Ok(())
     }
 
-    pub fn check_compatible(&self, other: &Self) -> Result<(), CollectionError> {
-        match (self, other) {
-            (VectorsConfig::Single(self_single), VectorsConfig::Single(other_single)) => {
-                Self::check_vector_params_compatibility(
-                    self_single,
-                    other_single,
-                    DEFAULT_VECTOR_NAME,
-                )
-            }
-            (VectorsConfig::Multi(self_params), VectorsConfig::Multi(other_params)) => {
-                for (self_vector_name, self_vector_params) in self_params {
-                    if let Some(other_vector_params) = other_params.get(self_vector_name) {
-                        Self::check_vector_params_compatibility(
-                            self_vector_params,
-                            other_vector_params,
-                            self_vector_name,
-                        )?;
-                    } else {
-                        return Err(CollectionError::BadInput {
-                            description: format!(
-                                "Vectors configuration is not compatible: origin collection have vector {}, while other collection does not",
-                                self_vector_name
-                            )
-                        });
-                    }
-                }
-                Ok(())
-            }
-            _ => {
-                let self_vectors = self
-                    .params_iter()
-                    .map(|(name, _)| name)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let other_vectors = other
-                    .params_iter()
-                    .map(|(name, _)| name)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(CollectionError::BadInput {
-                    description: format!("Vectors configuration is not compatible: origin collection have vectors: [{}], while other vectors: [{}]", self_vectors, other_vectors)
-                })
-            }
+    // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
+    pub fn check_compatible_with_segment_config(
+        &self,
+        other: &HashMap<String, segment::types::VectorDataConfig>,
+        exact: bool,
+    ) -> CollectionResult<()> {
+        if exact && self.vectors_num() != other.len() {
+            return Err(incompatible_vectors_error(
+                self.params_iter().map(|(name, _)| name),
+                other.keys().map(String::as_str),
+            ));
         }
+
+        for (vector_name, this) in self.params_iter() {
+            let Some(other) = other.get(vector_name) else {
+                return Err(missing_vector_error(vector_name));
+            };
+
+            VectorParamsBase::from(this).check_compatibility(&other.into(), vector_name)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn incompatible_vectors_error<'a, 'b>(
+    this: impl Iterator<Item = &'a str>,
+    other: impl Iterator<Item = &'b str>,
+) -> CollectionError {
+    let this_vectors = this.collect::<Vec<_>>().join(", ");
+    let other_vectors = other.collect::<Vec<_>>().join(", ");
+
+    CollectionError::BadInput {
+        description: format!(
+            "Vectors configuration is not compatible: \
+             origin collection have vectors [{}], \
+             while other vectors [{}]",
+            this_vectors, other_vectors
+        ),
+    }
+}
+
+fn missing_vector_error(vector_name: &str) -> CollectionError {
+    CollectionError::BadInput {
+        description: format!(
+            "Vectors configuration is not compatible: \
+             origin collection have vector {}, while other collection does not",
+            vector_name
+        ),
     }
 }
 
@@ -1102,6 +1111,58 @@ impl Validate for VectorsConfig {
 impl From<VectorParams> for VectorsConfig {
     fn from(params: VectorParams) -> Self {
         VectorsConfig::Single(params)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct VectorParamsBase {
+    /// Size of a vectors used
+    size: usize,
+    /// Type of distance function used for measuring distance between vectors
+    distance: Distance,
+}
+
+impl VectorParamsBase {
+    fn check_compatibility(&self, other: &Self, vector_name: &str) -> CollectionResult<()> {
+        if self.size != other.size {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: \
+                     origin vector {} size: {}, while other vector size: {}",
+                    vector_name, self.size, other.size
+                ),
+            });
+        }
+
+        if self.distance != other.distance {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: \
+                     origin vector {} distance: {:?}, while other vector distance: {:?}",
+                    vector_name, self.distance, other.distance
+                ),
+            });
+        }
+
+        Ok(())
+    }
+}
+
+impl From<&VectorParams> for VectorParamsBase {
+    fn from(params: &VectorParams) -> Self {
+        Self {
+            size: params.size.get() as _, // TODO!?
+            distance: params.distance,
+        }
+    }
+}
+
+impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
+    fn from(config: &segment::types::VectorDataConfig) -> Self {
+        Self {
+            size: config.size,
+            distance: config.distance,
+        }
     }
 }
 
