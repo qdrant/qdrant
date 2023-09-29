@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::{self, BoxFuture, Either};
+use futures::future::{self, BoxFuture};
 use futures::stream::FuturesUnordered;
-use futures::{FutureExt, StreamExt};
+use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools;
 use rand::seq::SliceRandom as _;
 use schemars::JsonSchema;
@@ -1624,28 +1624,32 @@ impl ShardReplicaSet {
                             })
                     };
 
-                    update_futures.push(Either::Right(local_update));
+                    update_futures.push(local_update.left_future());
                 }
             }
 
             for remote in active_remote_shards {
                 let operation = operation.clone();
-                update_futures.push(Either::Left(async move {
+
+                let remote_update = async move {
                     remote
                         .update(operation, wait)
                         .await
                         .map_err(|err| (remote.peer_id, err))
-                }));
+                };
+
+                update_futures.push(remote_update.right_future());
             }
 
             match self.shared_storage_config.update_concurrency {
                 Some(concurrency) => {
                     futures::stream::iter(update_futures)
                         .buffer_unordered(concurrency.get())
-                        .collect::<Vec<_>>()
+                        .collect()
                         .await
                 }
-                _ => futures::future::join_all(update_futures).await,
+
+                None => FuturesUnordered::from_iter(update_futures).collect().await,
             }
         };
 
