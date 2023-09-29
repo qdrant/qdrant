@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
@@ -26,6 +27,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let (collection_params, indexing_threshold_kb) = {
             let collection_config = self.collection_config.read().await;
@@ -53,7 +55,9 @@ impl LocalShard {
             is_stopped.get_is_stopped(),
             indexing_threshold_kb,
         );
-        let timeout = self.shared_storage_config.search_timeout;
+
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+
         let res: Vec<Vec<ScoredPoint>> = tokio::select! {
             res = search_request => res,
             _ = tokio::time::sleep(timeout) => {
@@ -192,10 +196,12 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.do_search(
             Arc::new(request.as_ref().clone().into()),
             search_runtime_handle,
+            timeout,
         )
         .await
     }
@@ -206,8 +212,10 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.do_search(request, search_runtime_handle).await
+        self.do_search(request, search_runtime_handle, timeout)
+            .await
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {

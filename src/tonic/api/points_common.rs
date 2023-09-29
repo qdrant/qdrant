@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::payload_index_params::IndexParams;
@@ -674,6 +674,7 @@ pub async fn search(
         vector_name,
         with_vectors,
         read_consistency,
+        timeout,
     } = search_points;
 
     let search_request = SearchRequest {
@@ -703,6 +704,7 @@ pub async fn search(
         search_request,
         read_consistency,
         shard_selection,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;
@@ -726,6 +728,7 @@ pub async fn search_batch(
     search_points: Vec<SearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =
         search_points.into_iter().map(TryInto::try_into).collect();
@@ -743,6 +746,7 @@ pub async fn search_batch(
         search_requests,
         read_consistency,
         shard_selection,
+        timeout,
     )
     .await
     .map_err(error_to_status)?;
@@ -768,6 +772,7 @@ pub async fn core_search_batch(
     search_points: Vec<CoreSearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =
         search_points.into_iter().map(TryInto::try_into).collect();
@@ -785,6 +790,7 @@ pub async fn core_search_batch(
         search_requests,
         read_consistency,
         shard_selection,
+        timeout,
     )
     .await
     .map_err(error_to_status)?;

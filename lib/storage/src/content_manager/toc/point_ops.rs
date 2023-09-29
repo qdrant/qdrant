@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use collection::grouping::group_by::GroupRequest;
 use collection::grouping::GroupBy;
 use collection::operations::consistency_params::ReadConsistency;
@@ -83,10 +85,11 @@ impl TableOfContent {
         request: SearchRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search(request, read_consistency, shard_selection)
+            .search(request, read_consistency, shard_selection, timeout)
             .await
             .map_err(|err| err.into())
     }
@@ -102,16 +105,19 @@ impl TableOfContent {
     /// # Result
     ///
     /// Points with search score
+    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
+    // ! please replicate any changes to both methods
     pub async fn search_batch(
         &self,
         collection_name: &str,
         request: SearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search_batch(request, read_consistency, shard_selection)
+            .search_batch(request, read_consistency, shard_selection, timeout)
             .await
             .map_err(|err| err.into())
     }
@@ -124,10 +130,11 @@ impl TableOfContent {
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .core_search_batch(request, read_consistency, shard_selection)
+            .core_search_batch(request, read_consistency, shard_selection, timeout)
             .await
             .map_err(|err| err.into())
     }

@@ -153,8 +153,9 @@ impl GroupRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
+                //TODO(luis): enable timeout for group requests
                 collection
-                    .search(request, read_consistency, shard_selection)
+                    .search(request, read_consistency, shard_selection, None)
                     .await
             }
             SourceRequest::Recommend(mut request) => {

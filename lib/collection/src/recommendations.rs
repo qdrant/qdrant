@@ -240,17 +240,18 @@ where
             };
         }
 
+        //TODO(luis): enable timeout for recommend
         let run_result = if !searches.is_empty() {
             let search_batch_request = SearchRequestBatch { searches };
             collection
-                .search_batch(search_batch_request, read_consistency, None)
+                .search_batch(search_batch_request, read_consistency, None, None)
                 .await?
         } else {
             let core_search_batch_request = CoreSearchRequestBatch {
                 searches: core_searches,
             };
             collection
-                .core_search_batch(core_search_batch_request, read_consistency, None)
+                .core_search_batch(core_search_batch_request, read_consistency, None, None)
                 .await?
         };
 

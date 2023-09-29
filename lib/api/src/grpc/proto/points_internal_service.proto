@@ -95,6 +95,7 @@ message SearchBatchPointsInternal {
   string collection_name = 1;
   repeated SearchPoints search_points = 2;
   optional uint32 shard_id = 3;
+  optional uint64 timeout = 4;
 }
 
 message RecoQuery {
@@ -128,6 +129,7 @@ message CoreSearchBatchPointsInternal {
   string collection_name = 1;
   repeated CoreSearchPoints search_points = 2;
   optional uint32 shard_id = 3;
+  optional uint64 timeout = 4;
 }
 
 message ScrollPointsInternal {

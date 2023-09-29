@@ -24,6 +24,7 @@ async fn search_points(
         request.into_inner(),
         params.consistency,
         None,
+        params.timeout(),
     )
     .await;
 
@@ -45,6 +46,7 @@ async fn batch_search_points(
         request.into_inner(),
         params.consistency,
         None,
+        params.timeout(),
     )
     .await;
 

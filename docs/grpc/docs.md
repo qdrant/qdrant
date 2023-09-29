@@ -2618,6 +2618,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | collection_name | [string](#string) |  | Name of the collection |
 | search_points | [SearchPoints](#qdrant-SearchPoints) | repeated |  |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 
 
 
@@ -2720,6 +2721,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 
 
 

@@ -769,6 +769,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
                 vector_name => Some(vector_name.to_string()),
             },
             read_consistency: None,
+            timeout: None,
         }
     }
 }
@@ -943,6 +944,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
             offset: None,
             collection_name: String::new(),
             read_consistency: None,
+            timeout: None,
         };
 
         let SearchRequest {
