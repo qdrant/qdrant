@@ -1505,14 +1505,16 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 }
 
 /// Select points with payload for a specified nested field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 pub struct Nested {
     pub key: PayloadKeyType,
+    #[validate]
     pub filter: Filter,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 pub struct NestedCondition {
+    #[validate]
     pub nested: Nested,
 }
 
@@ -1576,6 +1578,8 @@ impl Validate for Condition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             Condition::Field(field_condition) => field_condition.validate(),
+            Condition::Nested(nested_condition) => nested_condition.validate(),
+            Condition::Filter(filter) => filter.validate(),
             _ => Ok(()),
         }
     }
