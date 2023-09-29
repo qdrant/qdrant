@@ -75,7 +75,7 @@ pub struct CollectionParams {
     /// Default value is Auto, which means that fan-out will be determined automatically based on
     /// the busyness of the local replica.
     /// Having more than 0 might be useful to smooth latency spikes of individual nodes.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub read_fan_out_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
