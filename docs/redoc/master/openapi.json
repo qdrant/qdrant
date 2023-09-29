@@ -4979,7 +4979,6 @@
           },
           "read_fan_out_factor": {
             "description": "Defines how many additional replicas should be processing read request at the same time. Default value is Auto, which means that fan-out will be determined automatically based on the busyness of the local replica. Having more than 0 might be useful to smooth latency spikes of individual nodes.",
-            "default": null,
             "type": "integer",
             "format": "uint32",
             "minimum": 0,
