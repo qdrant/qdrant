@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -9,7 +10,6 @@ use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECIS
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable};
-use crate::types::PointOffsetType;
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
     pub(super) map: BTreeMap<Vec<u8>, u32>,

@@ -9,14 +9,16 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use mutable_numeric_index::MutableNumericIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use super::utils::check_boundaries;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
@@ -27,9 +29,7 @@ use crate::index::key_encoding::{
     encode_i64_key_ascending,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
-};
+use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range};
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
@@ -284,8 +284,11 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let cond_range = condition.range.as_ref()?;
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        let cond_range = condition
+            .range
+            .as_ref()
+            .ok_or_else(|| OperationError::service_error("failed to get condition range"))?;
 
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
@@ -313,31 +316,30 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
-        match (&start_bound, &end_bound) {
-            (Excluded(s), Excluded(e)) if s == e => {
-                // range start and end are equal and excluded in BTreeMap
-                return Some(Box::new(vec![].into_iter()));
-            }
-            (Included(s) | Excluded(s), Included(e) | Excluded(e)) if s > e => {
-                //range start is greater than range end
-                return Some(Box::new(vec![].into_iter()));
-            }
-            _ => {}
+        if !check_boundaries(&start_bound, &end_bound) {
+            return Ok(Box::new(vec![].into_iter()));
         }
 
-        Some(match self {
+        Ok(match self {
             NumericIndex::Mutable(index) => Box::new(index.values_range(start_bound, end_bound)),
         })
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        condition.range.as_ref().map(|range| {
-            let mut cardinality = self.range_cardinality(range);
-            cardinality
-                .primary_clauses
-                .push(PrimaryCondition::Condition(condition.clone()));
-            cardinality
-        })
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
+        condition
+            .range
+            .as_ref()
+            .map(|range| {
+                let mut cardinality = self.range_cardinality(range);
+                cardinality
+                    .primary_clauses
+                    .push(PrimaryCondition::Condition(condition.clone()));
+                cardinality
+            })
+            .ok_or_else(|| OperationError::service_error("failed to estimate cardinality"))
     }
 
     fn payload_blocks(
