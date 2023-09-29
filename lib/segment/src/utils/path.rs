@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
 
 pub fn strip_prefix<'a>(path: &'a Path, prefix: &Path) -> OperationResult<&'a Path> {
     path.strip_prefix(prefix).map_err(|err| {

@@ -2,9 +2,10 @@ use std::collections::HashSet;
 use std::iter::FromIterator;
 
 use itertools::Itertools;
+use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::entry::entry_point::{OperationError, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;

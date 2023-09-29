@@ -8,10 +8,11 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use ordered_float::Float;
 use parking_lot::RwLock;
+use segment::common::operation_error::OperationError;
 use segment::common::BYTES_IN_KB;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::QueryVector;
-use segment::entry::entry_point::{OperationError, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
     WithPayload, WithPayloadInterface, WithVector, VECTOR_ELEMENT_SIZE,

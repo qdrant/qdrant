@@ -1,8 +1,8 @@
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;

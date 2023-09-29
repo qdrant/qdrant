@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::{fmt, io};
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::utils;
 
 /// Append `file` to the archive under `dest_dir` directory at `file`'s path relative to `base`.

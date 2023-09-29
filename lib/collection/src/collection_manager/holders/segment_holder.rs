@@ -10,7 +10,8 @@ use itertools::Itertools;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
-use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 

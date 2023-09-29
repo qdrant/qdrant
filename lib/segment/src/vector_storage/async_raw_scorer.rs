@@ -5,8 +5,8 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::query_scorer::reco_query_scorer::RecoQueryScorer;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
-use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::types::Distance;

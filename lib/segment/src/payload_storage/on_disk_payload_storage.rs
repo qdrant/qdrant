@@ -5,9 +5,9 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::common::Flusher;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef};
 

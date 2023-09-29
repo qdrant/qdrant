@@ -14,9 +14,9 @@ use parking_lot::Mutex;
 use super::div_ceil;
 use crate::common::error_logging::LogError;
 use crate::common::mmap_type::MmapBitSlice;
+use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, QuantizationConfig};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;

@@ -15,16 +15,17 @@ use rocksdb::DB;
 use tar::Builder;
 use uuid::Uuid;
 
+use crate::common::operation_error::OperationError::TypeInferenceError;
+use crate::common::operation_error::{
+    get_service_error, OperationError, OperationResult, SegmentFailedState,
+};
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
-use crate::entry::entry_point::OperationError::TypeInferenceError;
-use crate::entry::entry_point::{
-    get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
-};
+use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -1280,7 +1281,7 @@ impl SegmentEntry for Segment {
             flush_op()
         } else {
             *background_flush_lock = Some(
-                std::thread::Builder::new()
+                thread::Builder::new()
                     .name("background_flush".to_string())
                     .spawn(flush_op)
                     .unwrap(),
@@ -1486,8 +1487,8 @@ impl SegmentEntry for Segment {
         builder.finish()?;
 
         // remove tmp directory in background
-        let _ = std::thread::spawn(move || {
-            let res = std::fs::remove_dir_all(&temp_path);
+        let _ = thread::spawn(move || {
+            let res = fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
                     "Failed to remove tmp directory at {}: {:?}",
@@ -1531,8 +1532,8 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::operation_error::OperationError::PointIdError;
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
-    use crate::entry::entry_point::OperationError::PointIdError;
     use crate::segment_constructor::{build_segment, load_segment};
     use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 

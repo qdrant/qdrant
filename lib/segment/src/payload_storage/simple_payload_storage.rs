@@ -5,8 +5,8 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::Payload;
 
 /// In-memory implementation of `PayloadStorage`.

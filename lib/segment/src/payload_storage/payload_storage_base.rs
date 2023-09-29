@@ -1,8 +1,8 @@
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::types::{Filter, Payload, PayloadKeyTypeRef};
 
 /// Trait for payload data storage. Should allow filter checks

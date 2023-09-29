@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
 use crate::types::{

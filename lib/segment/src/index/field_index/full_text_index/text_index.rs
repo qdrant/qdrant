@@ -7,10 +7,10 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::text_index::TextIndexParams;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::{
     Document, InvertedIndex, ParsedQuery,
 };

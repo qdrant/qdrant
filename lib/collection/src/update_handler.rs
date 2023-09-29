@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
-use segment::entry::entry_point::OperationResult;
+use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -266,7 +266,7 @@ impl UpdateHandler {
                                 // Handle and report errors
                                 Err(error) => match error {
                                     CollectionError::Cancelled { description } => {
-                                        log::debug!("Optimization cancelled - {}", description);
+                                        debug!("Optimization cancelled - {}", description);
                                         tracker_handle
                                             .update(TrackerStatus::Cancelled(description));
                                         false
@@ -292,7 +292,7 @@ impl UpdateHandler {
                     // Panic handler
                     Some(Box::new(move |panic_payload| {
                         let panic_msg = panic_payload_into_string(panic_payload);
-                        log::warn!(
+                        warn!(
                             "Optimization task panicked, collection may be in unstable state: {panic_msg}"
                         );
                         segments
@@ -531,7 +531,7 @@ impl UpdateHandler {
             let max_ack_version = match *max_ack.lock().await {
                 Some(max_id) => {
                     if confirmed_version > max_id {
-                        log::trace!("Acknowledging message {max_id} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
+                        trace!("Acknowledging message {max_id} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
                     }
                     confirmed_version.min(max_id)
                 }
