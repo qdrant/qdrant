@@ -2,6 +2,8 @@
 
 use std::fmt::Write as _;
 use std::io::{self, IsTerminal as _};
+use std::panic;
+use std::path::Path;
 use std::str::FromStr as _;
 use std::sync::Arc;
 
@@ -9,18 +11,42 @@ use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use tokio::sync::RwLock;
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{filter, fmt, registry, reload, Registry};
+use tracing_subscriber::{filter, fmt, layer, registry, reload, Registry};
 
 pub use self::config::{LoggerConfig, LoggerConfigDiff};
 
 pub fn setup(config: &config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
-    let config = config.clone();
+    let mut config = config.clone();
+
+    // Note that on-disk logger *have* to be initialized *before* default logger!
+    //
+    // If default logger is initialized before on-disk logger, then ANSI escape-sequences (that are
+    // used to apply color and formatting in the terminal, but looks like corrupted text in the text
+    // editor) might appear in the on-disk log-file.
+    //
+    // This happens because when multiple `fmt::Layer`s are initialized in the same subscriber,
+    // the top-level `fmt::Layer` would cache pre-formatted fragments of the log-line
+    // for the next `fmt::Layer`s to reuse.
+    //
+    // And default logger outputs colored log-lines, which on-disk logger reuse even if colors are
+    // disabled for the on-disk logger. :/
+
+    let on_disk_logger = match on_disk::new(&mut config.on_disk) {
+        Ok(on_disk_logger) => on_disk_logger,
+        Err(err) => {
+            eprintln!("{err}");
+            None
+        }
+    };
+
+    let (on_disk_logger, on_disk_logger_handle) = reload::Layer::new(on_disk_logger);
+    let reg = tracing_subscriber::registry().with(on_disk_logger);
 
     let default_logger = default::new(&config.default);
     let (default_logger, default_logger_handle) = reload::Layer::new(default_logger);
-    let reg = tracing_subscriber::registry().with(default_logger);
+    let reg = reg.with(default_logger);
 
-    let logger_handle = LoggerHandle::new(config, default_logger_handle);
+    let logger_handle = LoggerHandle::new(config, default_logger_handle, on_disk_logger_handle);
 
     // Use `console` or `console-subscriber` feature to enable `console-subscriber`
     //
@@ -55,19 +81,37 @@ pub fn setup(config: &config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
 pub struct LoggerHandle {
     config: Arc<RwLock<config::LoggerConfig>>,
     default: DefaultLoggerReloadHandle,
+    on_disk: OnDiskLoggerReloadHandle,
 }
 
 #[rustfmt::skip] // `rustfmt` formats this into unreadable single line
-type DefaultLoggerReloadHandle<S = Registry> = reload::Handle<
+type DefaultLoggerReloadHandle<S = DefaultLoggerSubscriber> = reload::Handle<
     default::Logger<S>,
     S,
 >;
 
+#[rustfmt::skip] // `rustfmt` formats this into unreadable single line
+type DefaultLoggerSubscriber<S = Registry> = layer::Layered<
+    reload::Layer<Option<on_disk::Logger<S>>, S>,
+    S,
+>;
+
+#[rustfmt::skip] // `rustfmt` formats this into unreadable single line
+type OnDiskLoggerReloadHandle<S = Registry> = reload::Handle<
+    Option<on_disk::Logger<S>>,
+    S,
+>;
+
 impl LoggerHandle {
-    pub fn new(config: config::LoggerConfig, default: DefaultLoggerReloadHandle) -> Self {
+    pub fn new(
+        config: config::LoggerConfig,
+        default: DefaultLoggerReloadHandle,
+        on_disk: OnDiskLoggerReloadHandle,
+    ) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
             default,
+            on_disk,
         }
     }
 
@@ -82,6 +126,11 @@ impl LoggerHandle {
         let default = default::new(&config.default);
         self.default.reload(default)?;
 
+        let mut on_disk = None;
+        self.on_disk.modify(|logger| on_disk = logger.take())?;
+        on_disk::update(&mut on_disk, &mut config.on_disk, diff.on_disk)?;
+        self.on_disk.reload(on_disk)?;
+
         Ok(())
     }
 }
@@ -94,6 +143,7 @@ pub mod config {
     pub struct LoggerConfig {
         #[serde(flatten)]
         pub default: default::Config,
+        pub on_disk: on_disk::Config,
     }
 
     impl LoggerConfig {
@@ -111,6 +161,7 @@ pub mod config {
 
         pub fn update(&mut self, diff: LoggerConfigDiff) {
             self.default.update(diff.default);
+            self.on_disk.update(diff.on_disk);
         }
     }
 
@@ -119,6 +170,7 @@ pub mod config {
     pub struct LoggerConfigDiff {
         #[serde(flatten)]
         pub default: default::ConfigDiff,
+        pub on_disk: on_disk::ConfigDiff,
     }
 
     #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, SmartDefault)]
@@ -383,6 +435,200 @@ mod default {
     }
 }
 
+mod on_disk {
+    use super::*;
+
+    #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, SmartDefault)]
+    #[serde(default)]
+    pub struct Config {
+        pub enabled: bool,
+        #[default = "./qdrant.log"]
+        pub log_file: String,
+        pub log_level: Option<String>,
+        pub span_events: config::SpanEvents,
+    }
+
+    impl Config {
+        pub fn update(&mut self, diff: ConfigDiff) {
+            if let Some(enabled) = diff.enabled {
+                self.enabled = enabled;
+            }
+
+            if let Some(log_file) = diff.log_file {
+                self.log_file = log_file;
+            }
+
+            if let Some(log_level) = diff.log_level {
+                self.log_level = log_level;
+            }
+
+            if let Some(span_events) = diff.span_events {
+                self.span_events = span_events;
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+    pub struct ConfigDiff {
+        pub enabled: Option<bool>,
+        pub log_file: Option<String>,
+        // Distinguish between unspecified field (`None`) and explicit `null` (`Some(None)`)
+        // See https://github.com/serde-rs/serde/issues/984#issuecomment-314143738
+        #[serde(default, deserialize_with = "deserialize_some")]
+        pub log_level: Option<Option<String>>,
+        pub span_events: Option<config::SpanEvents>,
+    }
+
+    #[rustfmt::skip] // `rustfmt` formats this into unreadable single line :/
+    pub type Logger<S> = filter::Filtered<
+        Option<fmt::Layer<S, fmt::format::DefaultFields, fmt::format::Format, MakeWriter>>,
+        filter::EnvFilter,
+        S,
+    >;
+
+    pub type MakeWriter = tracing_appender::rolling::RollingFileAppender;
+
+    pub fn new<S>(config: &mut Config) -> anyhow::Result<Option<Logger<S>>>
+    where
+        S: tracing::Subscriber + for<'span> registry::LookupSpan<'span>,
+    {
+        if !config.enabled {
+            return Ok(None);
+        }
+
+        let make_writer = match make_writer(&config.log_file) {
+            Ok(make_writer) => make_writer,
+            Err(err) => {
+                config.enabled = false;
+
+                return Err(anyhow::format_err!(
+                    "failed to enable loggin into '{}' log-file: {err}",
+                    config.log_file,
+                ));
+            }
+        };
+
+        let layer = fmt::Layer::default()
+            .with_ansi(false)
+            .with_span_events(config.span_events.clone().into())
+            .with_writer(make_writer);
+
+        let filter = filter(config.log_level.as_deref().unwrap_or(""));
+
+        let logger = Some(layer).with_filter(filter);
+
+        Ok(Some(logger))
+    }
+
+    pub fn update<S>(
+        logger: &mut Option<Logger<S>>,
+        config: &mut Config,
+        mut diff: ConfigDiff,
+    ) -> anyhow::Result<()>
+    where
+        S: tracing::Subscriber + for<'span> registry::LookupSpan<'span>,
+    {
+        if let Some(enabled) = diff.enabled {
+            if enabled != logger.is_some() {
+                config.update(diff);
+                *logger = new(config)?;
+                return Ok(());
+            }
+        }
+
+        let Some(logger) = logger else {
+            config.update(diff);
+            return Ok(());
+        };
+
+        let mut result = Ok(());
+
+        if let Some(log_file) = &diff.log_file {
+            match make_writer(log_file) {
+                Ok(make_writer) => {
+                    let writer = logger
+                        .inner_mut()
+                        .as_mut()
+                        .expect("valid logger state")
+                        .writer_mut();
+
+                    *writer = make_writer;
+                }
+
+                Err(err) => {
+                    result = Err(anyhow::format_err!(
+                        "failed to reconfigure logging into '{log_file}' log-file: {err}"
+                    ));
+
+                    diff.log_file = None;
+                }
+            }
+        }
+
+        if let Some(user_filters) = &diff.log_level {
+            *logger.filter_mut() = filter(user_filters.as_deref().unwrap_or(""));
+        }
+
+        if let Some(span_events) = &diff.span_events {
+            let mut layer = logger.inner_mut().take().expect("valid logger state");
+            layer = layer.with_span_events(span_events.clone().into());
+            *logger.inner_mut() = Some(layer);
+        }
+
+        config.update(diff);
+
+        result
+    }
+
+    fn make_writer(log_file: impl AsRef<Path>) -> anyhow::Result<MakeWriter> {
+        let log_file = log_file.as_ref();
+
+        let log_dir = log_file.parent().unwrap_or(Path::new(""));
+
+        let log_file_name = log_file.file_name().ok_or_else(|| {
+            anyhow::format_err!(
+                "'{}' log-file path does not contain a file name",
+                log_file.display()
+            )
+        })?;
+
+        let result =
+            panic::catch_unwind(|| tracing_appender::rolling::never(log_dir, log_file_name));
+
+        let panic = match result {
+            Ok(make_writer) => return Ok(make_writer),
+            Err(panic) => panic,
+        };
+
+        if let Some(msg) = panic.downcast_ref::<&str>() {
+            Err(anyhow::format_err!("{msg}"))
+        } else if let Some(msg) = panic.downcast_ref::<String>() {
+            Err(anyhow::format_err!("{msg}"))
+        } else {
+            Err(anyhow::format_err!(
+                "failed to open '{}' log-file",
+                log_file.display()
+            ))
+        }
+    }
+
+    fn filter(user_filters: &str) -> filter::EnvFilter {
+        const DEFAULT_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
+
+        // TODO: Tweak default filters for the on-disk logger? 🤔
+        const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
+            ("hyper", log::LevelFilter::Info),
+            ("h2", log::LevelFilter::Info),
+            ("tower", log::LevelFilter::Info),
+            ("rustls", log::LevelFilter::Info),
+            ("wal", log::LevelFilter::Info),
+            ("raft", log::LevelFilter::Info),
+        ];
+
+        super::filter(DEFAULT_LOG_LEVEL, DEFAULT_FILTERS, user_filters)
+    }
+}
+
 fn filter<'a>(
     default_log_level: log::LevelFilter,
     default_filters: impl IntoIterator<Item = &'a (&'a str, log::LevelFilter)>,
@@ -439,6 +685,13 @@ mod test {
                 span_events: (fmt::format::FmtSpan::NEW | fmt::format::FmtSpan::CLOSE).into(),
                 color: config::Color::Enable,
             },
+
+            on_disk: on_disk::Config {
+                enabled: true,
+                log_file: "/logs/qdrant".into(),
+                log_level: Some("tracing".into()),
+                span_events: (fmt::format::FmtSpan::NEW | fmt::format::FmtSpan::CLOSE).into(),
+            },
         };
 
         assert_eq!(config, expected);
@@ -447,6 +700,12 @@ mod test {
     #[test]
     fn deserialize_empty_config() {
         let config = deserialize_config(empty_config());
+        assert_eq!(config, LoggerConfig::default());
+    }
+
+    #[test]
+    fn deserialize_config_with_empty_on_disk() {
+        let config = deserialize_config(config_with_empty_on_disk());
         assert_eq!(config, LoggerConfig::default());
     }
 
@@ -460,6 +719,13 @@ mod test {
                 span_events: Some((fmt::format::FmtSpan::NEW | fmt::format::FmtSpan::CLOSE).into()),
                 color: Some(config::Color::Enable),
             },
+
+            on_disk: on_disk::ConfigDiff {
+                enabled: Some(true),
+                log_file: Some("/logs/qdrant".into()),
+                log_level: Some(Some("tracing".into())),
+                span_events: Some((fmt::format::FmtSpan::NEW | fmt::format::FmtSpan::CLOSE).into()),
+            },
         };
 
         assert_eq!(diff, expected);
@@ -472,15 +738,32 @@ mod test {
     }
 
     #[test]
+    fn deserialize_diff_with_empty_on_disk() {
+        let diff = deserialize_diff(config_with_empty_on_disk());
+        assert_eq!(diff, LoggerConfigDiff::default());
+    }
+
+    #[test]
     fn deserialize_diff_with_explicit_nulls() {
         let diff = deserialize_diff(json!({
             "log_level": null,
             "span_events": null,
             "color": null,
+
+            "on_disk": {
+                "enabled": null,
+                "log_file": null,
+                "log_level": null,
+                "span_events": null,
+            }
         }));
 
         let expected = LoggerConfigDiff {
             default: default::ConfigDiff {
+                log_level: Some(None),
+                ..Default::default()
+            },
+            on_disk: on_disk::ConfigDiff {
                 log_level: Some(None),
                 ..Default::default()
             },
@@ -502,10 +785,21 @@ mod test {
             "log_level": "debug",
             "span_events": ["new", "close"],
             "color": true,
+
+            "on_disk": {
+                "enabled": true,
+                "log_file": "/logs/qdrant",
+                "log_level": "tracing",
+                "span_events": ["new", "close"],
+            }
         })
     }
 
     fn empty_config() -> serde_json::Value {
         json!({})
+    }
+
+    fn config_with_empty_on_disk() -> serde_json::Value {
+        json!({ "on_disk": {} })
     }
 }

@@ -101,6 +101,7 @@ smart-default = "0.7"
 
 # Profiling
 tracing = { version = "0.1", features = ["async-await"] }
+tracing-appender = { version = "0.2", features = ["parking_lot"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = { version = "0.1", default-features = false, features = ["log-tracer", "std"] }
 console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
