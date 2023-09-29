@@ -188,6 +188,7 @@ pub struct ScrollRequest {
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
+    #[validate]
     pub filter: Option<Filter>,
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
@@ -319,6 +320,7 @@ pub struct SearchGroupsRequest {
     pub vector: NamedVectorStruct,
 
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
 
     /// Additional search params
@@ -441,6 +443,7 @@ pub struct RecommendRequest {
     pub strategy: Option<RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
 
     /// Additional search params
@@ -503,6 +506,7 @@ pub struct RecommendGroupsRequest {
     pub strategy: Option<RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
 
     /// Additional search params
@@ -558,6 +562,7 @@ pub struct GroupsResult {
 #[serde(rename_all = "snake_case")]
 pub struct CountRequest {
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
     /// If true, count exact number of points. If false, count approximate number of points faster.
     /// Approximate count might be unreliable during the indexing process. Default: true
