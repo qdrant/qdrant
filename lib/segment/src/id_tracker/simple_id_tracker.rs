@@ -9,10 +9,10 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 

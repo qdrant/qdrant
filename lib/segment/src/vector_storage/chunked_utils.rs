@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 
 use crate::common::mmap_type::MmapSlice;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{OperationError, OperationResult};
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";

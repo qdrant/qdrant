@@ -12,9 +12,9 @@ use memory::mmap_ops;
 
 use super::quantized::quantized_vectors::QuantizedVectors;
 use super::VectorStorageEnum;
+use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;

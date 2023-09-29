@@ -3,6 +3,7 @@ pub mod arc_atomic_ref_cell_iterator;
 pub mod cpu;
 pub mod error_logging;
 pub mod mmap_type;
+pub mod operation_error;
 pub mod operation_time_statistics;
 pub mod rocksdb_buffered_delete_wrapper;
 pub mod rocksdb_wrapper;
@@ -12,9 +13,9 @@ pub mod version;
 
 use std::sync::atomic::AtomicBool;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{SegmentConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;

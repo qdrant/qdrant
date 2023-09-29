@@ -9,9 +9,9 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, polygon_hashes,
     rectangle_hashes, GeoHash,

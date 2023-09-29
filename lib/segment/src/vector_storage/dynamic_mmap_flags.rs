@@ -10,8 +10,8 @@ use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
 use crate::common::mmap_type::{MmapBitSlice, MmapType};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::vector_storage::div_ceil;
 
 #[cfg(debug_assertions)]

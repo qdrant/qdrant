@@ -9,8 +9,8 @@ use common::types::PointOffsetType;
 use memmap2::{Mmap, MmapMut};
 use memory::{madvise, mmap_ops};
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
-use crate::entry::entry_point::{OperationError, OperationResult};
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
 

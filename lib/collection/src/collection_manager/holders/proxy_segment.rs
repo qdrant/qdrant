@@ -5,9 +5,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorElementType};
-use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
+use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{

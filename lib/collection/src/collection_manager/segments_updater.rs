@@ -3,8 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use parking_lot::{RwLock, RwLockWriteGuard};
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,

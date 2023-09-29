@@ -15,12 +15,12 @@ use rayon::prelude::*;
 use rayon::ThreadPool;
 
 use super::graph_links::{GraphLinks, GraphLinksMmap};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::BYTES_IN_KB;
 use crate::data_types::vectors::QueryVector;
-use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;

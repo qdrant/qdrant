@@ -8,9 +8,9 @@ use common::types::PointOffsetType;
 use super::memmap_vector_storage::MemmapVectorStorage;
 use super::quantized::quantized_vectors::QuantizedVectors;
 use super::simple_vector_storage::SimpleVectorStorage;
+use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
 

@@ -9,8 +9,8 @@ use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
 use super::graph_links::{GraphLinks, GraphLinksMmap};
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::rev_range;
-use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;

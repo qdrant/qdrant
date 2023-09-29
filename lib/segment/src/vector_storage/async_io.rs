@@ -5,8 +5,8 @@ use common::types::PointOffsetType;
 use io_uring::{opcode, types, IoUring};
 use memory::mmap_ops::transmute_from_u8_to_slice;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{OperationError, OperationResult};
 
 const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
 

@@ -15,9 +15,9 @@ use rocksdb::DB;
 use serde_json::Value;
 use smol_str::SmolStr;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,

@@ -8,9 +8,9 @@ use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
+use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
-use crate::entry::entry_point::OperationResult;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
     ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,

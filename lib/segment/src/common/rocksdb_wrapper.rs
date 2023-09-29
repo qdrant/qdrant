@@ -5,9 +5,9 @@ use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB};
 
-use crate::common::Flusher;
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::Flusher;
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_MAX_LOG_SIZE: usize = 1024 * 1024; // 1 mb

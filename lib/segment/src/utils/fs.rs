@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Move all files and directories from the `dir` directory to the `dest_dir` directory.
 ///

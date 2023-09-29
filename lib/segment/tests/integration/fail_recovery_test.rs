@@ -1,5 +1,6 @@
+use segment::common::operation_error::{OperationError, SegmentFailedState};
 use segment::data_types::vectors::only_default_vector;
-use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
+use segment::entry::entry_point::SegmentEntry;
 use serde_json::json;
 use tempfile::Builder;
 

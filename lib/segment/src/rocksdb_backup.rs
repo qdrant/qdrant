@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
 
 pub fn create(db: &rocksdb::DB, backup_path: &Path) -> OperationResult<()> {
     if !backup_path.exists() {

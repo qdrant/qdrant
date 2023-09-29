@@ -6,8 +6,8 @@ use rocksdb::DB;
 
 use self::memory::{BinaryItem, BinaryMemory};
 use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 
@@ -328,10 +328,7 @@ impl ValueIndexer<bool> for BinaryIndex {
         value.as_bool()
     }
 
-    fn remove_point(
-        &mut self,
-        id: PointOffsetType,
-    ) -> crate::entry::entry_point::OperationResult<()> {
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         self.memory.remove(id);
         self.db_wrapper.remove(id.to_be_bytes())?;
         Ok(())
