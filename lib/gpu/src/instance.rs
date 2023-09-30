@@ -40,7 +40,7 @@ impl Instance {
                 application_version: 0,
                 p_engine_name: engine_name.as_ptr(),
                 engine_version: 0,
-                api_version: vk::make_api_version(0, 1, 0, 0),
+                api_version: vk::make_api_version(0, 1, 3, 0),
             };
 
             let extensions = Self::get_extensions_list(debug_messenger.is_some());
