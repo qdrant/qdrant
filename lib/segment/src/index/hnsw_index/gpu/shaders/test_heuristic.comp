@@ -21,7 +21,7 @@ void main() {
 
     POINT_ID point_id = request.data[2 * gl_GlobalInvocationID.x];
     POINT_ID entry_id = request.data[2 * gl_GlobalInvocationID.x + 1];
-    float score = similarity(point_id, entry_id);
+    float score = similarity_obsolete(point_id, entry_id);
     ScoredPoint entry = ScoredPoint(entry_id, score);
 
     search(point_id, entry);

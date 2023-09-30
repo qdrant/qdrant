@@ -106,7 +106,7 @@ void process_candidate(ScoredPoint scored_point) {
 
 void process_link(POINT_ID point_id, POINT_ID link) {
     if (check_and_process_visited(link)) {
-        float score = similarity(point_id, link);
+        float score = similarity_obsolete(point_id, link);
         ScoredPoint scored = ScoredPoint(link, score);
         process_candidate(scored);
     }
@@ -140,7 +140,7 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
         changed = false;
 
         LINKS_FOREACH(result.id) {
-            float score = similarity(point_id, LINKS_FOREACH_VALUE);
+            float score = similarity_obsolete(point_id, LINKS_FOREACH_VALUE);
             if (score > result.score) {
                 changed = true;
                 result = ScoredPoint(LINKS_FOREACH_VALUE, score);
@@ -164,7 +164,7 @@ uint run_heuristic() {
 
         for (uint j = 0; j < result_count; j++) {
             ScoredPoint selected_point = get_nearest(j);
-            float dist_to_already_selected = similarity(current_closest.id, selected_point.id);
+            float dist_to_already_selected = similarity_obsolete(current_closest.id, selected_point.id);
             if (dist_to_already_selected > current_closest.score) {
                 is_good = false;
                 break;

@@ -31,6 +31,8 @@ VECTOR_STORAGE_DEFINE(1)
 VECTOR_STORAGE_DEFINE(2)
 VECTOR_STORAGE_DEFINE(3)
 
+shared vec4[DIMENSION / 4] request_vector;
+
 #define VECTOR_STORAGE_SCORE(STORAGE_INDEX_A, STORAGE_INDEX_B) \
     for (uint i = 0; i < d; i++) { \
         result += dot( \
@@ -42,14 +44,17 @@ VECTOR_STORAGE_DEFINE(3)
 uint similarity_counter = 0;
 
 void set_request_vector(uint idx) {
-    
+    uint subgroup_len = DIMENSION / (4 * SUBGROUP_SIZE);
+    for (uint i = 0; i < subgroup_len; i++) {
+        request_vector[i] = CONCAT(vectors, idx % STORAGES_COUNT).data[(idx / STORAGES_COUNT) * DIMENSION / 4 + i];
+    }
 }
 
 float similarity2(uint idx) {
     return 0.0;
 }
 
-float similarity(uint a, uint b) {
+float similarity_obsolete(uint a, uint b) {
     similarity_counter += 1;
 
     mat4 result = mat4(0.0);

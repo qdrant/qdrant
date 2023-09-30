@@ -1,9 +1,11 @@
 #version 450
 
+#extension GL_KHR_shader_subgroup_basic : enable
+
 #define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) buffer ScoresData {
     float data[];
@@ -11,5 +13,9 @@ layout(set = 0, binding = 0) buffer ScoresData {
 
 void main() {
     set_request_vector(0);
-    scores.data[gl_GlobalInvocationID.x] = similarity2(gl_GlobalInvocationID.x);
+    uint idx = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    float score = similarity2(idx);
+    if (subgroupElect()) {
+        scores.data[idx] = score;
+    }
 }

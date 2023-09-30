@@ -41,7 +41,7 @@ void update_entry(uint thread_index) {
     POINT_ID point_id = update_entry_points.data[thread_index];
     ScoredPoint entry_point = {
         requests.data[point_id],
-        similarity(point_id, requests.data[point_id])
+        similarity_obsolete(point_id, requests.data[point_id])
     };
     requests.data[point_id] = greedy_search(point_id, entry_point).id;
 }
@@ -54,7 +54,7 @@ void run_request(uint thread_index) {
 
     ScoredPoint entry = {
         requests.data[point_id],
-        similarity(point_id, requests.data[point_id])
+        similarity_obsolete(point_id, requests.data[point_id])
     };
 
     search(point_id, entry);
@@ -92,10 +92,10 @@ void run_request(uint thread_index) {
             GET_LINK(other_point_id, other_point_links_count) = point_id;
             LINKS_SET_SIZE(other_point_id, other_point_links_count + 1);
         } else {
-            ScoredPoint other_scored_point = {point_id, similarity(other_point_id, point_id)};
+            ScoredPoint other_scored_point = {point_id, similarity_obsolete(other_point_id, point_id)};
             BHEAP(nearest, push)(other_scored_point);
             LINKS_FOREACH(other_point_id) {
-                float candidate_score = similarity(other_point_id, LINKS_FOREACH_VALUE);
+                float candidate_score = similarity_obsolete(other_point_id, LINKS_FOREACH_VALUE);
                 ScoredPoint candidate = {LINKS_FOREACH_VALUE, candidate_score};
                 BHEAP(nearest, push)(candidate);
             }
