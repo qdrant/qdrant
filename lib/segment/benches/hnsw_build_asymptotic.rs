@@ -1,19 +1,17 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use common::types::{PointOffsetType, ScoreType};
+use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
-use segment::data_types::vectors::{VectorElementType, VectorType};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
-use segment::spaces::simple::CosineMetric;
-use segment::types::Distance;
+use segment::spaces::simple::{CosineMetric, DotProductMetric};
 
 const NUM_VECTORS: usize = 5_000;
 const DIM: usize = 16;
@@ -106,27 +104,6 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
     }
 }
 
-#[derive(Clone)]
-struct FakeMetric {}
-
-impl Metric for FakeMetric {
-    fn distance() -> Distance {
-        unreachable!("FakeMetric::distance")
-    }
-
-    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        v1[0] + v2[0]
-    }
-
-    fn preprocess(vector: VectorType) -> VectorType {
-        vector
-    }
-
-    fn postprocess(score: ScoreType) -> ScoreType {
-        score
-    }
-}
-
 fn scoring_vectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("scoring-vector");
     let mut rng = thread_rng();
@@ -134,7 +111,7 @@ fn scoring_vectors(c: &mut Criterion) {
     let base_num_vectors = 10_000;
 
     let num_vectors = base_num_vectors;
-    let vector_holder = TestRawScorerProducer::<FakeMetric>::new(DIM, num_vectors, &mut rng);
+    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point", |b| {
         b.iter(|| {
@@ -151,7 +128,7 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 10;
-    let vector_holder = TestRawScorerProducer::<FakeMetric>::new(DIM, num_vectors, &mut rng);
+    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
@@ -168,7 +145,7 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 50;
-    let vector_holder = TestRawScorerProducer::<FakeMetric>::new(DIM, num_vectors, &mut rng);
+    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {
@@ -203,7 +180,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| FakeMetric::similarity(&vectors[x], &query))
+                .map(|x| DotProductMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });
@@ -220,7 +197,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| FakeMetric::similarity(&vectors[x], &query))
+                .map(|x| DotProductMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });
