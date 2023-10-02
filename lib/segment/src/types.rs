@@ -21,7 +21,9 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils;
-use crate::common::utils::MultiValue;
+use crate::common::utils::{
+    get_value_from_json_map, insert_at_path, remove_value_from_json_map, MultiValue,
+};
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
 use crate::spaces::metric::Metric;
@@ -824,19 +826,19 @@ impl Payload {
 
 impl PayloadContainer for Map<String, Value> {
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        utils::get_value_from_json_map(path, self)
+        get_value_from_json_map(path, self)
     }
 }
 
 impl PayloadContainer for Payload {
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        utils::get_value_from_json_map(path, &self.0)
+        get_value_from_json_map(path, &self.0)
     }
 }
 
 impl<'a> PayloadContainer for OwnedPayloadRef<'a> {
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        utils::get_value_from_json_map(path, self.deref())
+        get_value_from_json_map(path, self.deref())
     }
 }
 
@@ -1833,18 +1835,53 @@ impl PayloadSelector {
         })
     }
 
-    #[allow(clippy::ptr_arg)]
-    pub fn check(&self, key: &PayloadKeyType) -> bool {
-        match self {
-            PayloadSelector::Include(selector) => selector.include.contains(key),
-            PayloadSelector::Exclude(selector) => !selector.exclude.contains(key),
-        }
+    pub fn new_exclude(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
+        PayloadSelector::Exclude(PayloadSelectorExclude {
+            exclude: vecs_payload_key_type,
+        })
     }
 
+    fn include_payload_selector(
+        source: &Map<String, Value>,
+        include: &[PayloadKeyType],
+    ) -> Payload {
+        let mut new_json_map = Map::new();
+        for path in include.iter() {
+            let focus = get_value_from_json_map(path, source);
+            match focus {
+                MultiValue::Single(element) => {
+                    if let Some(element) = element {
+                        insert_at_path(path, &mut new_json_map, element.clone());
+                    }
+                }
+                MultiValue::Multiple(elements) => {
+                    let array = elements.iter().cloned().cloned().collect();
+                    insert_at_path(path, &mut new_json_map, Value::Array(array));
+                }
+            }
+        }
+        new_json_map.into()
+    }
+
+    fn exclude_payload_selector(source: Map<String, Value>, exclude: &[PayloadKeyType]) -> Payload {
+        let mut json_map = source;
+        // remove all excluded fields
+        for path in exclude.iter() {
+            let _removed = remove_value_from_json_map(path, &mut json_map);
+        }
+        json_map.into()
+    }
+
+    /// Process payload selector
     pub fn process(&self, x: Payload) -> Payload {
-        let map: serde_json::Map<String, Value> =
-            x.into_iter().filter(|(key, _)| self.check(key)).collect();
-        map.into()
+        match self {
+            PayloadSelector::Include(selector) => {
+                Self::include_payload_selector(&x.0, &selector.include)
+            }
+            PayloadSelector::Exclude(selector) => {
+                Self::exclude_payload_selector(x.0, &selector.exclude)
+            }
+        }
     }
 }
 
@@ -2759,14 +2796,119 @@ mod tests {
         let merged = this.merge(&other);
 
         assert!(merged.must.is_some());
-        assert!(merged.must.as_ref().unwrap().len() == 2);
+        assert_eq!(merged.must.as_ref().unwrap().len(), 2);
         assert!(merged.must_not.is_none());
         assert!(merged.should.is_some());
-        assert!(merged.should.as_ref().unwrap().len() == 1);
+        assert_eq!(merged.should.as_ref().unwrap().len(), 1);
 
         assert!(merged.must.as_ref().unwrap().contains(&condition1));
         assert!(merged.must.as_ref().unwrap().contains(&condition2));
         assert!(merged.should.as_ref().unwrap().contains(&condition1));
+    }
+
+    #[test]
+    fn test_payload_selector_include() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
+                }
+            }
+        });
+
+        // include root & nested
+        let selector = PayloadSelector::new_include(vec!["a".to_string(), "b.e.f".to_string()]);
+        let payload = selector.process(payload.into());
+
+        let expected = json!({
+            "a": 1,
+            "b": {
+                "e": {
+                    "f": [1,2,3],
+                }
+            }
+        });
+        assert_eq!(payload, expected.into());
+
+        // include array element
+        let selector = PayloadSelector::new_include(vec!["b.e.f[0]".to_string()]);
+        let payload = selector.process(payload);
+        let expected = json!({
+            "b": {
+                "e": {
+                    "f": [1],
+                }
+            }
+        });
+        assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_exclude() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
+                }
+            }
+        });
+
+        // exclude
+        let selector = PayloadSelector::new_exclude(vec!["a".to_string(), "b.e.f".to_string()]);
+        let payload = selector.process(payload.into());
+
+        // root removal & nested removal
+        let expected = json!({
+            "b": {
+                "c": 123,
+                "e": {
+                    "g": 7,
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
+                }
+            }
+        });
+        assert_eq!(payload, expected.into());
     }
 }
 

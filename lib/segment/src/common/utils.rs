@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -316,6 +317,109 @@ pub fn remove_value_from_json_map(
     }
 }
 
+/// Insert value at a given JSON path  in JSON array
+pub fn insert_at_array_path(
+    array_path: &str,
+    array_index: Option<u32>,
+    rest_path: Option<&str>,
+    value: &mut serde_json::Map<String, Value>,
+    new_value: Value,
+) {
+    match value.get_mut(array_path) {
+        None => {
+            // create array
+            value.insert(array_path.to_string(), Value::Array(vec![]));
+            insert_at_array_path(array_path, array_index, rest_path, value, new_value);
+        }
+        Some(Value::Array(array)) => {
+            match rest_path {
+                None => {
+                    if let Some(array_index) = array_index {
+                        let array_index = array_index as usize;
+                        match array.len().cmp(&array_index) {
+                            Ordering::Greater => {
+                                // overwrite value at position
+                                array[array_index] = new_value;
+                            }
+                            Ordering::Less => {
+                                // ignore - no value at position
+                            }
+                            Ordering::Equal => {
+                                // append value at the end
+                                array.push(new_value);
+                            }
+                        }
+                    } else {
+                        // append value if no index provided
+                        array.push(new_value);
+                    }
+                }
+                Some(rest_path) => {
+                    // dig deeper
+                    for value in array.iter_mut() {
+                        if let Value::Object(map) = value {
+                            insert_at_path(rest_path, map, new_value.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Some(_value) => {
+            // overwrite existing
+            value.insert(array_path.to_string(), Value::Array(vec![]));
+            insert_at_array_path(array_path, array_index, rest_path, value, new_value);
+        }
+    }
+}
+
+/// Insert value at a given JSON path in JSON map
+pub fn insert_at_path(path: &str, value: &mut serde_json::Map<String, Value>, new_value: Value) {
+    match path.split_once('.') {
+        Some((element, rest_path)) => {
+            // check if targeting array
+            match parse_array_path(element) {
+                Some((array_element_path, array_index)) => insert_at_array_path(
+                    array_element_path,
+                    array_index,
+                    Some(rest_path),
+                    value,
+                    new_value,
+                ),
+                None => {
+                    // no array notation
+                    if rest_path.is_empty() {
+                        value.insert(element.to_string(), new_value);
+                    } else {
+                        match value.get_mut(element) {
+                            None => {
+                                // create entry
+                                let mut map = serde_json::Map::new();
+                                insert_at_path(rest_path, &mut map, new_value);
+                                value.insert(element.to_string(), Value::Object(map));
+                            }
+                            Some(Value::Object(map)) => insert_at_path(rest_path, map, new_value),
+                            Some(_value) => {
+                                // overwrite existing
+                                let mut map = serde_json::Map::new();
+                                insert_at_path(rest_path, &mut map, new_value);
+                                value.insert(element.to_string(), Value::Object(map));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None => match parse_array_path(path) {
+            Some((array_element_path, array_index)) => {
+                insert_at_array_path(array_element_path, array_index, None, value, new_value);
+            }
+            None => {
+                value.insert(path.to_string(), new_value);
+            }
+        },
+    }
+}
+
 pub fn transpose_map_into_named_vector(
     map: HashMap<String, Vec<Vec<VectorElementType>>>,
 ) -> Vec<NamedVectors<'static>> {
@@ -624,6 +728,58 @@ mod tests {
                 &Value::Number(2.into()),
                 &Value::Number(3.into()),
             ]
+        );
+    }
+
+    #[test]
+    fn test_insert_at_path() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        // insert root
+        insert_at_path("h", &mut map, Value::Number(4.into()));
+        assert_eq!(map.get("h"), Some(&Value::Number(4.into())));
+
+        // insert new nested
+        insert_at_path("a.a-new", &mut map, Value::Number(5.into()));
+        assert_eq!(
+            map.get("a").unwrap().get("a-new"),
+            Some(&Value::Number(5.into()))
+        );
+
+        // insert overwrite existing
+        insert_at_path("a.f", &mut map, Value::Number(6.into()));
+        assert_eq!(
+            map.get("a").unwrap().get("f"),
+            Some(&Value::Number(6.into()))
+        );
+
+        // insert into array existing index
+        insert_at_path("g[2]", &mut map, Value::String("g2-new".to_string()));
+        assert_eq!(
+            map.get("g").unwrap().as_array().unwrap()[2],
+            Value::String("g2-new".to_string())
+        );
+
+        // append into array
+        insert_at_path("g[]", &mut map, Value::String("g3".to_string()));
+        assert_eq!(
+            map.get("g").unwrap().as_array().unwrap()[3],
+            Value::String("g3".to_string())
         );
     }
 }
