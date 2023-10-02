@@ -1,3 +1,5 @@
+mod temp_directories;
+
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir};
