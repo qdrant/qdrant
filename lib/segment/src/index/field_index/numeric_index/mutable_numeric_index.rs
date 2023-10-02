@@ -7,8 +7,8 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable};
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
