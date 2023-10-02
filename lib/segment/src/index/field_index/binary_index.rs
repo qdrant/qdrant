@@ -199,6 +199,16 @@ impl BinaryIndex {
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         self.values_count(point_id) == 0
     }
+
+    /// Check if the point has a true value
+    pub fn values_has_true(&self, point_id: PointOffsetType) -> bool {
+        self.memory.get(point_id).has_true()
+    }
+
+    /// Check if the point has a false value
+    pub fn values_has_false(&self, point_id: PointOffsetType) -> bool {
+        self.memory.get(point_id).has_false()
+    }
 }
 
 impl PayloadFieldIndex for BinaryIndex {
