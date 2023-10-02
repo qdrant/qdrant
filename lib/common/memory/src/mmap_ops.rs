@@ -92,6 +92,7 @@ where
     );
 }
 pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
+    debug_assert_eq!(v.len(), size_of::<T>());
     unsafe { &*(v.as_ptr() as *const T) }
 }
 

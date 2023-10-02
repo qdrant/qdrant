@@ -50,10 +50,9 @@ impl InvertedIndexMmap {
         if *id >= self.file_header.posting_count as DimId {
             return None;
         }
-
+        let header_start = *id as usize * POSTING_HEADER_SIZE;
         let header = transmute_from_u8::<PostingListFileHeader>(
-            &self.mmap
-                [*id as usize * POSTING_HEADER_SIZE..(*id as usize + 1) * POSTING_HEADER_SIZE],
+            &self.mmap[header_start..header_start + POSTING_HEADER_SIZE],
         )
         .clone();
         let elements_bytes = &self.mmap[header.start_offset as usize..header.end_offset as usize];
@@ -64,8 +63,9 @@ impl InvertedIndexMmap {
         inverted_index_ram: &InvertedIndexRam,
         path: P,
     ) -> std::io::Result<Self> {
-        let (total_posting_headers_size, total_posting_elements_size) =
-            Self::calculate_file_length(inverted_index_ram);
+        let total_posting_headers_size = Self::total_posting_headers_size(inverted_index_ram);
+        let total_posting_elements_size = Self::total_posting_elements_size(inverted_index_ram);
+
         let file_length = total_posting_headers_size + total_posting_elements_size;
         let file_path = Self::index_file_path(path.as_ref());
         create_and_ensure_length(file_path.as_ref(), file_length)?;
@@ -91,30 +91,31 @@ impl InvertedIndexMmap {
     }
 
     pub fn load<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        // read index config file
+        let config_file_path = Self::index_config_file_path(path.as_ref());
+        // if the file header does not exist, the index is malformed
+        let file_header: InvertedIndexFileHeader = read_json(&config_file_path)?;
+        // read index data into mmap
         let file_path = Self::index_file_path(path.as_ref());
         let mmap = open_read_mmap(file_path.as_ref())?;
         madvise::madvise(&mmap, madvise::get_global())?;
-        // read from index file
-        let config_file_path = Self::index_config_file_path(path.as_ref());
-        // if the file header does not exist, the index is malformed (TODO delete data if no file)
-        let file_header: InvertedIndexFileHeader = read_json(&config_file_path)?;
         Ok(Self {
             mmap: Arc::new(mmap),
             file_header,
         })
     }
 
-    /// Calculate file length in bytes
-    /// Returns (posting headers size, posting elements size)
-    fn calculate_file_length(inverted_index_ram: &InvertedIndexRam) -> (usize, usize) {
-        let total_posting_headers_size = inverted_index_ram.postings.len() * POSTING_HEADER_SIZE;
+    fn total_posting_headers_size(inverted_index_ram: &InvertedIndexRam) -> usize {
+        inverted_index_ram.postings.len() * POSTING_HEADER_SIZE
+    }
 
+    fn total_posting_elements_size(inverted_index_ram: &InvertedIndexRam) -> usize {
         let mut total_posting_elements_size = 0;
         for posting in &inverted_index_ram.postings {
             total_posting_elements_size += posting.elements.len() * size_of::<PostingElement>();
         }
 
-        (total_posting_headers_size, total_posting_elements_size)
+        total_posting_elements_size
     }
 
     fn save_posting_headers(
