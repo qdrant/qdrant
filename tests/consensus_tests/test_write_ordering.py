@@ -69,6 +69,25 @@ def test_write_ordering(tmp_path: pathlib.Path):
     # succeeds as Medium selects an Alive peer
     assert_http_ok(r)
 
+    # Write ordering with filter update operation
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/test_collection/points/delete?wait=true&ordering=medium", json={
+            "filter": {
+                "must": [
+                    {
+                        "key": "a",
+                        "match": {
+                            "value": 100
+                        }
+                    }
+                ]
+            }
+        }
+    )
+
+    # succeeds as Medium selects an Alive peer
+    assert_http_ok(r)
+
     # write ordering strong
     r = requests.put(
         f"{peer_api_uris[0]}/collections/test_collection/points?wait=true&ordering=strong", json={
