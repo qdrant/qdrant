@@ -318,12 +318,14 @@ message RecommendPoints {
   optional RecommendStrategy strategy = 16; // How to use the example vectors to find the results
   repeated Vector positive_vectors = 17; // Look for vectors closest to those
   repeated Vector negative_vectors = 18; // Try to avoid vectors like this
+  optional uint64 timeout = 19; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message RecommendBatchPoints {
   string collection_name = 1; // Name of the collection
   repeated RecommendPoints recommend_points = 2;
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message RecommendPointGroups {

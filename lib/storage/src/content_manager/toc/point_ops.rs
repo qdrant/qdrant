@@ -29,6 +29,7 @@ impl TableOfContent {
         collection_name: &str,
         request: RecommendRequest,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_by(
@@ -36,6 +37,7 @@ impl TableOfContent {
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
+            timeout,
         )
         .await
         .map_err(|err| err.into())
@@ -56,6 +58,7 @@ impl TableOfContent {
         collection_name: &str,
         request: RecommendRequestBatch,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_batch_by(
@@ -63,6 +66,7 @@ impl TableOfContent {
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
+            timeout,
         )
         .await
         .map_err(|err| err.into())

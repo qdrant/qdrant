@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::time::{Duration, Instant};
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
@@ -47,6 +48,7 @@ pub async fn recommend_by<'a, F, Fut>(
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -64,6 +66,7 @@ where
         collection,
         collection_by_name,
         read_consistency,
+        timeout,
     )
     .await?;
     Ok(results.into_iter().next().unwrap())
@@ -94,20 +97,22 @@ fn get_search_vector_name(request: &RecommendRequest) -> String {
 /// # Arguments
 ///
 /// * `request_batch` - batch recommendations request
-/// * `search_runtime_handle` - tokio runtime handle to execute search queries
 /// * `collection` - collection to search in
 /// * `collection_by_name` - function to retrieve collection by name, used to retrieve points from other collections
+/// * `timeout` - timeout for the whole batch, in the searching stage. E.g. time in preprocessing won't be counted
 ///
 pub async fn recommend_batch_by<'a, F, Fut>(
     request_batch: RecommendRequestBatch,
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
+    let instant = Instant::now();
     // shortcuts batch if all requests with limit=0
     if request_batch.searches.iter().all(|s| s.limit == 0) {
         return Ok(vec![]);
@@ -240,18 +245,19 @@ where
             };
         }
 
-        //TODO(luis): enable timeout for recommend
+        // Update timeout after preprocessing
+        let timeout = timeout.map(|timeout| timeout.saturating_sub(instant.elapsed()));
         let run_result = if !searches.is_empty() {
             let search_batch_request = SearchRequestBatch { searches };
             collection
-                .search_batch(search_batch_request, read_consistency, None, None)
+                .search_batch(search_batch_request, read_consistency, None, timeout)
                 .await?
         } else {
             let core_search_batch_request = CoreSearchRequestBatch {
                 searches: core_searches,
             };
             collection
-                .core_search_batch(core_search_batch_request, read_consistency, None, None)
+                .core_search_batch(core_search_batch_request, read_consistency, None, timeout)
                 .await?
         };
 
@@ -284,6 +290,7 @@ fn batch_by_strategy(
         }
     })
 }
+
 fn recommend_by_avg_vector<'a>(
     request: RecommendRequest,
     positive: impl Iterator<Item = &'a VectorType>,

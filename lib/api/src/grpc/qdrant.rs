@@ -3501,6 +3501,9 @@ pub struct RecommendPoints {
     /// Try to avoid vectors like this
     #[prost(message, repeated, tag = "18")]
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "19")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3517,6 +3520,9 @@ pub struct RecommendBatchPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "4")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

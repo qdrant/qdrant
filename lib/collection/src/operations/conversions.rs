@@ -1129,6 +1129,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             collection_name: String::new(),
             positive_vectors: value.positive_vectors,
             negative_vectors: value.negative_vectors,
+            timeout: None, // TODO(luis): Enable timeout for group requests
         };
 
         let RecommendRequest {

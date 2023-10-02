@@ -333,6 +333,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         &collection,
         |_name| async { unreachable!("Should not be called in this test") },
         None,
+        None,
     )
     .await
     .unwrap();

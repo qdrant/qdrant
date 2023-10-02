@@ -195,12 +195,14 @@ impl Points for PointsService {
             collection_name,
             recommend_points,
             read_consistency,
+            timeout,
         } = request.into_inner();
         recommend_batch(
             self.toc.as_ref(),
             collection_name,
             recommend_points,
             read_consistency,
+            timeout.map(Duration::from_secs),
         )
         .await
     }

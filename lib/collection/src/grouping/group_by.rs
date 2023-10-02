@@ -167,7 +167,15 @@ impl GroupRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
-                recommend_by(request, collection, collection_by_name, read_consistency).await
+                //TODO(luis): enable timeout for group requests
+                recommend_by(
+                    request,
+                    collection,
+                    collection_by_name,
+                    read_consistency,
+                    None,
+                )
+                .await
             }
         }
     }

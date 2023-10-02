@@ -228,6 +228,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
         None,
+        None,
     )
     .await;
 
@@ -251,6 +252,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
+        None,
         None,
     )
     .await
