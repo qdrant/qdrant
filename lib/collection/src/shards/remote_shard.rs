@@ -154,9 +154,8 @@ impl RemoteShard {
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
-        // the target shard is None because the operation is forwarded as if it came from the client
         self.execute_update_operation(
-            None,
+            Some(self.id),
             self.collection_id.clone(),
             operation,
             wait,

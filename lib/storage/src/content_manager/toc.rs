@@ -1382,10 +1382,32 @@ impl TableOfContent {
         ordering: WriteOrdering,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
+
+        // Ordered operation flow:
+        //
+        // ┌───────────────────┐
+        // │ User              │
+        // └┬──────────────────┘
+        //  │ Shard: None
+        //  │ Ordering: Strong
+        // ┌▼──────────────────┐
+        // │ First Node        │ <- update_from_client
+        // └┬──────────────────┘
+        //  │ Shard: Some(N)
+        //  │ Ordering: Strong
+        // ┌▼──────────────────┐
+        // │ Leader node       │ <- update_from_peer
+        // └┬──────────────────┘
+        //  │ Shard: Some(N)
+        //  │ Ordering: None(Weak)
+        // ┌▼──────────────────┐
+        // │ Updating node     │ <- update_from_peer
+        // └───────────────────┘
+
         let result = match shard_selection {
             Some(shard_selection) => {
                 collection
-                    .update_from_peer(operation, shard_selection, wait)
+                    .update_from_peer(operation, shard_selection, wait, ordering)
                     .await
             }
             None => {

@@ -690,13 +690,21 @@ impl Collection {
         operation: CollectionUpdateOperations,
         shard_selection: ShardId,
         wait: bool,
+        ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
         let _update_lock = self.updates_lock.read().await;
         let shard_holder_guard = self.shards_holder.read().await;
 
         let res = match shard_holder_guard.get_shard(&shard_selection) {
             None => None,
-            Some(target_shard) => target_shard.update_local(operation, wait).await?,
+            Some(target_shard) => match ordering {
+                WriteOrdering::Weak => target_shard.update_local(operation, wait).await?,
+                WriteOrdering::Medium | WriteOrdering::Strong => Some(
+                    target_shard
+                        .update_with_consistency(operation, wait, ordering)
+                        .await?,
+                ),
+            },
         };
 
         if let Some(res) = res {
