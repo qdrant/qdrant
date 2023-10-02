@@ -234,6 +234,15 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
                         .map_or(false, |values| values.iter().any(|i| i == &value))
                 }))
             }
+            (ValueVariants::Bool(is_true), FieldIndex::BinaryIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    if is_true {
+                        index.values_has_true(point_id)
+                    } else {
+                        index.values_has_false(point_id)
+                    }
+                }))
+            }
             _ => None,
         },
         Match::Text(MatchText { text }) => match index {
