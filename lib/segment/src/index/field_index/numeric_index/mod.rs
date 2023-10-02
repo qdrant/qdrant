@@ -126,7 +126,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         }
     }
 
-    #[allow(clippy::manual_clamp)] // false positive
     fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
         let lbound = if let Some(lte) = range.lte {
             Included(T::from_f64(lte))
