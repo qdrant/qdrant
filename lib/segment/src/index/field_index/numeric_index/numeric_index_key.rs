@@ -1,11 +1,13 @@
 use std::fmt::Debug;
 
+use common::types::PointOffsetType;
+
 use crate::index::field_index::histogram::Numericable;
 use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
     encode_i64_key_ascending,
 };
-use crate::types::{FloatPayloadType, IntPayloadType, PointOffsetType};
+use crate::types::{FloatPayloadType, IntPayloadType};
 
 pub trait Encodable: Copy + Default {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;

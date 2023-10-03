@@ -2,16 +2,16 @@ use std::collections::BTreeMap;
 use std::ops::{Bound, Range};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::mutable_numeric_index::MutableNumericIndex;
-use super::numeric_index_key::NumericIndexKey;
-use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use super::numeric_index_key::{Encodable, NumericIndexKey};
+use super::{NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::histogram::{Histogram, Numericable};
-use crate::types::PointOffsetType;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable> {
     map: NumericKeySortedVec<T>,

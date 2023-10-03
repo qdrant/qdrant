@@ -17,6 +17,8 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use self::immutable_numeric_index::ImmutableNumericIndex;
+use self::numeric_index_key::{Encodable, NumericIndexKey};
 use super::utils::check_boundaries;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -320,7 +322,19 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         }
 
         Ok(match self {
-            NumericIndex::Mutable(index) => Box::new(index.values_range(start_bound, end_bound)),
+            NumericIndex::Mutable(index) => {
+                let start_bound = match start_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                let end_bound = match end_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                Box::new(index.values_range(start_bound, end_bound))
+            }
             NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
         })
     }
