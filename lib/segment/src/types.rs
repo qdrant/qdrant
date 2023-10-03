@@ -1577,10 +1577,10 @@ impl Condition {
 impl Validate for Condition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
+            Condition::HasId(_) | Condition::IsEmpty(_) | Condition::IsNull(_) => Ok(()),
             Condition::Field(field_condition) => field_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
-            _ => Ok(()),
         }
     }
 }
