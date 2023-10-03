@@ -3405,6 +3405,9 @@ pub struct SearchPointGroups {
     /// Options for specifying how to use the group id to lookup points in another collection
     #[prost(message, optional, tag = "13")]
     pub with_lookup: ::core::option::Option<WithLookup>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "14")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3589,6 +3592,9 @@ pub struct RecommendPointGroups {
     /// Try to avoid vectors like this
     #[prost(message, repeated, tag = "19")]
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "20")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

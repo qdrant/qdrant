@@ -93,6 +93,7 @@ async fn recommend_point_groups(
         &collection.name,
         request.into_inner(),
         params.consistency,
+        params.timeout(),
     )
     .await;
 

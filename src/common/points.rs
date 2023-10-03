@@ -520,12 +520,14 @@ pub async fn do_search_point_groups(
     request: SearchGroupsRequest,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
         request.into(),
         read_consistency,
         shard_selection,
+        timeout,
     )
     .await
 }
@@ -535,9 +537,16 @@ pub async fn do_recommend_point_groups(
     collection_name: &str,
     request: RecommendGroupsRequest,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
-    toc.group(collection_name, request.into(), read_consistency, None)
-        .await
+    toc.group(
+        collection_name,
+        request.into(),
+        read_consistency,
+        None,
+        timeout,
+    )
+    .await
 }
 
 pub async fn do_count_points(

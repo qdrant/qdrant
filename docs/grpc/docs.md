@@ -2420,6 +2420,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | strategy | [RecommendStrategy](#qdrant-RecommendStrategy) | optional | How to use the example vectors to find the results |
 | positive_vectors | [Vector](#qdrant-Vector) | repeated | Look for vectors closest to those |
 | negative_vectors | [Vector](#qdrant-Vector) | repeated | Try to avoid vectors like this |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 
 
 
@@ -2698,6 +2699,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 
 
 

@@ -153,9 +153,14 @@ impl GroupRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
-                //TODO(luis): enable timeout for group requests
                 collection
-                    .search(request, read_consistency, shard_selection, None)
+                    .search(
+                        request,
+                        read_consistency,
+                        shard_selection,
+                        // Timeout is handled by dropping this Future
+                        None,
+                    )
                     .await
             }
             SourceRequest::Recommend(mut request) => {
@@ -167,12 +172,12 @@ impl GroupRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
-                //TODO(luis): enable timeout for group requests
                 recommend_by(
                     request,
                     collection,
                     collection_by_name,
                     read_consistency,
+                    // Timeout is handled by dropping this Future
                     None,
                 )
                 .await
@@ -301,7 +306,7 @@ where
 
         let source = &mut request.source;
 
-        // construct filter to exclude already found groups
+        // Construct filter to exclude already found groups
         let full_groups = aggregator.keys_of_filled_groups();
         if !full_groups.is_empty() {
             let except_any = except_on(&request.group_by, full_groups);
@@ -314,13 +319,14 @@ where
             }
         }
 
-        // exclude already aggregated points
+        // Exclude already aggregated points
         let ids = aggregator.ids().clone();
         if !ids.is_empty() {
             let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
             source.merge_filter(&exclude_ids);
         }
 
+        // Make request
         let points = request
             .r#do(
                 collection,
@@ -350,7 +356,7 @@ where
 
             let source = &mut request.source;
 
-            // construct filter to only include unsatisfied groups
+            // Construct filter to only include unsatisfied groups
             let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
             let match_any = match_on(&request.group_by, unsatisfied_groups);
             if !match_any.is_empty() {
@@ -361,13 +367,14 @@ where
                 source.merge_filter(&include_groups);
             }
 
-            // exclude already aggregated points
+            // Exclude already aggregated points
             let ids = aggregator.ids().clone();
             if !ids.is_empty() {
                 let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
                 source.merge_filter(&exclude_ids);
             }
 
+            // Make request
             let points = request
                 .r#do(
                     collection,

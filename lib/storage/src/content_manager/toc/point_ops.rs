@@ -199,20 +199,16 @@ impl TableOfContent {
         request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);
 
-        let mut group_by = GroupBy::new(request, &collection, collection_by_name);
-
-        if let Some(read_consistency) = read_consistency {
-            group_by = group_by.with_read_consistency(read_consistency);
-        }
-
-        if let Some(shard_selection) = shard_selection {
-            group_by = group_by.with_shard_selection(shard_selection);
-        }
+        let group_by = GroupBy::new(request, &collection, collection_by_name)
+            .set_read_consistency(read_consistency)
+            .set_shard_selection(shard_selection)
+            .set_timeout(timeout);
 
         group_by
             .execute()

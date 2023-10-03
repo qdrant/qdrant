@@ -270,6 +270,7 @@ message SearchPointGroups {
   uint32 group_size = 11; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
   optional WithLookup with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
+  optional uint64 timeout = 14; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message ScrollPoints {
@@ -347,6 +348,7 @@ message RecommendPointGroups {
   optional RecommendStrategy strategy = 17; // How to use the example vectors to find the results
   repeated Vector positive_vectors = 18; // Look for vectors closest to those
   repeated Vector negative_vectors = 19; // Try to avoid vectors like this
+  optional uint64 timeout = 20; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message CountPoints {

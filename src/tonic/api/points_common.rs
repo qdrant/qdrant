@@ -818,6 +818,7 @@ pub async fn search_groups(
     let SearchPointGroups {
         collection_name,
         read_consistency,
+        timeout,
         ..
     } = search_point_groups;
 
@@ -830,6 +831,7 @@ pub async fn search_groups(
         search_groups_request,
         read_consistency,
         shard_selection,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;
@@ -968,6 +970,7 @@ pub async fn recommend_groups(
     let RecommendPointGroups {
         collection_name,
         read_consistency,
+        timeout,
         ..
     } = recommend_point_groups;
 
@@ -979,6 +982,7 @@ pub async fn recommend_groups(
         &collection_name,
         recommend_groups_request,
         read_consistency,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;

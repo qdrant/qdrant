@@ -1124,12 +1124,12 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             with_vectors: value.with_vectors,
             score_threshold: value.score_threshold,
             read_consistency: None,
-            limit: 0,
-            offset: None,
+            limit: 0,     // Will be calculated from group_size
+            offset: None, // Not enabled for groups
             collection_name: String::new(),
             positive_vectors: value.positive_vectors,
             negative_vectors: value.negative_vectors,
-            timeout: None, // TODO(luis): Enable timeout for group requests
+            timeout: None, // Passed as query param
         };
 
         let RecommendRequest {

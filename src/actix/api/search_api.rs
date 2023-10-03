@@ -68,6 +68,7 @@ async fn search_point_groups(
         request.into_inner(),
         params.consistency,
         None,
+        params.timeout(),
     )
     .await;
 
