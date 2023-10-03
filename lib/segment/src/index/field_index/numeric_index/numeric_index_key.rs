@@ -2,60 +2,11 @@ use std::fmt::Debug;
 
 use common::types::PointOffsetType;
 
+use super::Encodable;
 use crate::index::field_index::histogram::Numericable;
-use crate::index::key_encoding::{
-    decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
-    encode_i64_key_ascending,
-};
-use crate::types::{FloatPayloadType, IntPayloadType};
-
-pub trait Encodable: Copy + Default {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
-
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
-
-    fn cmp_key(&self, other: &Self) -> std::cmp::Ordering;
-}
-
-impl Encodable for IntPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i64_key_ascending(*self, id)
-    }
-
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_i64_key_ascending(key)
-    }
-
-    fn cmp_key(&self, other: &Self) -> std::cmp::Ordering {
-        self.cmp(other)
-    }
-}
-
-impl Encodable for FloatPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_f64_key_ascending(*self, id)
-    }
-
-    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_f64_key_ascending(key)
-    }
-
-    fn cmp_key(&self, other: &Self) -> std::cmp::Ordering {
-        if self.is_nan() && other.is_nan() {
-            return std::cmp::Ordering::Equal;
-        }
-        if self.is_nan() {
-            return std::cmp::Ordering::Less;
-        }
-        if other.is_nan() {
-            return std::cmp::Ordering::Greater;
-        }
-        self.partial_cmp(other).unwrap()
-    }
-}
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct NumericIndexKey<T: PartialEq + PartialOrd> {
+pub struct NumericIndexKey<T> {
     pub key: T,
     pub idx: PointOffsetType,
 }
@@ -77,7 +28,7 @@ impl<T: PartialEq + PartialOrd + Encodable + Numericable> NumericIndexKey<T> {
 
 impl<T: PartialEq + PartialOrd + Encodable> PartialOrd for NumericIndexKey<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.key.cmp_key(&other.key) {
+        match self.key.cmp_encoded(&other.key) {
             core::cmp::Ordering::Equal => {}
             ord => return Some(ord),
         }

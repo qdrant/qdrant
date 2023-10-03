@@ -7,8 +7,8 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::mutable_numeric_index::MutableNumericIndex;
-use super::numeric_index_key::{Encodable, NumericIndexKey};
-use super::{NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use super::numeric_index_key::NumericIndexKey;
+use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable};
@@ -23,7 +23,6 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable> {
     point_to_values_container: Vec<T>,
 }
 
-#[derive(Default)]
 struct NumericKeySortedVec<T: Encodable + Numericable> {
     data: Vec<NumericIndexKey<T>>,
     deleted_count: usize,
@@ -108,7 +107,10 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         let store_cf_name = NumericIndex::<T>::storage_cf_name(field);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
         Self {
-            map: Default::default(),
+            map: NumericKeySortedVec {
+                data: Default::default(),
+                deleted_count: 0,
+            },
             db_wrapper,
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
@@ -249,7 +251,7 @@ mod tests {
         key_set: &NumericKeySortedVec<FloatPayloadType>,
         encoded_map: &BTreeMap<Vec<u8>, PointOffsetType>,
     ) {
-        check_range(&key_set, &encoded_map, Bound::Unbounded, Bound::Unbounded);
+        check_range(key_set, encoded_map, Bound::Unbounded, Bound::Unbounded);
     }
 
     #[test]
