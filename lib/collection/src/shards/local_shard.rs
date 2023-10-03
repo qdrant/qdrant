@@ -249,7 +249,7 @@ impl LocalShard {
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
         let vectors_size_bytes = collection.estimate_vector_data_size().await;
 
-        // Simple heuristic to exclude mmap prefaulting for colletions that won't benefit from it.
+        // Simple heuristic to exclude mmap prefaulting for collections that won't benefit from it.
         //
         // We assume that mmap prefaulting is beneficial if we can put significant part of data
         // into RAM in advance. However, if we can see that the data is too big to fit into RAM,
