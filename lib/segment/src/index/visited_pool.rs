@@ -12,7 +12,7 @@ const POOL_KEEP_LIMIT: usize = 16;
 /// Visited list reuses same memory to keep track of visited points ids among multiple consequent queries
 ///
 /// It stores the sequence number of last processed operation next to the point ID, which allows to avoid memory allocation
-/// and re-use same counter for multiple queries.
+/// and reuse same counter for multiple queries.
 #[derive(Debug)]
 pub struct VisitedList {
     current_iter: usize,

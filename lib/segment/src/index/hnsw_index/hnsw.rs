@@ -607,7 +607,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     if payload_block.cardinality > max_block_size {
                         continue;
                     }
-                    // ToDo: re-use graph layer for same payload
+                    // ToDo: reuse graph layer for same payload
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
                         total_vector_count,
                         payload_m,
