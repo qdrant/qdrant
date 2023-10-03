@@ -37,6 +37,6 @@ starlette-testclient==0.2.0
 tomli==2.0.1
 tomli_w==1.0.0
 typing_extensions==4.5.0
-urllib3==1.26.15
+urllib3==1.26.17
 Werkzeug==2.2.3
 yarl==1.8.2
