@@ -651,7 +651,7 @@ mod tests {
         let (_vector_holder_orig, graph_layers_orig) =
             create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng2, None);
 
-        // check is graph_layers_builder links are equeal to graph_layers_orig
+        // check is graph_layers_builder links are equal to graph_layers_orig
         let orig_len = graph_layers_orig.links.num_points();
         let builder_len = graph_layers_builder.links_layers.len();
 

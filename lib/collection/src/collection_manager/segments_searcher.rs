@@ -789,7 +789,7 @@ mod tests {
 
     /// Tests whether calculating the effective ef limit value is correct.
     ///
-    /// Because there was confustion about what the effective value should be for some input
+    /// Because there was confusion about what the effective value should be for some input
     /// combinations, we decided to write this tests to ensure correctness.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/1694>
