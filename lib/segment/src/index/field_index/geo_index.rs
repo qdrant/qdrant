@@ -405,7 +405,7 @@ impl GeoMapIndex {
         for geo_hash in &geo_hashes {
             self.points_map
                 .entry(geo_hash.to_owned())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(idx);
 
             self.increment_hash_value_counts(geo_hash);
