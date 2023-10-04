@@ -141,7 +141,7 @@ impl SegmentsSearcher {
                         // without sampling on that segment.
                         searches_to_rerun
                             .entry(segment_id)
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(batch_id);
                     }
                 }

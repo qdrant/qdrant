@@ -370,10 +370,7 @@ impl SplitByShard for Batch {
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
                             let vector = vector.into_owned();
-                            batch_vectors
-                                .entry(name)
-                                .or_insert_with(Vec::new)
-                                .push(vector);
+                            batch_vectors.entry(name).or_default().push(vector);
                         }
                         batch.payloads.as_mut().unwrap().push(payload);
                     }
@@ -411,10 +408,7 @@ impl SplitByShard for Batch {
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
                             let vector = vector.into_owned();
-                            batch_vectors
-                                .entry(name)
-                                .or_insert_with(Vec::new)
-                                .push(vector);
+                            batch_vectors.entry(name).or_default().push(vector);
                         }
                     }
                 }

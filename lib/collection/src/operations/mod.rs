@@ -127,10 +127,7 @@ where
     let mut op_vec_by_shard: HashMap<ShardId, Vec<O>> = HashMap::new();
     for operation in iter {
         let shard_id = point_to_shard(id_extractor(&operation), ring);
-        op_vec_by_shard
-            .entry(shard_id)
-            .or_insert_with(Vec::new)
-            .push(operation);
+        op_vec_by_shard.entry(shard_id).or_default().push(operation);
     }
     OperationToShard::by_shard(op_vec_by_shard)
 }
