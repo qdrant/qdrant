@@ -1,6 +1,25 @@
 use super::*;
 
 impl Collection {
+    pub async fn search(
+        &self,
+        request: SearchRequest,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        if request.limit == 0 {
+            return Ok(vec![]);
+        }
+        // search is a special case of search_batch with a single batch
+        let request_batch = SearchRequestBatch {
+            searches: vec![request],
+        };
+        let results = self
+            .do_search_batch(request_batch, read_consistency, shard_selection)
+            .await?;
+        Ok(results.into_iter().next().unwrap())
+    }
+
     // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
     // ! please replicate any changes to both methods
     pub async fn search_batch(
@@ -314,24 +333,5 @@ impl Collection {
             })
             .collect();
         Ok(enriched_result)
-    }
-
-    pub async fn search(
-        &self,
-        request: SearchRequest,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        if request.limit == 0 {
-            return Ok(vec![]);
-        }
-        // search is a special case of search_batch with a single batch
-        let request_batch = SearchRequestBatch {
-            searches: vec![request],
-        };
-        let results = self
-            .do_search_batch(request_batch, read_consistency, shard_selection)
-            .await?;
-        Ok(results.into_iter().next().unwrap())
     }
 }
