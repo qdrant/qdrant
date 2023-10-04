@@ -1,4 +1,14 @@
-use super::*;
+use std::path::{Path, PathBuf};
+
+use collection::operations::snapshot_ops::SnapshotDescription;
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::shard_transfer::ShardTransfer;
+
+use super::TableOfContent;
+use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
     pub fn snapshots_path(&self) -> &str {
