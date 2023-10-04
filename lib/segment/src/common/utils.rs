@@ -202,6 +202,7 @@ fn focus_array_path<'a>(
 /// path: "arr[].a"   => Vec![Value::Array[ 1, 2, 3], 4]
 /// path: "arr[].a[]" => Vec![ 1, 2, 3, 4]
 ///
+/// performance: the function could be improved by using the Entry API instead of BTreeMap.get
 pub fn get_value_from_json_map<'a>(
     path: &str,
     json_map: &'a serde_json::Map<String, Value>,
@@ -282,6 +283,9 @@ fn delete_array_path(
     MultiValue::default()
 }
 
+/// Remove value at a given JSON path from JSON map
+///
+/// performance: the function could be improved by using the Entry API instead of BTreeMap.get_mut
 pub fn remove_value_from_json_map(
     path: &str,
     json_map: &mut serde_json::Map<String, Value>,
