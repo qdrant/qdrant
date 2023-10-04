@@ -142,6 +142,53 @@ impl Collection {
         get_snapshot_description(&snapshot_path).await
     }
 
+    /// Restore collection from snapshot
+    ///
+    /// This method performs blocking IO.
+    pub fn restore_snapshot(
+        snapshot_path: &Path,
+        target_dir: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
+    ) -> CollectionResult<()> {
+        // decompress archive
+        let archive_file = std::fs::File::open(snapshot_path)?;
+        let mut ar = tar::Archive::new(archive_file);
+        ar.unpack(target_dir)?;
+
+        let config = CollectionConfig::load(target_dir)?;
+        config.validate_and_warn();
+        let configured_shards = config.params.shard_number.get();
+
+        for shard_id in 0..configured_shards {
+            let shard_path = versioned_shard_path(target_dir, shard_id, 0);
+            let shard_config_opt = ShardConfig::load(&shard_path)?;
+            if let Some(shard_config) = shard_config_opt {
+                match shard_config.r#type {
+                    shard_config::ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
+                    shard_config::ShardType::Remote { .. } => {
+                        RemoteShard::restore_snapshot(&shard_path)
+                    }
+                    shard_config::ShardType::Temporary => {}
+                    shard_config::ShardType::ReplicaSet { .. } => {
+                        ReplicaSetShard::restore_snapshot(
+                            &shard_path,
+                            this_peer_id,
+                            is_distributed,
+                        )?
+                    }
+                }
+            } else {
+                return Err(CollectionError::service_error(format!(
+                    "Can't read shard config at {}",
+                    shard_path.display()
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn list_shard_snapshots(
         &self,
         shard_id: ShardId,
@@ -221,52 +268,5 @@ impl Collection {
             .await
             .recover_local_shard_from(snapshot_shard_path, shard_id)
             .await
-    }
-
-    /// Restore collection from snapshot
-    ///
-    /// This method performs blocking IO.
-    pub fn restore_snapshot(
-        snapshot_path: &Path,
-        target_dir: &Path,
-        this_peer_id: PeerId,
-        is_distributed: bool,
-    ) -> CollectionResult<()> {
-        // decompress archive
-        let archive_file = std::fs::File::open(snapshot_path)?;
-        let mut ar = tar::Archive::new(archive_file);
-        ar.unpack(target_dir)?;
-
-        let config = CollectionConfig::load(target_dir)?;
-        config.validate_and_warn();
-        let configured_shards = config.params.shard_number.get();
-
-        for shard_id in 0..configured_shards {
-            let shard_path = versioned_shard_path(target_dir, shard_id, 0);
-            let shard_config_opt = ShardConfig::load(&shard_path)?;
-            if let Some(shard_config) = shard_config_opt {
-                match shard_config.r#type {
-                    shard_config::ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
-                    shard_config::ShardType::Remote { .. } => {
-                        RemoteShard::restore_snapshot(&shard_path)
-                    }
-                    shard_config::ShardType::Temporary => {}
-                    shard_config::ShardType::ReplicaSet { .. } => {
-                        ReplicaSetShard::restore_snapshot(
-                            &shard_path,
-                            this_peer_id,
-                            is_distributed,
-                        )?
-                    }
-                }
-            } else {
-                return Err(CollectionError::service_error(format!(
-                    "Can't read shard config at {}",
-                    shard_path.display()
-                )));
-            }
-        }
-
-        Ok(())
     }
 }
