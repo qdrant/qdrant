@@ -35,6 +35,24 @@ impl Collection {
         Ok(())
     }
 
+    /// Updates vectors config:
+    /// Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
+    pub async fn update_vectors_from_diff(
+        &self,
+        update_vectors_diff: &VectorsConfigDiff,
+    ) -> CollectionResult<()> {
+        let mut config = self.collection_config.write().await;
+        update_vectors_diff.check_vector_names(&config.params)?;
+        config
+            .params
+            .update_vectors_from_diff(update_vectors_diff)?;
+        config.save(&self.path)?;
+        Ok(())
+    }
+
     /// Updates quantization config:
     /// Saves new params on disk
     ///
@@ -68,24 +86,6 @@ impl Collection {
             }
         }
         self.collection_config.read().await.save(&self.path)?;
-        Ok(())
-    }
-
-    /// Updates vectors config:
-    /// Saves new params on disk
-    ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
-    pub async fn update_vectors_from_diff(
-        &self,
-        update_vectors_diff: &VectorsConfigDiff,
-    ) -> CollectionResult<()> {
-        let mut config = self.collection_config.write().await;
-        update_vectors_diff.check_vector_names(&config.params)?;
-        config
-            .params
-            .update_vectors_from_diff(update_vectors_diff)?;
-        config.save(&self.path)?;
         Ok(())
     }
 
