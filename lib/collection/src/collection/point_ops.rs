@@ -1,4 +1,16 @@
-use super::*;
+use std::sync::Arc;
+
+use futures::{future, TryStreamExt as _};
+use itertools::Itertools as _;
+use segment::types::{WithPayload, WithPayloadInterface};
+use validator::Validate as _;
+
+use super::Collection;
+use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::point_ops::WriteOrdering;
+use crate::operations::types::*;
+use crate::operations::CollectionUpdateOperations;
+use crate::shards::shard::ShardId;
 
 impl Collection {
     /// Handle collection updates from peers.
@@ -59,7 +71,7 @@ impl Collection {
                 .map(move |(replica_set, operation)| {
                     replica_set.update_with_consistency(operation, wait, ordering)
                 });
-            join_all(shard_requests).await
+            future::join_all(shard_requests).await
         };
 
         let with_error = results.iter().filter(|result| result.is_err()).count();
@@ -131,7 +143,7 @@ impl Collection {
                 )
             });
 
-            try_join_all(scroll_futures).await?
+            future::try_join_all(scroll_futures).await?
         };
         let mut points: Vec<_> = retrieved_points
             .into_iter()
@@ -201,7 +213,7 @@ impl Collection {
                     shard_selection.is_some(),
                 )
             });
-            try_join_all(retrieve_futures).await?
+            future::try_join_all(retrieve_futures).await?
         };
         let points = all_shard_collection_results.into_iter().flatten().collect();
         Ok(points)
