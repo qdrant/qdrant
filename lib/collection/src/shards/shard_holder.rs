@@ -273,6 +273,16 @@ impl ShardHolder {
                         .map_err(|e| panic!("Failed to save shard config {path:?}: {e}"))
                         .unwrap();
                 }
+
+                // Change local shards stuck in Initializing state to Active
+                let local_peer_id = replica_set.this_peer_id();
+                if replica_set.peer_is_local_initializing(&local_peer_id).await {
+                    log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
+                    replica_set
+                        .set_replica_state(&local_peer_id, ReplicaState::Active)
+                        .expect("Failed to set local shard state");
+                }
+
                 self.add_shard(shard_id, replica_set);
             }
         }
