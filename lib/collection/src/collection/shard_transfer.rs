@@ -17,32 +17,6 @@ impl Collection {
             .await
     }
 
-    async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
-    where
-        OF: Future<Output = ()> + Send + 'static,
-        OE: Future<Output = ()> + Send + 'static,
-    {
-        let mut active_transfer_tasks = self.transfer_tasks.lock().await;
-        let task_result = active_transfer_tasks.stop_if_exists(&transfer.key()).await;
-
-        debug_assert_eq!(task_result, TaskResult::NotFound);
-
-        let shard_holder = self.shards_holder.clone();
-        let collection_id = self.id.clone();
-        let channel_service = self.channel_service.clone();
-
-        let transfer_task = spawn_transfer_task(
-            shard_holder,
-            transfer.clone(),
-            collection_id,
-            channel_service,
-            on_finish,
-            on_error,
-        );
-
-        active_transfer_tasks.add_task(&transfer, transfer_task);
-    }
-
     pub async fn start_shard_transfer<T, F>(
         &self,
         shard_transfer: ShardTransfer,
@@ -103,6 +77,32 @@ impl Collection {
             self.send_shard(shard_transfer, on_finish, on_error).await;
         }
         Ok(do_transfer)
+    }
+
+    async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
+    where
+        OF: Future<Output = ()> + Send + 'static,
+        OE: Future<Output = ()> + Send + 'static,
+    {
+        let mut active_transfer_tasks = self.transfer_tasks.lock().await;
+        let task_result = active_transfer_tasks.stop_if_exists(&transfer.key()).await;
+
+        debug_assert_eq!(task_result, TaskResult::NotFound);
+
+        let shard_holder = self.shards_holder.clone();
+        let collection_id = self.id.clone();
+        let channel_service = self.channel_service.clone();
+
+        let transfer_task = spawn_transfer_task(
+            shard_holder,
+            transfer.clone(),
+            collection_id,
+            channel_service,
+            on_finish,
+            on_error,
+        );
+
+        active_transfer_tasks.add_task(&transfer, transfer_task);
     }
 
     /// Handles finishing of the shard transfer.
