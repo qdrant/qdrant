@@ -3,12 +3,6 @@ use super::*;
 pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidden";
 
 impl TableOfContent {
-    pub fn set_locks(&self, is_write_locked: bool, error_message: Option<String>) {
-        self.is_write_locked
-            .store(is_write_locked, Ordering::Relaxed);
-        *self.lock_error_message.lock() = error_message;
-    }
-
     pub fn is_write_locked(&self) -> bool {
         self.is_write_locked.load(Ordering::Relaxed)
     }
@@ -29,5 +23,11 @@ impl TableOfContent {
             });
         }
         Ok(())
+    }
+
+    pub fn set_locks(&self, is_write_locked: bool, error_message: Option<String>) {
+        self.is_write_locked
+            .store(is_write_locked, Ordering::Relaxed);
+        *self.lock_error_message.lock() = error_message;
     }
 }
