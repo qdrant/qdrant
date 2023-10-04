@@ -1,8 +1,24 @@
-use super::*;
+use std::path::{Path, PathBuf};
+
+use segment::common::version::StorageVersion as _;
+use tokio::fs;
+
+use super::Collection;
+use crate::collection::CollectionVersion;
+use crate::common::file_utils::FileCleaner;
+use crate::config::CollectionConfig;
+use crate::operations::snapshot_ops::{self, SnapshotDescription};
+use crate::operations::types::{CollectionError, CollectionResult, NodeType};
+use crate::shards::local_shard::LocalShard;
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::replica_set::ShardReplicaSet;
+use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_config::{self, ShardConfig};
+use crate::shards::shard_versioning;
 
 impl Collection {
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        list_snapshots_in_directory(&self.snapshots_path).await
+        snapshot_ops::list_snapshots_in_directory(&self.snapshots_path).await
     }
 
     /// Creates a snapshot of the collection.
@@ -52,9 +68,12 @@ impl Collection {
             let shards_holder = self.shards_holder.read().await;
             // Create snapshot of each shard
             for (shard_id, replica_set) in shards_holder.get_shards() {
-                let shard_snapshot_path =
-                    versioned_shard_path(&snapshot_temp_target_dir_path, *shard_id, 0);
-                create_dir_all(&shard_snapshot_path).await?;
+                let shard_snapshot_path = shard_versioning::versioned_shard_path(
+                    &snapshot_temp_target_dir_path,
+                    *shard_id,
+                    0,
+                );
+                fs::create_dir_all(&shard_snapshot_path).await?;
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
@@ -81,14 +100,14 @@ impl Collection {
 
         // Archive snapshot folder into a single file
         log::debug!("Archiving snapshot {:?}", &snapshot_temp_target_dir_path);
-        let archiving = tokio::task::spawn_blocking(move || {
-            let mut builder = TarBuilder::new(snapshot_temp_arc_file.as_file_mut());
+        let archiving = tokio::task::spawn_blocking(move || -> CollectionResult<_> {
+            let mut builder = tar::Builder::new(snapshot_temp_arc_file.as_file_mut());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
             builder.append_dir_all(".", &snapshot_temp_target_dir_path)?;
             builder.finish()?;
             drop(builder);
             // return ownership of the file
-            Ok::<_, CollectionError>(snapshot_temp_arc_file)
+            Ok(snapshot_temp_arc_file)
         });
         snapshot_temp_arc_file = archiving.await??;
 
@@ -100,15 +119,15 @@ impl Collection {
 
         // Ensure that the temporary file is deleted on error
         let _file_cleaner = FileCleaner::new(&snapshot_path_tmp_move);
-        copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
-        rename(&snapshot_path_tmp_move, &snapshot_path).await?;
+        fs::copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
+        fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
 
         log::info!(
             "Collection snapshot {} completed into {:?}",
             snapshot_name,
             snapshot_path
         );
-        get_snapshot_description(&snapshot_path).await
+        snapshot_ops::get_snapshot_description(&snapshot_path).await
     }
 
     /// Restore collection from snapshot
@@ -130,7 +149,7 @@ impl Collection {
         let configured_shards = config.params.shard_number.get();
 
         for shard_id in 0..configured_shards {
-            let shard_path = versioned_shard_path(target_dir, shard_id, 0);
+            let shard_path = shard_versioning::versioned_shard_path(target_dir, shard_id, 0);
             let shard_config_opt = ShardConfig::load(&shard_path)?;
             if let Some(shard_config) = shard_config_opt {
                 match shard_config.r#type {
@@ -140,7 +159,7 @@ impl Collection {
                     }
                     shard_config::ShardType::Temporary => {}
                     shard_config::ShardType::ReplicaSet { .. } => {
-                        ReplicaSetShard::restore_snapshot(
+                        ShardReplicaSet::restore_snapshot(
                             &shard_path,
                             this_peer_id,
                             is_distributed,
