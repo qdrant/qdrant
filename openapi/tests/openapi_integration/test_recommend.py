@@ -231,10 +231,8 @@ def get_points(ids: list):
 
 
 def test_raw_vectors():
-    points = get_points([1,2,3,4,5,6,7,8])
-    
-    print(points[0])
-    
+    points = get_points([1, 2, 3, 4, 5, 6, 7, 8])
+
     # Assert using ids is the same as using the raw vectors
     response_ids = request_with_validation(
         api="/collections/{collection_name}/points/recommend",

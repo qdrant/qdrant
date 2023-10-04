@@ -116,6 +116,42 @@ impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
     }
 }
 
+impl Validate for crate::grpc::qdrant::condition::ConditionOneOf {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::condition::ConditionOneOf;
+        match self {
+            ConditionOneOf::Field(field_condition) => field_condition.validate(),
+            ConditionOneOf::Nested(nested) => nested.validate(),
+            ConditionOneOf::Filter(filter) => filter.validate(),
+            ConditionOneOf::IsEmpty(_) => Ok(()),
+            ConditionOneOf::HasId(_) => Ok(()),
+            ConditionOneOf::IsNull(_) => Ok(()),
+        }
+    }
+}
+
+impl Validate for crate::grpc::qdrant::FieldCondition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        // TODO && self.geo_polygon.is_none()
+        let all_fields_none = self.r#match.is_none()
+            && self.range.is_none()
+            && self.geo_bounding_box.is_none()
+            && self.geo_radius.is_none()
+            && self.values_count.is_none();
+
+        if all_fields_none {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "match",
+                ValidationError::new("At least one field condition must be specified"),
+            );
+            Err(errors)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
     value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
