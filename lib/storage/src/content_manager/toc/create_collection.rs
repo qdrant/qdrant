@@ -1,4 +1,20 @@
-use super::*;
+use std::num::NonZeroU32;
+
+use collection::collection::Collection;
+use collection::config::{self, CollectionConfig, CollectionParams};
+use collection::operations::config_diff::DiffConfig as _;
+use collection::operations::types::{CollectionResult, VectorsConfig};
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::CollectionId;
+
+use super::TableOfContent;
+use crate::content_manager::collection_meta_ops::*;
+use crate::content_manager::collections_ops::Checker as _;
+use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::data_transfer;
+use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
     pub(super) async fn create_collection(
@@ -58,10 +74,10 @@ impl TableOfContent {
             )
         }
         let replication_factor =
-            replication_factor.unwrap_or_else(|| default_replication_factor().get());
+            replication_factor.unwrap_or_else(|| config::default_replication_factor().get());
 
-        let write_consistency_factor =
-            write_consistency_factor.unwrap_or_else(|| default_write_consistency_factor().get());
+        let write_consistency_factor = write_consistency_factor
+            .unwrap_or_else(|| config::default_write_consistency_factor().get());
 
         let collection_params = CollectionParams {
             vectors,
@@ -216,7 +232,7 @@ impl TableOfContent {
         let this_peer_id = self.this_peer_id;
         self.general_runtime.spawn(async move {
             // Create indexes
-            match transfer_indexes(
+            match data_transfer::transfer_indexes(
                 collections.clone(),
                 &from_collection,
                 &to_collection,
@@ -231,8 +247,13 @@ impl TableOfContent {
             }
 
             // Transfer data
-            match populate_collection(collections, &from_collection, &to_collection, this_peer_id)
-                .await
+            match data_transfer::populate_collection(
+                collections,
+                &from_collection,
+                &to_collection,
+                this_peer_id,
+            )
+            .await
             {
                 Ok(_) => log::info!(
                     "Collection {} initialized with data from {}",
