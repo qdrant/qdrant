@@ -132,11 +132,11 @@ impl Validate for crate::grpc::qdrant::condition::ConditionOneOf {
 
 impl Validate for crate::grpc::qdrant::FieldCondition {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        // TODO && self.geo_polygon.is_none()
         let all_fields_none = self.r#match.is_none()
             && self.range.is_none()
             && self.geo_bounding_box.is_none()
             && self.geo_radius.is_none()
+            && self.geo_polygon.is_none()
             && self.values_count.is_none();
 
         if all_fields_none {
