@@ -45,16 +45,6 @@ impl TableOfContent {
             .await?)
     }
 
-    fn send_remove_replica_proposal_op(
-        proposal_sender: &OperationSender,
-        collection_name: String,
-        peer_id: PeerId,
-        shard_id: ShardId,
-    ) -> Result<(), StorageError> {
-        let operation = ConsensusOperations::remove_replica(collection_name, shard_id, peer_id);
-        proposal_sender.send(operation)
-    }
-
     pub fn send_set_replica_state_proposal(
         &self,
         collection_name: String,
@@ -112,5 +102,15 @@ impl TableOfContent {
             )?;
         }
         Ok(())
+    }
+
+    fn send_remove_replica_proposal_op(
+        proposal_sender: &OperationSender,
+        collection_name: String,
+        peer_id: PeerId,
+        shard_id: ShardId,
+    ) -> Result<(), StorageError> {
+        let operation = ConsensusOperations::remove_replica(collection_name, shard_id, peer_id);
+        proposal_sender.send(operation)
     }
 }
