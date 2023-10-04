@@ -192,22 +192,6 @@ impl TableOfContent {
         Ok(true)
     }
 
-    async fn set_shard_replica_state(
-        &self,
-        operation: SetShardReplicaState,
-    ) -> Result<(), StorageError> {
-        self.get_collection(&operation.collection_name)
-            .await?
-            .set_shard_replica_state(
-                operation.shard_id,
-                operation.peer_id,
-                operation.state,
-                operation.from_state,
-            )
-            .await?;
-        Ok(())
-    }
-
     async fn handle_transfer(
         &self,
         collection_id: CollectionId,
@@ -293,6 +277,22 @@ impl TableOfContent {
                 collection.abort_shard_transfer(transfer).await?;
             }
         };
+        Ok(())
+    }
+
+    async fn set_shard_replica_state(
+        &self,
+        operation: SetShardReplicaState,
+    ) -> Result<(), StorageError> {
+        self.get_collection(&operation.collection_name)
+            .await?
+            .set_shard_replica_state(
+                operation.shard_id,
+                operation.peer_id,
+                operation.state,
+                operation.from_state,
+            )
+            .await?;
         Ok(())
     }
 }
