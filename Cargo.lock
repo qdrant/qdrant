@@ -4753,6 +4753,12 @@ name = "sparse"
 version = "0.1.0"
 dependencies = [
  "common",
+ "io",
+ "memmap2 0.7.1",
+ "memory",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
