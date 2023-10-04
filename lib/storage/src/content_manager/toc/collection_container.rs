@@ -1,47 +1,6 @@
 use super::*;
 
 impl TableOfContent {
-    fn on_transfer_failure_callback(
-        proposal_sender: Option<OperationSender>,
-    ) -> collection::collection::OnTransferFailure {
-        Arc::new(move |transfer, collection_name, reason| {
-            if let Some(proposal_sender) = &proposal_sender {
-                let operation = ConsensusOperations::abort_transfer(
-                    collection_name.clone(),
-                    transfer.clone(),
-                    reason,
-                );
-                if let Err(send_error) = proposal_sender.send(operation) {
-                    log::error!(
-                        "Can't send proposal to abort transfer of shard {} of collection {}. Error: {}",
-                        transfer.shard_id,
-                        collection_name,
-                        send_error
-                    );
-                }
-            }
-        })
-    }
-
-    fn on_transfer_success_callback(
-        proposal_sender: Option<OperationSender>,
-    ) -> collection::collection::OnTransferSuccess {
-        Arc::new(move |transfer, collection_name| {
-            if let Some(proposal_sender) = &proposal_sender {
-                let operation =
-                    ConsensusOperations::finish_transfer(collection_name.clone(), transfer.clone());
-                if let Err(send_error) = proposal_sender.send(operation) {
-                    log::error!(
-                        "Can't send proposal to complete transfer of shard {} of collection {}. Error: {}",
-                        transfer.shard_id,
-                        collection_name,
-                        send_error
-                    );
-                }
-            }
-        })
-    }
-
     fn collections_snapshot_sync(&self) -> consensus_manager::CollectionsSnapshot {
         self.general_runtime.block_on(self.collections_snapshot())
     }
@@ -183,6 +142,47 @@ impl TableOfContent {
     fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.general_runtime
             .block_on(self.remove_shards_at_peer(peer_id))
+    }
+
+    fn on_transfer_failure_callback(
+        proposal_sender: Option<OperationSender>,
+    ) -> collection::collection::OnTransferFailure {
+        Arc::new(move |transfer, collection_name, reason| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let operation = ConsensusOperations::abort_transfer(
+                    collection_name.clone(),
+                    transfer.clone(),
+                    reason,
+                );
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to abort transfer of shard {} of collection {}. Error: {}",
+                        transfer.shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            }
+        })
+    }
+
+    fn on_transfer_success_callback(
+        proposal_sender: Option<OperationSender>,
+    ) -> collection::collection::OnTransferSuccess {
+        Arc::new(move |transfer, collection_name| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let operation =
+                    ConsensusOperations::finish_transfer(collection_name.clone(), transfer.clone());
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to complete transfer of shard {} of collection {}. Error: {}",
+                        transfer.shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            }
+        })
     }
 }
 
