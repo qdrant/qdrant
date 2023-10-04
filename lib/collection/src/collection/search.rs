@@ -237,54 +237,6 @@ impl Collection {
             .await
     }
 
-    async fn merge_from_shards(
-        &self,
-        mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
-        request: CoreSearchRequestBatch,
-        shard_selection: Option<u32>,
-    ) -> Result<Vec<Vec<ScoredPoint>>, CollectionError> {
-        let batch_size = request.searches.len();
-
-        // merge results from shards in order
-        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
-        for shard_searches_results in all_searches_res.iter_mut() {
-            for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
-                merged_results[index].append(shard_searches_result)
-            }
-        }
-        let collection_params = self.collection_config.read().await.params.clone();
-        let top_results: Vec<_> = merged_results
-            .into_iter()
-            .zip(request.searches.iter())
-            .map(|(res, request)| {
-                let distance = collection_params
-                    .get_vector_params(request.query.get_vector_name())?
-                    .distance;
-                let mut top_res = match distance.distance_order() {
-                    Order::LargeBetter => {
-                        peek_top_largest_iterable(res, request.limit + request.offset)
-                    }
-                    Order::SmallBetter => {
-                        peek_top_smallest_iterable(res, request.limit + request.offset)
-                    }
-                };
-                // Remove `offset` from top result only for client requests
-                // to avoid applying `offset` twice in distributed mode.
-                if shard_selection.is_none() && request.offset > 0 {
-                    if top_res.len() >= request.offset {
-                        // Panics if the end point > length of the vector.
-                        top_res.drain(..request.offset);
-                    } else {
-                        top_res.clear()
-                    }
-                }
-                Ok(top_res)
-            })
-            .collect::<CollectionResult<Vec<_>>>()?;
-
-        Ok(top_results)
-    }
-
     pub(crate) async fn fill_search_result_with_payload(
         &self,
         search_result: Vec<ScoredPoint>,
@@ -333,5 +285,53 @@ impl Collection {
             })
             .collect();
         Ok(enriched_result)
+    }
+
+    async fn merge_from_shards(
+        &self,
+        mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
+        request: CoreSearchRequestBatch,
+        shard_selection: Option<u32>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, CollectionError> {
+        let batch_size = request.searches.len();
+
+        // merge results from shards in order
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
+        for shard_searches_results in all_searches_res.iter_mut() {
+            for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
+                merged_results[index].append(shard_searches_result)
+            }
+        }
+        let collection_params = self.collection_config.read().await.params.clone();
+        let top_results: Vec<_> = merged_results
+            .into_iter()
+            .zip(request.searches.iter())
+            .map(|(res, request)| {
+                let distance = collection_params
+                    .get_vector_params(request.query.get_vector_name())?
+                    .distance;
+                let mut top_res = match distance.distance_order() {
+                    Order::LargeBetter => {
+                        peek_top_largest_iterable(res, request.limit + request.offset)
+                    }
+                    Order::SmallBetter => {
+                        peek_top_smallest_iterable(res, request.limit + request.offset)
+                    }
+                };
+                // Remove `offset` from top result only for client requests
+                // to avoid applying `offset` twice in distributed mode.
+                if shard_selection.is_none() && request.offset > 0 {
+                    if top_res.len() >= request.offset {
+                        // Panics if the end point > length of the vector.
+                        top_res.drain(..request.offset);
+                    } else {
+                        top_res.clear()
+                    }
+                }
+                Ok(top_res)
+            })
+            .collect::<CollectionResult<Vec<_>>>()?;
+
+        Ok(top_results)
     }
 }
