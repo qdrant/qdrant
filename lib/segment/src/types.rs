@@ -1865,6 +1865,11 @@ impl PayloadSelector {
 
     fn exclude_payload_selector(source: Map<String, Value>, exclude: &[PayloadKeyType]) -> Payload {
         let mut json_map = source;
+        let mut exclude = exclude.to_vec();
+        // sort by length, longest first, so we can have a stable cursor when deleting array elements
+        exclude.sort_by(|a, b| b.cmp(a));
+        // remove duplicate to avoid removing incorrect field when targeting array elements
+        exclude.dedup();
         // remove all excluded fields
         for path in exclude.iter() {
             let _removed = remove_value_from_json_map(path, &mut json_map);
@@ -2906,6 +2911,58 @@ mod tests {
                         }
                     ]
                 }
+            }
+        });
+        assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_duplicate_exclude() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "f": [1,2,3,4,5],
+            }
+        });
+
+        // exclude duplicate
+        let selector =
+            PayloadSelector::new_exclude(vec!["b.f[1]".to_string(), "b.f[1]".to_string()]);
+        let payload = selector.process(payload.into());
+
+        // single removal
+        let expected = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "f": [1,3,4,5],
+            }
+        });
+        assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_stable_exclude() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "f": [1,2,3,4,5],
+            }
+        });
+
+        // exclude duplicate
+        let selector =
+            PayloadSelector::new_exclude(vec!["b.f[1]".to_string(), "b.f[3]".to_string()]);
+        let payload = selector.process(payload.into());
+
+        // stable removal
+        let expected = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "f": [1,3,5],
             }
         });
         assert_eq!(payload, expected.into());
