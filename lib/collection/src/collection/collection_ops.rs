@@ -1,4 +1,15 @@
-use super::*;
+use std::cmp;
+use std::sync::Arc;
+
+use futures::{future, TryStreamExt as _};
+use segment::types::QuantizationConfig;
+
+use super::Collection;
+use crate::operations::config_diff::*;
+use crate::operations::types::*;
+use crate::optimizers_builder::OptimizersConfig;
+use crate::shards::replica_set::{Change, ReplicaState};
+use crate::shards::shard::{PeerId, ShardId};
 
 impl Collection {
     /// Updates collection params:
@@ -183,7 +194,7 @@ impl Collection {
         let updates = shard_holder
             .all_shards()
             .map(|replica_set| replica_set.on_optimizer_config_update());
-        try_join_all(updates).await?;
+        future::try_join_all(updates).await?;
         Ok(())
     }
 
