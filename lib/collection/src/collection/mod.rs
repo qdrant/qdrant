@@ -103,10 +103,6 @@ pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Sen
 pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
 
 impl Collection {
-    pub fn name(&self) -> String {
-        self.id.clone()
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         name: CollectionId,
@@ -282,6 +278,10 @@ impl Collection {
             return false;
         }
         true
+    }
+
+    pub fn name(&self) -> String {
+        self.id.clone()
     }
 
     /// Return a list of local shards, present on this peer
