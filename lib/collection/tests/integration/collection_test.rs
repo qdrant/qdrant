@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fs::File;
 
 use collection::operations::payload_ops::{PayloadOps, SetPayload};
 use collection::operations::point_ops::{Batch, PointOperations, PointStruct, WriteOrdering};
@@ -7,6 +8,7 @@ use collection::operations::types::{
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
+use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
@@ -157,7 +159,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     assert_eq!(count_res.count, 1);
 }
 
-// FIXME: dos not work
+// FIXME: does not work
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_loading() {
     test_collection_loading_with_shards(1).await;
@@ -481,4 +483,46 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     assert_eq!(result.points.get(0).unwrap().id, 1.into());
     assert_eq!(result.points.get(1).unwrap().id, 2.into());
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_collection_local_load_initializing_not_stuck() {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+
+    // Create and unload collection
+    simple_collection_fixture(collection_dir.path(), 1).await;
+
+    // Modify replica state file on disk, set state to Initializing
+    // This is to simulate a situation where a collection was not fully created, we cannot create
+    // this situation through our collection interface
+    {
+        let replica_state_path = collection_dir.path().join("0/replica_state.json");
+        let replica_state_file = File::open(&replica_state_path).unwrap();
+        let mut replica_set_state: ReplicaSetState =
+            serde_json::from_reader(replica_state_file).unwrap();
+
+        for peer_id in replica_set_state.peers().into_keys() {
+            replica_set_state.set_peer_state(peer_id, ReplicaState::Initializing);
+        }
+
+        let replica_state_file = File::create(&replica_state_path).unwrap();
+        serde_json::to_writer(replica_state_file, &replica_set_state).unwrap();
+    }
+
+    // Reload collection
+    let collection_path = collection_dir.path();
+    let loaded_collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
+
+    // Local replica must be in Active state after loading (all replicas are local)
+    let loaded_state = loaded_collection.state().await;
+    for shard_info in loaded_state.shards.values() {
+        for replica_state in shard_info.replicas.values() {
+            assert_eq!(replica_state, &ReplicaState::Active);
+        }
+    }
 }
