@@ -3080,6 +3080,7 @@ pub struct SearchPoints {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "4")]
@@ -3153,6 +3154,7 @@ pub struct SearchPointGroups {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint32, tag = "4")]
@@ -3200,6 +3202,7 @@ pub struct ScrollPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Start with this ID
     #[prost(message, optional, tag = "3")]
@@ -3245,6 +3248,7 @@ pub struct RecommendPoints {
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "5")]
@@ -3317,6 +3321,7 @@ pub struct RecommendPointGroups {
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of groups in result
     #[prost(uint32, tag = "5")]
@@ -3376,6 +3381,7 @@ pub struct CountPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// If `true` - return exact count, if `false` - return approximate count
     #[prost(bool, optional, tag = "3")]
@@ -3698,25 +3704,31 @@ pub struct UpdateBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Filter {
     /// At least one of those conditions should match
     #[prost(message, repeated, tag = "1")]
+    #[validate]
     pub should: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must match
     #[prost(message, repeated, tag = "2")]
+    #[validate]
     pub must: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must NOT match
     #[prost(message, repeated, tag = "3")]
+    #[validate]
     pub must_not: ::prost::alloc::vec::Vec<Condition>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
     #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6")]
+    #[validate]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
@@ -3760,6 +3772,7 @@ pub struct HasIdCondition {
     #[prost(message, repeated, tag = "1")]
     pub has_id: ::prost::alloc::vec::Vec<PointId>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3769,6 +3782,7 @@ pub struct NestedCondition {
     pub key: ::prost::alloc::string::String,
     /// Filter condition
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
 }
 #[derive(serde::Serialize)]
@@ -6109,6 +6123,7 @@ pub struct CoreSearchPoints {
     #[prost(message, optional, tag = "2")]
     pub query: ::core::option::Option<QueryEnum>,
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     #[prost(uint64, tag = "4")]
     #[validate(range(min = 1))]
