@@ -172,6 +172,41 @@ impl TableOfContent {
         Ok(())
     }
 
+    async fn on_peer_created(
+        &self,
+        collection_name: String,
+        peer_id: PeerId,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        if let Some(proposal_sender) = &self.consensus_proposal_sender {
+            let operation =
+                ConsensusOperations::initialize_replica(collection_name.clone(), shard_id, peer_id);
+            if let Err(send_error) = proposal_sender.send(operation) {
+                log::error!(
+                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
+                        peer_id,
+                        shard_id,
+                        collection_name,
+                        send_error
+                    );
+            }
+        } else {
+            // Just activate the shard
+            let collections = self.collections.read().await;
+            if let Some(collection) = collections.get(&collection_name) {
+                collection
+                    .set_shard_replica_state(
+                        shard_id,
+                        peer_id,
+                        ReplicaState::Active,
+                        Some(ReplicaState::Initializing),
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
     async fn run_data_initialization(
         &self,
         from_collection: CollectionId,
@@ -207,40 +242,5 @@ impl TableOfContent {
                 Err(err) => log::error!("Initialization failed: {}", err),
             }
         });
-    }
-
-    async fn on_peer_created(
-        &self,
-        collection_name: String,
-        peer_id: PeerId,
-        shard_id: ShardId,
-    ) -> CollectionResult<()> {
-        if let Some(proposal_sender) = &self.consensus_proposal_sender {
-            let operation =
-                ConsensusOperations::initialize_replica(collection_name.clone(), shard_id, peer_id);
-            if let Err(send_error) = proposal_sender.send(operation) {
-                log::error!(
-                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
-                        peer_id,
-                        shard_id,
-                        collection_name,
-                        send_error
-                    );
-            }
-        } else {
-            // Just activate the shard
-            let collections = self.collections.read().await;
-            if let Some(collection) = collections.get(&collection_name) {
-                collection
-                    .set_shard_replica_state(
-                        shard_id,
-                        peer_id,
-                        ReplicaState::Active,
-                        Some(ReplicaState::Initializing),
-                    )
-                    .await?;
-            }
-        }
-        Ok(())
     }
 }
