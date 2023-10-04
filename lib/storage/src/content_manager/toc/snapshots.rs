@@ -32,6 +32,19 @@ impl TableOfContent {
         Ok(snapshots_path)
     }
 
+    pub async fn create_snapshot(
+        &self,
+        collection_name: &str,
+    ) -> Result<SnapshotDescription, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
+        // snapshot directory is mounted as network share and multiple writes to it could be slow
+        let temp_dir = self.optional_temp_or_storage_temp_path()?;
+        Ok(collection
+            .create_snapshot(&temp_dir, self.this_peer_id)
+            .await?)
+    }
+
     fn send_remove_replica_proposal_op(
         proposal_sender: &OperationSender,
         collection_name: String,
@@ -99,18 +112,5 @@ impl TableOfContent {
             )?;
         }
         Ok(())
-    }
-
-    pub async fn create_snapshot(
-        &self,
-        collection_name: &str,
-    ) -> Result<SnapshotDescription, StorageError> {
-        let collection = self.get_collection(collection_name).await?;
-        // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
-        // snapshot directory is mounted as network share and multiple writes to it could be slow
-        let temp_dir = self.optional_temp_or_storage_temp_path()?;
-        Ok(collection
-            .create_snapshot(&temp_dir, self.this_peer_id)
-            .await?)
     }
 }
