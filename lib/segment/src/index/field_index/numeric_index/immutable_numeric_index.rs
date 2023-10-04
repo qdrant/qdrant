@@ -7,7 +7,6 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::mutable_numeric_index::MutableNumericIndex;
-use super::numeric_index_key::NumericIndexKey;
 use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -23,6 +22,13 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable> {
     point_to_values_container: Vec<T>,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct NumericIndexKey<T> {
+    pub key: T,
+    pub idx: PointOffsetType,
+    pub deleted: bool,
+}
+
 struct NumericKeySortedVec<T: Encodable + Numericable> {
     data: Vec<NumericIndexKey<T>>,
     deleted_count: usize,
@@ -32,6 +38,48 @@ struct NumericKeySortedVecIterator<'a, T: Encodable + Numericable> {
     set: &'a NumericKeySortedVec<T>,
     start_index: usize,
     end_index: usize,
+}
+
+impl<T: PartialEq + PartialOrd + Encodable + Numericable> NumericIndexKey<T> {
+    pub fn new(key: T, idx: PointOffsetType) -> Self {
+        Self {
+            key,
+            idx,
+            deleted: false,
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        T::encode_key(&self.key, self.idx)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Self {
+        let (idx, key) = T::decode_key(bytes);
+        Self {
+            key,
+            idx,
+            deleted: false,
+        }
+    }
+}
+
+impl<T: PartialEq + PartialOrd + Encodable> PartialOrd for NumericIndexKey<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.key.cmp_encoded(&other.key) {
+            core::cmp::Ordering::Equal => {}
+            ord => return Some(ord),
+        }
+        Some(self.idx.cmp(&other.idx))
+    }
+}
+
+impl<T: PartialEq + PartialOrd + Encodable> Eq for NumericIndexKey<T> {}
+
+impl<T: PartialEq + PartialOrd + Encodable> Ord for NumericIndexKey<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other)
+            .expect("Numeric index key is not comparable")
+    }
 }
 
 impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
@@ -52,7 +100,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
 
     fn remove(&mut self, key: NumericIndexKey<T>) {
         if let Ok(index) = self.data.binary_search(&key) {
-            self.data[index].idx = PointOffsetType::MAX;
+            self.data[index].deleted = true;
             self.deleted_count += 1;
         }
     }
@@ -62,8 +110,8 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         start_bound: Bound<NumericIndexKey<T>>,
         end_bound: Bound<NumericIndexKey<T>>,
     ) -> impl Iterator<Item = NumericIndexKey<T>> + '_ {
-        let start_index = self.find_bound_index(start_bound, 0);
-        let end_index = self.find_bound_index(end_bound, self.data.len());
+        let start_index = self.find_start_index(start_bound);
+        let end_index = self.find_end_index(end_bound);
         NumericKeySortedVecIterator {
             set: self,
             start_index,
@@ -71,17 +119,25 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         }
     }
 
-    fn find_bound_index(&self, bound: Bound<NumericIndexKey<T>>, unbounded_value: usize) -> usize {
+    fn find_start_index(&self, bound: Bound<NumericIndexKey<T>>) -> usize {
         match bound {
-            Bound::Included(bound) => self
-                .data
-                .binary_search_by(|key| match key.cmp(&bound) {
-                    std::cmp::Ordering::Equal => std::cmp::Ordering::Greater,
-                    ord => ord,
-                })
-                .unwrap_or_else(|idx| idx),
+            Bound::Included(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
+            Bound::Excluded(bound) => match self.data.binary_search(&bound) {
+                Ok(idx) => idx + 1,
+                Err(idx) => idx,
+            },
+            Bound::Unbounded => 0,
+        }
+    }
+
+    fn find_end_index(&self, bound: Bound<NumericIndexKey<T>>) -> usize {
+        match bound {
+            Bound::Included(bound) => match self.data.binary_search(&bound) {
+                Ok(idx) => idx + 1,
+                Err(idx) => idx,
+            },
             Bound::Excluded(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
-            Bound::Unbounded => unbounded_value,
+            Bound::Unbounded => self.data.len(),
         }
     }
 }
@@ -93,7 +149,7 @@ impl<'a, T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'a
         while self.start_index < self.end_index {
             let key = self.set.data[self.start_index].clone();
             self.start_index += 1;
-            if key.idx == PointOffsetType::MAX {
+            if key.deleted {
                 continue;
             }
             return Some(key);
@@ -207,6 +263,7 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::ops::Bound;
     use std::ops::Bound::{Excluded, Included, Unbounded};
 
@@ -223,18 +280,18 @@ mod tests {
             .values_range(start_bound.clone(), end_bound.clone())
             .collect::<Vec<_>>();
 
-        let start_bound = match start_bound {
+        let start_encoded_bound = match start_bound {
             Included(k) => Included(k.encode()),
             Excluded(k) => Excluded(k.encode()),
             Unbounded => Unbounded,
         };
-        let end_bound = match end_bound {
+        let end_encoded_bound = match end_bound {
             Included(k) => Included(k.encode()),
             Excluded(k) => Excluded(k.encode()),
             Unbounded => Unbounded,
         };
         let set2 = encoded_map
-            .range((start_bound, end_bound))
+            .range((start_encoded_bound, end_encoded_bound))
             .map(|(b, _)| NumericIndexKey::<FloatPayloadType>::decode(b))
             .collect::<Vec<_>>();
 
@@ -252,6 +309,72 @@ mod tests {
         encoded_map: &BTreeMap<Vec<u8>, PointOffsetType>,
     ) {
         check_range(key_set, encoded_map, Bound::Unbounded, Bound::Unbounded);
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Unbounded,
+            Bound::Included(NumericIndexKey::new(0.4, 2)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Unbounded,
+            Bound::Excluded(NumericIndexKey::new(0.4, 2)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Included(NumericIndexKey::new(0.4, 2)),
+            Bound::Unbounded,
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Excluded(NumericIndexKey::new(0.4, 2)),
+            Bound::Unbounded,
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Included(NumericIndexKey::new(-5.0, 1)),
+            Bound::Included(NumericIndexKey::new(5.0, 1)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Included(NumericIndexKey::new(-5.0, 1)),
+            Bound::Excluded(NumericIndexKey::new(5.0, 1)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Excluded(NumericIndexKey::new(-5.0, 1)),
+            Bound::Included(NumericIndexKey::new(5.0, 1)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Excluded(NumericIndexKey::new(-5.0, 1)),
+            Bound::Excluded(NumericIndexKey::new(5.0, 1)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Included(NumericIndexKey::new(-5.0, 1000)),
+            Bound::Included(NumericIndexKey::new(5.0, 1000)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Excluded(NumericIndexKey::new(-5.0, 1000)),
+            Bound::Excluded(NumericIndexKey::new(5.0, 1000)),
+        );
+        check_range(
+            key_set,
+            encoded_map,
+            Bound::Excluded(NumericIndexKey::new(-50000.0, 1000)),
+            Bound::Excluded(NumericIndexKey::new(50000.0, 1000)),
+        );
     }
 
     #[test]
@@ -292,5 +415,52 @@ mod tests {
         set_byte.remove(&deleted_key.encode());
 
         check_ranges(&set_keys, &set_byte);
+
+        // test deletion and ranges after deletion
+        let deleted_key = NumericIndexKey::new(-5.0, 1);
+        set_keys.remove(deleted_key.clone());
+        set_byte.remove(&deleted_key.encode());
+
+        check_ranges(&set_keys, &set_byte);
+    }
+
+    #[test]
+    fn test_numeric_index_key_sorting() {
+        let pairs = [
+            NumericIndexKey::new(0.0, 1),
+            NumericIndexKey::new(0.0, 3),
+            NumericIndexKey::new(-0.0, 2),
+            NumericIndexKey::new(-0.0, 4),
+            NumericIndexKey::new(0.4, 2),
+            NumericIndexKey::new(-0.4, 3),
+            NumericIndexKey::new(5.0, 1),
+            NumericIndexKey::new(-5.0, 1),
+            NumericIndexKey::new(f64::NAN, 0),
+            NumericIndexKey::new(f64::NAN, 2),
+            NumericIndexKey::new(f64::NAN, 3),
+            NumericIndexKey::new(f64::INFINITY, 0),
+            NumericIndexKey::new(f64::NEG_INFINITY, 1),
+            NumericIndexKey::new(f64::NEG_INFINITY, 2),
+            NumericIndexKey::new(f64::NEG_INFINITY, 3),
+        ];
+
+        let encoded: Vec<Vec<u8>> = pairs
+            .iter()
+            .map(|k| FloatPayloadType::encode_key(&k.key, k.idx))
+            .collect();
+
+        let set_byte: BTreeSet<Vec<u8>> = BTreeSet::from_iter(encoded.iter().cloned());
+        let set_keys: BTreeSet<NumericIndexKey<FloatPayloadType>> =
+            BTreeSet::from_iter(pairs.iter().cloned());
+
+        for (b, k) in set_byte.iter().zip(set_keys.iter()) {
+            let (decoded_id, decoded_float) = FloatPayloadType::decode_key(b.as_slice());
+            if decoded_float.is_nan() && k.key.is_nan() {
+                assert_eq!(decoded_id, k.idx);
+            } else {
+                assert_eq!(decoded_id, k.idx);
+                assert_eq!(decoded_float, k.key);
+            }
+        }
     }
 }

@@ -3,7 +3,6 @@ mod tests;
 
 mod immutable_numeric_index;
 mod mutable_numeric_index;
-mod numeric_index_key;
 
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
@@ -17,8 +16,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use self::immutable_numeric_index::ImmutableNumericIndex;
-use self::numeric_index_key::NumericIndexKey;
+use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
 use super::utils::check_boundaries;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -331,17 +329,11 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
                 let v: T = T::from_f64(*gt);
-                Excluded(NumericIndexKey {
-                    key: v,
-                    idx: PointOffsetType::MAX,
-                })
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
             }
             Range { gte: Some(gte), .. } => {
                 let v: T = T::from_f64(*gte);
-                Included(NumericIndexKey {
-                    key: v,
-                    idx: PointOffsetType::MIN,
-                })
+                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
             }
             _ => Unbounded,
         };
@@ -349,17 +341,11 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let end_bound = match cond_range {
             Range { lt: Some(lt), .. } => {
                 let v: T = T::from_f64(*lt);
-                Excluded(NumericIndexKey {
-                    key: v,
-                    idx: PointOffsetType::MIN,
-                })
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
             }
             Range { lte: Some(lte), .. } => {
                 let v: T = T::from_f64(*lte);
-                Included(NumericIndexKey {
-                    key: v,
-                    idx: PointOffsetType::MAX,
-                })
+                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
             }
             _ => Unbounded,
         };
