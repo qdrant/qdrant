@@ -136,7 +136,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let mut message_send_failures = self.message_send_failures.write();
         let entry = message_send_failures
             .entry(peer_address.to_string())
-            .or_insert_with(Default::default);
+            .or_default();
         // Log only first error
         if entry.count == 0 {
             log::warn!("Failed to send message to {peer_address} with error: {error}")

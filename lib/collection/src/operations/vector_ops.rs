@@ -92,10 +92,13 @@ impl SplitByShard for VectorOperations {
                         let shard_id = point_to_shard(point.id, ring);
                         (shard_id, point)
                     })
-                    .fold(HashMap::new(), |mut map, (shard_id, points)| {
-                        map.entry(shard_id).or_insert(vec![]).push(points);
-                        map
-                    });
+                    .fold(
+                        HashMap::new(),
+                        |mut map: HashMap<u32, Vec<PointVectors>>, (shard_id, points)| {
+                            map.entry(shard_id).or_default().push(points);
+                            map
+                        },
+                    );
                 let shard_ops = shard_points.into_iter().map(|(shard_id, points)| {
                     (
                         shard_id,
