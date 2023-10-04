@@ -4,11 +4,14 @@ use crate::common::types::DimId;
 use crate::index::posting_list::PostingList;
 
 /// Inverted flatten index from dimension id to posting list
-pub struct InvertedIndex {
+
+/// Inverted flatten index from dimension id to posting list
+#[derive(Debug, Clone)]
+pub struct InvertedIndexRam {
     pub postings: Vec<PostingList>,
 }
 
-impl InvertedIndex {
+impl InvertedIndexRam {
     pub fn get(&self, id: &DimId) -> Option<&PostingList> {
         self.postings.get((*id) as usize)
     }
@@ -30,13 +33,12 @@ impl InvertedIndexBuilder {
         self
     }
 
-    pub fn build(&mut self) -> InvertedIndex {
+    pub fn build(&mut self) -> InvertedIndexRam {
         // Get sorted keys
         let mut keys: Vec<u32> = self.postings.keys().copied().collect();
         keys.sort_unstable();
 
         let last_key = *keys.last().unwrap_or(&0);
-
         // Allocate postings of max key size
         let mut postings = Vec::new();
         postings.resize(last_key as usize + 1, PostingList::default());
@@ -45,6 +47,6 @@ impl InvertedIndexBuilder {
         for key in keys {
             postings[key as usize] = self.postings.remove(&key).unwrap();
         }
-        InvertedIndex { postings }
+        InvertedIndexRam { postings }
     }
 }

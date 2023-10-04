@@ -2,7 +2,7 @@ use common::types::PointOffsetType;
 
 use crate::common::types::DimWeight;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PostingElement {
     pub record_id: PointOffsetType,
     pub weight: DimWeight,
@@ -76,7 +76,7 @@ impl PostingBuilder {
 
 /// Iterator over posting list elements offering skipping abilities to avoid full iteration.
 pub struct PostingListIterator<'a> {
-    posting_list: &'a PostingList,
+    elements: &'a [PostingElement],
     current_index: usize,
 }
 
@@ -84,8 +84,8 @@ impl<'a> Iterator for PostingListIterator<'a> {
     type Item = &'a PostingElement;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_index < self.posting_list.elements.len() {
-            let element = &self.posting_list.elements[self.current_index];
+        if self.current_index < self.elements.len() {
+            let element = &self.elements[self.current_index];
             self.current_index += 1;
             Some(element)
         } else {
@@ -95,21 +95,21 @@ impl<'a> Iterator for PostingListIterator<'a> {
 }
 
 impl<'a> PostingListIterator<'a> {
-    pub fn new(posting_list: &'a PostingList) -> PostingListIterator<'a> {
+    pub fn new(elements: &'a [PostingElement]) -> PostingListIterator<'a> {
         PostingListIterator {
-            posting_list,
+            elements,
             current_index: 0,
         }
     }
 
     /// Returns the next element without advancing the iterator.
     pub fn peek(&self) -> Option<&PostingElement> {
-        self.posting_list.elements.get(self.current_index)
+        self.elements.get(self.current_index)
     }
 
     /// Returns the number of elements from the current position to the end of the list.
     pub fn len_to_end(&self) -> usize {
-        self.posting_list.elements.len() - self.current_index
+        self.elements.len() - self.current_index
     }
 
     /// Tries to find the element with ID == id and returns it.
@@ -119,18 +119,18 @@ impl<'a> PostingListIterator<'a> {
     /// If the iterator skipped to the end, None is returned and current index is set to the length of the list.
     /// Uses binary search.
     pub fn skip_to(&mut self, id: PointOffsetType) -> Option<&PostingElement> {
-        if self.current_index >= self.posting_list.elements.len() {
+        if self.current_index >= self.elements.len() {
             return None;
         }
 
         // Use binary search to find the next element with ID > id
-        let next_element = self.posting_list.elements[self.current_index..]
-            .binary_search_by(|e| e.record_id.cmp(&id));
+        let next_element =
+            self.elements[self.current_index..].binary_search_by(|e| e.record_id.cmp(&id));
 
         match next_element {
             Ok(found_offset) => {
                 self.current_index += found_offset;
-                Some(&self.posting_list.elements[self.current_index])
+                Some(&self.elements[self.current_index])
             }
             Err(insert_index) => {
                 self.current_index += insert_index;
@@ -141,7 +141,7 @@ impl<'a> PostingListIterator<'a> {
 
     /// Skips to the end of the posting list and returns None.
     pub fn skip_to_end(&mut self) -> Option<&PostingElement> {
-        self.current_index = self.posting_list.elements.len();
+        self.current_index = self.elements.len();
         None
     }
 }
@@ -165,7 +165,7 @@ mod tests {
 
         let posting_list = builder.build();
 
-        let mut iter = PostingListIterator::new(&posting_list);
+        let mut iter = PostingListIterator::new(&posting_list.elements);
 
         assert_eq!(iter.peek().unwrap().record_id, 1);
 
