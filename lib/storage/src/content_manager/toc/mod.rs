@@ -222,47 +222,45 @@ impl TableOfContent {
         self.consensus_proposal_sender.is_some()
     }
 
-    fn get_collection_path(&self, collection_name: &str) -> PathBuf {
-        Path::new(&self.storage_config.storage_path)
-            .join(COLLECTIONS_DIR)
-            .join(collection_name)
-    }
-
     pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
     }
 
-    async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
-        let path = self.get_collection_path(collection_name);
+    /// List of all collections
+    pub async fn all_collections(&self) -> Vec<String> {
+        self.collections.read().await.keys().cloned().collect()
+    }
 
-        if path.exists() {
-            if CollectionConfig::check(&path) {
-                return Err(StorageError::bad_input(format!(
-                    "Can't create collection with name {collection_name}. Collection data already exists at {path}",
-                    collection_name = collection_name,
-                    path = path.display(),
-                )));
-            } else {
-                // Collection doesn't have a valid config, remove it
-                log::debug!(
-                    "Removing invalid collection path {path} from storage",
-                    path = path.display(),
-                );
-                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
-                    StorageError::service_error(format!(
-                        "Can't clear directory for collection {collection_name}. Error: {err}"
-                    ))
-                })?;
-            }
-        }
+    /// List of all collections
+    pub fn all_collections_sync(&self) -> Vec<String> {
+        self.general_runtime
+            .block_on(self.collections.read())
+            .keys()
+            .cloned()
+            .collect()
+    }
 
-        tokio::fs::create_dir_all(&path).await.map_err(|err| {
-            StorageError::service_error(format!(
-                "Can't create directory for collection {collection_name}. Error: {err}"
-            ))
-        })?;
+    pub async fn get_collection(
+        &self,
+        collection_name: &str,
+    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
+        let read_collection = self.collections.read().await;
 
-        Ok(path)
+        let real_collection_name = {
+            let alias_persistence = self.alias_persistence.read().await;
+            Self::resolve_name(collection_name, &read_collection, &alias_persistence).await?
+        };
+        // resolve_name already checked collection existence, unwrap is safe here
+        Ok(RwLockReadGuard::map(read_collection, |collection| {
+            collection.get(&real_collection_name).unwrap()
+        }))
+    }
+
+    async fn get_collection_opt(
+        &self,
+        collection_name: String,
+    ) -> Option<RwLockReadGuard<Collection>> {
+        self.get_collection(&collection_name).await.ok()
     }
 
     /// Finds the original name of the collection
@@ -295,168 +293,6 @@ impl TableOfContent {
         Ok(resolved_name)
     }
 
-    fn send_set_replica_state_proposal_op(
-        proposal_sender: &OperationSender,
-        collection_name: String,
-        peer_id: PeerId,
-        shard_id: ShardId,
-        state: ReplicaState,
-        from_state: Option<ReplicaState>,
-    ) -> Result<(), StorageError> {
-        let operation = ConsensusOperations::set_replica_state(
-            collection_name,
-            shard_id,
-            peer_id,
-            state,
-            from_state,
-        );
-        proposal_sender.send(operation)
-    }
-
-    fn change_peer_state_callback(
-        proposal_sender: Option<OperationSender>,
-        collection_name: String,
-        state: ReplicaState,
-        from_state: Option<ReplicaState>,
-    ) -> replica_set::ChangePeerState {
-        Arc::new(move |peer_id, shard_id| {
-            if let Some(proposal_sender) = &proposal_sender {
-                if let Err(send_error) = Self::send_set_replica_state_proposal_op(
-                    proposal_sender,
-                    collection_name.clone(),
-                    peer_id,
-                    shard_id,
-                    state,
-                    from_state,
-                ) {
-                    log::error!(
-                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
-                        peer_id,
-                        shard_id,
-                        collection_name,
-                        send_error
-                    );
-                }
-            } else {
-                log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
-            }
-        })
-    }
-
-    pub fn request_snapshot(&self) -> Result<(), StorageError> {
-        let sender = match &self.consensus_proposal_sender {
-            Some(sender) => sender,
-            None => {
-                return Err(StorageError::service_error(
-                    "Qdrant is running in standalone mode",
-                ))
-            }
-        };
-
-        sender.send(ConsensusOperations::request_snapshot())?;
-
-        Ok(())
-    }
-
-    fn request_shard_transfer_callback(
-        proposal_sender: Option<OperationSender>,
-        collection_name: String,
-    ) -> RequestShardTransfer {
-        Arc::new(move |shard_transfer| {
-            if let Some(proposal_sender) = &proposal_sender {
-                let collection_name = collection_name.clone();
-                let to_peer = shard_transfer.to;
-                let operation =
-                    ConsensusOperations::start_transfer(collection_name.clone(), shard_transfer);
-                if let Err(send_error) = proposal_sender.send(operation) {
-                    log::error!(
-                        "Can't send proposal to request shard transfer to peer {} of collection {}. Error: {}",
-                        to_peer,
-                        collection_name,
-                        send_error
-                    );
-                }
-            } else {
-                log::error!("Can't send proposal to request shard transfer. Error: this is a single node deployment");
-            }
-        })
-    }
-
-    /// Cancels all transfers where the source peer is the current peer.
-    pub async fn cancel_outgoing_all_transfers(&self, reason: &str) -> Result<(), StorageError> {
-        let collections = self.collections.read().await;
-        if let Some(proposal_sender) = &self.consensus_proposal_sender {
-            for collection in collections.values() {
-                for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
-                    let cancel_transfer =
-                        ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
-                    proposal_sender.send(cancel_transfer)?;
-                }
-            }
-        } else {
-            log::error!("Can't cancel outgoing transfers, this is a single node deployment");
-        }
-        Ok(())
-    }
-
-    async fn get_collection_opt(
-        &self,
-        collection_name: String,
-    ) -> Option<RwLockReadGuard<Collection>> {
-        self.get_collection(&collection_name).await.ok()
-    }
-
-    pub async fn get_collection(
-        &self,
-        collection_name: &str,
-    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
-        let read_collection = self.collections.read().await;
-
-        let real_collection_name = {
-            let alias_persistence = self.alias_persistence.read().await;
-            Self::resolve_name(collection_name, &read_collection, &alias_persistence).await?
-        };
-        // resolve_name already checked collection existence, unwrap is safe here
-        Ok(RwLockReadGuard::map(read_collection, |collection| {
-            collection.get(&real_collection_name).unwrap()
-        }))
-    }
-
-    /// Initiate receiving shard.
-    ///
-    /// Fails if the collection does not exist
-    pub async fn initiate_receiving_shard(
-        &self,
-        collection_name: String,
-        shard_id: ShardId,
-    ) -> Result<(), StorageError> {
-        log::info!(
-            "Initiating receiving shard {}:{}",
-            collection_name,
-            shard_id
-        );
-        let initiate_shard_transfer_future = self
-            .get_collection(&collection_name)
-            .await?
-            .initiate_shard_transfer(shard_id);
-        initiate_shard_transfer_future.await?;
-        Ok(())
-    }
-
-    /// List of all collections
-    pub async fn all_collections(&self) -> Vec<String> {
-        self.collections.read().await.keys().cloned().collect()
-    }
-
-    /// List of all collections
-    pub fn all_collections_sync(&self) -> Vec<String> {
-        self.general_runtime
-            .block_on(self.collections.read())
-            .keys()
-            .cloned()
-            .collect()
-    }
-
     /// List of all aliases for a given collection
     pub async fn collection_aliases(
         &self,
@@ -484,14 +320,6 @@ impl TableOfContent {
         }
 
         Ok(aliases)
-    }
-
-    fn this_peer_id(&self) -> PeerId {
-        self.this_peer_id
-    }
-
-    pub fn peer_address_by_id(&self) -> PeerAddressById {
-        self.channel_service.id_to_address.read().clone()
     }
 
     pub async fn suggest_shard_distribution(
@@ -532,15 +360,40 @@ impl TableOfContent {
         shard_distribution
     }
 
-    pub async fn get_telemetry_data(&self) -> Vec<CollectionTelemetry> {
-        let mut result = Vec::new();
-        let all_collections = self.all_collections().await;
-        for collection_name in &all_collections {
-            if let Ok(collection) = self.get_collection(collection_name).await {
-                result.push(collection.get_telemetry_data().await);
+    /// Initiate receiving shard.
+    ///
+    /// Fails if the collection does not exist
+    pub async fn initiate_receiving_shard(
+        &self,
+        collection_name: String,
+        shard_id: ShardId,
+    ) -> Result<(), StorageError> {
+        log::info!(
+            "Initiating receiving shard {}:{}",
+            collection_name,
+            shard_id
+        );
+        let initiate_shard_transfer_future = self
+            .get_collection(&collection_name)
+            .await?
+            .initiate_shard_transfer(shard_id);
+        initiate_shard_transfer_future.await?;
+        Ok(())
+    }
+
+    pub fn request_snapshot(&self) -> Result<(), StorageError> {
+        let sender = match &self.consensus_proposal_sender {
+            Some(sender) => sender,
+            None => {
+                return Err(StorageError::service_error(
+                    "Qdrant is running in standalone mode",
+                ))
             }
-        }
-        result
+        };
+
+        sender.send(ConsensusOperations::request_snapshot())?;
+
+        Ok(())
     }
 
     pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
@@ -556,6 +409,149 @@ impl TableOfContent {
             }
         }
         false
+    }
+
+    pub async fn get_telemetry_data(&self) -> Vec<CollectionTelemetry> {
+        let mut result = Vec::new();
+        let all_collections = self.all_collections().await;
+        for collection_name in &all_collections {
+            if let Ok(collection) = self.get_collection(collection_name).await {
+                result.push(collection.get_telemetry_data().await);
+            }
+        }
+        result
+    }
+
+    /// Cancels all transfers where the source peer is the current peer.
+    pub async fn cancel_outgoing_all_transfers(&self, reason: &str) -> Result<(), StorageError> {
+        let collections = self.collections.read().await;
+        if let Some(proposal_sender) = &self.consensus_proposal_sender {
+            for collection in collections.values() {
+                for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
+                    let cancel_transfer =
+                        ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
+                    proposal_sender.send(cancel_transfer)?;
+                }
+            }
+        } else {
+            log::error!("Can't cancel outgoing transfers, this is a single node deployment");
+        }
+        Ok(())
+    }
+
+    fn change_peer_state_callback(
+        proposal_sender: Option<OperationSender>,
+        collection_name: String,
+        state: ReplicaState,
+        from_state: Option<ReplicaState>,
+    ) -> replica_set::ChangePeerState {
+        Arc::new(move |peer_id, shard_id| {
+            if let Some(proposal_sender) = &proposal_sender {
+                if let Err(send_error) = Self::send_set_replica_state_proposal_op(
+                    proposal_sender,
+                    collection_name.clone(),
+                    peer_id,
+                    shard_id,
+                    state,
+                    from_state,
+                ) {
+                    log::error!(
+                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
+                        peer_id,
+                        shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            } else {
+                log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
+            }
+        })
+    }
+
+    fn send_set_replica_state_proposal_op(
+        proposal_sender: &OperationSender,
+        collection_name: String,
+        peer_id: PeerId,
+        shard_id: ShardId,
+        state: ReplicaState,
+        from_state: Option<ReplicaState>,
+    ) -> Result<(), StorageError> {
+        let operation = ConsensusOperations::set_replica_state(
+            collection_name,
+            shard_id,
+            peer_id,
+            state,
+            from_state,
+        );
+        proposal_sender.send(operation)
+    }
+
+    fn request_shard_transfer_callback(
+        proposal_sender: Option<OperationSender>,
+        collection_name: String,
+    ) -> RequestShardTransfer {
+        Arc::new(move |shard_transfer| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let collection_name = collection_name.clone();
+                let to_peer = shard_transfer.to;
+                let operation =
+                    ConsensusOperations::start_transfer(collection_name.clone(), shard_transfer);
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to request shard transfer to peer {} of collection {}. Error: {}",
+                        to_peer,
+                        collection_name,
+                        send_error
+                    );
+                }
+            } else {
+                log::error!("Can't send proposal to request shard transfer. Error: this is a single node deployment");
+            }
+        })
+    }
+
+    fn this_peer_id(&self) -> PeerId {
+        self.this_peer_id
+    }
+
+    async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
+        let path = self.get_collection_path(collection_name);
+
+        if path.exists() {
+            if CollectionConfig::check(&path) {
+                return Err(StorageError::bad_input(format!(
+                    "Can't create collection with name {collection_name}. Collection data already exists at {path}",
+                    collection_name = collection_name,
+                    path = path.display(),
+                )));
+            } else {
+                // Collection doesn't have a valid config, remove it
+                log::debug!(
+                    "Removing invalid collection path {path} from storage",
+                    path = path.display(),
+                );
+                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
+                    StorageError::service_error(format!(
+                        "Can't clear directory for collection {collection_name}. Error: {err}"
+                    ))
+                })?;
+            }
+        }
+
+        tokio::fs::create_dir_all(&path).await.map_err(|err| {
+            StorageError::service_error(format!(
+                "Can't create directory for collection {collection_name}. Error: {err}"
+            ))
+        })?;
+
+        Ok(path)
+    }
+
+    fn get_collection_path(&self, collection_name: &str) -> PathBuf {
+        Path::new(&self.storage_config.storage_path)
+            .join(COLLECTIONS_DIR)
+            .join(collection_name)
     }
 
     /// Wait until all other known peers reach the given commit
@@ -590,6 +586,10 @@ impl TableOfContent {
             .map_err(|_elapsed| StorageError::Timeout {
                 description: "Failed to wait for consensus commit on all peers, timed out.".into(),
             })
+    }
+
+    fn peer_address_by_id(&self) -> PeerAddressById {
+        self.channel_service.id_to_address.read().clone()
     }
 
     /// Wait until the given peer reaches the given commit
