@@ -289,6 +289,10 @@ impl Collection {
         self.shards_holder.read().await.get_local_shards().await
     }
 
+    pub async fn contains_shard(&self, shard_id: ShardId) -> bool {
+        self.shards_holder.read().await.contains_shard(&shard_id)
+    }
+
     pub async fn set_shard_replica_state(
         &self,
         shard_id: ShardId,
@@ -392,10 +396,6 @@ impl Collection {
         }
 
         Ok(())
-    }
-
-    pub async fn contains_shard(&self, shard_id: ShardId) -> bool {
-        self.shards_holder.read().await.contains_shard(&shard_id)
     }
 
     pub fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
