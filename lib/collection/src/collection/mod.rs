@@ -429,25 +429,6 @@ impl Collection {
         state.apply(this_peer_id, self, abort_transfer).await
     }
 
-    pub async fn get_telemetry_data(&self) -> CollectionTelemetry {
-        let (shards_telemetry, transfers) = {
-            let mut shards_telemetry = Vec::new();
-            let shards_holder = self.shards_holder.read().await;
-            for shard in shards_holder.all_shards() {
-                shards_telemetry.push(shard.get_telemetry_data().await)
-            }
-            (shards_telemetry, shards_holder.get_shard_transfer_info())
-        };
-
-        CollectionTelemetry {
-            id: self.name(),
-            init_time_ms: self.init_time.as_millis() as u64,
-            config: self.collection_config.read().await.clone(),
-            shards: shards_telemetry,
-            transfers,
-        }
-    }
-
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
         self.shards_holder
             .read()
@@ -562,6 +543,25 @@ impl Collection {
         }
 
         Ok(())
+    }
+
+    pub async fn get_telemetry_data(&self) -> CollectionTelemetry {
+        let (shards_telemetry, transfers) = {
+            let mut shards_telemetry = Vec::new();
+            let shards_holder = self.shards_holder.read().await;
+            for shard in shards_holder.all_shards() {
+                shards_telemetry.push(shard.get_telemetry_data().await)
+            }
+            (shards_telemetry, shards_holder.get_shard_transfer_info())
+        };
+
+        CollectionTelemetry {
+            id: self.name(),
+            init_time_ms: self.init_time.as_millis() as u64,
+            config: self.collection_config.read().await.clone(),
+            shards: shards_telemetry,
+            transfers,
+        }
     }
 
     pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
