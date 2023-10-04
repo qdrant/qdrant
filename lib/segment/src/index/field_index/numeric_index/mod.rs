@@ -5,7 +5,6 @@ mod immutable_numeric_index;
 mod mutable_numeric_index;
 
 use std::cmp::{max, min};
-use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
@@ -21,7 +20,7 @@ use super::utils::check_boundaries;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::index::field_index::histogram::{Histogram, Numericable, Point};
+use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
@@ -216,68 +215,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             exp: min(expected_max, max(estimation, expected_min)),
             max: expected_max,
         }
-    }
-
-    fn add_to_map(
-        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram<T>,
-        key: Vec<u8>,
-        id: PointOffsetType,
-    ) {
-        let existed_value = map.insert(key.clone(), id);
-        // Histogram works with unique values (idx + value) only, so we need to
-        // make sure that we don't add the same value twice.
-        // key is a combination of value + idx, so we can use it to ensure than the pair is unique
-        if existed_value.is_none() {
-            histogram.insert(
-                NumericIndex::<T>::key_to_histogram_point(&key),
-                |x| NumericIndex::<T>::get_histogram_left_neighbor(map, x),
-                |x| NumericIndex::<T>::get_histogram_right_neighbor(map, x),
-            );
-        }
-    }
-
-    pub fn remove_from_map(
-        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram<T>,
-        key: Vec<u8>,
-    ) {
-        let existed_val = map.remove(&key);
-        if existed_val.is_some() {
-            histogram.remove(
-                &Self::key_to_histogram_point(&key),
-                |x| Self::get_histogram_left_neighbor(map, x),
-                |x| Self::get_histogram_right_neighbor(map, x),
-            );
-        }
-    }
-
-    fn key_to_histogram_point(key: &[u8]) -> Point<T> {
-        let (decoded_idx, decoded_val) = T::decode_key(key);
-        Point {
-            val: decoded_val,
-            idx: decoded_idx as usize,
-        }
-    }
-
-    fn get_histogram_left_neighbor(
-        map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        let key = point.val.encode_key(point.idx as PointOffsetType);
-        map.range((Unbounded, Excluded(key)))
-            .next_back()
-            .map(|(key, _)| Self::key_to_histogram_point(key))
-    }
-
-    fn get_histogram_right_neighbor(
-        map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        let key = point.val.encode_key(point.idx as PointOffsetType);
-        map.range((Excluded(key), Unbounded))
-            .next()
-            .map(|(key, _)| Self::key_to_histogram_point(key))
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
