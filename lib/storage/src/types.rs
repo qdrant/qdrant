@@ -75,7 +75,7 @@ pub struct StorageConfig {
 }
 
 impl StorageConfig {
-    pub fn to_shared_storage_config(&self) -> SharedStorageConfig {
+    pub fn to_shared_storage_config(&self, is_distributed: bool) -> SharedStorageConfig {
         SharedStorageConfig::new(
             self.update_queue_size,
             self.node_type,
@@ -85,6 +85,7 @@ impl StorageConfig {
                 .search_timeout_sec
                 .map(|x| Duration::from_secs(x as u64)),
             self.update_concurrency,
+            is_distributed,
         )
     }
 }
