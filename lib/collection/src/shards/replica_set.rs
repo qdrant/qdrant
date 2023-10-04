@@ -738,22 +738,6 @@ impl ShardReplicaSet {
         res && !self.is_locally_disabled(peer_id)
     }
 
-    /// Determines if the given peer is local and is in `Initializing` state.
-    pub async fn peer_is_local_initializing(&self, peer_id: &PeerId) -> bool {
-        let is_local = &self.this_peer_id() == peer_id && self.is_local().await;
-        let is_initializing = match self.peer_state(peer_id) {
-            Some(ReplicaState::Initializing) => true,
-            Some(
-                ReplicaState::Active
-                | ReplicaState::Partial
-                | ReplicaState::Dead
-                | ReplicaState::Listener,
-            )
-            | None => false,
-        };
-        is_local && is_initializing
-    }
-
     pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
         self.replica_state.read().get_peer_state(peer_id).copied()
     }

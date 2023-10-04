@@ -276,7 +276,11 @@ impl ShardHolder {
 
                 // Change local shards stuck in Initializing state to Active
                 let local_peer_id = replica_set.this_peer_id();
-                if replica_set.peer_is_local_initializing(&local_peer_id).await {
+                let is_local =
+                    replica_set.this_peer_id() == local_peer_id && replica_set.is_local().await;
+                let is_initializing =
+                    replica_set.peer_state(&local_peer_id) == Some(ReplicaState::Initializing);
+                if is_local && is_initializing {
                     log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
                     replica_set
                         .set_replica_state(&local_peer_id, ReplicaState::Active)
