@@ -564,12 +564,12 @@ impl Collection {
         }
     }
 
-    pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
-        self.is_initialized.await_ready_for_timeout(timeout)
-    }
-
     pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
         self.updates_lock.write().await
+    }
+
+    pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
+        self.is_initialized.await_ready_for_timeout(timeout)
     }
 }
 
