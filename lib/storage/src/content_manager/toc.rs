@@ -120,6 +120,7 @@ impl TableOfContent {
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
+        let is_distributed = consensus_proposal_sender.is_some();
         for entry in collection_paths {
             let collection_path = entry
                 .expect("Can't access of one of the collection files")
@@ -150,7 +151,9 @@ impl TableOfContent {
                 this_peer_id,
                 &collection_path,
                 &collection_snapshots_path,
-                storage_config.to_shared_storage_config().into(),
+                storage_config
+                    .to_shared_storage_config(is_distributed)
+                    .into(),
                 channel_service.clone(),
                 Self::change_peer_state_callback(
                     consensus_proposal_sender.clone(),
@@ -430,7 +433,9 @@ impl TableOfContent {
             &collection_path,
             &snapshots_path,
             &collection_config,
-            self.storage_config.to_shared_storage_config().into(),
+            self.storage_config
+                .to_shared_storage_config(self.is_distributed())
+                .into(),
             collection_shard_distribution,
             self.channel_service.clone(),
             Self::change_peer_state_callback(
@@ -1471,7 +1476,9 @@ impl TableOfContent {
                         &collection_path,
                         &snapshots_path,
                         &state.config,
-                        self.storage_config.to_shared_storage_config().into(),
+                        self.storage_config
+                            .to_shared_storage_config(self.is_distributed())
+                            .into(),
                         shard_distribution,
                         self.channel_service.clone(),
                         Self::change_peer_state_callback(

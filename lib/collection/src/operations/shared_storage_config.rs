@@ -20,6 +20,7 @@ pub struct SharedStorageConfig {
     pub recovery_mode: Option<String>,
     pub search_timeout: Duration,
     pub update_concurrency: Option<NonZeroUsize>,
+    pub is_distributed: bool,
 }
 
 impl Default for SharedStorageConfig {
@@ -31,6 +32,7 @@ impl Default for SharedStorageConfig {
             recovery_mode: None,
             search_timeout: DEFAULT_SEARCH_TIMEOUT,
             update_concurrency: None,
+            is_distributed: false,
         }
     }
 }
@@ -43,6 +45,7 @@ impl SharedStorageConfig {
         recovery_mode: Option<String>,
         search_timeout: Option<Duration>,
         update_concurrency: Option<NonZeroUsize>,
+        is_distributed: bool,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -55,6 +58,7 @@ impl SharedStorageConfig {
             recovery_mode,
             search_timeout: search_timeout.unwrap_or(DEFAULT_SEARCH_TIMEOUT),
             update_concurrency,
+            is_distributed,
         }
     }
 }
