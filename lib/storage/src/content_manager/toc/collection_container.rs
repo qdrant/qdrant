@@ -1,5 +1,98 @@
 use super::*;
 
+impl CollectionContainer for TableOfContent {
+    fn perform_collection_meta_op(
+        &self,
+        operation: CollectionMetaOperations,
+    ) -> Result<bool, StorageError> {
+        self.perform_collection_meta_op_sync(operation)
+    }
+
+    fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
+        self.collections_snapshot_sync()
+    }
+
+    fn apply_collections_snapshot(
+        &self,
+        data: consensus_manager::CollectionsSnapshot,
+    ) -> Result<(), StorageError> {
+        self.apply_collections_snapshot(data)
+    }
+
+    fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        self.general_runtime.block_on(async {
+            // Validation:
+            // 1. Check that we are not removing some unique shards (removed)
+
+            // Validation passed
+
+            self.remove_shards_at_peer(peer_id).await?;
+
+            if self.this_peer_id == peer_id {
+                // We are detaching the current peer, so we need to remove all connections
+                // Remove all peers from the channel service
+
+                let ids_to_drop: Vec<_> = self
+                    .channel_service
+                    .id_to_address
+                    .read()
+                    .keys()
+                    .filter(|id| **id != self.this_peer_id)
+                    .copied()
+                    .collect();
+                for id in ids_to_drop {
+                    self.channel_service.remove_peer(id).await;
+                }
+            } else {
+                self.channel_service.remove_peer(peer_id).await;
+            }
+            Ok(())
+        })
+    }
+
+    fn sync_local_state(&self) -> Result<(), StorageError> {
+        self.general_runtime.block_on(async {
+            let collections = self.collections.read().await;
+            let transfer_failure_callback =
+                Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
+            let transfer_success_callback =
+                Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
+
+            for collection in collections.values() {
+                let finish_shard_initialize = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Active,
+                    Some(ReplicaState::Initializing),
+                );
+                let convert_to_listener_callback = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Listener,
+                    Some(ReplicaState::Active),
+                );
+                let convert_from_listener_to_active_callback = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Active,
+                    Some(ReplicaState::Listener),
+                );
+
+                collection
+                    .sync_local_state(
+                        transfer_failure_callback.clone(),
+                        transfer_success_callback.clone(),
+                        finish_shard_initialize,
+                        convert_to_listener_callback,
+                        convert_from_listener_to_active_callback,
+                    )
+                    .await?;
+            }
+            Ok(())
+        })
+    }
+}
+
 impl TableOfContent {
     fn collections_snapshot_sync(&self) -> consensus_manager::CollectionsSnapshot {
         self.general_runtime.block_on(self.collections_snapshot())
@@ -182,99 +275,6 @@ impl TableOfContent {
                     );
                 }
             }
-        })
-    }
-}
-
-impl CollectionContainer for TableOfContent {
-    fn perform_collection_meta_op(
-        &self,
-        operation: CollectionMetaOperations,
-    ) -> Result<bool, StorageError> {
-        self.perform_collection_meta_op_sync(operation)
-    }
-
-    fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
-        self.collections_snapshot_sync()
-    }
-
-    fn apply_collections_snapshot(
-        &self,
-        data: consensus_manager::CollectionsSnapshot,
-    ) -> Result<(), StorageError> {
-        self.apply_collections_snapshot(data)
-    }
-
-    fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.general_runtime.block_on(async {
-            // Validation:
-            // 1. Check that we are not removing some unique shards (removed)
-
-            // Validation passed
-
-            self.remove_shards_at_peer(peer_id).await?;
-
-            if self.this_peer_id == peer_id {
-                // We are detaching the current peer, so we need to remove all connections
-                // Remove all peers from the channel service
-
-                let ids_to_drop: Vec<_> = self
-                    .channel_service
-                    .id_to_address
-                    .read()
-                    .keys()
-                    .filter(|id| **id != self.this_peer_id)
-                    .copied()
-                    .collect();
-                for id in ids_to_drop {
-                    self.channel_service.remove_peer(id).await;
-                }
-            } else {
-                self.channel_service.remove_peer(peer_id).await;
-            }
-            Ok(())
-        })
-    }
-
-    fn sync_local_state(&self) -> Result<(), StorageError> {
-        self.general_runtime.block_on(async {
-            let collections = self.collections.read().await;
-            let transfer_failure_callback =
-                Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
-            let transfer_success_callback =
-                Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
-
-            for collection in collections.values() {
-                let finish_shard_initialize = Self::change_peer_state_callback(
-                    self.consensus_proposal_sender.clone(),
-                    collection.name(),
-                    ReplicaState::Active,
-                    Some(ReplicaState::Initializing),
-                );
-                let convert_to_listener_callback = Self::change_peer_state_callback(
-                    self.consensus_proposal_sender.clone(),
-                    collection.name(),
-                    ReplicaState::Listener,
-                    Some(ReplicaState::Active),
-                );
-                let convert_from_listener_to_active_callback = Self::change_peer_state_callback(
-                    self.consensus_proposal_sender.clone(),
-                    collection.name(),
-                    ReplicaState::Active,
-                    Some(ReplicaState::Listener),
-                );
-
-                collection
-                    .sync_local_state(
-                        transfer_failure_callback.clone(),
-                        transfer_success_callback.clone(),
-                        finish_shard_initialize,
-                        convert_to_listener_callback,
-                        convert_from_listener_to_active_callback,
-                    )
-                    .await?;
-            }
-            Ok(())
         })
     }
 }
