@@ -189,6 +189,22 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn recover_local_shard_from(
+        &self,
+        snapshot_shard_path: &Path,
+        shard_id: ShardId,
+    ) -> CollectionResult<bool> {
+        // TODO:
+        //   Check that shard snapshot is compatible with the collection
+        //   (see `VectorsConfig::check_compatible_with_segment_config`)
+
+        self.shards_holder
+            .read()
+            .await
+            .recover_local_shard_from(snapshot_shard_path, shard_id)
+            .await
+    }
+
     pub async fn list_shard_snapshots(
         &self,
         shard_id: ShardId,
@@ -251,22 +267,6 @@ impl Collection {
                 is_distributed,
                 temp_dir,
             )
-            .await
-    }
-
-    pub async fn recover_local_shard_from(
-        &self,
-        snapshot_shard_path: &Path,
-        shard_id: ShardId,
-    ) -> CollectionResult<bool> {
-        // TODO:
-        //   Check that shard snapshot is compatible with the collection
-        //   (see `VectorsConfig::check_compatible_with_segment_config`)
-
-        self.shards_holder
-            .read()
-            .await
-            .recover_local_shard_from(snapshot_shard_path, shard_id)
             .await
     }
 }
