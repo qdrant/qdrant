@@ -66,27 +66,6 @@ impl TableOfContent {
         Ok(())
     }
 
-    pub fn request_shard_transfer(
-        &self,
-        collection_name: String,
-        shard_id: ShardId,
-        from_peer: PeerId,
-        to_peer: PeerId,
-        sync: bool,
-    ) -> Result<(), StorageError> {
-        if let Some(proposal_sender) = &self.consensus_proposal_sender {
-            let transfer_request = ShardTransfer {
-                shard_id,
-                from: from_peer,
-                to: to_peer,
-                sync,
-            };
-            let operation = ConsensusOperations::start_transfer(collection_name, transfer_request);
-            proposal_sender.send(operation)?;
-        }
-        Ok(())
-    }
-
     pub fn request_remove_replica(
         &self,
         collection_name: String,
@@ -112,5 +91,26 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         let operation = ConsensusOperations::remove_replica(collection_name, shard_id, peer_id);
         proposal_sender.send(operation)
+    }
+
+    pub fn request_shard_transfer(
+        &self,
+        collection_name: String,
+        shard_id: ShardId,
+        from_peer: PeerId,
+        to_peer: PeerId,
+        sync: bool,
+    ) -> Result<(), StorageError> {
+        if let Some(proposal_sender) = &self.consensus_proposal_sender {
+            let transfer_request = ShardTransfer {
+                shard_id,
+                from: from_peer,
+                to: to_peer,
+                sync,
+            };
+            let operation = ConsensusOperations::start_transfer(collection_name, transfer_request);
+            proposal_sender.send(operation)?;
+        }
+        Ok(())
     }
 }
