@@ -1,4 +1,14 @@
-use super::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use futures::future;
+use segment::spaces::tools;
+use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, WithVector};
+
+use super::Collection;
+use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::types::*;
+use crate::shards::shard::ShardId;
 
 impl Collection {
     pub async fn search(
@@ -92,7 +102,7 @@ impl Collection {
                         shard_selection,
                     )
                 });
-            try_join_all(filled_results).await
+            future::try_join_all(filled_results).await
         } else {
             let result = self
                 .do_search_batch(request, read_consistency, shard_selection)
@@ -173,7 +183,7 @@ impl Collection {
                         shard_selection,
                     )
                 });
-            try_join_all(filled_results).await
+            future::try_join_all(filled_results).await
         } else {
             let result = self
                 .do_core_search_batch(request, read_consistency, shard_selection)
@@ -199,7 +209,7 @@ impl Collection {
             let all_searches = target_shards.iter().map(|shard| {
                 shard.search(request.clone(), read_consistency, shard_selection.is_some())
             });
-            try_join_all(all_searches).await?
+            future::try_join_all(all_searches).await?
         };
 
         let request = Arc::into_inner(request)
@@ -227,7 +237,7 @@ impl Collection {
             let all_searches = target_shards.iter().map(|shard| {
                 shard.core_search(request.clone(), read_consistency, shard_selection.is_some())
             });
-            try_join_all(all_searches).await?
+            future::try_join_all(all_searches).await?
         };
 
         let request = Arc::into_inner(request)
@@ -292,7 +302,7 @@ impl Collection {
         mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
         request: CoreSearchRequestBatch,
         shard_selection: Option<u32>,
-    ) -> Result<Vec<Vec<ScoredPoint>>, CollectionError> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
         // merge results from shards in order
@@ -312,10 +322,10 @@ impl Collection {
                     .distance;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
-                        peek_top_largest_iterable(res, request.limit + request.offset)
+                        tools::peek_top_largest_iterable(res, request.limit + request.offset)
                     }
                     Order::SmallBetter => {
-                        peek_top_smallest_iterable(res, request.limit + request.offset)
+                        tools::peek_top_smallest_iterable(res, request.limit + request.offset)
                     }
                 };
                 // Remove `offset` from top result only for client requests
