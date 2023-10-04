@@ -8,7 +8,7 @@ use segment::types::default_quantization_ignore_value;
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{BinaryQuantization, CompressionRatio, GroupId};
+use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -850,13 +850,13 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_bounding_box,
             geo_radius,
             values_count,
-            // geo_polygon,
+            geo_polygon,
         } = value;
 
         let geo_bounding_box =
             geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
-        let geo_polygon = None; // geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
+        let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         Ok(Self {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
@@ -877,19 +877,20 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             range,
             geo_bounding_box,
             geo_radius,
-            geo_polygon: _geo_polygon,
+            geo_polygon,
             values_count,
         } = value;
 
         let geo_bounding_box = geo_bounding_box.map(Into::into);
         let geo_radius = geo_radius.map(Into::into);
+        let geo_polygon = geo_polygon.map(Into::into);
         Self {
             key,
             r#match: r#match.map(Into::into),
             range: range.map(Into::into),
             geo_bounding_box,
             geo_radius,
-            // geo_polygon: geo_polygon.map(Into::into),
+            geo_polygon,
             values_count: values_count.map(Into::into),
         }
     }
@@ -951,21 +952,24 @@ impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
     type Error = Status;
 
     fn try_from(value: GeoPolygon) -> Result<Self, Self::Error> {
-        if value.points.is_empty() {
-            return Err(Status::invalid_argument("Empty GeoPolygon"));
+        match value {
+            GeoPolygon {
+                exterior: Some(e),
+                interiors,
+            } => Ok(Self {
+                exterior: e.into(),
+                interiors: interiors.into_iter().map(Into::into).collect(),
+            }),
+            _ => Err(Status::invalid_argument("Malformed GeoPolygon type")),
         }
-
-        let points: Vec<segment::types::GeoPoint> =
-            value.points.into_iter().map(Into::into).collect();
-
-        Ok(Self { points })
     }
 }
 
 impl From<segment::types::GeoPolygon> for GeoPolygon {
     fn from(value: segment::types::GeoPolygon) -> Self {
         Self {
-            points: value.points.into_iter().map(Into::into).collect(),
+            exterior: Some(value.exterior.into()),
+            interiors: value.interiors.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -975,6 +979,22 @@ impl From<GeoPoint> for segment::types::GeoPoint {
         Self {
             lon: value.lon,
             lat: value.lat,
+        }
+    }
+}
+
+impl From<GeoLineString> for segment::types::GeoLineString {
+    fn from(value: GeoLineString) -> Self {
+        Self {
+            points: value.points.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<segment::types::GeoLineString> for GeoLineString {
+    fn from(value: segment::types::GeoLineString) -> Self {
+        Self {
+            points: value.points.into_iter().map(Into::into).collect(),
         }
     }
 }

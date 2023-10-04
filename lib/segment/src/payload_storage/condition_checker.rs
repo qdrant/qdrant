@@ -3,8 +3,8 @@
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, FieldCondition, GeoBoundingBox, GeoRadius, Match, MatchAny, MatchExcept,
-    MatchText, MatchValue, Range, ValueVariants, ValuesCount,
+    AnyVariants, FieldCondition, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny,
+    MatchExcept, MatchText, MatchValue, Range, ValueVariants, ValuesCount,
 };
 
 pub trait ValueChecker {
@@ -45,6 +45,11 @@ impl ValueChecker for FieldCondition {
         res = res
             || self
                 .geo_bounding_box
+                .as_ref()
+                .map_or(false, |condition| condition.check_match(payload));
+        res = res
+            || self
+                .geo_polygon
                 .as_ref()
                 .map_or(false, |condition| condition.check_match(payload));
         res = res
@@ -124,7 +129,7 @@ impl ValueChecker for GeoBoundingBox {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(lon, lat);
+                    return self.check_point(&GeoPoint { lon, lat });
                 }
                 false
             }
@@ -141,7 +146,24 @@ impl ValueChecker for GeoRadius {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(lon, lat);
+                    return self.check_point(&GeoPoint { lon, lat });
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+}
+
+impl ValueChecker for GeoPolygon {
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Object(obj) => {
+                let lon_op = obj.get("lon").and_then(|x| x.as_f64());
+                let lat_op = obj.get("lat").and_then(|x| x.as_f64());
+
+                if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
+                    return self.convert().check_point(&GeoPoint { lon, lat });
                 }
                 false
             }

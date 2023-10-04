@@ -735,6 +735,9 @@ impl From<OperationError> for CollectionError {
                 error: format!("{err}"),
                 backtrace: None,
             },
+            OperationError::ValidationError { .. } => Self::BadInput {
+                description: format!("{err}"),
+            },
         }
     }
 }

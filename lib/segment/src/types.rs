@@ -9,7 +9,7 @@ use std::str::FromStr;
 
 use common::types::ScoreType;
 use geo::prelude::HaversineDistance;
-use geo::{Contains, Coord, Point, Polygon};
+use geo::{Contains, Coord, LineString, Point, Polygon};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -19,6 +19,7 @@ use smol_str::SmolStr;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils;
 use crate::common::utils::MultiValue;
 use crate::data_types::text_index::TextIndexParams;
@@ -727,6 +728,12 @@ pub struct GeoPoint {
     pub lat: f64,
 }
 
+/// Ordered sequence of GeoPoints representing the line
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct GeoLineString {
+    pub points: Vec<GeoPoint>,
+}
+
 #[derive(Deserialize)]
 struct GeoPointShadow {
     pub lon: f64,
@@ -1285,11 +1292,11 @@ pub struct GeoBoundingBox {
 }
 
 impl GeoBoundingBox {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
-        (self.top_left.lon < lon)
-            && (lon < self.bottom_right.lon)
-            && (self.bottom_right.lat < lat)
-            && (lat < self.top_left.lat)
+    pub fn check_point(&self, point: &GeoPoint) -> bool {
+        (self.top_left.lon < point.lon)
+            && (point.lon < self.bottom_right.lon)
+            && (self.bottom_right.lat < point.lat)
+            && (point.lat < self.top_left.lat)
     }
 }
 
@@ -1306,36 +1313,129 @@ pub struct GeoRadius {
 }
 
 impl GeoRadius {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+    pub fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::new(self.center.lon, self.center.lat);
-        query_center.haversine_distance(&Point::new(lon, lat)) < self.radius
+        query_center.haversine_distance(&Point::new(point.lon, point.lat)) < self.radius
+    }
+}
+
+#[derive(Deserialize)]
+pub struct GeoPolygonShadow {
+    pub exterior: GeoLineString,
+    pub interiors: Option<Vec<GeoLineString>>,
+}
+
+pub struct PolygonWrapper {
+    pub polygon: Polygon,
+}
+
+impl PolygonWrapper {
+    pub fn check_point(&self, point: &GeoPoint) -> bool {
+        let point_new = Point::new(point.lon, point.lat);
+        self.polygon.contains(&point_new)
     }
 }
 
 /// Geo filter request
 ///
-/// Matches coordinates inside the polygon, defined by the given coordinates in order.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
+/// Matches coordinates inside the polygon, defined by `exterior` and `interiors`
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(try_from = "GeoPolygonShadow")]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPolygon {
-    /// Ordered list of coordinates representing the vertices of a polygon.
-    #[validate(custom = "common::validation::validate_geo_polygon")]
-    pub points: Vec<GeoPoint>,
+    /// The exterior line bounds the surface
+    /// must consist of a minimum of 4 points, and the first and last points
+    /// must be the same.
+    pub exterior: GeoLineString,
+    /// Interior lines (if present) bound holes within the surface
+    /// each GeoLineString must consist of a minimum of 4 points, and the first
+    /// and last points must be the same.
+    pub interiors: Vec<GeoLineString>,
 }
 
 impl GeoPolygon {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
-        let polygon_points: Vec<Coord<f64>> = self
-            .points
+    pub fn validate_line_string(line: &GeoLineString) -> OperationResult<()> {
+        if line.points.len() <= 3 {
+            return Err(OperationError::ValidationError {
+                description: format!(
+                    "polygon invalid, the size must be at least 4, got {}",
+                    line.points.len()
+                ),
+            });
+        }
+
+        if let (Some(first), Some(last)) = (line.points.first(), line.points.last()) {
+            if (first.lat - last.lat).abs() > f64::EPSILON
+                || (first.lon - last.lon).abs() > f64::EPSILON
+            {
+                return Err(OperationError::ValidationError {
+                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line") 
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    // convert GeoPolygon to Geo crate Polygon class for checking point intersection
+    pub fn convert(&self) -> PolygonWrapper {
+        let exterior_line: LineString = LineString(
+            self.exterior
+                .points
+                .iter()
+                .map(|p| Coord { x: p.lon, y: p.lat })
+                .collect(),
+        );
+
+        // Convert the interior points to coordinates (if any)
+        let interior_lines: Vec<LineString> = self
+            .interiors
             .iter()
-            .map(|p| Coord { x: p.lon, y: p.lat })
+            .map(|interior_points| {
+                interior_points
+                    .points
+                    .iter()
+                    .map(|p| Coord { x: p.lon, y: p.lat })
+                    .collect()
+            })
+            .map(LineString)
             .collect();
 
-        let polygon = Polygon::new(polygon_points.into(), vec![]);
+        PolygonWrapper {
+            polygon: Polygon::new(exterior_line, interior_lines),
+        }
+    }
 
-        let point = Coord { x: lon, y: lat };
+    pub fn new(exterior: &GeoLineString, interiors: &Vec<GeoLineString>) -> OperationResult<Self> {
+        Self::validate_line_string(exterior)?;
 
-        polygon.contains(&point)
+        for interior in interiors {
+            Self::validate_line_string(interior)?;
+        }
+
+        Ok(GeoPolygon {
+            exterior: exterior.clone(),
+            interiors: interiors.to_vec(),
+        })
+    }
+}
+
+impl TryFrom<GeoPolygonShadow> for GeoPolygon {
+    type Error = OperationError;
+
+    fn try_from(value: GeoPolygonShadow) -> OperationResult<Self> {
+        Self::validate_line_string(&value.exterior)?;
+
+        if let Some(interiors) = &value.interiors {
+            for interior in interiors {
+                Self::validate_line_string(interior)?;
+            }
+        }
+
+        Ok(GeoPolygon {
+            exterior: value.exterior,
+            interiors: value.interiors.unwrap_or_default(),
+        })
     }
 }
 
@@ -1355,7 +1455,6 @@ pub struct FieldCondition {
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
     /// Check if geo point is within a given polygon
-    #[serde(skip)] // TODO: uncomment when geo_polygon is implemented
     pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
     pub values_count: Option<ValuesCount>,
@@ -1819,11 +1918,58 @@ impl Filter {
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use super::{GeoLineString, GeoPoint, GeoPolygon};
+
+    pub fn build_polygon(exterior_points: Vec<(f64, f64)>) -> GeoPolygon {
+        let exterior_line = GeoLineString {
+            points: exterior_points
+                .into_iter()
+                .map(|(lon, lat)| GeoPoint { lon, lat })
+                .collect(),
+        };
+
+        GeoPolygon {
+            exterior: exterior_line,
+            interiors: vec![],
+        }
+    }
+
+    pub fn build_polygon_with_interiors(
+        exterior_points: Vec<(f64, f64)>,
+        interiors_points: Vec<Vec<(f64, f64)>>,
+    ) -> GeoPolygon {
+        let exterior_line = GeoLineString {
+            points: exterior_points
+                .into_iter()
+                .map(|(lon, lat)| GeoPoint { lon, lat })
+                .collect(),
+        };
+
+        let interior_lines = interiors_points
+            .into_iter()
+            .map(|points| GeoLineString {
+                points: points
+                    .into_iter()
+                    .map(|(lon, lat)| GeoPoint { lon, lat })
+                    .collect(),
+            })
+            .collect();
+
+        GeoPolygon {
+            exterior: exterior_line,
+            interiors: interior_lines,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
 
+    use super::test_utils::build_polygon_with_interiors;
     use super::*;
     use crate::common::utils::remove_value_from_json_map;
 
@@ -1854,10 +2000,10 @@ mod tests {
             radius: 80000.0,
         };
 
-        let inside_result = radius.check_point(0.5, 0.5);
+        let inside_result = radius.check_point(&GeoPoint { lon: 0.5, lat: 0.5 });
         assert!(inside_result);
 
-        let outside_result = radius.check_point(1.5, 1.5);
+        let outside_result = radius.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
         assert!(!outside_result);
     }
 
@@ -1875,71 +2021,81 @@ mod tests {
         };
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 78626.29627999048
-        let inside_result = bounding_box.check_point(-0.5, 0.5);
+        let inside_result = bounding_box.check_point(&GeoPoint {
+            lon: -0.5,
+            lat: 0.5,
+        });
         assert!(inside_result);
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
-        let outside_result = bounding_box.check_point(1.5, 1.5);
+        let outside_result = bounding_box.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
         assert!(!outside_result);
     }
 
     #[test]
     fn test_geo_polygon_check_point() {
-        // Create a GeoPolygon with a square shape
-        let polygon_1 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -1.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: 1.0,
-                    lat: -1.0,
-                },
-                GeoPoint { lon: 1.0, lat: 1.0 },
-                GeoPoint {
-                    lon: -1.0,
-                    lat: 1.0,
-                },
-            ],
-        };
+        let test_cases = [
+            // Create a GeoPolygon with a square shape
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.0, -1.0),
+                    (1.0, 1.0),
+                    (-1.0, 1.0),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![]],
+                // Expected results
+                vec![((0.5, 0.5), true), ((1.5, 1.5), false), ((1.0, 0.0), false)],
+            ),
+            // Create a GeoPolygon as a `twisted square`
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.0, 1.0),
+                    (1.0, -1.0),
+                    (-1.0, 1.0),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![]],
+                // Expected results
+                vec![((0.5, 0.0), true), ((0.0, 0.5), false), ((0.0, 0.0), false)],
+            ),
+            // Create a GeoPolygon with an interior (a 'hole' inside the polygon)
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.5, -1.0),
+                    (1.5, 1.5),
+                    (-1.0, 1.5),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![
+                    (-0.5, -0.5),
+                    (-0.5, 0.5),
+                    (0.5, 0.5),
+                    (0.5, -0.5),
+                    (-0.5, -0.5),
+                ]],
+                // Expected results
+                vec![((0.6, 0.6), true), ((0.0, 0.0), false), ((0.5, 0.5), false)],
+            ),
+        ];
 
-        let inside_result = polygon_1.check_point(0.5, 0.5);
-        assert!(inside_result);
+        for (exterior, interiors, points) in test_cases {
+            let polygon = build_polygon_with_interiors(exterior, interiors);
 
-        let outside_result = polygon_1.check_point(1.5, 1.5);
-        assert!(!outside_result);
-
-        let on_edge_result = polygon_1.check_point(1.0, 0.0);
-        assert!(!on_edge_result);
-
-        // Create a GeoPolygon as a `twisted square`
-        let polygon_2 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -1.0,
-                    lat: -1.0,
-                },
-                GeoPoint { lon: 1.0, lat: 1.0 },
-                GeoPoint {
-                    lon: 1.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: -1.0,
-                    lat: 1.0,
-                },
-            ],
-        };
-
-        let inside_result_2 = polygon_2.check_point(0.5, 0.0);
-        assert!(inside_result_2);
-
-        let outside_result_2 = polygon_2.check_point(0.0, 0.5);
-        assert!(!outside_result_2);
-
-        let on_edge_result_2 = polygon_2.check_point(0.0, 0.0);
-        assert!(!on_edge_result_2);
+            for ((lon, lat), expected_result) in points {
+                let inside_result = polygon.convert().check_point(&GeoPoint { lon, lat });
+                assert_eq!(inside_result, expected_result);
+            }
+        }
     }
 
     #[test]
@@ -2335,10 +2491,132 @@ mod tests {
             ]
         }
         "#;
-
         let filter: Result<Filter, _> = serde_json::from_str(query1);
-
         assert!(filter.is_err());
+
+        let query2 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_polygon": {
+                        "exterior": {},
+                        "interiors": []
+                    }
+                }
+            ]
+        }
+        "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query2);
+        assert!(filter.is_err());
+
+        let query3 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_polygon": {
+                        "exterior":{
+                            "points": [
+                                {"lon": -12.0, "lat": -34.0},
+                                {"lon": 11.0, "lat": -22.0},
+                                {"lon": -32.0, "lat": -14.0}
+                            ]
+                        },
+                        "interiors": []
+                    }
+                }
+            ]
+        }
+        "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query3);
+        assert!(filter.is_err());
+
+        let query4 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_polygon": {
+                        "exterior": {
+                            "points": [
+                                {"lon": -12.0, "lat": -34.0},
+                                {"lon": 11.0, "lat": -22.0},
+                                {"lon": -32.0, "lat": -14.0},
+                                {"lon": -12.0, "lat": -34.0}
+                            ]
+                        },
+                        "interiors": []
+                    }
+                }
+            ]
+        }
+        "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query4);
+        assert!(filter.is_ok());
+
+        let query5 = r#"
+            {
+                "must": [
+                    {
+                        "key": "geo_field",
+                        "geo_polygon": {
+                            "exterior": {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0},
+                                        {"lon": -12.0, "lat": -34.0}
+                                    ]
+                                },
+                            "interiors": [
+                                {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+            "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query5);
+        assert!(filter.is_err());
+
+        let query6 = r#"
+            {
+                "must": [
+                    {
+                        "key": "geo_field",
+                        "geo_polygon": {
+                            "exterior": {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0},
+                                        {"lon": -12.0, "lat": -34.0}
+                                    ]
+                                },
+                            "interiors": [
+                                {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0},
+                                        {"lon": -12.0, "lat": -34.0}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+            "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query6);
+        assert!(filter.is_ok());
     }
 
     #[test]

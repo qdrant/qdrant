@@ -3806,6 +3806,9 @@ pub struct FieldCondition {
     /// Check number of values for a specific field
     #[prost(message, optional, tag = "6")]
     pub values_count: ::core::option::Option<ValuesCount>,
+    /// Check if geo point is within a given polygon
+    #[prost(message, optional, tag = "7")]
+    pub geo_polygon: ::core::option::Option<GeoPolygon>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3895,17 +3898,29 @@ pub struct GeoRadius {
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoLineString {
+    /// Ordered sequence of GeoPoints representing the line
+    #[prost(message, repeated, tag = "1")]
+    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
+}
+/// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
+/// Additionally, the first and last points of each GeoLineString must be the same.
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPolygon {
-    /// Ordered list of coordinates representing the vertices of a polygon.
-    /// The minimum size is 4, and the first coordinate and the last coordinate
-    /// should be the same to form a closed polygon.
-    #[prost(message, repeated, tag = "1")]
-    #[validate(custom = "common::validation::validate_geo_polygon")]
-    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
+    /// The exterior line bounds the surface
+    #[prost(message, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_geo_polygon_exterior")]
+    pub exterior: ::core::option::Option<GeoLineString>,
+    /// Interior lines (if present) bound holes within the surface
+    #[prost(message, repeated, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_geo_polygon_interiors")]
+    pub interiors: ::prost::alloc::vec::Vec<GeoLineString>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

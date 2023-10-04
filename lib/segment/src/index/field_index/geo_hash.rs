@@ -1,9 +1,7 @@
 use std::ops::Range;
 
 use geo::algorithm::haversine_distance::HaversineDistance;
-#[allow(deprecated)]
-use geo::{Coordinate, Point};
-use geo::{Intersects, Polygon};
+use geo::{Coord, Intersects, LineString, Point, Polygon};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
 
@@ -19,8 +17,7 @@ const LON_RANGE: Range<f64> = -180.0..180.0;
 const LAT_RANGE: Range<f64> = -90.0..90.0;
 const COORD_EPS: f64 = 1e-12;
 
-#[allow(deprecated)]
-impl From<GeoPoint> for Coordinate<f64> {
+impl From<GeoPoint> for Coord<f64> {
     fn from(point: GeoPoint) -> Self {
         Self {
             x: point.lat,
@@ -75,8 +72,7 @@ fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<GeoHash, Geoh
     let lon = sphere_lon(coord.x + 2f64 * lon_err.abs() * dlng);
     let lat = sphere_lat(coord.y + 2f64 * lat_err.abs() * dlat);
 
-    #[allow(deprecated)]
-    let neighbor_coord = Coordinate { x: lon, y: lat };
+    let neighbor_coord = Coord { x: lon, y: lat };
     encode(neighbor_coord, hash_str.len())
 }
 
@@ -201,25 +197,14 @@ fn check_circle_intersection(geohash: &str, circle: &GeoRadius) -> bool {
 }
 
 /// Check if geohash tile intersects the polygon
-fn check_polygon_intersection(geohash: &str, polygon: &GeoPolygon) -> bool {
+fn check_polygon_intersection(geohash: &str, polygon: &Polygon) -> bool {
     let precision = geohash.len();
     if precision == 0 {
         return true;
     }
     let rect = decode_bbox(geohash).unwrap();
 
-    #[allow(deprecated)]
-    let polygon_ring: Vec<Coordinate<f64>> = polygon
-        .points
-        .iter()
-        .map(|point| Coordinate {
-            x: point.lon,
-            y: point.lat,
-        })
-        .collect();
-    let polygon = Polygon::new(geo::LineString(polygon_ring), vec![]);
-
-    rect.intersects(&polygon)
+    rect.intersects(polygon)
 }
 
 fn create_hashes(
@@ -276,6 +261,47 @@ pub fn rectangle_hashes(
 }
 
 /// Return as-high-as-possible with maximum of `max_regions`
+/// number of geo-hash guaranteed to contain a boundary defined by closed LineString.
+fn boundary_hashes(boundary: &LineString, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
+    let geo_bounding_box = minimum_bounding_rectangle_for_boundary(boundary);
+    let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
+    let polygon = Polygon::new(boundary.clone(), vec![]);
+
+    let mapping_fn = |precision| {
+        full_geohash_bounding_box
+            .geohash_regions(precision, max_regions)
+            .map(|hashes| {
+                hashes
+                    .into_iter()
+                    .filter(|hash| check_polygon_intersection(hash, &polygon))
+                    .collect_vec()
+            })
+    };
+    create_hashes(mapping_fn)
+}
+
+/// A function used for cardinality estimation
+/// The first return value is as-high-as-possible with maximum of `max_regions`
+/// number of geo-hash guaranteed to contain the polygon's exterior.
+/// The second return value is all as-high-as-possible with maximum of `max_regions`
+/// number of geo-hash guaranteed to contain each polygon's interior.
+pub fn polygon_hashes_estimation(
+    polygon: &GeoPolygon,
+    max_regions: usize,
+) -> (Vec<GeoHash>, Vec<Vec<GeoHash>>) {
+    assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
+    let polygon_wrapper = polygon.convert().polygon;
+    let exterior_hashes = boundary_hashes(&polygon_wrapper.exterior().clone(), max_regions);
+    let interiors_hashes = polygon_wrapper
+        .interiors()
+        .iter()
+        .map(|interior| boundary_hashes(interior, max_regions).unwrap())
+        .collect_vec();
+
+    (exterior_hashes.unwrap(), interiors_hashes)
+}
+
+/// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole polygon.
 pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
     if max_regions == 0 {
@@ -283,7 +309,8 @@ pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> OperationResu
             "max_regions cannot be equal to zero",
         ));
     }
-    let geo_bounding_box = minimum_bounding_rectangle_for_polygon(polygon);
+    let polygon_wrapper = polygon.convert().polygon;
+    let geo_bounding_box = minimum_bounding_rectangle_for_boundary(polygon_wrapper.exterior());
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
     let mapping_fn = |precision| {
@@ -292,7 +319,7 @@ pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> OperationResu
             .map(|hashes| {
                 hashes
                     .into_iter()
-                    .filter(|hash| check_polygon_intersection(hash, polygon))
+                    .filter(|hash| check_polygon_intersection(hash, &polygon_wrapper))
                     .collect_vec()
             })
     };
@@ -349,24 +376,24 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
     }
 }
 
-fn minimum_bounding_rectangle_for_polygon(polygon: &GeoPolygon) -> GeoBoundingBox {
+fn minimum_bounding_rectangle_for_boundary(boundary: &LineString) -> GeoBoundingBox {
     let mut min_lon = std::f64::MAX;
     let mut max_lon = std::f64::MIN;
     let mut min_lat = std::f64::MAX;
     let mut max_lat = std::f64::MIN;
 
-    for point in &polygon.points {
-        if point.lon < min_lon {
-            min_lon = point.lon;
+    for point in boundary.coords() {
+        if point.x < min_lon {
+            min_lon = point.x;
         }
-        if point.lon > max_lon {
-            max_lon = point.lon;
+        if point.x > max_lon {
+            max_lon = point.x;
         }
-        if point.lat < min_lat {
-            min_lat = point.lat;
+        if point.y < min_lat {
+            min_lat = point.y;
         }
-        if point.lat > max_lat {
-            max_lat = point.lat;
+        if point.y > max_lat {
+            max_lat = point.y;
         }
     }
 
@@ -391,6 +418,7 @@ mod tests {
     use rand::{Rng, SeedableRng};
 
     use super::*;
+    use crate::types::test_utils::{build_polygon, build_polygon_with_interiors};
 
     const BERLIN: GeoPoint = GeoPoint {
         lat: 52.52437,
@@ -550,30 +578,13 @@ mod tests {
     fn polygon_hashes_nyc() {
         // conversion to lon/lat http://geohash.co/
         // "dr5ruj4477kd"
-        let near_nyc_polygon = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -74.00101399,
-                    lat: 40.76517460,
-                },
-                GeoPoint {
-                    lon: -73.98201792,
-                    lat: 40.76517460,
-                },
-                GeoPoint {
-                    lon: -73.98201792,
-                    lat: 40.75078539,
-                },
-                GeoPoint {
-                    lon: -74.00101399,
-                    lat: 40.75078539,
-                },
-                GeoPoint {
-                    lon: -74.00101399,
-                    lat: 40.76517460,
-                },
-            ],
-        };
+        let near_nyc_polygon = build_polygon(vec![
+            (-74.00101399, 40.76517460),
+            (-73.98201792, 40.76517460),
+            (-73.98201792, 40.75078539),
+            (-74.00101399, 40.75078539),
+            (-74.00101399, 40.76517460),
+        ]);
 
         let nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 200);
         let nyc_hashes = nyc_hashes_result.unwrap();
@@ -614,149 +625,113 @@ mod tests {
 
     #[test]
     fn test_check_polygon_intersection() {
-        // Create a geohash as (-135, 0), (-90, 0), (-90, 45), (-135, 45)
-        #[allow(deprecated)]
-        let geohash = encode(Coordinate { x: -115.0, y: 35.0 }, 1).unwrap();
+        fn check_intersection(geohash: &str, polygon: &GeoPolygon, expected: bool) {
+            let intersect = check_polygon_intersection(geohash, &polygon.convert().polygon);
+            assert_eq!(intersect, expected);
+        }
 
-        // Test a polygon that intersects with the geohash
-        let polygon_1 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -120.0,
-                    lat: -30.0,
-                },
-                GeoPoint {
-                    lon: -150.0,
-                    lat: -30.0,
-                },
-                GeoPoint {
-                    lon: -150.0,
-                    lat: 40.0,
-                },
-                GeoPoint {
-                    lon: -120.0,
-                    lat: 40.0,
-                },
-                GeoPoint {
-                    lon: -135.0,
-                    lat: -1.0,
-                },
-            ],
-        };
-        let intersect_1 = check_polygon_intersection(&geohash, &polygon_1);
-        assert!(intersect_1);
+        // Create a geohash as (-56.2, 33.75), (-56.2, 39.375), (-45, 39.375), (-45, 33.75)
+        let geohash = encode(Coord { x: -50.0, y: 35.0 }, 2).unwrap();
 
-        // Test a polygon that does not intersect with the geohash
-        let polygon_2 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -80.0,
-                    lat: -30.0,
-                },
-                GeoPoint {
-                    lon: -80.0,
-                    lat: 40.0,
-                },
-                GeoPoint {
-                    lon: -20.0,
-                    lat: 40.0,
-                },
-                GeoPoint {
-                    lon: -20.0,
-                    lat: -30.0,
-                },
-                GeoPoint {
-                    lon: -135.0,
-                    lat: -1.0,
-                },
-            ],
-        };
-        let intersect_2 = check_polygon_intersection(&geohash, &polygon_2);
-        assert!(!intersect_2);
+        // Test a polygon intersect with the geohash
+        check_intersection(
+            &geohash,
+            &build_polygon(vec![
+                (-60.0, 37.0),
+                (-60.0, 45.0),
+                (-50.0, 45.0),
+                (-50.0, 37.0),
+                (-60.0, 37.0),
+            ]),
+            true,
+        );
 
-        // Test a polygon that overlaps with the geohash
-        let polygon_3 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -135.0,
-                    lat: 0.0,
-                },
-                GeoPoint {
-                    lon: -90.0,
-                    lat: 0.0,
-                },
-                GeoPoint {
-                    lon: -90.0,
-                    lat: 45.0,
-                },
-                GeoPoint {
-                    lon: -135.0,
-                    lat: 45.0,
-                },
-                GeoPoint {
-                    lon: -135.0,
-                    lat: -1.0,
-                },
-            ],
-        };
-        let intersect_3 = check_polygon_intersection(&geohash, &polygon_3);
-        assert!(intersect_3);
+        // Test a polygon does not intersect with the geohash
+        check_intersection(
+            &geohash,
+            &build_polygon(vec![
+                (-70.2, 50.8),
+                (-70.2, 55.9),
+                (-65.6, 55.9),
+                (-65.6, 50.8),
+                (-70.2, 50.8),
+            ]),
+            false,
+        );
 
-        // Test a polygon that only share one edge
-        let polygon_4 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -135.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: -150.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: -150.0,
-                    lat: 46.0,
-                },
-                GeoPoint {
-                    lon: -135.0,
-                    lat: 46.0,
-                },
-                GeoPoint {
-                    lon: -135.0,
-                    lat: -1.0,
-                },
-            ],
-        };
-        let intersect_4 = check_polygon_intersection(&geohash, &polygon_4);
-        assert!(intersect_4);
+        // Test a polygon that overlap with the geohash
+        check_intersection(
+            &geohash,
+            &build_polygon(vec![
+                (-56.2, 33.75),
+                (-56.2, 39.375),
+                (-45.0, 39.375),
+                (-45.0, 33.75),
+                (-56.2, 33.75),
+            ]),
+            true,
+        );
 
-        // Test a geohash that is within the geohash
-        let polygon_5 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -134.0,
-                    lat: 1.0,
-                },
-                GeoPoint {
-                    lon: -91.0,
-                    lat: 1.0,
-                },
-                GeoPoint {
-                    lon: -91.0,
-                    lat: 44.0,
-                },
-                GeoPoint {
-                    lon: -134.0,
-                    lat: 44.0,
-                },
-                GeoPoint {
-                    lon: -135.0,
-                    lat: -1.0,
-                },
-            ],
-        };
-        let intersect_5 = check_polygon_intersection(&geohash, &polygon_5);
-        assert!(intersect_5);
+        // Test a polygon that only share one edge with the geohash
+        check_intersection(
+            &geohash,
+            &build_polygon(vec![
+                (-45.0, 39.375),
+                (-45.0, 45.0),
+                (-30.9, 45.0),
+                (-30.9, 39.375),
+                (-45.0, 39.375),
+            ]),
+            true,
+        );
+
+        // Test a polygon that is within the geohash
+        check_intersection(
+            &geohash,
+            &build_polygon(vec![
+                (-55.7, 34.3),
+                (-55.7, 38.0),
+                (-46.8, 38.0),
+                (-46.8, 34.3),
+                (-55.7, 34.3),
+            ]),
+            true,
+        );
+
+        // Test a polygon that contains the geohash
+        check_intersection(
+            &geohash,
+            &build_polygon(vec![
+                (-60.0, 33.0),
+                (-60.0, 40.0),
+                (-44.0, 40.0),
+                (-44.0, 33.0),
+                (-60.0, 33.0),
+            ]),
+            true,
+        );
+
+        // The geohash is in the exterior of the polygon
+        check_intersection(
+            &geohash,
+            &build_polygon_with_interiors(
+                vec![
+                    (-70.0, 13.0),
+                    (-70.0, 50.0),
+                    (-34.0, 50.0),
+                    (-34.0, 13.0),
+                    (-70.0, 13.0),
+                ],
+                vec![vec![
+                    (-60.0, 33.0),
+                    (-60.0, 40.0),
+                    (-44.0, 40.0),
+                    (-44.0, 33.0),
+                    (-60.0, 33.0),
+                ]],
+            ),
+            false,
+        );
     }
 
     #[test]
@@ -919,7 +894,7 @@ mod tests {
             lat: 40.76517460,
             lon: -74.00101399,
         };
-        assert!(geo_box.check_point(center.lon, center.lat));
+        assert!(geo_box.check_point(&center));
     }
 
     #[test]
@@ -981,9 +956,10 @@ mod tests {
         assert!(rectangle_hashes.is_err());
 
         // polygon
-        let sample_polygon = GeoPolygon {
-            points: vec![top_left, bottom_right],
-        };
+        let sample_polygon = build_polygon(vec![
+            (-74.00101399, 40.76517460),
+            (-73.98201792, 40.75078539),
+        ]);
 
         let polygon_hashes = polygon_hashes(&sample_polygon, invalid_max_hashes);
         assert!(polygon_hashes.is_err());
