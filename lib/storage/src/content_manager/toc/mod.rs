@@ -1,6 +1,7 @@
 mod collection_container;
 mod collection_meta_ops;
 mod create_collection;
+mod locks;
 mod temp_directories;
 
 use std::cmp::max;
@@ -74,7 +75,6 @@ use crate::ConsensusOperations;
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
-pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidden";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -943,34 +943,6 @@ impl TableOfContent {
             }
         }
         false
-    }
-
-    pub fn set_locks(&self, is_write_locked: bool, error_message: Option<String>) {
-        self.is_write_locked
-            .store(is_write_locked, Ordering::Relaxed);
-        *self.lock_error_message.lock() = error_message;
-    }
-
-    pub fn is_write_locked(&self) -> bool {
-        self.is_write_locked.load(Ordering::Relaxed)
-    }
-
-    pub fn get_lock_error_message(&self) -> Option<String> {
-        self.lock_error_message.lock().clone()
-    }
-
-    /// Returns an error if the write lock is set
-    pub fn check_write_lock(&self) -> Result<(), StorageError> {
-        if self.is_write_locked.load(Ordering::Relaxed) {
-            return Err(StorageError::Locked {
-                description: self
-                    .lock_error_message
-                    .lock()
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
-            });
-        }
-        Ok(())
     }
 
     /// Wait until all other known peers reach the given commit
