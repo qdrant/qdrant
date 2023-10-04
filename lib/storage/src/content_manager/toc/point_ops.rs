@@ -1,4 +1,15 @@
-use super::*;
+use collection::grouping::group_by::GroupRequest;
+use collection::grouping::GroupBy;
+use collection::operations::consistency_params::ReadConsistency;
+use collection::operations::point_ops::WriteOrdering;
+use collection::operations::types::*;
+use collection::operations::CollectionUpdateOperations;
+use collection::recommendations;
+use collection::shards::shard::ShardId;
+use segment::types::ScoredPoint;
+
+use super::TableOfContent;
+use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
     /// Recommend points using positive and negative example from the request
@@ -18,7 +29,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_by(
+        recommendations::recommend_by(
             request,
             &collection,
             |name| self.get_collection_opt(name),
@@ -45,7 +56,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_batch_by(
+        recommendations::recommend_batch_by(
             request,
             &collection,
             |name| self.get_collection_opt(name),
