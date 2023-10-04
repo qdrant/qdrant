@@ -1,4 +1,20 @@
-use super::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use collection::collection::Collection;
+use collection::collection_state;
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::PeerId;
+use collection::shards::CollectionId;
+
+use super::TableOfContent;
+use crate::content_manager::collection_meta_ops::*;
+use crate::content_manager::collections_ops::Checker as _;
+use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::errors::StorageError;
+use crate::content_manager::{consensus_manager, CollectionContainer};
 
 impl CollectionContainer for TableOfContent {
     fn perform_collection_meta_op(
