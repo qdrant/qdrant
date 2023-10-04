@@ -159,7 +159,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     assert_eq!(count_res.count, 1);
 }
 
-// FIXME: dos not work
+// FIXME: does not work
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_loading() {
     test_collection_loading_with_shards(1).await;
