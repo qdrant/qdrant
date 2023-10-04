@@ -1,6 +1,62 @@
 use super::*;
 
 impl TableOfContent {
+    pub(super) fn perform_collection_meta_op_sync(
+        &self,
+        operation: CollectionMetaOperations,
+    ) -> Result<bool, StorageError> {
+        self.general_runtime
+            .block_on(self.perform_collection_meta_op(operation))
+    }
+
+    pub async fn perform_collection_meta_op(
+        &self,
+        operation: CollectionMetaOperations,
+    ) -> Result<bool, StorageError> {
+        match operation {
+            CollectionMetaOperations::CreateCollection(mut operation) => {
+                log::debug!("Creating collection {}", operation.collection_name);
+                let distribution = match operation.take_distribution() {
+                    None => CollectionShardDistribution::all_local(
+                        operation.create_collection.shard_number,
+                        self.this_peer_id,
+                    ),
+                    Some(distribution) => distribution.into(),
+                };
+                self.create_collection(
+                    &operation.collection_name,
+                    operation.create_collection,
+                    distribution,
+                )
+                .await
+            }
+            CollectionMetaOperations::UpdateCollection(operation) => {
+                log::debug!("Updating collection {}", operation.collection_name);
+                self.update_collection(operation).await
+            }
+            CollectionMetaOperations::DeleteCollection(operation) => {
+                log::debug!("Deleting collection {}", operation.0);
+                self.delete_collection(&operation.0).await
+            }
+            CollectionMetaOperations::ChangeAliases(operation) => {
+                log::debug!("Changing aliases");
+                self.update_aliases(operation).await
+            }
+            CollectionMetaOperations::TransferShard(collection, operation) => {
+                log::debug!("Transfer shard {:?} of {}", operation, collection);
+
+                self.handle_transfer(collection, operation)
+                    .await
+                    .map(|()| true)
+            }
+            CollectionMetaOperations::SetShardReplicaState(operation) => {
+                log::debug!("Set shard replica state {:?}", operation);
+                self.set_shard_replica_state(operation).await.map(|()| true)
+            }
+            CollectionMetaOperations::Nop { .. } => Ok(true),
+        }
+    }
+
     async fn update_collection(
         &self,
         mut operation: UpdateCollectionOperation,
@@ -134,62 +190,6 @@ impl TableOfContent {
             };
         }
         Ok(true)
-    }
-
-    pub(super) fn perform_collection_meta_op_sync(
-        &self,
-        operation: CollectionMetaOperations,
-    ) -> Result<bool, StorageError> {
-        self.general_runtime
-            .block_on(self.perform_collection_meta_op(operation))
-    }
-
-    pub async fn perform_collection_meta_op(
-        &self,
-        operation: CollectionMetaOperations,
-    ) -> Result<bool, StorageError> {
-        match operation {
-            CollectionMetaOperations::CreateCollection(mut operation) => {
-                log::debug!("Creating collection {}", operation.collection_name);
-                let distribution = match operation.take_distribution() {
-                    None => CollectionShardDistribution::all_local(
-                        operation.create_collection.shard_number,
-                        self.this_peer_id,
-                    ),
-                    Some(distribution) => distribution.into(),
-                };
-                self.create_collection(
-                    &operation.collection_name,
-                    operation.create_collection,
-                    distribution,
-                )
-                .await
-            }
-            CollectionMetaOperations::UpdateCollection(operation) => {
-                log::debug!("Updating collection {}", operation.collection_name);
-                self.update_collection(operation).await
-            }
-            CollectionMetaOperations::DeleteCollection(operation) => {
-                log::debug!("Deleting collection {}", operation.0);
-                self.delete_collection(&operation.0).await
-            }
-            CollectionMetaOperations::ChangeAliases(operation) => {
-                log::debug!("Changing aliases");
-                self.update_aliases(operation).await
-            }
-            CollectionMetaOperations::TransferShard(collection, operation) => {
-                log::debug!("Transfer shard {:?} of {}", operation, collection);
-
-                self.handle_transfer(collection, operation)
-                    .await
-                    .map(|()| true)
-            }
-            CollectionMetaOperations::SetShardReplicaState(operation) => {
-                log::debug!("Set shard replica state {:?}", operation);
-                self.set_shard_replica_state(operation).await.map(|()| true)
-            }
-            CollectionMetaOperations::Nop { .. } => Ok(true),
-        }
     }
 
     async fn set_shard_replica_state(
