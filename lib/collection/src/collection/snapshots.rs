@@ -228,26 +228,6 @@ impl Collection {
             .await
     }
 
-    pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
-        self.shards_holder
-            .read()
-            .await
-            .assert_shard_exists(shard_id)
-            .await
-    }
-
-    pub async fn get_shard_snapshot_path(
-        &self,
-        shard_id: ShardId,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        self.shards_holder
-            .read()
-            .await
-            .get_shard_snapshot_path(&self.snapshots_path, shard_id, snapshot_file_name)
-            .await
-    }
-
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
@@ -267,6 +247,26 @@ impl Collection {
                 is_distributed,
                 temp_dir,
             )
+            .await
+    }
+
+    pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
+        self.shards_holder
+            .read()
+            .await
+            .assert_shard_exists(shard_id)
+            .await
+    }
+
+    pub async fn get_shard_snapshot_path(
+        &self,
+        shard_id: ShardId,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        self.shards_holder
+            .read()
+            .await
+            .get_shard_snapshot_path(&self.snapshots_path, shard_id, snapshot_file_name)
             .await
     }
 }
