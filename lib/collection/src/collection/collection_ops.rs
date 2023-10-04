@@ -89,7 +89,6 @@ impl Collection {
         Ok(())
     }
 
-
     /// Handle replica changes
     ///
     /// add and remove replicas from replica set
