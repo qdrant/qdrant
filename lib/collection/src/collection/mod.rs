@@ -4,70 +4,31 @@ mod search;
 mod shard_transfer;
 mod snapshots;
 
-use std::cmp;
-use std::collections::{HashMap, HashSet};
-use std::future::Future;
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::{join_all, try_join_all};
-use futures::TryStreamExt as _;
-use itertools::Itertools;
 use segment::common::version::StorageVersion;
-use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
-use segment::types::{
-    ExtendedPointId, Order, QuantizationConfig, ScoredPoint, WithPayload, WithPayloadInterface,
-    WithVector,
-};
 use semver::Version;
-use tar::Builder as TarBuilder;
-use tokio::fs::{copy, create_dir_all, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
-use validator::Validate;
 
 use crate::collection_state::{ShardInfo, State};
-use crate::common::file_utils::FileCleaner;
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
-use crate::operations::config_diff::{
-    CollectionParamsDiff, DiffConfig, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
-};
-use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::snapshot_ops::{
-    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
-};
-use crate::operations::types::{
-    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult,
-    CoreSearchRequestBatch, CountRequest, CountResult, LocalShardInfo, NodeType, PointRequest,
-    Record, RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult, VectorsConfigDiff,
-};
-use crate::operations::CollectionUpdateOperations;
-use crate::optimizers_builder::OptimizersConfig;
+use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
-use crate::shards::local_shard::LocalShard;
-use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
-use crate::shards::replica_set::{
-    Change, ChangePeerState, ReplicaState, ShardReplicaSet as ReplicaSetShard,
-}; // TODO rename ReplicaShard to ReplicaSetShard
+use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
-use crate::shards::shard_versioning::versioned_shard_path;
-use crate::shards::transfer::shard_transfer::{
-    change_remote_shard_route, check_transfer_conflicts_strict, finalize_partial_shard,
-    handle_transferred_shard_proxy, revert_proxy_shard_to_local, spawn_transfer_task,
-    ShardTransfer, ShardTransferKey,
-};
-use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
+use crate::shards::transfer::shard_transfer::{check_transfer_conflicts_strict, ShardTransfer};
+use crate::shards::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
 use crate::telemetry::CollectionTelemetry;
 
@@ -126,7 +87,7 @@ impl Collection {
         for (shard_id, mut peers) in shard_distribution.shards {
             let is_local = peers.remove(&this_peer_id);
 
-            let replica_set = ReplicaSetShard::build(
+            let replica_set = ShardReplicaSet::build(
                 shard_id,
                 name.clone(),
                 this_peer_id,
