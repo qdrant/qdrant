@@ -398,10 +398,6 @@ impl Collection {
         Ok(())
     }
 
-    pub fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
-        self.request_shard_transfer_cb.deref()(shard_transfer)
-    }
-
     pub async fn state(&self) -> State {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();
@@ -570,6 +566,10 @@ impl Collection {
 
     pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
         self.is_initialized.await_ready_for_timeout(timeout)
+    }
+
+    pub fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
+        self.request_shard_transfer_cb.deref()(shard_transfer)
     }
 }
 
