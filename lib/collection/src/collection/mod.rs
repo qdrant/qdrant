@@ -174,29 +174,6 @@ impl Collection {
         })
     }
 
-    /// Check if stored version have consequent version.
-    /// If major version is different, then it is not compatible.
-    /// If the difference in consecutive versions is greater than 1 in patch,
-    /// then the collection is not compatible with the current version.
-    ///
-    /// Example:
-    ///   0.4.0 -> 0.4.1 = true
-    ///   0.4.0 -> 0.4.2 = false
-    ///   0.4.0 -> 0.5.0 = false
-    ///   0.4.0 -> 0.5.1 = false
-    pub fn can_upgrade_storage(stored: &Version, app: &Version) -> bool {
-        if stored.major != app.major {
-            return false;
-        }
-        if stored.minor != app.minor {
-            return false;
-        }
-        if stored.patch + 1 < app.patch {
-            return false;
-        }
-        true
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         collection_id: CollectionId,
@@ -282,6 +259,29 @@ impl Collection {
             updates_lock: RwLock::new(()),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
         }
+    }
+
+    /// Check if stored version have consequent version.
+    /// If major version is different, then it is not compatible.
+    /// If the difference in consecutive versions is greater than 1 in patch,
+    /// then the collection is not compatible with the current version.
+    ///
+    /// Example:
+    ///   0.4.0 -> 0.4.1 = true
+    ///   0.4.0 -> 0.4.2 = false
+    ///   0.4.0 -> 0.5.0 = false
+    ///   0.4.0 -> 0.5.1 = false
+    pub fn can_upgrade_storage(stored: &Version, app: &Version) -> bool {
+        if stored.major != app.major {
+            return false;
+        }
+        if stored.minor != app.minor {
+            return false;
+        }
+        if stored.patch + 1 < app.patch {
+            return false;
+        }
+        true
     }
 
     /// Return a list of local shards, present on this peer
