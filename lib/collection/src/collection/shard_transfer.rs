@@ -166,6 +166,22 @@ impl Collection {
         Ok(())
     }
 
+    /// Handles abort of the transfer
+    ///
+    /// 1. Unregister the transfer
+    /// 2. Stop transfer task
+    /// 3. Unwrap the proxy
+    /// 4. Remove temp shard, or mark it as dead
+    pub async fn abort_shard_transfer(
+        &self,
+        transfer_key: ShardTransferKey,
+    ) -> CollectionResult<()> {
+        let shard_holder_guard = self.shards_holder.read().await;
+        // Internal implementation, used to prevents double-read deadlock
+        self._abort_shard_transfer(transfer_key, &shard_holder_guard)
+            .await
+    }
+
     pub(super) async fn _abort_shard_transfer(
         &self,
         transfer_key: ShardTransferKey,
@@ -204,22 +220,6 @@ impl Collection {
         let _finish_was_registered = shard_holder_guard.register_finish_transfer(&transfer_key)?;
 
         Ok(())
-    }
-
-    /// Handles abort of the transfer
-    ///
-    /// 1. Unregister the transfer
-    /// 2. Stop transfer task
-    /// 3. Unwrap the proxy
-    /// 4. Remove temp shard, or mark it as dead
-    pub async fn abort_shard_transfer(
-        &self,
-        transfer_key: ShardTransferKey,
-    ) -> CollectionResult<()> {
-        let shard_holder_guard = self.shards_holder.read().await;
-        // Internal implementation, used to prevents double-read deadlock
-        self._abort_shard_transfer(transfer_key, &shard_holder_guard)
-            .await
     }
 
     /// Initiate local partial shard
