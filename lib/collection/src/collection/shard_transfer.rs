@@ -1,19 +1,19 @@
 use super::*;
 
 impl Collection {
-    pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
-        self.shards_holder
-            .read()
-            .await
-            .check_transfer_exists(transfer_key)
-            .await
-    }
-
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
         self.shards_holder
             .read()
             .await
             .get_outgoing_transfers(current_peer_id)
+            .await
+    }
+
+    pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
+        self.shards_holder
+            .read()
+            .await
+            .check_transfer_exists(transfer_key)
             .await
     }
 
