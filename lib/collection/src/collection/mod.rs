@@ -76,14 +76,6 @@ pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Sen
 pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
-struct CollectionVersion;
-
-impl StorageVersion for CollectionVersion {
-    fn current() -> String {
-        env!("CARGO_PKG_VERSION").to_string()
-    }
-}
-
 /// Collection's data is split into several shards.
 pub struct Collection {
     pub(crate) id: CollectionId,
@@ -578,5 +570,13 @@ impl Collection {
 
     pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
         self.updates_lock.write().await
+    }
+}
+
+struct CollectionVersion;
+
+impl StorageVersion for CollectionVersion {
+    fn current() -> String {
+        env!("CARGO_PKG_VERSION").to_string()
     }
 }
