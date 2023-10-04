@@ -151,16 +151,16 @@ fn parse_array_path(path: &str) -> Option<(&str, Option<u32>)> {
 fn focus_array_path<'a>(
     array_path: &str,
     array_index: Option<u32>,
-    rest_path: Option<&str>,
-    value: &'a serde_json::Map<String, Value>,
+    rest_of_path: Option<&str>,
+    json_map: &'a serde_json::Map<String, Value>,
 ) -> MultiValue<&'a Value> {
-    match value.get(array_path) {
+    match json_map.get(array_path) {
         Some(Value::Array(array)) => {
             let mut values: MultiValue<_> = MultiValue::default();
             for (i, value) in array.iter().enumerate() {
                 if let Some(array_index) = array_index {
                     if i == array_index as usize {
-                        match rest_path {
+                        match rest_of_path {
                             Some(rest_path) => {
                                 // expect an Object if there is a rest path
                                 if let Value::Object(map) = value {
@@ -171,7 +171,7 @@ fn focus_array_path<'a>(
                         }
                     }
                 } else {
-                    match rest_path {
+                    match rest_of_path {
                         Some(rest_path) => {
                             // expect an Object if there is a rest path
                             if let Value::Object(map) = value {
@@ -204,7 +204,7 @@ fn focus_array_path<'a>(
 ///
 pub fn get_value_from_json_map<'a>(
     path: &str,
-    value: &'a serde_json::Map<String, Value>,
+    json_map: &'a serde_json::Map<String, Value>,
 ) -> MultiValue<&'a Value> {
     // check if leaf path element
     match path.split_once('.') {
@@ -212,11 +212,11 @@ pub fn get_value_from_json_map<'a>(
             // check if targeting array
             match parse_array_path(element) {
                 Some((array_element_path, array_index)) => {
-                    focus_array_path(array_element_path, array_index, Some(rest_path), value)
+                    focus_array_path(array_element_path, array_index, Some(rest_path), json_map)
                 }
                 None => {
                     // no array notation
-                    match value.get(element) {
+                    match json_map.get(element) {
                         Some(Value::Object(map)) => get_value_from_json_map(rest_path, map),
                         Some(value) => match rest_path.is_empty() {
                             true => MultiValue::one(value),
@@ -229,9 +229,9 @@ pub fn get_value_from_json_map<'a>(
         }
         None => match parse_array_path(path) {
             Some((array_element_path, array_index)) => {
-                focus_array_path(array_element_path, array_index, None, value)
+                focus_array_path(array_element_path, array_index, None, json_map)
             }
-            None => match value.get(path) {
+            None => match json_map.get(path) {
                 Some(value) => MultiValue::one(value),
                 None => MultiValue::default(),
             },
@@ -245,11 +245,11 @@ pub fn get_value_from_json_map<'a>(
 fn delete_array_path(
     array_path: &str,
     array_index: Option<u32>,
-    rest_path: Option<&str>,
-    value: &mut serde_json::Map<String, Value>,
+    rest_of_path: Option<&str>,
+    json_map: &mut serde_json::Map<String, Value>,
 ) -> MultiValue<Value> {
-    if let Some(Value::Array(array)) = value.get_mut(array_path) {
-        match rest_path {
+    if let Some(Value::Array(array)) = json_map.get_mut(array_path) {
+        match rest_of_path {
             None => {
                 // end of path - delete and collect
                 if let Some(array_index) = array_index {
@@ -284,7 +284,7 @@ fn delete_array_path(
 
 pub fn remove_value_from_json_map(
     path: &str,
-    value: &mut serde_json::Map<String, Value>,
+    json_map: &mut serde_json::Map<String, Value>,
 ) -> MultiValue<Value> {
     // check if leaf path element
     match path.split_once('.') {
@@ -292,14 +292,14 @@ pub fn remove_value_from_json_map(
             // check if targeting array
             match parse_array_path(element) {
                 Some((array_element_path, array_index)) => {
-                    delete_array_path(array_element_path, array_index, Some(rest_path), value)
+                    delete_array_path(array_element_path, array_index, Some(rest_path), json_map)
                 }
                 None => {
                     // no array notation
                     if rest_path.is_empty() {
-                        MultiValue::option(value.remove(element))
+                        MultiValue::option(json_map.remove(element))
                     } else {
-                        match value.get_mut(element) {
+                        match json_map.get_mut(element) {
                             None => MultiValue::default(),
                             Some(Value::Object(map)) => remove_value_from_json_map(rest_path, map),
                             Some(_value) => MultiValue::default(),
@@ -310,29 +310,29 @@ pub fn remove_value_from_json_map(
         }
         None => match parse_array_path(path) {
             Some((array_element_path, array_index)) => {
-                delete_array_path(array_element_path, array_index, None, value)
+                delete_array_path(array_element_path, array_index, None, json_map)
             }
-            None => MultiValue::option(value.remove(path)),
+            None => MultiValue::option(json_map.remove(path)),
         },
     }
 }
 
-/// Insert value at a given JSON path  in JSON array
+/// Insert new_value at a given JSON path into a JSON array
 pub fn insert_at_array_path(
     array_path: &str,
     array_index: Option<u32>,
-    rest_path: Option<&str>,
-    value: &mut serde_json::Map<String, Value>,
+    rest_of_path: Option<&str>,
+    json_map: &mut serde_json::Map<String, Value>,
     new_value: Value,
 ) {
-    match value.get_mut(array_path) {
+    match json_map.get_mut(array_path) {
         None => {
             // create array
-            value.insert(array_path.to_string(), Value::Array(vec![]));
-            insert_at_array_path(array_path, array_index, rest_path, value, new_value);
+            json_map.insert(array_path.to_string(), Value::Array(vec![]));
+            insert_at_array_path(array_path, array_index, rest_of_path, json_map, new_value);
         }
         Some(Value::Array(array)) => {
-            match rest_path {
+            match rest_of_path {
                 None => {
                     if let Some(array_index) = array_index {
                         let array_index = array_index as usize;
@@ -366,14 +366,14 @@ pub fn insert_at_array_path(
         }
         Some(_value) => {
             // overwrite existing
-            value.insert(array_path.to_string(), Value::Array(vec![]));
-            insert_at_array_path(array_path, array_index, rest_path, value, new_value);
+            json_map.insert(array_path.to_string(), Value::Array(vec![]));
+            insert_at_array_path(array_path, array_index, rest_of_path, json_map, new_value);
         }
     }
 }
 
 /// Insert value at a given JSON path in JSON map
-pub fn insert_at_path(path: &str, value: &mut serde_json::Map<String, Value>, new_value: Value) {
+pub fn insert_at_path(path: &str, json_map: &mut serde_json::Map<String, Value>, new_value: Value) {
     match path.split_once('.') {
         Some((element, rest_path)) => {
             // check if targeting array
@@ -382,27 +382,27 @@ pub fn insert_at_path(path: &str, value: &mut serde_json::Map<String, Value>, ne
                     array_element_path,
                     array_index,
                     Some(rest_path),
-                    value,
+                    json_map,
                     new_value,
                 ),
                 None => {
                     // no array notation
                     if rest_path.is_empty() {
-                        value.insert(element.to_string(), new_value);
+                        json_map.insert(element.to_string(), new_value);
                     } else {
-                        match value.get_mut(element) {
+                        match json_map.get_mut(element) {
                             None => {
                                 // create entry
                                 let mut map = serde_json::Map::new();
                                 insert_at_path(rest_path, &mut map, new_value);
-                                value.insert(element.to_string(), Value::Object(map));
+                                json_map.insert(element.to_string(), Value::Object(map));
                             }
                             Some(Value::Object(map)) => insert_at_path(rest_path, map, new_value),
                             Some(_value) => {
                                 // overwrite existing
                                 let mut map = serde_json::Map::new();
                                 insert_at_path(rest_path, &mut map, new_value);
-                                value.insert(element.to_string(), Value::Object(map));
+                                json_map.insert(element.to_string(), Value::Object(map));
                             }
                         }
                     }
@@ -411,10 +411,10 @@ pub fn insert_at_path(path: &str, value: &mut serde_json::Map<String, Value>, ne
         }
         None => match parse_array_path(path) {
             Some((array_element_path, array_index)) => {
-                insert_at_array_path(array_element_path, array_index, None, value, new_value);
+                insert_at_array_path(array_element_path, array_index, None, json_map, new_value);
             }
             None => {
-                value.insert(path.to_string(), new_value);
+                json_map.insert(path.to_string(), new_value);
             }
         },
     }

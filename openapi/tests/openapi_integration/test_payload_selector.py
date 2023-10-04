@@ -259,7 +259,7 @@ def test_payload_selectors():
         }
     }
 
-    # Search with payload selector include at array index
+    # Search with payload selector exclude at array index
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",

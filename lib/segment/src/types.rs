@@ -1855,7 +1855,7 @@ impl PayloadSelector {
                     }
                 }
                 MultiValue::Multiple(elements) => {
-                    let array = elements.iter().cloned().cloned().collect();
+                    let array = elements.into_iter().cloned().collect();
                     insert_at_path(path, &mut new_json_map, Value::Array(array));
                 }
             }
