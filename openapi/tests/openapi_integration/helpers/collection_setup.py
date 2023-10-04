@@ -10,6 +10,110 @@ def drop_collection(collection_name='test_collection'):
     )
     assert response.ok
 
+def geo_collection_setup(
+        collection_name='test_collection',
+        on_disk_payload=False,
+        on_disk_vectors=False,
+):
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "size": 4,
+                "distance": "Dot",
+                "on_disk": on_disk_vectors
+            },
+            "on_disk_payload": on_disk_payload
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": [0.05, 0.61, 0.76, 0.74],
+                    "payload": {
+                        "value": 1,
+                        "location": {
+                                    "lon": 50.5200,
+                                    "lat": 50.4050
+                                }}
+                },
+                {
+                    "id": 2,
+                    "vector": [0.19, 0.81, 0.75, 0.11],
+                    "payload": {
+                        "value": 2,
+                        "location": {
+                                    "lon": 60.5200,
+                                    "lat": 60.4050
+                                }}
+                },
+                {
+                    "id": 3,
+                    "vector": [0.36, 0.55, 0.47, 0.94],
+                    "payload": {
+                        "value": 3,
+                        "location": {
+                                    "lon": -60.5200,
+                                    "lat": -60.4050
+                                }}
+                },
+                {
+                    "id": 4,
+                    "vector": [0.18, 0.01, 0.85, 0.80],
+                    "payload": {
+                        "value": 4,
+                        "location": {
+                                    "lon": 80.5200,
+                                    "lat": 80.4050
+                                }
+                                }
+                },
+                {
+                    "id": 5,
+                    "vector": [0.24, 0.18, 0.22, 0.44],
+                    "payload": {
+                        "value": 5,
+                        "location": {
+                                    "lon": -72.5200,
+                                    "lat": -72.4050
+                                }}
+                },
+                # add a entry doesn't contain location
+                {
+                    "id": 6,
+                    "vector": [0.24, 0.18, 0.22, 0.44],
+                    "payload": {
+                        "value": 6}
+                },
+            ]
+        }
+    )
+    assert response.ok
+
 
 def basic_collection_setup(
         collection_name='test_collection',

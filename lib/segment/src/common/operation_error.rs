@@ -48,6 +48,8 @@ pub enum OperationError {
     OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
+    #[error("Validation failed: {description}")]
+    ValidationError { description: String },
 }
 
 impl OperationError {
