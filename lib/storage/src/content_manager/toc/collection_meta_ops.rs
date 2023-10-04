@@ -1,4 +1,17 @@
-use super::*;
+use std::collections::HashSet;
+use std::path::Path;
+
+use collection::collection_state;
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::transfer::shard_transfer;
+use collection::shards::CollectionId;
+use uuid::Uuid;
+
+use super::TableOfContent;
+use crate::content_manager::collection_meta_ops::*;
+use crate::content_manager::collections_ops::Checker as _;
+use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
@@ -233,7 +246,7 @@ impl TableOfContent {
                 // Peers: shard_id=1 - [{123: Active}]
                 // Transfer: {321 -> 123}, shard_id=1
 
-                validate_transfer(&transfer, &all_peers, shard_state, &transfers)?;
+                shard_transfer::validate_transfer(&transfer, &all_peers, shard_state, &transfers)?;
 
                 let collection_id_clone = collection_id.clone();
                 let transfer_clone = transfer.clone();
@@ -267,12 +280,18 @@ impl TableOfContent {
             }
             ShardTransferOperations::Finish(transfer) => {
                 // Validate transfer exists to prevent double handling
-                validate_transfer_exists(&transfer.key(), &collection.state().await.transfers)?;
+                shard_transfer::validate_transfer_exists(
+                    &transfer.key(),
+                    &collection.state().await.transfers,
+                )?;
                 collection.finish_shard_transfer(transfer).await?;
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
-                validate_transfer_exists(&transfer, &collection.state().await.transfers)?;
+                shard_transfer::validate_transfer_exists(
+                    &transfer,
+                    &collection.state().await.transfers,
+                )?;
                 log::warn!("Aborting shard transfer: {reason}");
                 collection.abort_shard_transfer(transfer).await?;
             }
