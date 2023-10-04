@@ -76,7 +76,7 @@ impl PostingBuilder {
 
 /// Iterator over posting list elements offering skipping abilities to avoid full iteration.
 pub struct PostingListIterator<'a> {
-    pub elements: &'a [PostingElement],
+    elements: &'a [PostingElement],
     current_index: usize,
 }
 
