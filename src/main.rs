@@ -208,7 +208,7 @@ fn main() -> anyhow::Result<()> {
     // It allocates required number of channels and manages proper reconnection handling
     let mut channel_service = ChannelService::default();
 
-    if settings.cluster.enabled {
+    if is_distributed_deployment {
         // We only need channel_service in case if cluster is enabled.
         // So we initialize it with real values here
         let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
@@ -256,7 +256,7 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, dispatcher_arc) = if settings.cluster.enabled {
+    let (telemetry_collector, dispatcher_arc) = if is_distributed_deployment {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
             toc_arc.clone(),
