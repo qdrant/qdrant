@@ -11,64 +11,32 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::collection_state;
-use collection::config::{
-    default_replication_factor, default_write_consistency_factor, CollectionConfig,
-    CollectionParams,
-};
-use collection::grouping::group_by::GroupRequest;
-use collection::grouping::GroupBy;
-use collection::operations::config_diff::DiffConfig;
-use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::point_ops::WriteOrdering;
-use collection::operations::snapshot_ops::SnapshotDescription;
-use collection::operations::types::{
-    AliasDescription, CollectionError, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, GroupsResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
-    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult, VectorsConfig,
-};
-use collection::operations::CollectionUpdateOperations;
-use collection::recommendations::{recommend_batch_by, recommend_by};
+use collection::config::{default_replication_factor, CollectionConfig};
+use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
-use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::shard_transfer::{
-    validate_transfer, validate_transfer_exists, ShardTransfer,
-};
-use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use futures::future::try_join_all;
 use futures::Future;
 use segment::common::cpu::get_num_cpus;
-use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use tonic::transport::Channel;
 use tonic::Status;
-use uuid::Uuid;
 
-use super::collection_meta_ops::{
-    CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,
-    UpdateCollectionOperation,
-};
-use super::{consensus_manager, CollectionContainer};
 use crate::content_manager::alias_mapping::AliasPersistence;
-use crate::content_manager::collection_meta_ops::{
-    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
-    CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
-    RenameAliasOperation, UpdateCollection,
-};
+use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::data_transfer::{populate_collection, transfer_indexes};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
