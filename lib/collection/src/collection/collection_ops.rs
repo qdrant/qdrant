@@ -53,6 +53,40 @@ impl Collection {
         Ok(())
     }
 
+    /// Updates shard optimization params:
+    /// Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
+    pub async fn update_optimizer_params_from_diff(
+        &self,
+        optimizer_config_diff: OptimizersConfigDiff,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            config.optimizer_config =
+                DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
+    /// Updates shard optimization params: Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
+    pub async fn update_optimizer_params(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            config.optimizer_config = optimizer_config;
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
     /// Updates quantization config:
     /// Saves new params on disk
     ///
@@ -133,40 +167,6 @@ impl Collection {
                 }
             }
         }
-        Ok(())
-    }
-
-    /// Updates shard optimization params:
-    /// Saves new params on disk
-    ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
-    pub async fn update_optimizer_params_from_diff(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
-        {
-            let mut config = self.collection_config.write().await;
-            config.optimizer_config =
-                DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
-        }
-        self.collection_config.read().await.save(&self.path)?;
-        Ok(())
-    }
-
-    /// Updates shard optimization params: Saves new params on disk
-    ///
-    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
-    /// the updated configuration.
-    pub async fn update_optimizer_params(
-        &self,
-        optimizer_config: OptimizersConfig,
-    ) -> CollectionResult<()> {
-        {
-            let mut config = self.collection_config.write().await;
-            config.optimizer_config = optimizer_config;
-        }
-        self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
 
