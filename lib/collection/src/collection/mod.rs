@@ -71,11 +71,6 @@ use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool
 use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
 use crate::telemetry::CollectionTelemetry;
 
-pub type VectorLookupFuture<'a> = Box<dyn Future<Output = CollectionResult<Vec<Record>>> + 'a>;
-pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
-pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
-pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
-
 /// Collection's data is split into several shards.
 pub struct Collection {
     pub(crate) id: CollectionId,
@@ -101,6 +96,11 @@ pub struct Collection {
     // Update runtime handle.
     update_runtime: Handle,
 }
+
+pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
+
+pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
+pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
 
 impl Collection {
     pub fn name(&self) -> String {
