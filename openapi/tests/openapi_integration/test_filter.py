@@ -42,3 +42,29 @@ def test_match_any():
     assert 2 in ids
     assert 3 in ids
     assert 4 in ids
+
+
+def test_just_key():
+    # the filter will be ignored as the condition is not well-formed
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 3,
+            "filter": {
+                "must": [
+                    {
+                        "key": "city",
+                    }
+                ]
+            }
+        }
+    )
+    assert not response.ok
+    assert response.status_code == 422
+    error = response.json()["status"]["error"]
+    assert error.__contains__(
+        "Validation error in JSON body: [filter.must[0].__all__: Validation error: At least one field condition must "
+        "be specified [{}]]")
