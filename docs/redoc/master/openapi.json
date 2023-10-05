@@ -6775,7 +6775,7 @@
         "type": "object",
         "properties": {
           "vectors": {
-            "description": "Vector data parameters to update. It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.",
+            "description": "Map of vector data parameters to update for each named vector. To update parameters in a collection having a single unnamed vector, use an empty string as name.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorsConfigDiff"
