@@ -116,6 +116,7 @@ impl<T: Numericable> Histogram<T> {
         }
     }
 
+    #[cfg(test)]
     pub fn total_count(&self) -> usize {
         self.total_count
     }
