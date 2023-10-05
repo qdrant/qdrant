@@ -78,7 +78,7 @@ fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<GeoHash, Geoh
 }
 
 pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError> {
-    encode((lon, lat).into(), GEOHASH_MAX_LENGTH).map(SmolStr::from)
+    encode((lon, lat).into(), GEOHASH_MAX_LENGTH).map(Into::into)
 }
 
 pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
