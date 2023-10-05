@@ -85,21 +85,20 @@ impl<T> From<Point<T>> for NumericIndexKey<T> {
 
 impl<T: PartialEq + PartialOrd + Encodable> PartialOrd for NumericIndexKey<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(match self.key.cmp_encoded(&other.key) {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: PartialEq + PartialOrd + Encodable> Ord for NumericIndexKey<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.key.cmp_encoded(&other.key) {
             std::cmp::Ordering::Equal => self.idx.cmp(&other.idx),
             ord => ord,
-        })
+        }
     }
 }
 
 impl<T: PartialEq + PartialOrd + Encodable> Eq for NumericIndexKey<T> {}
-
-impl<T: PartialEq + PartialOrd + Encodable> Ord for NumericIndexKey<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other)
-            .expect("Numeric index key is not comparable")
-    }
-}
 
 impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
     fn from_btree_map(map: BTreeMap<Vec<u8>, u32>) -> Self {
