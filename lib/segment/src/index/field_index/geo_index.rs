@@ -879,7 +879,7 @@ mod tests {
 
         let europe_no_berlin = GeoPolygon {
             exterior: europe.clone(),
-            interiors: vec![berlin.clone()],
+            interiors: Some(vec![berlin.clone()]),
         };
         check_cardinality_match(
             polygon_hashes(&europe_no_berlin, GEO_QUERY_MAX_REGION).unwrap(),

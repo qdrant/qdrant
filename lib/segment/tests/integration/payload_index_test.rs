@@ -649,9 +649,11 @@ fn test_struct_payload_geo_polygon_index() {
     }
 
     let exterior = generate_ring(polygon_edge);
-    let interiors = std::iter::repeat_with(|| generate_ring(polygon_edge))
-        .take(interiors_num)
-        .collect();
+    let interiors = Some(
+        std::iter::repeat_with(|| generate_ring(polygon_edge))
+            .take(interiors_num)
+            .collect(),
+    );
 
     let geo_polygon = GeoPolygon {
         exterior,

@@ -1350,7 +1350,7 @@ pub struct GeoPolygon {
     /// Interior lines (if present) bound holes within the surface
     /// each GeoLineString must consist of a minimum of 4 points, and the first
     /// and last points must be the same.
-    pub interiors: Vec<GeoLineString>,
+    pub interiors: Option<Vec<GeoLineString>>,
 }
 
 impl GeoPolygon {
@@ -1388,19 +1388,20 @@ impl GeoPolygon {
         );
 
         // Convert the interior points to coordinates (if any)
-        let interior_lines: Vec<LineString> = self
-            .interiors
-            .iter()
-            .map(|interior_points| {
-                interior_points
-                    .points
-                    .iter()
-                    .map(|p| Coord { x: p.lon, y: p.lat })
-                    .collect()
-            })
-            .map(LineString)
-            .collect();
-
+        let interior_lines: Vec<LineString> = match &self.interiors {
+            None => vec![],
+            Some(interiors) => interiors
+                .iter()
+                .map(|interior_points| {
+                    interior_points
+                        .points
+                        .iter()
+                        .map(|p| Coord { x: p.lon, y: p.lat })
+                        .collect()
+                })
+                .map(LineString)
+                .collect(),
+        };
         PolygonWrapper {
             polygon: Polygon::new(exterior_line, interior_lines),
         }
@@ -1415,7 +1416,7 @@ impl GeoPolygon {
 
         Ok(GeoPolygon {
             exterior: exterior.clone(),
-            interiors: interiors.to_vec(),
+            interiors: Some(interiors.to_vec()),
         })
     }
 }
@@ -1434,7 +1435,7 @@ impl TryFrom<GeoPolygonShadow> for GeoPolygon {
 
         Ok(GeoPolygon {
             exterior: value.exterior,
-            interiors: value.interiors.unwrap_or_default(),
+            interiors: value.interiors,
         })
     }
 }
@@ -1931,7 +1932,7 @@ pub(crate) mod test_utils {
 
         GeoPolygon {
             exterior: exterior_line,
-            interiors: vec![],
+            interiors: None,
         }
     }
 
@@ -1946,15 +1947,17 @@ pub(crate) mod test_utils {
                 .collect(),
         };
 
-        let interior_lines = interiors_points
-            .into_iter()
-            .map(|points| GeoLineString {
-                points: points
-                    .into_iter()
-                    .map(|(lon, lat)| GeoPoint { lon, lat })
-                    .collect(),
-            })
-            .collect();
+        let interior_lines = Some(
+            interiors_points
+                .into_iter()
+                .map(|points| GeoLineString {
+                    points: points
+                        .into_iter()
+                        .map(|(lon, lat)| GeoPoint { lon, lat })
+                        .collect(),
+                })
+                .collect(),
+        );
 
         GeoPolygon {
             exterior: exterior_line,

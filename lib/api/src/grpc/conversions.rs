@@ -958,7 +958,7 @@ impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
                 interiors,
             } => Ok(Self {
                 exterior: e.into(),
-                interiors: interiors.into_iter().map(Into::into).collect(),
+                interiors: Some(interiors.into_iter().map(Into::into).collect()),
             }),
             _ => Err(Status::invalid_argument("Malformed GeoPolygon type")),
         }
@@ -969,7 +969,12 @@ impl From<segment::types::GeoPolygon> for GeoPolygon {
     fn from(value: segment::types::GeoPolygon) -> Self {
         Self {
             exterior: Some(value.exterior.into()),
-            interiors: value.interiors.into_iter().map(Into::into).collect(),
+            interiors: value
+                .interiors
+                .unwrap_or_default()
+                .into_iter()
+                .map(Into::into)
+                .collect(),
         }
     }
 }
