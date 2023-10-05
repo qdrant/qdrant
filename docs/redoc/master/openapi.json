@@ -4134,7 +4134,8 @@
             "description": "If set, overrides global timeout for this request. Unit is seconds.",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4234,7 +4235,8 @@
             "description": "If set, overrides global timeout for this request. Unit is seconds.",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4337,7 +4339,8 @@
             "description": "If set, overrides global timeout for this request. Unit is seconds.",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4434,7 +4437,8 @@
             "description": "If set, overrides global timeout for this request. Unit is seconds.",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4534,7 +4538,8 @@
             "description": "If set, overrides global timeout for this request. Unit is seconds.",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4637,7 +4642,8 @@
             "description": "If set, overrides global timeout for this request. Unit is seconds.",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],

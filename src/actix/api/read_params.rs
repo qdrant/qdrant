@@ -1,3 +1,4 @@
+use std::num::NonZeroU64;
 use std::time::Duration;
 
 use collection::operations::consistency_params::ReadConsistency;
@@ -11,13 +12,12 @@ pub struct ReadParams {
     #[validate]
     pub consistency: Option<ReadConsistency>,
     /// If set, overrides global timeout for this request. Unit is seconds.
-    #[validate(range(min = 1))]
-    pub timeout: Option<u64>,
+    pub timeout: Option<NonZeroU64>,
 }
 
 impl ReadParams {
     pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(Duration::from_secs)
+        self.timeout.map(|num| Duration::from_secs(num.get()))
     }
 }
 
