@@ -85,11 +85,10 @@ impl<T> From<Point<T>> for NumericIndexKey<T> {
 
 impl<T: PartialEq + PartialOrd + Encodable> PartialOrd for NumericIndexKey<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.key.cmp_encoded(&other.key) {
-            core::cmp::Ordering::Equal => {}
-            ord => return Some(ord),
-        }
-        Some(self.idx.cmp(&other.idx))
+        Some(match self.key.cmp_encoded(&other.key) {
+            std::cmp::Ordering::Equal => self.idx.cmp(&other.idx),
+            ord => ord,
+        })
     }
 }
 
