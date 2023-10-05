@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests;
 
+mod immutable_numeric_index;
 mod mutable_numeric_index;
 
 use std::cmp::{max, min};
-use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
@@ -15,11 +15,12 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
 use super::utils::check_boundaries;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::index::field_index::histogram::{Histogram, Numericable, Point};
+use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
@@ -36,15 +37,23 @@ const HISTOGRAM_PRECISION: f64 = 0.01;
 
 pub trait Encodable: Copy {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
+
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
+
+    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering;
 }
 
 impl Encodable for IntPayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
         encode_i64_key_ascending(*self, id)
     }
+
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         decode_i64_key_ascending(key)
+    }
+
+    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
+        self.cmp(other)
     }
 }
 
@@ -52,41 +61,64 @@ impl Encodable for FloatPayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
         encode_f64_key_ascending(*self, id)
     }
+
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         decode_f64_key_ascending(key)
+    }
+
+    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
+        if self.is_nan() && other.is_nan() {
+            return std::cmp::Ordering::Equal;
+        }
+        if self.is_nan() {
+            return std::cmp::Ordering::Less;
+        }
+        if other.is_nan() {
+            return std::cmp::Ordering::Greater;
+        }
+        self.partial_cmp(other).unwrap()
     }
 }
 
 pub enum NumericIndex<T: Encodable + Numericable> {
     Mutable(MutableNumericIndex<T>),
+    Immutable(ImmutableNumericIndex<T>),
 }
 
 impl<T: Encodable + Numericable> NumericIndex<T> {
-    pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        NumericIndex::Mutable(MutableNumericIndex::new(db, field))
+    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+        if is_appendable {
+            NumericIndex::Mutable(MutableNumericIndex::new(db, field))
+        } else {
+            NumericIndex::Immutable(ImmutableNumericIndex::new(db, field))
+        }
     }
 
     fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
         match self {
             NumericIndex::Mutable(index) => index.get_db_wrapper(),
+            NumericIndex::Immutable(index) => index.get_db_wrapper(),
         }
     }
 
     fn get_histogram(&self) -> &Histogram<T> {
         match self {
             NumericIndex::Mutable(index) => &index.histogram,
+            NumericIndex::Immutable(index) => &index.histogram,
         }
     }
 
     fn get_points_count(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.points_count,
+            NumericIndex::Immutable(index) => index.points_count,
         }
     }
 
     fn get_values_count(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.get_values_count(),
+            NumericIndex::Immutable(index) => index.get_values_count(),
         }
     }
 
@@ -101,6 +133,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             NumericIndex::Mutable(index) => index.load(),
+            NumericIndex::Immutable(index) => index.load(),
         }
     }
 
@@ -111,18 +144,21 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.remove_point(idx),
+            NumericIndex::Immutable(index) => index.remove_point(idx),
         }
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<T>> {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
         match self {
             NumericIndex::Mutable(index) => index.get_values(idx),
+            NumericIndex::Immutable(index) => index.get_values(idx),
         }
     }
 
     pub fn get_max_values_per_point(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.max_values_per_point,
+            NumericIndex::Immutable(index) => index.max_values_per_point,
         }
     }
 
@@ -181,68 +217,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         }
     }
 
-    fn add_to_map(
-        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram<T>,
-        key: Vec<u8>,
-        id: PointOffsetType,
-    ) {
-        let existed_value = map.insert(key.clone(), id);
-        // Histogram works with unique values (idx + value) only, so we need to
-        // make sure that we don't add the same value twice.
-        // key is a combination of value + idx, so we can use it to ensure than the pair is unique
-        if existed_value.is_none() {
-            histogram.insert(
-                NumericIndex::<T>::key_to_histogram_point(&key),
-                |x| NumericIndex::<T>::get_histogram_left_neighbor(map, x),
-                |x| NumericIndex::<T>::get_histogram_right_neighbor(map, x),
-            );
-        }
-    }
-
-    pub fn remove_from_map(
-        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram<T>,
-        key: Vec<u8>,
-    ) {
-        let existed_val = map.remove(&key);
-        if existed_val.is_some() {
-            histogram.remove(
-                &Self::key_to_histogram_point(&key),
-                |x| Self::get_histogram_left_neighbor(map, x),
-                |x| Self::get_histogram_right_neighbor(map, x),
-            );
-        }
-    }
-
-    fn key_to_histogram_point(key: &[u8]) -> Point<T> {
-        let (decoded_idx, decoded_val) = T::decode_key(key);
-        Point {
-            val: decoded_val,
-            idx: decoded_idx as usize,
-        }
-    }
-
-    fn get_histogram_left_neighbor(
-        map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        let key = point.val.encode_key(point.idx as PointOffsetType);
-        map.range((Unbounded, Excluded(key)))
-            .next_back()
-            .map(|(key, _)| Self::key_to_histogram_point(key))
-    }
-
-    fn get_histogram_right_neighbor(
-        map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        let key = point.val.encode_key(point.idx as PointOffsetType);
-        map.range((Excluded(key), Unbounded))
-            .next()
-            .map(|(key, _)| Self::key_to_histogram_point(key))
-    }
-
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
@@ -292,11 +266,11 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
                 let v: T = T::from_f64(*gt);
-                Excluded(v.encode_key(PointOffsetType::MAX))
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
             }
             Range { gte: Some(gte), .. } => {
                 let v: T = T::from_f64(*gte);
-                Included(v.encode_key(PointOffsetType::MIN))
+                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
             }
             _ => Unbounded,
         };
@@ -304,11 +278,11 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         let end_bound = match cond_range {
             Range { lt: Some(lt), .. } => {
                 let v: T = T::from_f64(*lt);
-                Excluded(v.encode_key(PointOffsetType::MIN))
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
             }
             Range { lte: Some(lte), .. } => {
                 let v: T = T::from_f64(*lte);
-                Included(v.encode_key(PointOffsetType::MAX))
+                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
             }
             _ => Unbounded,
         };
@@ -320,7 +294,20 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         }
 
         Ok(match self {
-            NumericIndex::Mutable(index) => Box::new(index.values_range(start_bound, end_bound)),
+            NumericIndex::Mutable(index) => {
+                let start_bound = match start_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                let end_bound = match end_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                Box::new(index.values_range(start_bound, end_bound))
+            }
+            NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
         })
     }
 
@@ -420,6 +407,9 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable numeric index",
+            )),
         }
     }
 
@@ -443,6 +433,9 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable numeric index",
+            )),
         }
     }
 

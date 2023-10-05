@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::ops::Bound;
+use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -9,10 +10,10 @@ use rocksdb::DB;
 use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::index::field_index::histogram::{Histogram, Numericable};
+use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
-    pub(super) map: BTreeMap<Vec<u8>, u32>,
+    pub(super) map: BTreeMap<Vec<u8>, PointOffsetType>,
     pub(super) db_wrapper: DatabaseColumnWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
@@ -38,8 +39,8 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         &self.db_wrapper
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<T>> {
-        self.point_to_values.get(idx as usize)
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
+        self.point_to_values.get(idx as usize).map(|v| v.as_slice())
     }
 
     pub fn get_values_count(&self) -> usize {
@@ -57,7 +58,7 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
         self.db_wrapper.put(&key, id.to_be_bytes())?;
-        NumericIndex::<T>::add_to_map(&mut self.map, &mut self.histogram, key, id);
+        Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
         Ok(())
     }
 
@@ -100,7 +101,7 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
 
             self.point_to_values[idx as usize].push(value);
 
-            NumericIndex::<T>::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
+            Self::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
         }
         for values in &self.point_to_values {
             if !values.is_empty() {
@@ -121,7 +122,7 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         for value in &removed_values {
             let key = value.encode_key(idx);
             self.db_wrapper.remove(&key)?;
-            NumericIndex::<T>::remove_from_map(&mut self.map, &mut self.histogram, key);
+            Self::remove_from_map(&mut self.map, &mut self.histogram, key);
         }
 
         if !removed_values.is_empty() {
@@ -129,5 +130,67 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         }
 
         Ok(())
+    }
+
+    fn add_to_map(
+        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
+        histogram: &mut Histogram<T>,
+        key: Vec<u8>,
+        id: PointOffsetType,
+    ) {
+        let existed_value = map.insert(key.clone(), id);
+        // Histogram works with unique values (idx + value) only, so we need to
+        // make sure that we don't add the same value twice.
+        // key is a combination of value + idx, so we can use it to ensure than the pair is unique
+        if existed_value.is_none() {
+            histogram.insert(
+                Self::key_to_histogram_point(&key),
+                |x| Self::get_histogram_left_neighbor(map, x),
+                |x| Self::get_histogram_right_neighbor(map, x),
+            );
+        }
+    }
+
+    fn remove_from_map(
+        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
+        histogram: &mut Histogram<T>,
+        key: Vec<u8>,
+    ) {
+        let existed_val = map.remove(&key);
+        if existed_val.is_some() {
+            histogram.remove(
+                &Self::key_to_histogram_point(&key),
+                |x| Self::get_histogram_left_neighbor(map, x),
+                |x| Self::get_histogram_right_neighbor(map, x),
+            );
+        }
+    }
+
+    fn key_to_histogram_point(key: &[u8]) -> Point<T> {
+        let (decoded_idx, decoded_val) = T::decode_key(key);
+        Point {
+            val: decoded_val,
+            idx: decoded_idx as usize,
+        }
+    }
+
+    fn get_histogram_left_neighbor(
+        map: &BTreeMap<Vec<u8>, PointOffsetType>,
+        point: &Point<T>,
+    ) -> Option<Point<T>> {
+        let key = point.val.encode_key(point.idx as PointOffsetType);
+        map.range((Unbounded, Excluded(key)))
+            .next_back()
+            .map(|(key, _)| Self::key_to_histogram_point(key))
+    }
+
+    fn get_histogram_right_neighbor(
+        map: &BTreeMap<Vec<u8>, PointOffsetType>,
+        point: &Point<T>,
+    ) -> Option<Point<T>> {
+        let key = point.val.encode_key(point.idx as PointOffsetType);
+        map.range((Excluded(key), Unbounded))
+            .next()
+            .map(|(key, _)| Self::key_to_histogram_point(key))
     }
 }
