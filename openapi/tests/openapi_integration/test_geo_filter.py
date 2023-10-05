@@ -285,28 +285,28 @@ def test_geo_polygon_multiple():
                     {
                         "key": "location",
                         "geo_polygon": {
-                            "exterior":{
-                                    "points": [
-                                        {"lon": 55.0, "lat": 55.0},
-                                        {"lon": 65.0, "lat": 55.0},
-                                        {"lon": 65.0, "lat": 65.0},
-                                        {"lon": 55.0, "lat": 65.0},
-                                        {"lon": 55.0, "lat": 55.0},
-                                    ]
+                            "exterior": {
+                                "points": [
+                                    {"lon": 55.0, "lat": 55.0},
+                                    {"lon": 65.0, "lat": 55.0},
+                                    {"lon": 65.0, "lat": 65.0},
+                                    {"lon": 55.0, "lat": 65.0},
+                                    {"lon": 55.0, "lat": 55.0},
+                                ]
                             },
                         },
                     },
                     {
                         "key": "location",
                         "geo_polygon": {
-                            "exterior":{
-                                    "points": [
-                                        {"lon": 75.0, "lat": 75.0},
-                                        {"lon": 85.0, "lat": 75.0},
-                                        {"lon": 85.0, "lat": 85.0},
-                                        {"lon": 75.0, "lat": 85.0},
-                                        {"lon": 75.0, "lat": 75.0},
-                                    ]
+                            "exterior": {
+                                "points": [
+                                    {"lon": 75.0, "lat": 75.0},
+                                    {"lon": 85.0, "lat": 75.0},
+                                    {"lon": 85.0, "lat": 85.0},
+                                    {"lon": 75.0, "lat": 85.0},
+                                    {"lon": 75.0, "lat": 75.0},
+                                ]
                             },
                         },
                     }
@@ -336,28 +336,28 @@ def test_geo_polygon_multiple():
                     {
                         "key": "location",
                         "geo_polygon": {
-                            "exterior":{
-                                    "points": [
-                                        {"lon": 55.0, "lat": 55.0},
-                                        {"lon": 65.0, "lat": 55.0},
-                                        {"lon": 65.0, "lat": 65.0},
-                                        {"lon": 55.0, "lat": 65.0},
-                                        {"lon": 55.0, "lat": 55.0},
-                                    ]
+                            "exterior": {
+                                "points": [
+                                    {"lon": 55.0, "lat": 55.0},
+                                    {"lon": 65.0, "lat": 55.0},
+                                    {"lon": 65.0, "lat": 65.0},
+                                    {"lon": 55.0, "lat": 65.0},
+                                    {"lon": 55.0, "lat": 55.0},
+                                ]
                             },
                         },
                     },
                     {
                         "key": "location",
                         "geo_polygon": {
-                            "exterior":{
-                                    "points": [
-                                        {"lon": 75.0, "lat": 75.0},
-                                        {"lon": 85.0, "lat": 75.0},
-                                        {"lon": 85.0, "lat": 85.0},
-                                        {"lon": 75.0, "lat": 85.0},
-                                        {"lon": 75.0, "lat": 75.0},
-                                    ]
+                            "exterior": {
+                                "points": [
+                                    {"lon": 75.0, "lat": 75.0},
+                                    {"lon": 85.0, "lat": 75.0},
+                                    {"lon": 85.0, "lat": 85.0},
+                                    {"lon": 75.0, "lat": 85.0},
+                                    {"lon": 75.0, "lat": 75.0},
+                                ]
                             },
                         },
                     }
