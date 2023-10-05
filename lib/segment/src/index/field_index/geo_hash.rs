@@ -74,7 +74,7 @@ fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<GeoHash, Geoh
     let lat = sphere_lat(coord.y + 2f64 * lat_err.abs() * dlat);
 
     let neighbor_coord = Coord { x: lon, y: lat };
-    encode(neighbor_coord, hash_str.len()).map(SmolStr::from)
+    encode(neighbor_coord, hash_str.len()).map(Into::into)
 }
 
 pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError> {
