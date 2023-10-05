@@ -87,7 +87,7 @@ impl GeoMapIndex {
             let sub_geo_hash = &geo_hash[0..i];
             match self.values_per_hash.get_mut(sub_geo_hash) {
                 None => {
-                    self.values_per_hash.insert(sub_geo_hash.to_string(), 1);
+                    self.values_per_hash.insert(sub_geo_hash.into(), 1);
                 }
                 Some(count) => {
                     *count += 1;
@@ -106,7 +106,7 @@ impl GeoMapIndex {
                         "Hash value count is not found for hash: {}",
                         sub_geo_hash
                     );
-                    self.values_per_hash.insert(sub_geo_hash.to_string(), 0);
+                    self.values_per_hash.insert(sub_geo_hash.into(), 0);
                 }
                 Some(count) => {
                     *count -= 1;
@@ -127,7 +127,7 @@ impl GeoMapIndex {
                 seen_hashes.insert(sub_geo_hash);
                 match self.points_per_hash.get_mut(sub_geo_hash) {
                     None => {
-                        self.points_per_hash.insert(sub_geo_hash.to_string(), 1);
+                        self.points_per_hash.insert(sub_geo_hash.into(), 1);
                     }
                     Some(count) => {
                         *count += 1;
@@ -153,7 +153,7 @@ impl GeoMapIndex {
                             "Hash point count is not found for hash: {}",
                             sub_geo_hash
                         );
-                        self.points_per_hash.insert(sub_geo_hash.to_string(), 0);
+                        self.points_per_hash.insert(sub_geo_hash.into(), 0);
                     }
                     Some(count) => {
                         *count -= 1;
@@ -222,7 +222,7 @@ impl GeoMapIndex {
         if separator_pos == s.len() - 1 {
             return Err(OperationError::service_error(DECODE_ERR));
         }
-        let geohash = s[..separator_pos].to_string();
+        let geohash = s[..separator_pos].into();
         let idx_str = &s[separator_pos + 1..];
         let idx = PointOffsetType::from_str(idx_str)
             .map_err(|_| OperationError::service_error(DECODE_ERR))?;
@@ -423,11 +423,11 @@ impl GeoMapIndex {
         &self,
         geo: &GeoHash,
     ) -> Box<dyn Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_> {
-        let geo_clone = geo.to_string();
+        let geo_clone = geo.clone();
         Box::new(
             self.points_map
-                .range(geo.to_string()..)
-                .take_while(move |(p, _h)| p.starts_with(&geo_clone)),
+                .range(geo.clone()..)
+                .take_while(move |(p, _h)| p.starts_with(geo_clone.as_str())),
         )
     }
 
@@ -459,13 +459,13 @@ impl GeoMapIndex {
 
         let mut edge_region = vec![];
 
-        let mut current_region = "";
+        let mut current_region = GeoHash::default();
 
         for (region, size) in large_regions.into_iter() {
-            if current_region.starts_with(region) {
+            if current_region.starts_with(region.as_str()) {
                 continue;
             } else {
-                current_region = region;
+                current_region = region.clone();
                 edge_region.push((region, *size));
             }
         }
@@ -757,7 +757,7 @@ mod tests {
 
     #[test]
     fn test_polygon_with_exclusion() {
-        fn check_cardinality_match(hashes: Vec<String>, field_condition: FieldCondition) {
+        fn check_cardinality_match(hashes: Vec<GeoHash>, field_condition: FieldCondition) {
             let field_index = build_random_index(500, 20);
             let exact_points_for_hashes = field_index.get_iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
@@ -889,7 +889,7 @@ mod tests {
 
     #[test]
     fn match_cardinality() {
-        fn check_cardinality_match(hashes: Vec<String>, field_condition: FieldCondition) {
+        fn check_cardinality_match(hashes: Vec<GeoHash>, field_condition: FieldCondition) {
             let field_index = build_random_index(500, 20);
             let exact_points_for_hashes = field_index.get_iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
