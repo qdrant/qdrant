@@ -6054,8 +6054,7 @@
         "description": "Geo filter request\n\nMatches coordinates inside the polygon, defined by `exterior` and `interiors`",
         "type": "object",
         "required": [
-          "exterior",
-          "interiors"
+          "exterior"
         ],
         "properties": {
           "exterior": {
@@ -6066,7 +6065,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/GeoLineString"
-            }
+            },
+            "nullable": true
           }
         }
       },
