@@ -4,11 +4,12 @@ use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::{Coord, Intersects, LineString, Point, Polygon};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
+use smol_str::SmolStr;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 
-pub type GeoHash = String;
+pub type GeoHash = SmolStr;
 
 /// Max size of geo-hash used for indexing. size=12 is about 6cm2
 const GEOHASH_MAX_LENGTH: usize = 12;
@@ -37,7 +38,7 @@ pub fn common_hash_prefix(geo_hashes: &[GeoHash]) -> GeoHash {
             }
         }
     }
-    first[0..prefix].to_string()
+    first[0..prefix].into()
 }
 
 /// Fix longitude for spherical overflow
@@ -73,11 +74,11 @@ fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<GeoHash, Geoh
     let lat = sphere_lat(coord.y + 2f64 * lat_err.abs() * dlat);
 
     let neighbor_coord = Coord { x: lon, y: lat };
-    encode(neighbor_coord, hash_str.len())
+    encode(neighbor_coord, hash_str.len()).map(Into::into)
 }
 
 pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError> {
-    encode((lon, lat).into(), GEOHASH_MAX_LENGTH)
+    encode((lon, lat).into(), GEOHASH_MAX_LENGTH).map(Into::into)
 }
 
 pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
@@ -122,8 +123,8 @@ impl GeohashBoundingBox {
     fn geohash_regions(&self, precision: usize, max_regions: usize) -> Option<Vec<GeoHash>> {
         let mut seen: Vec<GeoHash> = Vec::new();
 
-        let mut from_row = self.north_west[..precision].to_owned();
-        let mut to_row = self.north_east[..precision].to_owned();
+        let mut from_row: GeoHash = self.north_west[..precision].into();
+        let mut to_row: GeoHash = self.north_east[..precision].into();
 
         let to_column = self.south_west[..precision].to_owned();
 
@@ -139,7 +140,7 @@ impl GeohashBoundingBox {
                 if current == to_row {
                     break;
                 }
-                current = sphere_neighbor(&current, Direction::E).unwrap();
+                current = sphere_neighbor(current.as_str(), Direction::E).unwrap();
             }
             if from_row == to_column {
                 break;
@@ -461,10 +462,10 @@ mod tests {
     #[test]
     fn top_level_rectangle_geo_area() {
         let rect = GeohashBoundingBox {
-            north_west: "u".to_string(),
-            south_west: "s".to_string(),
-            south_east: "t".to_string(),
-            north_east: "v".to_string(),
+            north_west: "u".into(),
+            south_west: "s".into(),
+            south_east: "t".into(),
+            north_east: "v".into(),
         };
         let mut geo_area = rect.geohash_regions(1, 100).unwrap();
         let mut expected = vec!["u", "s", "v", "t"];
@@ -477,10 +478,10 @@ mod tests {
     #[test]
     fn nyc_rectangle_geo_area_high_precision() {
         let rect = GeohashBoundingBox {
-            north_west: "dr5ruj4477kd".to_string(),
-            south_west: "dr5ru46ne2ux".to_string(),
-            south_east: "dr5ru6ryw0cp".to_string(),
-            north_east: "dr5rumpfq534".to_string(),
+            north_west: "dr5ruj4477kd".into(),
+            south_west: "dr5ru46ne2ux".into(),
+            south_east: "dr5ru6ryw0cp".into(),
+            north_east: "dr5rumpfq534".into(),
         };
 
         // calling `rect.geohash_regions()` is too expensive
@@ -490,10 +491,10 @@ mod tests {
     #[test]
     fn nyc_rectangle_geo_area_medium_precision() {
         let rect = GeohashBoundingBox {
-            north_west: "dr5ruj4".to_string(),
-            south_west: "dr5ru46".to_string(),
-            south_east: "dr5ru6r".to_string(),
-            north_east: "dr5rump".to_string(),
+            north_west: "dr5ruj4".into(),
+            south_west: "dr5ru46".into(),
+            south_east: "dr5ru6r".into(),
+            north_east: "dr5rump".into(),
         };
 
         let geo_area = rect.geohash_regions(7, 1000).unwrap();
@@ -503,10 +504,10 @@ mod tests {
     #[test]
     fn nyc_rectangle_geo_area_low_precision() {
         let rect = GeohashBoundingBox {
-            north_west: "dr5ruj".to_string(),
-            south_west: "dr5ru4".to_string(),
-            south_east: "dr5ru6".to_string(),
-            north_east: "dr5rum".to_string(),
+            north_west: "dr5ruj".into(),
+            south_west: "dr5ru4".into(),
+            south_east: "dr5ru6".into(),
+            north_east: "dr5rum".into(),
         };
 
         let mut geo_area = rect.geohash_regions(6, 100).unwrap();
@@ -889,7 +890,7 @@ mod tests {
 
     #[test]
     fn turn_geo_hash_to_box() {
-        let geo_box = geo_hash_to_box(&"dr5ruj4477kd".to_string());
+        let geo_box = geo_hash_to_box(&"dr5ruj4477kd".into());
         let center = GeoPoint {
             lat: 40.76517460,
             lon: -74.00101399,
@@ -900,10 +901,10 @@ mod tests {
     #[test]
     fn common_prefix() {
         let geo_hashes = vec![
-            "abcd123".to_string(),
-            "abcd2233".to_string(),
-            "abcd3213".to_string(),
-            "abcd533".to_string(),
+            "abcd123".into(),
+            "abcd2233".into(),
+            "abcd3213".into(),
+            "abcd533".into(),
         ];
 
         let common_prefix = common_hash_prefix(&geo_hashes);
@@ -911,10 +912,10 @@ mod tests {
         assert_eq!(&common_prefix, "abcd");
 
         let geo_hashes = vec![
-            "abcd123".to_string(),
-            "bbcd2233".to_string(),
-            "cbcd3213".to_string(),
-            "dbcd533".to_string(),
+            "abcd123".into(),
+            "bbcd2233".into(),
+            "cbcd3213".into(),
+            "dbcd533".into(),
         ];
 
         let common_prefix = common_hash_prefix(&geo_hashes);
