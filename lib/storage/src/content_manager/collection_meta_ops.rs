@@ -180,8 +180,8 @@ impl CreateCollectionOperation {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
-    /// Vector data parameters to update.
-    /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
+    /// Map of vector data parameters to update for each named vector.
+    /// To update parameters in a collection having a single unnamed vector, use an empty string as name.
     #[validate]
     pub vectors: Option<VectorsConfigDiff>,
     /// Custom params for Optimizers.  If none - it is left unchanged.
