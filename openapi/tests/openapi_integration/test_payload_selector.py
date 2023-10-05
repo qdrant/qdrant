@@ -190,45 +190,6 @@ def test_payload_selectors():
         }
     }
 
-    # Search with payload selector include at array index
-    response = request_with_validation(
-        api='/collections/{collection_name}/points/scroll',
-        method="POST",
-        path_params={'collection_name': collection_name},
-        body={
-            "filter": {
-                "must": [
-                    {
-                        "key": "country.name",
-                        "match": {
-                            "value": "Germany",
-                        }
-                    }
-                ]
-            },
-            "limit": 3,
-            "with_payload": {
-                "include": ["country.cities[0]"],
-            },
-        }
-    )
-    assert response.ok
-    assert response.json()['result']['points'][0]['payload'] == {
-        "country": {
-            "cities": [
-                {
-                    "name": "Berlin",
-                    "population": 3.7,
-                    "location": {
-                        "lon": 13.76116,
-                        "lat": 52.33826,
-                    },
-                    "sightseeing": ["Brandenburg Gate", "Reichstag"]
-                },
-            ],
-        }
-    }
-
     # Search with payload selector exclude paths
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
@@ -277,7 +238,7 @@ def test_payload_selectors():
             },
             "limit": 3,
             "with_payload": {
-                "exclude": ["country.name", "country.capital", "country.cities[1]"],
+                "exclude": ["country.name", "country.capital"],
             },
         }
     )
@@ -295,6 +256,15 @@ def test_payload_selectors():
                     "sightseeing": ["Brandenburg Gate", "Reichstag"]
                 },
                 {
+                    "name": "Munich",
+                    "population": 1.5,
+                    "location": {
+                        "lon": 11.57549,
+                        "lat": 48.13743,
+                    },
+                    "sightseeing": ["Marienplatz", "Olympiapark"]
+                },
+                {
                     "name": "Hamburg",
                     "population": 1.8,
                     "location": {
@@ -306,5 +276,3 @@ def test_payload_selectors():
             ],
         }
     }
-
-

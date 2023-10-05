@@ -1841,12 +1841,22 @@ impl PayloadSelector {
         })
     }
 
+    /// Payload selector to arrays is not supported because it requires extra care with deletion ordering within arrays.
+    fn filter_out_path_to_array(paths: &[PayloadKeyType]) -> Vec<PayloadKeyType> {
+        paths
+            .iter()
+            .filter(|path| !path.contains('['))
+            .cloned()
+            .collect()
+    }
+
     fn include_payload_selector(
         source: &Map<String, Value>,
         include: &[PayloadKeyType],
     ) -> Payload {
+        let include = Self::filter_out_path_to_array(include);
         let mut new_json_map = Map::new();
-        for path in include.iter() {
+        for path in include.iter().as_ref() {
             let focus = get_value_from_json_map(path, source);
             match focus {
                 MultiValue::Single(element) => {
@@ -1865,11 +1875,7 @@ impl PayloadSelector {
 
     fn exclude_payload_selector(source: Map<String, Value>, exclude: &[PayloadKeyType]) -> Payload {
         let mut json_map = source;
-        let mut exclude = exclude.to_vec();
-        // sort by length, longest first, so we can have a stable cursor when deleting array elements
-        exclude.sort_by(|a, b| b.cmp(a));
-        // remove duplicate to avoid removing incorrect field when targeting array elements
-        exclude.dedup();
+        let exclude = Self::filter_out_path_to_array(exclude);
         // remove all excluded fields
         for path in exclude.iter() {
             let _removed = remove_value_from_json_map(path, &mut json_map);
@@ -2849,17 +2855,60 @@ mod tests {
             }
         });
         assert_eq!(payload, expected.into());
+    }
 
-        // include array element
-        let selector = PayloadSelector::new_include(vec!["b.e.f[0]".to_string()]);
-        let payload = selector.process(payload);
-        let expected = json!({
+    #[test]
+    fn test_payload_selector_array_include() {
+        let payload = json!({
+            "a": 1,
             "b": {
-                "e": {
-                    "f": [1],
-                }
+                "c": 123,
+                "f": [1,2,3,4,5],
             }
         });
+
+        // handles duplicates
+        let selector = PayloadSelector::new_include(vec!["a".to_string(), "a".to_string()]);
+        let payload = selector.process(payload.into());
+
+        let expected = json!({
+            "a": 1
+        });
+        assert_eq!(payload, expected.into());
+
+        // ignore path that points to array
+        let selector = PayloadSelector::new_include(vec!["b.f[0]".to_string()]);
+        let payload = selector.process(payload);
+
+        // nothing included
+        let expected = json!({});
+        assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_no_implicit_array_include() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": [
+                    {
+                        "d": 1,
+                        "e": 2
+                    },
+                    {
+                        "d": 3,
+                        "e": 4
+                    }
+                ],
+            }
+        });
+
+        // no implicit array traversal is guaranteed by our JsonPath infrastructure, not by the selector itself.
+        let selector = PayloadSelector::new_include(vec!["b.c.d".to_string()]);
+        let payload = selector.process(payload.into());
+
+        // nothing included
+        let expected = json!({});
         assert_eq!(payload, expected.into());
     }
 
@@ -2917,7 +2966,7 @@ mod tests {
     }
 
     #[test]
-    fn test_payload_selector_duplicate_exclude() {
+    fn test_payload_selector_array_exclude() {
         let payload = json!({
             "a": 1,
             "b": {
@@ -2926,43 +2975,28 @@ mod tests {
             }
         });
 
-        // exclude duplicate
-        let selector =
-            PayloadSelector::new_exclude(vec!["b.f[1]".to_string(), "b.f[1]".to_string()]);
+        // handles duplicates
+        let selector = PayloadSelector::new_exclude(vec!["a".to_string(), "a".to_string()]);
         let payload = selector.process(payload.into());
 
         // single removal
         let expected = json!({
-            "a": 1,
-            "b": {
-                "c": 123,
-                "f": [1,3,4,5],
-            }
-        });
-        assert_eq!(payload, expected.into());
-    }
-
-    #[test]
-    fn test_payload_selector_stable_exclude() {
-        let payload = json!({
-            "a": 1,
             "b": {
                 "c": 123,
                 "f": [1,2,3,4,5],
             }
         });
+        assert_eq!(payload, expected.into());
 
-        // exclude duplicate
-        let selector =
-            PayloadSelector::new_exclude(vec!["b.f[1]".to_string(), "b.f[3]".to_string()]);
-        let payload = selector.process(payload.into());
+        // ignore path that points to array
+        let selector = PayloadSelector::new_exclude(vec!["b.f[0]".to_string()]);
+        let payload = selector.process(payload);
 
-        // stable removal
+        // no removal
         let expected = json!({
-            "a": 1,
             "b": {
                 "c": 123,
-                "f": [1,3,5],
+                "f": [1,2,3,4,5],
             }
         });
         assert_eq!(payload, expected.into());
