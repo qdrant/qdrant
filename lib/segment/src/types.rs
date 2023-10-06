@@ -2889,9 +2889,9 @@ mod tests {
         });
         assert_eq!(selected_payload, expected.into());
 
-        // with implicit array traversal
+        // with explicit array traversal ([] notation)
         let selector = PayloadSelector::new_include(vec!["b.c[].d".to_string()]);
-        let selected_payload = selector.process(payload.into());
+        let selected_payload = selector.process(payload.clone().into());
 
         let expected = json!({
             "b": {
@@ -2899,6 +2899,17 @@ mod tests {
                     {"d": 1},
                     {"d": 3}
                 ]
+            }
+        });
+        assert_eq!(selected_payload, expected.into());
+
+        // shortcuts implicit array traversal
+        let selector = PayloadSelector::new_include(vec!["b.c.d".to_string()]);
+        let selected_payload = selector.process(payload.into());
+
+        let expected = json!({
+            "b": {
+                "c": []
             }
         });
         assert_eq!(selected_payload, expected.into());
