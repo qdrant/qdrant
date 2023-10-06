@@ -1,3 +1,4 @@
+// source: https://github.com/grpc/grpc/blob/master/doc/health-checking.md#service-definition
 syntax = "proto3";
 
 package grpc.health.v1;

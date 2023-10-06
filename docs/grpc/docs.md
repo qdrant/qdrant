@@ -1272,7 +1272,7 @@ Note: 1kB = 1 vector of size 256. |
 <p align="right"><a href="#top">Top</a></p>
 
 ## health_check.proto
-
+source: https://github.com/grpc/grpc/blob/master/doc/health-checking.md#service-definition
 
 
 <a name="grpc-health-v1-HealthCheckRequest"></a>
