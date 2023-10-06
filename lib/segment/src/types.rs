@@ -22,7 +22,8 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils;
 use crate::common::utils::{
-    get_value_from_json_map, insert_at_path, remove_value_from_json_map, MultiValue,
+    check_exclude_pattern, check_include_pattern, filter_json_values, get_value_from_json_map,
+    MultiValue,
 };
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
@@ -1841,57 +1842,23 @@ impl PayloadSelector {
         })
     }
 
-    /// Payload selector to arrays is not supported because it requires extra care with deletion ordering within arrays.
-    fn filter_out_path_to_array(paths: &[PayloadKeyType]) -> Vec<PayloadKeyType> {
-        paths
-            .iter()
-            .filter(|path| !path.contains('['))
-            .cloned()
-            .collect()
-    }
-
-    fn include_payload_selector(
-        source: &Map<String, Value>,
-        include: &[PayloadKeyType],
-    ) -> Payload {
-        let include = Self::filter_out_path_to_array(include);
-        let mut new_json_map = Map::new();
-        for path in include.iter().as_ref() {
-            let focus = get_value_from_json_map(path, source);
-            match focus {
-                MultiValue::Single(element) => {
-                    if let Some(element) = element {
-                        insert_at_path(path, &mut new_json_map, element.clone());
-                    }
-                }
-                MultiValue::Multiple(elements) => {
-                    let array = elements.into_iter().cloned().collect();
-                    insert_at_path(path, &mut new_json_map, Value::Array(array));
-                }
-            }
-        }
-        new_json_map.into()
-    }
-
-    fn exclude_payload_selector(source: Map<String, Value>, exclude: &[PayloadKeyType]) -> Payload {
-        let mut json_map = source;
-        let exclude = Self::filter_out_path_to_array(exclude);
-        // remove all excluded fields
-        for path in exclude.iter() {
-            let _removed = remove_value_from_json_map(path, &mut json_map);
-        }
-        json_map.into()
-    }
-
     /// Process payload selector
     pub fn process(&self, x: Payload) -> Payload {
         match self {
-            PayloadSelector::Include(selector) => {
-                Self::include_payload_selector(&x.0, &selector.include)
-            }
-            PayloadSelector::Exclude(selector) => {
-                Self::exclude_payload_selector(x.0, &selector.exclude)
-            }
+            PayloadSelector::Include(selector) => filter_json_values(&x.0, |key, _| {
+                selector
+                    .include
+                    .iter()
+                    .any(|pattern| check_include_pattern(pattern, key))
+            })
+            .into(),
+            PayloadSelector::Exclude(selector) => filter_json_values(&x.0, |key, _| {
+                selector
+                    .exclude
+                    .iter()
+                    .all(|pattern| !check_exclude_pattern(pattern, key))
+            })
+            .into(),
         }
     }
 }
@@ -2903,13 +2870,38 @@ mod tests {
             }
         });
 
-        // no implicit array traversal is guaranteed by our JsonPath infrastructure, not by the selector itself.
-        let selector = PayloadSelector::new_include(vec!["b.c.d".to_string()]);
-        let payload = selector.process(payload.into());
+        let selector = PayloadSelector::new_include(vec!["b.c".to_string()]);
+        let selected_payload = selector.process(payload.clone().into());
 
-        // nothing included
-        let expected = json!({});
-        assert_eq!(payload, expected.into());
+        let expected = json!({
+            "b": {
+                "c": [
+                    {
+                        "d": 1,
+                        "e": 2
+                    },
+                    {
+                        "d": 3,
+                        "e": 4
+                    }
+                ]
+            }
+        });
+        assert_eq!(selected_payload, expected.into());
+
+        // with implicit array traversal
+        let selector = PayloadSelector::new_include(vec!["b.c[].d".to_string()]);
+        let selected_payload = selector.process(payload.into());
+
+        let expected = json!({
+            "b": {
+                "c": [
+                    {"d": 1},
+                    {"d": 3}
+                ]
+            }
+        });
+        assert_eq!(selected_payload, expected.into());
     }
 
     #[test]

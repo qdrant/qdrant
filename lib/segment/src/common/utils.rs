@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -321,106 +320,108 @@ pub fn remove_value_from_json_map(
     }
 }
 
-/// Insert new_value at a given JSON path into a JSON array
-pub fn insert_at_array_path(
-    array_path: &str,
-    array_index: Option<u32>,
-    rest_of_path: Option<&str>,
-    json_map: &mut serde_json::Map<String, Value>,
-    new_value: Value,
-) {
-    match json_map.get_mut(array_path) {
-        None => {
-            // create array
-            json_map.insert(array_path.to_string(), Value::Array(vec![]));
-            insert_at_array_path(array_path, array_index, rest_of_path, json_map, new_value);
-        }
-        Some(Value::Array(array)) => {
-            match rest_of_path {
-                None => {
-                    if let Some(array_index) = array_index {
-                        let array_index = array_index as usize;
-                        match array.len().cmp(&array_index) {
-                            Ordering::Greater => {
-                                // overwrite value at position
-                                array[array_index] = new_value;
-                            }
-                            Ordering::Less => {
-                                // ignore - no value at position
-                            }
-                            Ordering::Equal => {
-                                // append value at the end
-                                array.push(new_value);
-                            }
-                        }
-                    } else {
-                        // append value if no index provided
-                        array.push(new_value);
-                    }
-                }
-                Some(rest_path) => {
-                    // dig deeper
-                    for value in array.iter_mut() {
-                        if let Value::Object(map) = value {
-                            insert_at_path(rest_path, map, new_value.clone());
-                        }
-                    }
-                }
-            }
-        }
-        Some(_value) => {
-            // overwrite existing
-            json_map.insert(array_path.to_string(), Value::Array(vec![]));
-            insert_at_array_path(array_path, array_index, rest_of_path, json_map, new_value);
-        }
-    }
+/// Check if a path is included in a list of patterns
+///
+/// Basically, it checks if either the pattern or path is a prefix of the other.
+/// Examples:
+/// ```
+/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a.b.c"));
+/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a.b"));
+/// assert!(!segment::common::utils::check_include_pattern("a.b.c", "a.b.d"));
+/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a"));
+/// assert!(segment::common::utils::check_include_pattern("a", "a.d"));
+/// ```
+pub fn check_include_pattern(pattern: &str, path: &str) -> bool {
+    pattern
+        .split(['.', '['])
+        .zip(path.split(['.', '[']))
+        .all(|(p, v)| p == v)
 }
 
-/// Insert value at a given JSON path in JSON map
-pub fn insert_at_path(path: &str, json_map: &mut serde_json::Map<String, Value>, new_value: Value) {
-    match path.split_once('.') {
-        Some((element, rest_path)) => {
-            // check if targeting array
-            match parse_array_path(element) {
-                Some((array_element_path, array_index)) => insert_at_array_path(
-                    array_element_path,
-                    array_index,
-                    Some(rest_path),
-                    json_map,
-                    new_value,
-                ),
-                None => {
-                    // no array notation
-                    if rest_path.is_empty() {
-                        json_map.insert(element.to_string(), new_value);
-                    } else {
-                        match json_map.get_mut(element) {
-                            None => {
-                                // create entry
-                                let mut map = serde_json::Map::new();
-                                insert_at_path(rest_path, &mut map, new_value);
-                                json_map.insert(element.to_string(), Value::Object(map));
-                            }
-                            Some(Value::Object(map)) => insert_at_path(rest_path, map, new_value),
-                            Some(_value) => {
-                                // overwrite existing
-                                let mut map = serde_json::Map::new();
-                                insert_at_path(rest_path, &mut map, new_value);
-                                json_map.insert(element.to_string(), Value::Object(map));
-                            }
-                        }
-                    }
+/// Check if a path should be excluded by a pattern
+///
+/// Basically, it checks if pattern is a prefix of path, but not the other way around.
+///
+/// ```
+/// assert!(segment::common::utils::check_exclude_pattern("a.b.c", "a.b.c"));
+/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a.b"));
+/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a.b.d"));
+/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a"));
+/// assert!(segment::common::utils::check_exclude_pattern("a", "a.d"));
+/// ```
+
+pub fn check_exclude_pattern(pattern: &str, path: &str) -> bool {
+    if pattern.len() > path.len() {
+        return false;
+    }
+    pattern
+        .split(['.', '['])
+        .zip(path.split(['.', '[']))
+        .all(|(p, v)| p == v)
+}
+
+fn _filter_json_values<'a>(
+    mut path: String,
+    value: &'a Value,
+    filter: &dyn Fn(&str, &Value) -> bool,
+) -> (String, Value) {
+    let value = match &value {
+        Value::Null => value.clone(),
+        Value::Bool(_) => value.clone(),
+        Value::Number(_) => value.clone(),
+        Value::String(_) => value.clone(),
+        Value::Array(array) => {
+            let mut new_array = Vec::new();
+            path.push_str("[]");
+            for value in array.iter() {
+                if filter(&path, value) {
+                    let (path_, value) = _filter_json_values(path, value, filter);
+                    path = path_;
+                    new_array.push(value);
                 }
             }
+            path.truncate(path.len() - 2);
+            Value::Array(new_array)
         }
-        None => match parse_array_path(path) {
-            Some((array_element_path, array_index)) => {
-                insert_at_array_path(array_element_path, array_index, None, json_map, new_value);
+        Value::Object(object) => {
+            let mut new_object = serde_json::Map::new();
+            for (key, value) in object.iter() {
+                if !path.is_empty() {
+                    path.push('.');
+                }
+                path.push_str(key);
+                if filter(&path, value) {
+                    let (path_, value) = _filter_json_values(path, value, filter);
+                    path = path_;
+                    new_object.insert(key.clone(), value);
+                }
+                path.truncate(path.len() - key.len());
+                if !path.is_empty() {
+                    path.pop();
+                }
             }
-            None => {
-                json_map.insert(path.to_string(), new_value);
-            }
-        },
+            Value::Object(new_object)
+        }
+    };
+    (path, value)
+}
+
+/// Filter json map based on external filter function
+///
+/// Filter function takes path and value as input and returns true if the value should be kept
+pub fn filter_json_values(
+    json_map: &serde_json::Map<String, Value>,
+    filter: impl Fn(&str, &Value) -> bool,
+) -> serde_json::Map<String, Value> {
+    let path = "".to_string();
+    let (_, res) = _filter_json_values(path, &Value::Object(json_map.clone()), &filter);
+
+    if let Value::Object(map) = res {
+        map
+    } else {
+        // This should never happen, because _filter_json_values always returns same
+        // type as input
+        panic!("Unexpected value type")
     }
 }
 
@@ -736,8 +737,8 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_at_path() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+    fn test_filter_json() {
+        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
                 "a": {
@@ -754,36 +755,26 @@ mod tests {
         )
         .unwrap();
 
-        // insert root
-        insert_at_path("h", &mut map, Value::Number(4.into()));
-        assert_eq!(map.get("h"), Some(&Value::Number(4.into())));
+        let res = filter_json_values(&map, |path, _value| {
+            path.starts_with("a.b[].c") || "a.b[].c".starts_with(path)
+        });
 
-        // insert new nested
-        insert_at_path("a.a-new", &mut map, Value::Number(5.into()));
         assert_eq!(
-            map.get("a").unwrap().get("a-new"),
-            Some(&Value::Number(5.into()))
-        );
-
-        // insert overwrite existing
-        insert_at_path("a.f", &mut map, Value::Number(6.into()));
-        assert_eq!(
-            map.get("a").unwrap().get("f"),
-            Some(&Value::Number(6.into()))
-        );
-
-        // insert into array existing index
-        insert_at_path("g[2]", &mut map, Value::String("g2-new".to_string()));
-        assert_eq!(
-            map.get("g").unwrap().as_array().unwrap()[2],
-            Value::String("g2-new".to_string())
-        );
-
-        // append into array
-        insert_at_path("g[]", &mut map, Value::String("g3".to_string()));
-        assert_eq!(
-            map.get("g").unwrap().as_array().unwrap()[3],
-            Value::String("g3".to_string())
+            res,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": [
+                            { "c": 1 },
+                            { "c": 2 },
+                            {}
+                        ]
+                    }
+                }
+                "#,
+            )
+            .unwrap()
         );
     }
 }

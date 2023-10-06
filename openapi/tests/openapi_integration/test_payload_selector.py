@@ -190,6 +190,45 @@ def test_payload_selectors():
         }
     }
 
+    # Search with payload selector include paths
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "key": "country.name",
+                        "match": {
+                            "value": "Germany",
+                        }
+                    }
+                ]
+            },
+            "limit": 3,
+            "with_payload": {
+                "include": ["country.cities[].name"],
+            },
+        }
+    )
+    assert response.ok
+    assert response.json()['result']['points'][0]['payload'] == {
+        "country": {
+            "cities": [
+                {
+                    "name": "Berlin",
+                },
+                {
+                    "name": "Munich"
+                },
+                {
+                    "name": "Hamburg"
+                }
+            ],
+        }
+    }
+
     # Search with payload selector exclude paths
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
