@@ -69,6 +69,14 @@
 - [collections_service.proto](#collections_service-proto)
     - [Collections](#qdrant-Collections)
   
+- [health_check.proto](#health_check-proto)
+    - [HealthCheckRequest](#grpc-health-v1-HealthCheckRequest)
+    - [HealthCheckResponse](#grpc-health-v1-HealthCheckResponse)
+  
+    - [HealthCheckResponse.ServingStatus](#grpc-health-v1-HealthCheckResponse-ServingStatus)
+  
+    - [Health](#grpc-health-v1-Health)
+  
 - [json_with_int.proto](#json_with_int-proto)
     - [ListValue](#qdrant-ListValue)
     - [Struct](#qdrant-Struct)
@@ -1256,6 +1264,76 @@ Note: 1kB = 1 vector of size 256. |
 | ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for all existing collections |
 | CollectionClusterInfo | [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest) | [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse) | Get cluster information for a collection |
 | UpdateCollectionClusterSetup | [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest) | [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse) | Update cluster setup for a collection |
+
+ 
+
+
+
+<a name="health_check-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## health_check.proto
+source: https://github.com/grpc/grpc/blob/master/doc/health-checking.md#service-definition
+
+
+<a name="grpc-health-v1-HealthCheckRequest"></a>
+
+### HealthCheckRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| service | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="grpc-health-v1-HealthCheckResponse"></a>
+
+### HealthCheckResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| status | [HealthCheckResponse.ServingStatus](#grpc-health-v1-HealthCheckResponse-ServingStatus) |  |  |
+
+
+
+
+
+ 
+
+
+<a name="grpc-health-v1-HealthCheckResponse-ServingStatus"></a>
+
+### HealthCheckResponse.ServingStatus
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| UNKNOWN | 0 |  |
+| SERVING | 1 |  |
+| NOT_SERVING | 2 |  |
+| SERVICE_UNKNOWN | 3 | Used only by the Watch method. |
+
+
+ 
+
+ 
+
+
+<a name="grpc-health-v1-Health"></a>
+
+### Health
+
+
+| Method Name | Request Type | Response Type | Description |
+| ----------- | ------------ | ------------- | ------------|
+| Check | [HealthCheckRequest](#grpc-health-v1-HealthCheckRequest) | [HealthCheckResponse](#grpc-health-v1-HealthCheckResponse) |  |
 
  
 
