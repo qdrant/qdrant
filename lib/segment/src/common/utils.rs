@@ -421,7 +421,7 @@ pub fn filter_json_values(
     } else {
         // This should never happen, because _filter_json_values always returns same
         // type as input
-        panic!("Unexpected value type")
+        unreachable!("Unexpected value type")
     }
 }
 
