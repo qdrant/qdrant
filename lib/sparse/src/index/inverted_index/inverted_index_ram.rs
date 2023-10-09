@@ -15,10 +15,20 @@ impl InvertedIndexRam {
     pub fn get(&self, id: &DimId) -> Option<&PostingList> {
         self.postings.get((*id) as usize)
     }
+
+    pub fn indexed_vector_count(&self) -> usize {
+        self.postings.len()
+    }
 }
 
 pub struct InvertedIndexBuilder {
     postings: HashMap<DimId, PostingList>,
+}
+
+impl Default for InvertedIndexBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InvertedIndexBuilder {
