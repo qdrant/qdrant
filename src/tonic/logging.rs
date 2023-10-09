@@ -44,7 +44,7 @@ where
 
         let method_name = request.uri().path().to_string();
         let instant = std::time::Instant::now();
-        log::trace!("gRPC request starting: {}", method_name);
+        log::info!("gRPC request starting: {} on port {}", method_name, request.uri().port());
         let future = inner.call(request);
         Box::pin(async move {
             let response = future.await;
