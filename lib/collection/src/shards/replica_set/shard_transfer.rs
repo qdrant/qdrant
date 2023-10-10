@@ -31,10 +31,16 @@ impl ShardReplicaSet {
                     self.shard_id, remote_shard.peer_id,
                 )));
             }
-            Some(shard) => {
+            Some(Shard::Proxy(_)) => {
                 return Err(CollectionError::service_error(format!(
-                    "Cannot proxify local shard {} - {} to peer {} because it is already proxified to another peer",
-                    shard.variant_name(), self.shard_id, remote_shard.peer_id
+                    "Cannot queue proxify local shard {} to peer {} because it already is a proxy",
+                    self.shard_id, remote_shard.peer_id,
+                )));
+            }
+            Some(Shard::Dummy(_)) => {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot proxify local dummy shard {} to peer {}",
+                    self.shard_id, remote_shard.peer_id,
                 )));
             }
             None => {
@@ -76,10 +82,16 @@ impl ShardReplicaSet {
                     self.shard_id, remote_shard.peer_id, proxy.remote_shard.peer_id
                 )));
             }
-            Some(shard) => {
+            Some(Shard::Proxy(_)) => {
                 return Err(CollectionError::service_error(format!(
-                    "Cannot queue proxify local shard {} - {} to peer {} because it is already proxified to another peer",
-                    shard.variant_name(), self.shard_id, remote_shard.peer_id
+                    "Cannot queue proxify local shard {} to peer {} because it already is a proxy",
+                    self.shard_id, remote_shard.peer_id,
+                )));
+            }
+            Some(Shard::Dummy(_)) => {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot proxify local dummy shard {} to peer {}",
+                    self.shard_id, remote_shard.peer_id,
                 )));
             }
             None => {
