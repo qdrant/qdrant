@@ -335,7 +335,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     ) -> Box<dyn RawScorer + 'a> {
         let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
         match quantized_storage {
-            // If `quantization_params` is `Some`, then quantization is *not* ignored
             Some(quantized_storage) if quantization_enabled => quantized_storage.raw_scorer(
                 vector.to_owned(),
                 id_tracker.deleted_point_bitslice(),
