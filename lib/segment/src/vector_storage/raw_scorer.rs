@@ -172,6 +172,9 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: VectorStorag
             vec_deleted,
             is_stopped,
         ),
+        QueryVector::NearestSparse(_sparse_vector) => {
+            unreachable!("Sparse vectors are not supported for metric scorers")
+        }
     }
 }
 

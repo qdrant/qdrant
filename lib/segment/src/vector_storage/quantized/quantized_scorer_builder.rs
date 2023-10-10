@@ -73,6 +73,10 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     QuantizedRecoQueryScorer::new(reco_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
+            QueryVector::NearestSparse(sparse_vector) => unreachable!(
+                "Quantized scorer does not support sparse vectors: {:?}",
+                sparse_vector
+            ),
         }
     }
 }

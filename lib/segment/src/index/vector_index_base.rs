@@ -2,13 +2,13 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use common::types::ScoredPointOffset;
-use sparse::index::inverted_index::InvertedIndex;
 
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
+use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
@@ -39,8 +39,8 @@ pub enum VectorIndexEnum {
     Plain(PlainIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),
     HnswMmap(HNSWIndex<GraphLinksMmap>),
-    SparseRam(InvertedIndex),
-    SparseMmap(InvertedIndex),
+    SparseRam(SparseVectorIndex),
+    SparseMmap(SparseVectorIndex),
 }
 
 impl VectorIndexEnum {
@@ -72,12 +72,11 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::HnswMmap(index) => {
                 index.search(vectors, filter, top, params, is_stopped)
             }
-            // TODO needs a SparseVector object as input
-            VectorIndexEnum::SparseRam(_index) => {
-                unimplemented!("SparseRam search not implemented")
+            VectorIndexEnum::SparseRam(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
             }
-            VectorIndexEnum::SparseMmap(_index) => {
-                unimplemented!("SparseMmap search not implemented")
+            VectorIndexEnum::SparseMmap(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
             }
         }
     }
@@ -87,9 +86,8 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.build_index(stopped),
             VectorIndexEnum::HnswRam(index) => index.build_index(stopped),
             VectorIndexEnum::HnswMmap(index) => index.build_index(stopped),
-            // TODO OperationResult should be pushed to common?
-            VectorIndexEnum::SparseRam(index) => Ok(index.build_index(stopped)?),
-            VectorIndexEnum::SparseMmap(index) => Ok(index.build_index(stopped)?),
+            VectorIndexEnum::SparseRam(index) => index.build_index(stopped),
+            VectorIndexEnum::SparseMmap(index) => index.build_index(stopped),
         }
     }
 
@@ -98,13 +96,8 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.get_telemetry_data(),
             VectorIndexEnum::HnswRam(index) => index.get_telemetry_data(),
             VectorIndexEnum::HnswMmap(index) => index.get_telemetry_data(),
-            // TODO VectorIndexSearchesTelemetry should be pushed to common?
-            VectorIndexEnum::SparseRam(_index) => {
-                unimplemented!("SparseRam telemetry not implemented")
-            }
-            VectorIndexEnum::SparseMmap(_index) => {
-                unimplemented!("SparseMmap telemetry not implemented")
-            }
+            VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(),
+            VectorIndexEnum::SparseMmap(index) => index.get_telemetry_data(),
         }
     }
 

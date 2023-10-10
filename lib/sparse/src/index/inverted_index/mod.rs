@@ -1,6 +1,3 @@
-use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-
 use common::types::ScoredPointOffset;
 
 use crate::common::sparse_vector::SparseVector;
@@ -31,23 +28,5 @@ impl InvertedIndex {
     pub fn search(&self, query: SparseVector, top: usize) -> Vec<ScoredPointOffset> {
         let mut search_context = SearchContext::new(query, top, self);
         search_context.search()
-    }
-
-    pub fn build_index(&mut self, _stopped: &AtomicBool) -> std::io::Result<()> {
-        Ok(())
-    }
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        match self {
-            InvertedIndex::Ram(_index) => vec![],
-            InvertedIndex::Mmap(index) => index.files(),
-        }
-    }
-
-    pub fn indexed_vector_count(&self) -> usize {
-        match self {
-            InvertedIndex::Ram(index) => index.indexed_vector_count(),
-            InvertedIndex::Mmap(index) => index.indexed_vector_count(),
-        }
     }
 }

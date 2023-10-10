@@ -283,6 +283,9 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     is_stopped.unwrap_or(&DEFAULT_STOPPED),
                 ))
             }
+            QueryVector::NearestSparse(_vector) => {
+                unreachable!("AsyncRawScorerBuilder does not support sparse vectors")
+            }
         }
     }
 }

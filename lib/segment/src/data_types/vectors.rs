@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sparse::common::sparse_vector::SparseVector;
 
 use super::named_vectors::NamedVectors;
 use crate::common::utils::transpose_map_into_named_vector;
@@ -232,6 +233,7 @@ impl Named for NamedRecoQuery {
 pub enum QueryVector {
     Nearest(VectorType),
     Recommend(RecoQuery<VectorType>),
+    NearestSparse(SparseVector),
 }
 
 impl From<VectorType> for QueryVector {
