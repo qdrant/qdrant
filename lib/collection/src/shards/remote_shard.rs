@@ -4,10 +4,12 @@ use std::sync::Arc;
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
+use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    InitiateShardTransferRequest, ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal,
+    HttpPortRequest, InitiateShardTransferRequest, ScrollPoints, ScrollPointsInternal,
+    SearchBatchPointsInternal,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -124,6 +126,22 @@ impl RemoteShard {
             .map_err(|err| err.into())
     }
 
+    async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        f: impl Fn(QdrantInternalClient<Channel>) -> O,
+    ) -> CollectionResult<T> {
+        let current_address = self.current_address()?;
+        self.channel_service
+            .channel_pool
+            .with_channel(&current_address, |channel| {
+                let client = QdrantInternalClient::new(channel);
+                let client = client.max_decoding_message_size(usize::MAX);
+                f(client)
+            })
+            .await
+            .map_err(|err| err.into())
+    }
+
     pub fn get_telemetry_data(&self) -> RemoteShardTelemetry {
         RemoteShardTelemetry {
             shard_id: self.id,
@@ -131,6 +149,17 @@ impl RemoteShard {
             searches: self.telemetry_search_durations.lock().get_statistics(),
             updates: self.telemetry_update_durations.lock().get_statistics(),
         }
+    }
+
+    /// Request at what port the remote has the HTTP REST API exposed
+    pub async fn request_http_port(&self) -> CollectionResult<i32> {
+        let res = self
+            .with_qdrant_client(|mut client| async move {
+                client.get_http_port(HttpPortRequest {}).await
+            })
+            .await?
+            .into_inner();
+        Ok(res.port)
     }
 
     pub async fn initiate_transfer(&self) -> CollectionResult<CollectionOperationResponse> {
