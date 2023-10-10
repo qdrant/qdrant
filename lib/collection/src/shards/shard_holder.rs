@@ -385,10 +385,38 @@ impl ShardHolder {
         }
     }
 
+    // TODO: do we want to keep this?
+    async fn assert_shard_is_local_or_queue_proxy(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        let is_local_shard = self
+            .is_shard_local_or_queue_proxy(&shard_id)
+            .await
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        if is_local_shard {
+            Ok(())
+        } else {
+            Err(CollectionError::bad_input(format!(
+                "Shard {shard_id} is not a local shard or queue proxy"
+            )))
+        }
+    }
+
     /// Returns true if shard it explicitly local, false otherwise.
     pub async fn is_shard_local(&self, shard_id: &ShardId) -> Option<bool> {
         match self.get_shard(shard_id) {
             Some(shard) => Some(shard.is_local().await),
+            None => None,
+        }
+    }
+
+    /// Returns true if shard it explicitly local, false otherwise.
+    // TODO: do we want to keep this?
+    pub async fn is_shard_local_or_queue_proxy(&self, shard_id: &ShardId) -> Option<bool> {
+        match self.get_shard(shard_id) {
+            Some(shard) => Some(shard.is_local().await || shard.is_queue_proxy_local().await),
             None => None,
         }
     }
@@ -472,7 +500,8 @@ impl ShardHolder {
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        if !shard.is_local().await {
+        // TODO: also allow here if queue proxy?
+        if !shard.is_local().await && !shard.is_queue_proxy_local().await {
             return Err(CollectionError::bad_input(format!(
                 "Shard {shard_id} is not a local shard"
             )));
@@ -622,7 +651,8 @@ impl ShardHolder {
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
-        self.assert_shard_is_local(shard_id).await?;
+        // TODO: also allow here if queue proxy?
+        self.assert_shard_is_local_or_queue_proxy(shard_id).await?;
         self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)
     }
 
