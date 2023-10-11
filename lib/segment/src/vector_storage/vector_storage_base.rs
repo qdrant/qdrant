@@ -10,7 +10,7 @@ use super::quantized::quantized_vectors::QuantizedVectors;
 use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorOrSparse};
 use crate::types::{Distance, QuantizationConfig};
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
 
@@ -108,6 +108,8 @@ pub enum VectorStorageEnum {
     Simple(SimpleVectorStorage),
     Memmap(Box<MemmapVectorStorage>),
     AppendableMemmap(Box<AppendableMmapVectorStorage>),
+    Sparse(InvertedIndex),
+    SparseMmap(InvertedIndex),
 }
 
 impl VectorStorage for VectorStorageEnum {
@@ -135,6 +137,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
+    // TODO(ivan)
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
         match self {
             VectorStorageEnum::Simple(v) => v.get_vector(key),

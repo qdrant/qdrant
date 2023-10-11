@@ -50,6 +50,8 @@ pub enum OperationError {
     Cancelled { description: String },
     #[error("Validation failed: {description}")]
     ValidationError { description: String },
+    #[error("Sparse conversion failed: {description}")]
+    SparseTypeError { description: String },
 }
 
 impl OperationError {

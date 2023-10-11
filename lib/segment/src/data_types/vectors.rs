@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::named_vectors::NamedVectors;
+use crate::common::operation_error::OperationError;
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::vector_storage::query::reco_query::RecoQuery;
 
@@ -15,6 +16,23 @@ pub const DEFAULT_VECTOR_NAME: &str = "";
 
 /// Type for vector
 pub type VectorType = Vec<VectorElementType>;
+
+#[derive(Debug, Clone)]
+pub enum VectorOrSparse {
+    Vector(VectorType),
+    Sparse(SparseVector),
+}
+
+impl TryInto<VectorType> for VectorOrSparse {
+    type Error = OperationError;
+
+    fn try_into(self) -> Result<VectorType, Self::Error> {
+        match self {
+            VectorOrSparse::Vector(v) => Ok(v),
+            VectorOrSparse::Sparse(v) => Err(OperationError::SparseTypeError{ description: Default::default() }),
+        }
+    }
+}
 
 pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
     NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
@@ -30,6 +48,8 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 pub enum VectorStruct {
     Single(VectorType),
     Multi(HashMap<String, VectorType>),
+    SparseSingle(VectorType),
+    SparseMulti(HashMap<String, VectorType>),
 }
 
 impl VectorStruct {
@@ -38,6 +58,8 @@ impl VectorStruct {
         match self {
             VectorStruct::Single(vector) => vector.is_empty(),
             VectorStruct::Multi(vectors) => vectors.values().all(|v| v.is_empty()),
+            VectorStruct::SparseSingle(vector) => vector.is_empty(),
+            VectorStruct::SparseMulti(vectors) => vectors.values().all(|v| v.is_empty()),
         }
     }
 }
@@ -69,6 +91,8 @@ impl VectorStruct {
         match self {
             VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(v),
             VectorStruct::Multi(v) => v.get(name),
+            VectorStruct::SparseSingle(v) => (name == DEFAULT_VECTOR_NAME).then_some(v),
+            VectorStruct::SparseMulti(v) => v.get(name),
         }
     }
 
@@ -76,6 +100,8 @@ impl VectorStruct {
         match self {
             VectorStruct::Single(v) => default_vector(v),
             VectorStruct::Multi(v) => NamedVectors::from_map(v),
+            VectorStruct::SparseSingle(v) => only_default_vector(&v),
+            VectorStruct::SparseMulti(v) => NamedVectors::from_map(v),
         }
     }
 }
@@ -231,25 +257,24 @@ impl Named for NamedRecoQuery {
 
 #[derive(Debug, Clone)]
 pub enum QueryVector {
-    Nearest(VectorType),
-    Recommend(RecoQuery<VectorType>),
-    NearestSparse(SparseVector),
+    Nearest(VectorOrSparse),
+    Recommend(RecoQuery<VectorOrSparse>),
 }
 
 impl From<VectorType> for QueryVector {
     fn from(vec: VectorType) -> Self {
-        Self::Nearest(vec)
+        Self::Nearest(VectorOrSparse::Vector(vec))
     }
 }
 
 impl<'a> From<&'a [VectorElementType]> for QueryVector {
     fn from(vec: &'a [VectorElementType]) -> Self {
-        Self::Nearest(vec.to_vec())
+        Self::Nearest(VectorOrSparse::Vector(vec.to_vec()))
     }
 }
 
 impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
     fn from(vec: [VectorElementType; N]) -> Self {
-        Self::Nearest(vec.to_vec())
+        Self::Nearest(VectorOrSparse::Vector(vec.to_vec()))
     }
 }

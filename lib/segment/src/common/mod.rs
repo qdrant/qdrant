@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{QueryVector, VectorOrSparse};
 use crate::types::{SegmentConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
@@ -49,7 +49,6 @@ fn _check_query_vector(
         QueryVector::Recommend(reco_query) => reco_query
             .iter_all()
             .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
-        QueryVector::NearestSparse(_sparse) => (),
     }
 
     Ok(())
@@ -102,18 +101,23 @@ fn get_vector_config_or_error<'a>(
 ///
 /// Returns an error if incompatible.
 fn check_vector_against_config(
-    vector: &[VectorElementType],
+    vector: &VectorOrSparse,
     vector_config: &VectorDataConfig,
 ) -> OperationResult<()> {
-    // Check dimensionality
-    let dim = vector_config.size;
-    if vector.len() != dim {
-        return Err(OperationError::WrongVector {
-            expected_dim: dim,
-            received_dim: vector.len(),
-        });
+    match vector {
+        VectorOrSparse::Vector(vector) => {
+            // Check dimensionality
+            let dim = vector_config.size;
+            if vector.len() != dim {
+                return Err(OperationError::WrongVector {
+                    expected_dim: dim,
+                    received_dim: vector.len(),
+                });
+            }
+            Ok(())
+        }
+        VectorOrSparse::Sparse(sparse_vector) => todo!(),
     }
-    Ok(())
 }
 
 pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {

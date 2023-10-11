@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use sparse::common::sparse_vector::SparseVector;
+
 use super::tiny_map;
 use super::vectors::{VectorElementType, DEFAULT_VECTOR_NAME};
 use crate::types::Distance;
@@ -8,10 +10,13 @@ use crate::types::Distance;
 type CowKey<'a> = Cow<'a, str>;
 type CowValue<'a> = Cow<'a, [VectorElementType]>;
 type TinyMap<'a> = tiny_map::TinyMap<CowKey<'a>, CowValue<'a>>;
+type SparseCowValue<'a> = Cow<'a, SparseVector>;
+type SparseTinyMap<'a> = tiny_map::TinyMap<CowKey<'a>, SparseCowValue<'a>>;
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct NamedVectors<'a> {
-    map: TinyMap<'a>,
+pub enum NamedVectors<'a> {
+    Vectors(TinyMap<'a>),
+    Sparse(SparseTinyMap<'a>),
 }
 
 impl<'a> NamedVectors<'a> {

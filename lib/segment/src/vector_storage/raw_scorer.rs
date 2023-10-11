@@ -5,6 +5,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::query_scorer::reco_query_scorer::RecoQueryScorer;
 use super::{VectorStorage, VectorStorageEnum};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -129,7 +130,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_scorer_with_metric::<CosineMetric, _>(
             query,
@@ -157,25 +158,22 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: VectorStorag
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
-    match query {
+    Ok(match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<TMetric, TVectorStorage>::new(vector, vector_storage),
+            MetricQueryScorer::<TMetric, TVectorStorage>::new(vector.try_into()?, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
         ),
         QueryVector::Recommend(reco_query) => raw_scorer_from_query_scorer(
-            RecoQueryScorer::<TMetric, TVectorStorage>::new(reco_query, vector_storage),
+            RecoQueryScorer::<TMetric, TVectorStorage>::new(vector.try_into()?, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::NearestSparse(_sparse_vector) => {
-            unreachable!("Sparse vectors are not supported for metric scorers")
-        }
-    }
+    })
 }
 
 pub fn raw_scorer_from_query_scorer<'a, TQueryScorer: QueryScorer + 'a>(
