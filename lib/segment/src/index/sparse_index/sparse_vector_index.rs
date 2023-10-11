@@ -26,7 +26,7 @@ impl VectorIndex for SparseVectorIndex {
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
-        _is_stopped: &AtomicBool,
+        is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         let sparse_vectors: Vec<SparseVector> = vectors
             .iter()
@@ -35,11 +35,10 @@ impl VectorIndex for SparseVectorIndex {
                 _ => panic!("SparseIndex::search() called with non-sparse query vector"), // TODO error
             })
             .collect();
-        // TODO make search cancellable with `is_stopped`
         match filter {
             None => sparse_vectors
                 .iter()
-                .map(|v| self.inverted_index.search(v.clone(), top))
+                .map(|v| self.inverted_index.search(v.clone(), top, is_stopped))
                 .collect(),
             Some(query_filter) => {
                 let payload_index = self.payload_index.borrow();

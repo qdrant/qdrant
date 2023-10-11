@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::types::ScoredPointOffset;
 
 use crate::common::sparse_vector::SparseVector;
@@ -25,8 +27,13 @@ impl InvertedIndex {
         }
     }
 
-    pub fn search(&self, query: SparseVector, top: usize) -> Vec<ScoredPointOffset> {
-        let mut search_context = SearchContext::new(query, top, self);
+    pub fn search(
+        &self,
+        query: SparseVector,
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        let mut search_context = SearchContext::new(query, top, self, is_stopped);
         search_context.search()
     }
 }
