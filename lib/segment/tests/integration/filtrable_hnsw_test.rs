@@ -137,7 +137,7 @@ fn test_filterable_hnsw() {
     let top = 3;
     let mut hits = 0;
     let attempts = 100;
-    for _i in 0..attempts {
+    for i in 0..attempts {
         let query = random_vector(&mut rnd, dim).into();
 
         let range_size = 40;
@@ -157,8 +157,8 @@ fn test_filterable_hnsw() {
         let filter_query = Some(&filter);
         // let filter_query = None;
 
-        let index_result = hnsw_index.search_with_graph(
-            &query,
+        let index_result = hnsw_index.search(
+            &[&query],
             filter_query,
             top,
             Some(&SearchParams {
@@ -168,12 +168,21 @@ fn test_filterable_hnsw() {
             &false.into(),
         );
 
+        // check that search was performed using HNSW index
+        assert_eq!(
+            hnsw_index
+                .get_telemetry_data()
+                .filtered_large_cardinality
+                .count,
+            i + 1
+        );
+
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
             .search(&[&query], filter_query, top, None, &false.into());
 
-        if plain_result.get(0).unwrap() == &index_result {
+        if plain_result == index_result {
             hits += 1;
         }
     }
