@@ -20,6 +20,7 @@ use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
+use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
@@ -32,6 +33,7 @@ use crate::types::{
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorage;
 
@@ -71,6 +73,12 @@ fn create_segment(
         .vector_data
         .keys()
         .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name))
+        .chain(
+            config
+                .sparse_vector_data
+                .keys()
+                .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name)),
+        )
         .collect();
     let database = open_db(segment_path, &vector_db_names)
         .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
@@ -85,7 +93,14 @@ fn create_segment(
     let appendable_flag = config
         .vector_data
         .values()
-        .all(|vector_config| vector_config.is_appendable());
+        .map(|vector_config| vector_config.is_appendable())
+        .chain(
+            config
+                .sparse_vector_data
+                .values()
+                .map(|sparse_vector_config| sparse_vector_config.is_appendable()),
+        )
+        .all(|v| v);
 
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
@@ -182,6 +197,50 @@ fn create_segment(
                 vector_storage,
                 vector_index,
                 quantized_vectors,
+            },
+        );
+    }
+
+    for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
+        let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+        let vector_index_path = get_vector_index_path(segment_path, vector_name);
+
+        let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+        let vector_storage = open_simple_sparse_vector_storage(database.clone(), &db_column_name)?;
+
+        // Warn when number of points between ID tracker and storage differs
+        let point_count = id_tracker.borrow().total_point_count();
+        let vector_count = vector_storage.borrow().total_vector_count();
+        if vector_count != point_count {
+            log::debug!(
+                "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {})",
+                vector_storage_path.display(),
+            );
+        }
+
+        let vector_index = match sparse_vector_config.index.and_then(|c| c.on_disk) {
+            Some(true) => sp(VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
+                sparse_vector_config.index.unwrap_or_default(),
+                id_tracker.clone(),
+                vector_storage.clone(),
+                payload_index.clone(),
+                &vector_index_path,
+            )?)),
+            _ => sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
+                sparse_vector_config.index.unwrap_or_default(),
+                id_tracker.clone(),
+                vector_storage.clone(),
+                payload_index.clone(),
+                &vector_index_path,
+            )?)),
+        };
+
+        vector_data.insert(
+            vector_name.to_owned(),
+            VectorData {
+                vector_storage,
+                vector_index,
+                quantized_vectors: None,
             },
         );
     }

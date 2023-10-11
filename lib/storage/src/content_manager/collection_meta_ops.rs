@@ -1,9 +1,13 @@
+use std::collections::BTreeMap;
+
 use collection::config::{CollectionConfig, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
 };
-use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
+use collection::operations::types::{
+    SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
+};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey};
@@ -102,6 +106,7 @@ pub struct InitFrom {
 pub struct CreateCollection {
     /// Vector data config.
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
+    #[serde(default)]
     #[validate]
     pub vectors: VectorsConfig,
     /// For auto sharding:
@@ -156,6 +161,9 @@ pub struct CreateCollection {
     #[serde(default, alias = "quantization")]
     #[validate]
     pub quantization_config: Option<QuantizationConfig>,
+    /// Sparse vector data config.
+    #[validate]
+    pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -210,6 +218,9 @@ pub struct UpdateCollection {
     #[serde(default, alias = "quantization")]
     #[validate]
     pub quantization_config: Option<QuantizationConfigDiff>,
+    /// Map of sparse vector data parameters to update for each sparse vector.
+    #[validate]
+    pub sparse_vectors: Option<SparseVectorsConfig>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -231,6 +242,7 @@ impl UpdateCollectionOperation {
                 params: None,
                 optimizers_config: None,
                 quantization_config: None,
+                sparse_vectors: None,
             },
             shard_replica_changes: None,
         }
@@ -370,6 +382,7 @@ impl From<CollectionConfig> for CreateCollection {
             optimizers_config: Some(value.optimizer_config.into()),
             init_from: None,
             quantization_config: value.quantization_config,
+            sparse_vectors: value.params.sparse_vectors,
         }
     }
 }

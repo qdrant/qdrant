@@ -48,6 +48,7 @@ fn exact_search_test() {
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 

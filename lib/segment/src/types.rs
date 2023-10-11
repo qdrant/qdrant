@@ -27,8 +27,10 @@ use crate::common::utils::{
 };
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
+use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
 pub type PayloadKeyType = String;
 pub type PayloadKeyTypeRef<'a> = &'a str;
@@ -610,7 +612,11 @@ impl PayloadStorageType {
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
+    #[serde(default)]
     pub vector_data: HashMap<String, VectorDataConfig>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
 }
@@ -628,21 +634,37 @@ impl SegmentConfig {
     }
 
     pub fn distance(&self, vector_name: &str) -> Option<Distance> {
-        self.vector_data
+        let distance = self
+            .vector_data
             .get(vector_name)
-            .map(|config| config.distance)
+            .map(|config| config.distance);
+        if distance.is_none() {
+            self.sparse_vector_data
+                .get(vector_name)
+                .map(|_config| SPARSE_VECTOR_DISTANCE)
+        } else {
+            distance
+        }
     }
 
     pub fn is_any_vector_indexed(&self) -> bool {
         self.vector_data
             .values()
             .any(|config| config.index.is_indexed())
+            || self
+                .sparse_vector_data
+                .values()
+                .any(|config| config.is_indexed())
     }
 
     pub fn are_all_vectors_indexed(&self) -> bool {
         self.vector_data
             .values()
             .all(|config| config.index.is_indexed())
+            && self
+                .sparse_vector_data
+                .values()
+                .all(|config| config.is_indexed())
     }
 
     /// Check if any vector storage is on-disk
@@ -650,6 +672,7 @@ impl SegmentConfig {
         self.vector_data
             .values()
             .any(|config| config.storage_type.is_on_disk())
+            || !self.sparse_vector_data.is_empty()
     }
 }
 
@@ -712,6 +735,25 @@ impl VectorDataConfig {
             VectorStorageType::ChunkedMmap => true,
         };
         is_index_appendable && is_storage_appendable
+    }
+}
+
+/// Config of single vector data storage
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct SparseVectorDataConfig {
+    /// Type of index used for search
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<SparseIndexConfig>,
+}
+
+impl SparseVectorDataConfig {
+    pub fn is_appendable(&self) -> bool {
+        true
+    }
+
+    pub fn is_indexed(&self) -> bool {
+        true
     }
 }
 

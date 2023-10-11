@@ -88,6 +88,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let mut result = Vec::with_capacity(vectors.len());
 
         for vector in vectors {
+            if top == 0 {
+                result.push(Vec::new());
+                continue;
+            }
+
             check_process_stopped(is_stopped)?;
             // measure time according to filter
             let _timer = if with_filter {

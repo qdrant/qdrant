@@ -16,11 +16,8 @@ use collection::operations::types::{
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
-use segment::data_types::vectors::{NamedSparseVector, Vector};
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::ScoredPoint;
 use serde::{Deserialize, Serialize};
-use sparse::common::sparse_vector::SparseVector;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
@@ -81,10 +78,6 @@ struct AllDefinitions {
     b9: ShardSnapshotRecover,
     ba: DiscoverRequest,
     bb: DiscoverRequestBatch,
-    bc: SparseVector,
-    bd: SparseIndexConfig,
-    be: Vector,
-    bf: NamedSparseVector,
 }
 
 fn save_schema<T: JsonSchema>() {
