@@ -14,26 +14,54 @@ const POOL_KEEP_LIMIT: usize = 16;
 /// It stores the sequence number of last processed operation next to the point ID, which allows to avoid memory allocation
 /// and reuse same counter for multiple queries.
 #[derive(Debug)]
-pub struct VisitedList {
+pub struct VisitedList<'a> {
+    pool: &'a VisitedPool,
+    data: VisitedListData,
+}
+
+#[derive(Debug)]
+struct VisitedListData {
     current_iter: usize,
     visit_counters: Vec<usize>,
 }
 
-impl VisitedList {
-    pub fn new(num_points: usize) -> Self {
-        VisitedList {
+impl Default for VisitedListData {
+    fn default() -> Self {
+        VisitedListData {
+            current_iter: 1,
+            visit_counters: vec![],
+        }
+    }
+}
+
+impl VisitedListData {
+    fn new(num_points: usize) -> Self {
+        VisitedListData {
             current_iter: 1,
             visit_counters: vec![0; num_points],
         }
     }
+}
+
+impl<'a> Drop for VisitedList<'a> {
+    fn drop(&mut self) {
+        self.pool.return_back(std::mem::take(&mut self.data));
+    }
+}
+
+impl<'a> VisitedList<'a> {
+    fn new(pool: &'a VisitedPool, data: VisitedListData) -> Self {
+        VisitedList { pool, data }
+    }
 
     pub fn get_current_iteration_id(&self) -> usize {
-        self.current_iter
+        self.data.current_iter
     }
 
     // Count how many points were visited since the given iteration
     pub fn count_visits_since(&self, iteration_id: usize) -> usize {
-        self.visit_counters
+        self.data
+            .visit_counters
             .iter()
             .filter(|x| **x >= iteration_id)
             .count()
@@ -41,25 +69,26 @@ impl VisitedList {
 
     /// Return `true` if visited
     pub fn check(&self, point_id: PointOffsetType) -> bool {
-        self.visit_counters
+        self.data
+            .visit_counters
             .get(point_id as usize)
-            .map_or(false, |x| *x >= self.current_iter)
+            .map_or(false, |x| *x >= self.data.current_iter)
     }
 
     /// Updates visited list
     /// return `true` if point was visited before
     pub fn check_and_update_visited(&mut self, point_id: PointOffsetType) -> bool {
         let idx = point_id as usize;
-        if idx >= self.visit_counters.len() {
-            self.visit_counters.resize(idx + 1, 0);
+        if idx >= self.data.visit_counters.len() {
+            self.data.visit_counters.resize(idx + 1, 0);
         }
-        let prev_value = self.visit_counters[idx];
-        self.visit_counters[idx] = self.current_iter;
-        prev_value >= self.current_iter
+        let prev_value = self.data.visit_counters[idx];
+        self.data.visit_counters[idx] = self.data.current_iter;
+        prev_value >= self.data.current_iter
     }
 
     pub fn next_iteration(&mut self) {
-        self.current_iter += 1;
+        self.data.current_iter += 1;
     }
 }
 
@@ -68,7 +97,7 @@ impl VisitedList {
 /// If there are more requests than lists - creates a new list, but only keeps max defined amount.
 #[derive(Debug)]
 pub struct VisitedPool {
-    pool: RwLock<Vec<VisitedList>>,
+    pool: RwLock<Vec<VisitedListData>>,
 }
 
 impl VisitedPool {
@@ -80,18 +109,20 @@ impl VisitedPool {
 
     pub fn get(&self, num_points: usize) -> VisitedList {
         match self.pool.write().pop() {
-            None => VisitedList::new(num_points),
-            Some(mut vl) => {
-                vl.next_iteration();
-                vl
+            None => VisitedList::new(self, VisitedListData::new(num_points)),
+            Some(mut data) => {
+                data.visit_counters.resize(num_points, 0);
+                let mut visited_list = VisitedList::new(self, data);
+                visited_list.next_iteration();
+                visited_list
             }
         }
     }
 
-    pub fn return_back(&self, visited_list: VisitedList) {
+    fn return_back(&self, data: VisitedListData) {
         let mut pool = self.pool.write();
         if pool.len() < POOL_KEEP_LIMIT {
-            pool.push(visited_list);
+            pool.push(data);
         }
     }
 }

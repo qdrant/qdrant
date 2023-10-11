@@ -48,10 +48,6 @@ impl GraphLayersBase for GraphLayersBuilder {
         self.visited_pool.get(self.num_points())
     }
 
-    fn return_visited_list_to_pool(&self, visited_list: VisitedList) {
-        self.visited_pool.return_back(visited_list);
-    }
-
     fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
     where
         F: FnMut(PointOffsetType),
@@ -193,7 +189,6 @@ impl GraphLayersBuilder {
         self.entry_points
             .lock()
             .merge_from_other(other.entry_points.into_inner());
-        self.visited_pool.return_back(visited_list);
     }
 
     fn num_points(&self) -> usize {
@@ -453,7 +448,6 @@ impl GraphLayersBuilder {
                             }
                         }
                     }
-                    self.return_visited_list_to_pool(visited_list);
                 }
             }
         }

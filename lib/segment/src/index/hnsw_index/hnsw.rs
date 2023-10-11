@@ -30,7 +30,7 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::visited_pool::VisitedList;
+use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
@@ -661,7 +661,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             debug!("skip building main HNSW graph");
         }
 
-        let mut block_filter_list = VisitedList::new(total_vector_count);
+        let visited_pool = VisitedPool::new();
+        let mut block_filter_list = visited_pool.get(total_vector_count);
         let visits_iteration = block_filter_list.get_current_iteration_id();
 
         let payload_index = self.payload_index.borrow();

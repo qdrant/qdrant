@@ -52,8 +52,6 @@ pub struct GraphLayers<TGraphLinks: GraphLinks> {
 pub trait GraphLayersBase {
     fn get_visited_list_from_pool(&self) -> VisitedList;
 
-    fn return_visited_list_to_pool(&self, visited_list: VisitedList);
-
     fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
         F: FnMut(PointOffsetType);
@@ -104,8 +102,6 @@ pub trait GraphLayersBase {
         let mut search_context = SearchContext::new(level_entry, ef);
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-
-        self.return_visited_list_to_pool(visited_list);
         search_context.nearest
     }
 
@@ -152,10 +148,6 @@ pub trait GraphLayersBase {
 impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
     fn get_visited_list_from_pool(&self) -> VisitedList {
         self.visited_pool.get(self.links.num_points())
-    }
-
-    fn return_visited_list_to_pool(&self, visited_list: VisitedList) {
-        self.visited_pool.return_back(visited_list);
     }
 
     fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)

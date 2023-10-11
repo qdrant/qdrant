@@ -4,7 +4,7 @@ use crate::index::visited_pool::VisitedList;
 use crate::payload_storage::FilterContext;
 
 pub struct BuildConditionChecker<'a> {
-    pub filter_list: &'a VisitedList,
+    pub filter_list: &'a VisitedList<'a>,
     pub current_point: PointOffsetType,
 }
 
