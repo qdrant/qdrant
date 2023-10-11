@@ -2,7 +2,6 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{self, size_of, transmute};
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
@@ -17,12 +16,10 @@ use crate::common::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::types::{Distance, QuantizationConfig};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
@@ -43,7 +40,6 @@ pub struct MmapVectors {
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
-    pub quantized_vectors: Option<QuantizedVectors>,
 }
 
 impl MmapVectors {
@@ -92,7 +88,6 @@ impl MmapVectors {
             uring_reader: Mutex::new(uring_reader),
             deleted,
             deleted_count,
-            quantized_vectors: None,
         })
     }
 
@@ -102,57 +97,6 @@ impl MmapVectors {
 
     pub fn flusher(&self) -> Flusher {
         self.deleted.flusher()
-    }
-
-    pub fn quantize(
-        &mut self,
-        distance: Distance,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        // In theory, we can lock deleted flags here, as we assume that it is the hottest data. We
-        // can use mlock to achieve that. Docker (and some other systems) has a very low default
-        // limit for lockable memory however, which is causing lock errors. Since this is the
-        // default configuration it is hard to make practical use of this. Additionally, the
-        // speedup is not measured explicitly.
-        // See <https://github.com/qdrant/qdrant/pull/1885#issuecomment-1547408116>
-
-        let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
-            let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
-            self.raw_vector_offset(offset)
-        });
-        self.quantized_vectors = Some(QuantizedVectors::create(
-            vector_data_iterator,
-            quantization_config,
-            distance,
-            self.dim,
-            self.num_vectors,
-            data_path,
-            true,
-            max_threads,
-            stopped,
-        )?);
-        Ok(())
-    }
-
-    pub fn load_quantization(
-        &mut self,
-        data_path: &Path,
-        distance: Distance,
-    ) -> OperationResult<()> {
-        if QuantizedVectors::config_exists(data_path) {
-            // In theory, we can lock deleted flags here, as we assume that it is the hottest data. We
-            // can use mlock to achieve that. Docker (and some other systems) has a very low default
-            // limit for lockable memory however, which is causing lock errors. Since this is the
-            // default configuration it is hard to make practical use of this. Additionally, the
-            // speedup is not measured explicitly.
-            // See <https://github.com/qdrant/qdrant/pull/1885#issuecomment-1547408116>
-
-            self.quantized_vectors = Some(QuantizedVectors::load(data_path, true, distance)?);
-        }
-        Ok(())
     }
 
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {

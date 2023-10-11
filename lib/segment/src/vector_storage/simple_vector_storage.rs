@@ -1,6 +1,5 @@
 use std::mem::size_of;
 use std::ops::Range;
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -19,15 +18,13 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::types::{Distance, QuantizationConfig};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::types::Distance;
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage {
     dim: usize,
     distance: Distance,
     vectors: ChunkedVectors<VectorElementType>,
-    quantized_vectors: Option<QuantizedVectors>,
     db_wrapper: DatabaseColumnWrapper,
     update_buffer: StoredRecord,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
@@ -78,7 +75,6 @@ pub fn open_simple_vector_storage(
             dim,
             distance,
             vectors,
-            quantized_vectors: None,
             db_wrapper,
             update_buffer: StoredRecord {
                 deleted: false,
@@ -140,6 +136,10 @@ impl VectorStorage for SimpleVectorStorage {
         self.distance
     }
 
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
     fn total_vector_count(&self) -> usize {
         self.vectors.len()
     }
@@ -183,45 +183,8 @@ impl VectorStorage for SimpleVectorStorage {
         self.db_wrapper.flusher()
     }
 
-    fn quantize(
-        &mut self,
-        path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
-        self.quantized_vectors = Some(QuantizedVectors::create(
-            vector_data_iterator,
-            quantization_config,
-            self.distance,
-            self.dim,
-            self.vectors.len(),
-            path,
-            false,
-            max_threads,
-            stopped,
-        )?);
-        Ok(())
-    }
-
-    fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
-        if QuantizedVectors::config_exists(path) {
-            self.quantized_vectors = Some(QuantizedVectors::load(path, false, self.distance)?);
-        }
-        Ok(())
-    }
-
-    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
-        self.quantized_vectors.as_ref()
-    }
-
     fn files(&self) -> Vec<std::path::PathBuf> {
-        if let Some(quantized_vectors) = &self.quantized_vectors {
-            quantized_vectors.files()
-        } else {
-            vec![]
-        }
+        vec![]
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {

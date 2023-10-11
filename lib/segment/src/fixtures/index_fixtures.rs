@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
@@ -12,9 +12,8 @@ use crate::common::Flusher;
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
-use crate::types::{Distance, QuantizationConfig};
+use crate::types::Distance;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{
     raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum, DEFAULT_STOPPED,
 };
@@ -47,6 +46,10 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         TMetric::distance()
     }
 
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
     fn total_vector_count(&self) -> usize {
         self.vectors.len()
     }
@@ -75,24 +78,6 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
 
     fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
-    }
-
-    fn quantize(
-        &mut self,
-        _data_path: &Path,
-        _quantization_config: &QuantizationConfig,
-        _max_threads: usize,
-        _stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn load_quantization(&mut self, _data_path: &Path) -> OperationResult<()> {
-        Ok(())
-    }
-
-    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
-        None
     }
 
     fn files(&self) -> Vec<PathBuf> {
