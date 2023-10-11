@@ -1,4 +1,5 @@
 use std::fs::create_dir_all;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use crate::common::operation_time_statistics::{
 };
 use crate::common::BYTES_IN_KB;
 use crate::data_types::vectors::QueryVector;
-use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -36,11 +37,12 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
-    default_quantization_ignore_value, FieldCondition, Filter, HnswConfig,
-    QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
+    default_quantization_ignore_value, default_quantization_oversampling_value, FieldCondition,
+    Filter, HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{
-    new_raw_scorer, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
+    new_raw_scorer, new_stoppable_raw_scorer, RawScorer, VectorStorage, VectorStorageEnum,
 };
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -213,7 +215,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         })
     }
 
-    pub fn search_with_graph(
+    fn search_with_graph(
         &self,
         vector: &QueryVector,
         filter: Option<&Filter>,
@@ -226,80 +228,30 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .unwrap_or(self.config.ef);
 
         let id_tracker = self.id_tracker.borrow();
+        let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
         let quantized_storage = vector_storage.quantized_storage();
 
-        // Check that:
-        // - `params` is `Some`
-        // - `params.quantization` is `Some`
-        // - and `params.quantization.ignore` is `false`
-        let quantization_params = params.and_then(|p| p.quantization).unwrap_or_default();
+        let raw_scorer = Self::construct_search_scorer(
+            vector,
+            &vector_storage,
+            quantized_storage,
+            id_tracker.deref(),
+            params,
+            is_stopped,
+        );
+        let oversampled_top =
+            Self::get_oversampled_top(vector_storage.quantized_storage(), params, top);
 
-        let (raw_scorer, do_oversampling) = match quantized_storage {
-            // If `quantization_params` is `Some`, then quantization is *not* ignored
-            Some(quantized_storage) if !quantization_params.ignore => {
-                let scorer = quantized_storage.raw_scorer(
-                    vector.clone(),
-                    id_tracker.deleted_point_bitslice(),
-                    vector_storage.deleted_vector_bitslice(),
-                    is_stopped,
-                );
-
-                let do_oversampling = quantization_params
-                    .rescore
-                    .unwrap_or_else(|| quantized_storage.default_rescoring());
-
-                (scorer, do_oversampling)
-            }
-
-            _ => {
-                let scorer = new_stoppable_raw_scorer(
-                    vector.to_owned(),
-                    &vector_storage,
-                    id_tracker.deleted_point_bitslice(),
-                    is_stopped,
-                );
-
-                (scorer, false)
-            }
-        };
-
-        let payload_index = self.payload_index.borrow();
         let filter_context = filter.map(|f| payload_index.filter_context(f));
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
-        let Some(graph) = &self.graph else {
-            return Vec::new();
-        };
-
-        if do_oversampling {
-            let oversampling = quantization_params.oversampling.unwrap_or(1.0);
-
-            let oversampled_top = if oversampling > 1.0 {
-                (oversampling * top as f64) as usize
-            } else {
-                // Very unlikely this is reached because validation enforces oversampling >= 1.0
-                top
-            };
-
-            let search_result = graph.search(oversampled_top, ef, points_scorer);
-
-            let raw_scorer = new_stoppable_raw_scorer(
-                vector.to_owned(),
-                &vector_storage,
-                id_tracker.deleted_point_bitslice(),
-                is_stopped,
-            );
-
-            let mut ids_iterator = search_result.iter().map(|x| x.idx);
-            let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
-
-            re_scored.sort_unstable();
-            re_scored.reverse();
-            re_scored.truncate(top);
-            re_scored
-        } else {
-            graph.search(top, ef, points_scorer)
+        match &self.graph {
+            Some(graph) => {
+                let search_result = graph.search(oversampled_top, ef, points_scorer);
+                self.postprocess_search_result(search_result, vector, params, top, is_stopped)
+            }
+            None => Default::default(),
         }
     }
 
@@ -317,6 +269,37 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .collect()
     }
 
+    fn search_plain(
+        &self,
+        vector: &QueryVector,
+        filter: &Filter,
+        top: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        let id_tracker = self.id_tracker.borrow();
+        let payload_index = self.payload_index.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let quantized_storage = vector_storage.quantized_storage();
+
+        let raw_scorer = Self::construct_search_scorer(
+            vector,
+            &vector_storage,
+            quantized_storage,
+            id_tracker.deref(),
+            params,
+            is_stopped,
+        );
+        let oversampled_top =
+            Self::get_oversampled_top(vector_storage.quantized_storage(), params, top);
+
+        let filtered_points = payload_index.query_points(filter);
+        let search_result =
+            raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top);
+
+        self.postprocess_search_result(search_result, vector, params, top, is_stopped)
+    }
+
     fn search_vectors_plain(
         &self,
         vectors: &[&QueryVector],
@@ -325,52 +308,110 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
-        let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
-        let vector_storage = self.vector_storage.borrow();
-        let filtered_points = payload_index.query_points(filter);
+        vectors
+            .iter()
+            .map(|vector| self.search_plain(vector, filter, top, params, is_stopped))
+            .collect()
+    }
+
+    fn is_quantized_search(
+        quantized_storage: Option<&QuantizedVectors>,
+        params: Option<&SearchParams>,
+    ) -> bool {
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
             .unwrap_or(default_quantization_ignore_value());
-        if ignore_quantization {
-            vectors
-                .iter()
-                .map(|&vector| {
-                    new_stoppable_raw_scorer(
-                        vector.to_owned(),
-                        &vector_storage,
-                        id_tracker.deleted_point_bitslice(),
-                        is_stopped,
-                    )
-                    .peek_top_iter(&mut filtered_points.iter().copied(), top)
-                })
-                .collect()
-        } else {
-            vectors
-                .iter()
-                .map(|&vector| {
-                    if let Some(quantized_storage) = vector_storage.quantized_storage() {
-                        quantized_storage
-                            .raw_scorer(
-                                vector.clone(),
-                                id_tracker.deleted_point_bitslice(),
-                                vector_storage.deleted_vector_bitslice(),
-                                is_stopped,
-                            )
-                            .peek_top_iter(&mut filtered_points.iter().copied(), top)
-                    } else {
-                        new_stoppable_raw_scorer(
-                            vector.to_owned(),
-                            &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
-                            is_stopped,
-                        )
-                        .peek_top_iter(&mut filtered_points.iter().copied(), top)
-                    }
-                })
-                .collect()
+        quantized_storage.is_some() && !ignore_quantization
+    }
+
+    fn construct_search_scorer<'a>(
+        vector: &QueryVector,
+        vector_storage: &'a VectorStorageEnum,
+        quantized_storage: Option<&'a QuantizedVectors>,
+        id_tracker: &'a dyn IdTracker,
+        params: Option<&SearchParams>,
+        is_stopped: &'a AtomicBool,
+    ) -> Box<dyn RawScorer + 'a> {
+        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
+        match quantized_storage {
+            Some(quantized_storage) if quantization_enabled => quantized_storage.raw_scorer(
+                vector.to_owned(),
+                id_tracker.deleted_point_bitslice(),
+                vector_storage.deleted_vector_bitslice(),
+                is_stopped,
+            ),
+            _ => new_stoppable_raw_scorer(
+                vector.to_owned(),
+                vector_storage,
+                id_tracker.deleted_point_bitslice(),
+                is_stopped,
+            ),
         }
+    }
+
+    fn get_oversampled_top(
+        quantized_storage: Option<&QuantizedVectors>,
+        params: Option<&SearchParams>,
+        top: usize,
+    ) -> usize {
+        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
+
+        let oversampling_value = params
+            .and_then(|p| p.quantization)
+            .map(|q| q.oversampling)
+            .unwrap_or(default_quantization_oversampling_value());
+
+        match oversampling_value {
+            Some(oversampling) if quantization_enabled && oversampling > 1.0 => {
+                (oversampling * top as f64) as usize
+            }
+            _ => top,
+        }
+    }
+
+    fn postprocess_search_result(
+        &self,
+        search_result: Vec<ScoredPointOffset>,
+        vector: &QueryVector,
+        params: Option<&SearchParams>,
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let quantized_storage = vector_storage.quantized_storage();
+
+        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
+
+        let default_rescoring = quantized_storage
+            .map(|q| q.default_rescoring())
+            .unwrap_or(false);
+        let rescore = quantization_enabled
+            && params
+                .and_then(|p| p.quantization)
+                .and_then(|q| q.rescore)
+                .unwrap_or(default_rescoring);
+
+        let mut postprocess_result = if rescore {
+            let raw_scorer = new_stoppable_raw_scorer(
+                vector.to_owned(),
+                &vector_storage,
+                id_tracker.deleted_point_bitslice(),
+                is_stopped,
+            );
+
+            let mut ids_iterator = search_result.iter().map(|x| x.idx);
+            let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
+
+            re_scored.sort_unstable();
+            re_scored.reverse();
+            re_scored
+        } else {
+            search_result
+        };
+        postprocess_result.truncate(top);
+        postprocess_result
     }
 }
 

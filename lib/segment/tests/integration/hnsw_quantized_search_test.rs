@@ -1,22 +1,25 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 
-use common::types::ScoredPointOffset;
+use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
-use segment::fixtures::payload_fixtures::random_vector;
+use segment::fixtures::payload_fixtures::{random_vector, STR_KEY};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::VectorIndex;
+use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
+use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig, QuantizationConfig,
-    QuantizationSearchParams, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
-    VectorDataConfig, VectorStorageType,
+    CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
+    ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
+    ScalarQuantizationConfig, SearchParams, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::VectorStorage;
+use serde_json::json;
 use tempfile::Builder;
 
 fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
@@ -36,12 +39,16 @@ fn hnsw_quantized_search_test(
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let quantized_data_path = dir.path();
 
+    let payloads_count = 50;
     let dim = 131;
     let m = 16;
     let ef = 64;
     let ef_construct = 64;
+    let top = 10;
+    let attempts = 10;
 
     let mut rnd = StdRng::seed_from_u64(42);
+    let mut op_num = 0;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -65,9 +72,27 @@ fn hnsw_quantized_search_test(
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(op_num, idx, only_default_vector(&vector))
             .unwrap();
+        op_num += 1;
     }
+
+    segment
+        .create_field_index(op_num, STR_KEY, Some(&Keyword.into()))
+        .unwrap();
+    op_num += 1;
+    for n in 0..payloads_count {
+        let idx = n.into();
+        let payload: Payload = json!(
+            {
+                STR_KEY: STR_KEY,
+            }
+        )
+        .into();
+        segment.set_full_payload(op_num, idx, &payload).unwrap();
+        op_num += 1;
+    }
+
     segment.vector_data.values_mut().for_each(|vector_storage| {
         vector_storage
             .vector_storage
@@ -79,7 +104,7 @@ fn hnsw_quantized_search_test(
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold: 0,
+        full_scan_threshold: 2 * payloads_count as usize,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
@@ -98,14 +123,69 @@ fn hnsw_quantized_search_test(
 
     hnsw_index.build_index(&stopped).unwrap();
 
-    let top = 10;
-    let attempts = 10;
+    let query_vectors = (0..attempts)
+        .map(|_| random_vector(&mut rnd, dim).into())
+        .collect::<Vec<_>>();
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        STR_KEY,
+        STR_KEY.to_owned().into(),
+    )));
+
+    // check that quantized search is working
+    // to check it, compare quantized search result with exact search result
+    check_matches(&query_vectors, &segment, &hnsw_index, None, ef, top);
+    check_matches(
+        &query_vectors,
+        &segment,
+        &hnsw_index,
+        Some(&filter),
+        ef,
+        top,
+    );
+
+    // check that oversampling is working
+    // to check it, search with oversampling and check that results are not worse
+    check_oversampling(&query_vectors, &hnsw_index, None, ef, top);
+    check_oversampling(&query_vectors, &hnsw_index, Some(&filter), ef, top);
+
+    // check that rescoring is working
+    // to check it, set all vectors to zero and expect zero scores
+    let zero_vector = vec![0.0; dim];
+    for n in 0..num_vectors {
+        let idx = n.into();
+        segment
+            .upsert_point(op_num, idx, only_default_vector(&zero_vector))
+            .unwrap();
+        op_num += 1;
+    }
+    check_rescoring(&query_vectors, &hnsw_index, None, ef, top);
+    check_rescoring(&query_vectors, &hnsw_index, Some(&filter), ef, top);
+}
+
+fn check_matches(
+    query_vectors: &[QueryVector],
+    segment: &Segment,
+    hnsw_index: &HNSWIndex<GraphLinksRam>,
+    filter: Option<&Filter>,
+    ef: usize,
+    top: usize,
+) {
+    let exact_search_results = query_vectors
+        .iter()
+        .map(|query| {
+            segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_index
+                .borrow()
+                .search(&[&query], filter, top, None, &false.into())
+        })
+        .collect::<Vec<_>>();
+
     let mut sames: usize = 0;
-    for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim).into();
+    let attempts = query_vectors.len();
+    for (query, plain_result) in query_vectors.iter().zip(exact_search_results.iter()) {
         let index_result = hnsw_index.search(
-            &[&query],
-            None,
+            &[query],
+            filter,
             top,
             Some(&SearchParams {
                 hnsw_ef: Some(ef),
@@ -113,24 +193,26 @@ fn hnsw_quantized_search_test(
             }),
             &false.into(),
         );
-        let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_index
-            .borrow()
-            .search(&[&query], None, top, None, &false.into());
-        sames += sames_count(&index_result, &plain_result);
+        sames += sames_count(&index_result, plain_result);
     }
     let acc = 100.0 * sames as f64 / (attempts * top) as f64;
     println!("sames = {sames}, attempts = {attempts}, top = {top}, acc = {acc}");
     assert!(acc > 40.0);
+}
 
-    // check oversampling
-    for _i in 0..attempts {
+fn check_oversampling(
+    query_vectors: &[QueryVector],
+    hnsw_index: &HNSWIndex<GraphLinksRam>,
+    filter: Option<&Filter>,
+    ef: usize,
+    top: usize,
+) {
+    for query in query_vectors {
         let ef_oversampling = ef / 8;
-        let oversampling_query = random_vector(&mut rnd, dim).into();
 
         let oversampling_1_result = hnsw_index.search(
-            &[&oversampling_query],
-            None,
+            &[query],
+            filter,
             top,
             Some(&SearchParams {
                 hnsw_ef: Some(ef_oversampling),
@@ -146,7 +228,7 @@ fn hnsw_quantized_search_test(
         let worst_1 = oversampling_1_result[0].last().unwrap();
 
         let oversampling_2_result = hnsw_index.search(
-            &[&oversampling_query],
+            &[&query],
             None,
             top,
             Some(&SearchParams {
@@ -170,6 +252,34 @@ fn hnsw_quantized_search_test(
 
         assert!(best_2.score >= best_1.score);
         assert!(worst_2.score >= worst_1.score);
+    }
+}
+
+fn check_rescoring(
+    query_vectors: &[QueryVector],
+    hnsw_index: &HNSWIndex<GraphLinksRam>,
+    filter: Option<&Filter>,
+    ef: usize,
+    top: usize,
+) {
+    for query in query_vectors.iter() {
+        let index_result = hnsw_index.search(
+            &[query],
+            filter,
+            top,
+            Some(&SearchParams {
+                hnsw_ef: Some(ef),
+                quantization: Some(QuantizationSearchParams {
+                    rescore: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            &false.into(),
+        );
+        for result in &index_result[0] {
+            assert!(result.score < ScoreType::EPSILON);
+        }
     }
 }
 
