@@ -29,7 +29,9 @@ impl TryInto<VectorType> for VectorOrSparse {
     fn try_into(self) -> Result<VectorType, Self::Error> {
         match self {
             VectorOrSparse::Vector(v) => Ok(v),
-            VectorOrSparse::Sparse(v) => Err(OperationError::SparseTypeError{ description: Default::default() }),
+            VectorOrSparse::Sparse(v) => Err(OperationError::SparseTypeError {
+                description: Default::default(),
+            }),
         }
     }
 }
