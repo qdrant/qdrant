@@ -22,6 +22,28 @@ impl<T> DiscoveryPair<T> {
             negative: f(self.negative),
         }
     }
+
+    pub fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
+        let positive_similarity = similarity(&self.positive);
+        let negative_similarity = similarity(&self.negative);
+
+        // if closer to positive, return 1, else -1
+        if positive_similarity > negative_similarity {
+            1
+        } else {
+            -1
+        }
+    }
+}
+
+#[cfg(test)]
+impl From<(isize, isize)> for DiscoveryPair<isize> {
+    fn from(pair: (isize, isize)) -> Self {
+        Self {
+            positive: pair.0,
+            negative: pair.1,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -54,43 +76,36 @@ impl<T> DiscoveryQuery<T> {
         )
     }
 
-    /// Compares the query against a single vector using a similarity function.
-    ///
-    /// Similarity function must be able to compare one vector against another to produce an intermediate score.
-    ///
-    /// Returns the score with regards to this query
+    fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
+        self.pairs
+            .iter()
+            .map(|pair| pair.rank_by(&similarity))
+            // get overall rank
+            .sum()
+    }
+
     pub fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let rank = self.rank_by(&similarity);
 
         let target_similarity = similarity(&self.target);
-        let sigmoid_similarity = 0.5 * (fast_sigmoid(target_similarity) + 1.0);
+        let sigmoid_similarity = scaled_fast_sigmoid(target_similarity);
 
         rank as ScoreType + sigmoid_similarity
-    }
-
-    pub fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
-        self.pairs
-            .iter()
-            .map(|pair| {
-                // get similarity to positive and negative
-                let positive_similarity = similarity(&pair.positive);
-                let negative_similarity = similarity(&pair.negative);
-
-                // if closer to positive, return 1, else -1
-                if positive_similarity > negative_similarity {
-                    1
-                } else {
-                    -1
-                }
-            })
-            // get overall rank
-            .sum()
     }
 }
 
 /// Acts as a substitute for sigmoid function, but faster because it doesn't do exponent.
 ///
+/// Scales the output to fit within (0, 1)
+#[inline]
+fn scaled_fast_sigmoid(x: ScoreType) -> ScoreType {
+    0.5 * (fast_sigmoid(x) + 1.0)
+}
+
+/// Acts as a substitute for sigmoid function, but faster because it doesn't do exponent.
+///
 /// Range of output is (-1, 1)
+#[inline]
 fn fast_sigmoid(x: ScoreType) -> ScoreType {
     // from https://stackoverflow.com/questions/10732027/fast-sigmoid-algorithm
     x / (1.0 + x.abs())
@@ -101,3 +116,71 @@ fn fast_sigmoid(x: ScoreType) -> ScoreType {
 //         QueryVector::Discovery(query)
 //     }
 // }
+
+#[cfg(test)]
+mod test {
+    use std::cmp::Ordering;
+
+    use common::types::ScoreType;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn dummy_similarity(x: &isize) -> ScoreType {
+        *x as ScoreType
+    }
+
+    /// Considers each "vector" as the actual score from the similarity function by
+    /// using a dummy identity function.
+    #[rstest]
+    #[case::no_pairs(vec![], 0)]
+    #[case::closer_to_positive(vec![(10, 4)], 1)]
+    #[case::closer_to_negative(vec![(4, 10)], -1)]
+    #[case::equal_scores(vec![(11, 11)], -1)]
+    #[case::neutral_zone(vec![(10, 4), (4, 10)], 0)]
+    #[case::best_zone(vec![(10, 4), (4, 2)], 2)]
+    #[case::worst_zone(vec![(4, 10), (2, 4)], -2)]
+    #[case::many_pairs(vec![(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (0, 4)], 4)]
+    fn context_ranking(#[case] pairs: Vec<(isize, isize)>, #[case] expected: RankType) {
+        let pairs = pairs.into_iter().map(DiscoveryPair::from).collect();
+
+        let _target = 42;
+
+        let query = DiscoveryQuery::new(_target, pairs);
+
+        let rank = query.rank_by(dummy_similarity);
+
+        assert_eq!(
+            rank, expected,
+            "Ranking is incorrect, expected {}, but got {rank}",
+            expected
+        );
+    }
+
+    /// Compares the score of a query against a fixed score
+    #[rstest]
+    #[case::no_pairs(1, vec![], Ordering::Less)]
+    #[case::just_above(1, vec![(1,0),(1,0)], Ordering::Greater)]
+    #[case::just_below(-1, vec![(1,0),(1,0)], Ordering::Less)]
+    #[case::bad_target_good_context(-1000, vec![(1,0),(1,0),(1, 0)], Ordering::Greater)]
+    #[case::good_target_bad_context(1000, vec![(1,0),(0,1)], Ordering::Less)]
+    fn score_better(
+        #[case] target: isize,
+        #[case] pairs: Vec<(isize, isize)>,
+        #[case] expected: Ordering,
+    ) {
+        let fixed_score: f32 = 2.5;
+
+        let pairs = pairs.into_iter().map(DiscoveryPair::from).collect();
+
+        let query = DiscoveryQuery::new(target, pairs);
+
+        let score = query.score_by(dummy_similarity);
+
+        assert_eq!(
+            score.total_cmp(&fixed_score),
+            expected,
+            "Comparison is incorrect, expected {expected:?} for {score} against {fixed_score}"
+        );
+    }
+}
