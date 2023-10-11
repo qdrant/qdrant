@@ -20,6 +20,7 @@ pub struct DiscoveryQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStora
 impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     DiscoveryQueryScorer<'a, TMetric, TVectorStorage>
 {
+    #[allow(dead_code)] // TODO(luis): remove once integrated
     pub fn new(query: DiscoveryQuery<VectorType>, vector_storage: &'a TVectorStorage) -> Self {
         let query = query.transform(|vector| TMetric::preprocess(vector));
 
