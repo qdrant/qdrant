@@ -393,7 +393,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 .and_then(|q| q.rescore)
                 .unwrap_or(default_rescoring);
 
-        let mut re_scored = if rescore {
+        let mut postprocess_result = if rescore {
             let raw_scorer = new_stoppable_raw_scorer(
                 vector.to_owned(),
                 &vector_storage,
@@ -406,13 +406,12 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
             re_scored.sort_unstable();
             re_scored.reverse();
-            re_scored.truncate(top);
             re_scored
         } else {
             search_result
         };
-        re_scored.truncate(top);
-        re_scored
+        postprocess_result.truncate(top);
+        postprocess_result
     }
 }
 
