@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use serde_json::Value;
+use sparse::common::sparse_vector::SparseVector;
 
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorOrSparse};
 use crate::index::field_index::FieldIndex;
 use crate::types::PayloadKeyType;
 
@@ -432,10 +433,17 @@ pub fn transpose_map_into_named_vector(
     for (key, values) in map {
         result.resize_with(values.len(), NamedVectors::default);
         for (i, value) in values.into_iter().enumerate() {
-            result[i].insert(key.clone(), value);
+            let vector: VectorOrSparse = value.into();
+            result[i].insert(key.clone(), vector);
         }
     }
     result
+}
+
+pub fn transpose_map_into_sparse_named_vector(
+    _map: HashMap<String, Vec<SparseVector>>,
+) -> Vec<NamedVectors<'static>> {
+    todo!() // TODO(ivan)
 }
 
 /// Light abstraction over a JSON path to avoid concatenating strings

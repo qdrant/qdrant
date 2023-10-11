@@ -7,7 +7,9 @@ use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidati
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{only_default_vector, BatchVectorStruct, VectorStruct};
+use segment::data_types::vectors::{
+    only_default_mixed_vector, BatchVectorStruct, VectorOrSparse, VectorStruct, VectorType,
+};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -251,6 +253,24 @@ impl Validate for PointInsertOperations {
                             }
                         }
                     }
+                    BatchVectorStruct::Sparse(vectors) => {
+                        if batch.ids.len() != vectors.len() {
+                            return Err(create_error(bad_input_description(
+                                batch.ids.len(),
+                                vectors.len(),
+                            )));
+                        }
+                    }
+                    BatchVectorStruct::MultiSparse(named_vectors) => {
+                        for vectors in named_vectors.values() {
+                            if batch.ids.len() != vectors.len() {
+                                return Err(create_error(bad_input_description(
+                                    batch.ids.len(),
+                                    vectors.len(),
+                                )));
+                            }
+                        }
+                    }
                 }
                 if let Some(payload_vector) = &batch.payloads {
                     if payload_vector.len() != batch.ids.len() {
@@ -348,7 +368,10 @@ impl SplitByShard for Batch {
                             payloads: Some(vec![]),
                         });
                         batch.ids.push(id);
-                        batch.vectors.single().push(vector);
+                        match &mut batch.vectors {
+                            BatchVectorStruct::Single(vectors) => vectors.push(vector),
+                            _ => unreachable!(), // TODO(ivan) propagate error
+                        }
                         batch.payloads.as_mut().unwrap().push(payload);
                     }
                 }
@@ -366,15 +389,22 @@ impl SplitByShard for Batch {
                             payloads: Some(vec![]),
                         });
                         batch.ids.push(id);
-                        let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
-                            let vector = vector.into_owned();
-                            batch_vectors.entry(name).or_default().push(vector);
+                            let vector: VectorOrSparse = vector.to_owned();
+                            let vector: VectorType = vector.try_into().unwrap(); // TODO(ivan) propagate error
+                            match &mut batch.vectors {
+                                BatchVectorStruct::Multi(batch_vectors) => {
+                                    batch_vectors.entry(name).or_default().push(vector)
+                                }
+                                _ => unreachable!(), // TODO(ivan) propagate error
+                            }
                         }
                         batch.payloads.as_mut().unwrap().push(payload);
                     }
                 }
+                BatchVectorStruct::Sparse(_) => unreachable!(), // TODO(ivan)
+                BatchVectorStruct::MultiSparse(_) => unreachable!(), // TODO(ivan)
             }
         } else {
             match vectors {
@@ -387,7 +417,10 @@ impl SplitByShard for Batch {
                             payloads: None,
                         });
                         batch.ids.push(id);
-                        batch.vectors.single().push(vector);
+                        match &mut batch.vectors {
+                            BatchVectorStruct::Single(vectors) => vectors.push(vector),
+                            _ => unreachable!(), // TODO propagate error
+                        }
                     }
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
@@ -404,14 +437,21 @@ impl SplitByShard for Batch {
                             payloads: None,
                         });
                         batch.ids.push(id);
-                        let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
-                            let vector = vector.into_owned();
-                            batch_vectors.entry(name).or_default().push(vector);
+                            let vector: VectorOrSparse = vector.to_owned();
+                            let vector: VectorType = vector.try_into().unwrap(); // TODO(ivan) propagate error
+                            match &mut batch.vectors {
+                                BatchVectorStruct::Multi(batch_vectors) => {
+                                    batch_vectors.entry(name).or_default().push(vector)
+                                }
+                                _ => unreachable!(), // TODO propagate error
+                            }
                         }
                     }
                 }
+                BatchVectorStruct::Sparse(_) => unreachable!(), // TODO(ivan)
+                BatchVectorStruct::MultiSparse(_) => unreachable!(), // TODO(ivan)
             }
         }
 
@@ -461,8 +501,8 @@ impl From<Vec<PointStruct>> for PointOperations {
 impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
         match &self.vector {
-            VectorStruct::Single(vector) => only_default_vector(vector),
-            VectorStruct::Multi(vectors) => NamedVectors::from_map_ref(vectors),
+            VectorStruct::Single(vector) => only_default_mixed_vector(vector),
+            VectorStruct::Multi(vectors) => NamedVectors::from_mixed_map_ref(vectors),
         }
     }
 }

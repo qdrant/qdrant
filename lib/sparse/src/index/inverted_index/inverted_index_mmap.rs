@@ -11,6 +11,7 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::inverted_index_ram::InvertedIndexBuilder;
 use crate::common::types::DimId;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
@@ -52,6 +53,13 @@ impl InvertedIndex for InvertedIndexMmap {
 
     fn indexed_vector_count(&self) -> usize {
         self.file_header.posting_count
+    }
+
+    fn from_builder<P: AsRef<Path>>(
+        mut builder: InvertedIndexBuilder,
+        path: P,
+    ) -> std::io::Result<Self> {
+        Self::convert_and_save(&builder.build(), path)
     }
 }
 

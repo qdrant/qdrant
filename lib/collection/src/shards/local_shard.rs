@@ -227,6 +227,17 @@ impl LocalShard {
                 .params
                 .vectors
                 .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
+            collection_config_read
+                .params
+                .sparse_vectors
+                .as_ref()
+                .map(|sparse_vectors| {
+                    sparse_vectors.check_compatible_with_segment_config(
+                        &segment.config().sparse_vector_data,
+                        true,
+                    )
+                })
+                .unwrap_or(Ok(()))?;
 
             segment_holder.add(segment);
         }
@@ -350,12 +361,14 @@ impl LocalShard {
         let mut build_handlers = vec![];
 
         let vector_params = config.params.into_base_vector_data()?;
+        let sparse_vector_params = config.params.into_sparse_vector_data()?;
         let segment_number = config.optimizer_config.get_number_segments();
 
         for _sid in 0..segment_number {
             let path_clone = segments_path.clone();
             let segment_config = SegmentConfig {
                 vector_data: vector_params.clone(),
+                sparse_vector_data: sparse_vector_params.clone(),
                 payload_storage_type: if config.params.on_disk_payload {
                     PayloadStorageType::OnDisk
                 } else {

@@ -614,6 +614,9 @@ impl PayloadStorageType {
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
 }
@@ -634,12 +637,20 @@ impl SegmentConfig {
         self.vector_data
             .values()
             .any(|config| config.index.is_indexed())
+            || self
+                .sparse_vector_data
+                .values()
+                .any(|config| config.is_indexed())
     }
 
     pub fn are_all_vectors_indexed(&self) -> bool {
         self.vector_data
             .values()
             .all(|config| config.index.is_indexed())
+            && self
+                .sparse_vector_data
+                .values()
+                .all(|config| config.is_indexed())
     }
 
     /// Check if any vector storage is on-disk
@@ -647,6 +658,10 @@ impl SegmentConfig {
         self.vector_data
             .values()
             .any(|config| config.storage_type.is_on_disk())
+            || self
+                .sparse_vector_data
+                .values()
+                .any(|config| config.storage_type.is_on_disk())
     }
 }
 
@@ -709,6 +724,28 @@ impl VectorDataConfig {
             VectorStorageType::ChunkedMmap => true,
         };
         is_index_appendable && is_storage_appendable
+    }
+}
+
+/// Config of single vector data storage
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct SparseVectorDataConfig {
+    /// Type of storage this vector uses
+    pub storage_type: VectorStorageType,
+}
+
+impl SparseVectorDataConfig {
+    pub fn is_appendable(&self) -> bool {
+        match self.storage_type {
+            VectorStorageType::Memory => true,
+            VectorStorageType::Mmap => false,
+            VectorStorageType::ChunkedMmap => true,
+        }
+    }
+
+    pub fn is_indexed(&self) -> bool {
+        true
     }
 }
 

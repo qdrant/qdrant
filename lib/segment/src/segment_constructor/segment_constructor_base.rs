@@ -33,6 +33,7 @@ use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memma
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+use crate::vector_storage::sparse_vector_storage_ram::open_sparse_vector_storage;
 use crate::vector_storage::VectorStorage;
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
@@ -71,6 +72,12 @@ fn create_segment(
         .vector_data
         .keys()
         .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name))
+        .chain(
+            config
+                .sparse_vector_data
+                .keys()
+                .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name)),
+        )
         .collect();
     let database = open_db(segment_path, &vector_db_names)
         .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
@@ -85,7 +92,14 @@ fn create_segment(
     let appendable_flag = config
         .vector_data
         .values()
-        .all(|vector_config| vector_config.is_appendable());
+        .map(|vector_config| vector_config.is_appendable())
+        .chain(
+            config
+                .sparse_vector_data
+                .values()
+                .map(|sparse_vector_config| sparse_vector_config.is_appendable()),
+        )
+        .all(|v| v);
 
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
@@ -182,6 +196,55 @@ fn create_segment(
                 vector_storage,
                 vector_index,
                 quantized_vectors,
+            },
+        );
+    }
+
+    for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
+        let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+
+        // Select suitable vector storage type based on configuration
+        let vector_storage = match sparse_vector_config.storage_type {
+            // In memory
+            VectorStorageType::Memory => {
+                let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+                open_sparse_vector_storage(database.clone(), &db_column_name)?
+            }
+            // Mmap on disk, not appendable
+            // TODO(ivan) mmap sparse vector storage
+            VectorStorageType::Mmap => {
+                return Err(OperationError::service_error("not implemented"))
+            }
+            // Chunked mmap on disk, appendable
+            VectorStorageType::ChunkedMmap => {
+                return Err(OperationError::service_error("not implemented"))
+            }
+        };
+
+        // Warn when number of points between ID tracker and storage differs
+        let point_count = id_tracker.borrow().total_point_count();
+        let vector_count = vector_storage.borrow().total_vector_count();
+        if vector_count != point_count {
+            log::debug!(
+                "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {})",
+                vector_storage_path.display(),
+            );
+        }
+
+        // TODO(ivan) use sparse vector index instead of plain one
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> =
+            sp(VectorIndexEnum::Plain(PlainIndex::new(
+                id_tracker.clone(),
+                vector_storage.clone(),
+                payload_index.clone(),
+            )));
+
+        vector_data.insert(
+            vector_name.to_owned(),
+            VectorData {
+                vector_storage,
+                vector_index,
+                quantized_vectors: None,
             },
         );
     }

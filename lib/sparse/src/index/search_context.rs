@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::types::ScoredPointOffset;
+use common::types::{PointOffsetType, ScoredPointOffset};
 
 use crate::common::sparse_vector::SparseVector;
 use crate::index::inverted_index::InvertedIndex;
@@ -129,7 +129,10 @@ impl<'a> SearchContext<'a> {
         });
     }
 
-    pub fn search(&mut self) -> Vec<ScoredPointOffset> {
+    pub fn search<F: Fn(PointOffsetType) -> bool>(
+        &mut self,
+        filter_condition: &F,
+    ) -> Vec<ScoredPointOffset> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
@@ -138,6 +141,10 @@ impl<'a> SearchContext<'a> {
             if self.is_stopped.load(Relaxed) {
                 break;
             }
+            if !filter_condition(candidate.idx) {
+                continue;
+            }
+
             // push candidate to result queue
             self.result_queue.push(candidate);
 
@@ -270,7 +277,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&|_| true),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -329,7 +336,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&|_| true),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -365,7 +372,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&|_| true),
             vec![
                 ScoredPointOffset {
                     score: 120.0,
@@ -400,7 +407,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&|_| true),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -428,7 +435,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&|_| true),
             vec![
                 ScoredPointOffset {
                     score: 90.0,

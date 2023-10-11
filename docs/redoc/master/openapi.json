@@ -5642,8 +5642,41 @@
                 "format": "float"
               }
             }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SparseVector"
+            }
           }
         ]
+      },
+      "SparseVector": {
+        "type": "object",
+        "required": [
+          "indices",
+          "weights"
+        ],
+        "properties": {
+          "indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "weights": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        }
       },
       "SearchRequest": {
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
@@ -5734,6 +5767,12 @@
           },
           {
             "$ref": "#/components/schemas/NamedVector"
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "$ref": "#/components/schemas/SparseNamedVector"
           }
         ]
       },
@@ -5756,6 +5795,23 @@
               "type": "number",
               "format": "float"
             }
+          }
+        }
+      },
+      "SparseNamedVector": {
+        "description": "Vector data with name",
+        "type": "object",
+        "required": [
+          "name",
+          "vector"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name of vector data",
+            "type": "string"
+          },
+          "vector": {
+            "$ref": "#/components/schemas/SparseVector"
           }
         }
       },
@@ -6485,6 +6541,9 @@
               "type": "number",
               "format": "float"
             }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
           }
         ]
       },
@@ -7161,6 +7220,21 @@
                   "type": "number",
                   "format": "float"
                 }
+              }
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SparseVector"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SparseVector"
               }
             }
           }

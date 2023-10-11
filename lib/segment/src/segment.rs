@@ -23,8 +23,8 @@ use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
-use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::named_vectors::{CowValue, NamedVectors};
+use crate::data_types::vectors::{QueryVector, VectorOrSparse, VectorOrSparseRef};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
@@ -171,6 +171,10 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
+            let new_vector = match &new_vector {
+                CowValue::Vector(vec) => VectorOrSparseRef::Vector(vec),
+                CowValue::Sparse(sparse) => VectorOrSparseRef::Sparse(sparse),
+            };
             vector_data
                 .vector_storage
                 .borrow_mut()
@@ -197,6 +201,7 @@ impl Segment {
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
             match vector_opt {
                 None => {
+                    // TODO(ivan) check if vector_storage is sparse and insert sparse vector
                     let dim = vector_storage.vector_dim();
                     let vector = vec![1.0; dim];
                     vector_storage.insert_vector(new_index, vector.as_slice().into())?;
@@ -376,7 +381,7 @@ impl Segment {
         &self,
         vector_name: &str,
         point_offset: PointOffsetType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    ) -> OperationResult<Option<VectorOrSparse>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let is_vector_deleted = vector_data
@@ -743,11 +748,13 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<Vec<ScoredPoint>> {
         check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let internal_result =
-            &vector_data
-                .vector_index
-                .borrow()
-                .search(&[vector], filter, top, params, is_stopped)[0];
+        let internal_result = &vector_data.vector_index.borrow().search(
+            &[vector],
+            filter,
+            top,
+            params,
+            is_stopped,
+        )?[0];
 
         check_stopped(is_stopped)?;
         self.process_search_result(internal_result, with_payload, with_vector)
@@ -772,7 +779,7 @@ impl SegmentEntry for Segment {
             top,
             params,
             is_stopped,
-        );
+        )?;
 
         check_stopped(is_stopped)?;
 
@@ -794,7 +801,12 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
+        vectors.preprocess(|name| {
+            self.segment_config
+                .vector_data
+                .get(name)
+                .map(|config| config.distance)
+        });
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
@@ -847,7 +859,12 @@ impl SegmentEntry for Segment {
         mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
+        vectors.preprocess(|name| {
+            self.segment_config
+                .vector_data
+                .get(name)
+                .map(|config| config.distance)
+        });
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -973,7 +990,7 @@ impl SegmentEntry for Segment {
         &self,
         vector_name: &str,
         point_id: PointIdType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    ) -> OperationResult<Option<VectorOrSparse>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
@@ -1367,15 +1384,21 @@ impl SegmentEntry for Segment {
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data_config = &self.segment_config.vector_data[vector_name];
-        Ok(vector_data_config.size)
+        Ok(self.vector_data[vector_name]
+            .vector_storage
+            .borrow()
+            .vector_dim())
     }
 
     fn vector_dims(&self) -> HashMap<String, usize> {
-        self.segment_config
-            .vector_data
+        self.vector_data
             .iter()
-            .map(|(vector_name, vector_config)| (vector_name.clone(), vector_config.size))
+            .map(|(vector_name, vector_data)| {
+                (
+                    vector_name.clone(),
+                    vector_data.vector_storage.borrow().vector_dim(),
+                )
+            })
             .collect()
     }
 
@@ -1596,6 +1619,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -1668,6 +1692,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
 
@@ -1759,6 +1784,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
 
@@ -1850,6 +1876,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
 
@@ -1881,6 +1908,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -1975,6 +2003,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -2038,6 +2067,7 @@ mod tests {
                     },
                 ),
             ]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -2143,6 +2173,7 @@ mod tests {
                     },
                 ),
             ]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -2176,12 +2207,12 @@ mod tests {
         ];
         let wrong_vectors_multi = vec![
             // Incorrect dimensionality
-            NamedVectors::from_ref("a", &[]),
-            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0]),
-            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0, 1.0, 0.0]),
-            NamedVectors::from_ref("b", &[]),
-            NamedVectors::from_ref("b", &[0.5]),
-            NamedVectors::from_ref("b", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from_ref("a", [].as_slice().into()),
+            NamedVectors::from_ref("a", [0.0, 1.0, 0.0].as_slice().into()),
+            NamedVectors::from_ref("a", [0.0, 1.0, 0.0, 1.0, 0.0].as_slice().into()),
+            NamedVectors::from_ref("b", [].as_slice().into()),
+            NamedVectors::from_ref("b", [0.5].as_slice().into()),
+            NamedVectors::from_ref("b", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
             NamedVectors::from([
                 ("a".into(), vec![0.1, 0.2, 0.3]),
                 ("b".into(), vec![1.0, 0.9]),
@@ -2191,8 +2222,8 @@ mod tests {
                 ("b".into(), vec![1.0, 0.9, 0.0]),
             ]),
             // Incorrect names
-            NamedVectors::from_ref("aa", &[0.0, 0.1, 0.2, 0.3]),
-            NamedVectors::from_ref("bb", &[0.0, 0.1]),
+            NamedVectors::from_ref("aa", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
+            NamedVectors::from_ref("bb", [0.0, 0.1].as_slice().into()),
             NamedVectors::from([
                 ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
                 ("b".into(), vec![1.0, 0.9]),
@@ -2205,7 +2236,8 @@ mod tests {
         let wrong_names = vec!["aa", "bb", ""];
 
         for (vector_name, vector) in wrong_vectors_single.iter() {
-            let query_vector = vector.to_owned().into();
+            let vector: VectorOrSparse = vector.to_owned().into();
+            let query_vector = vector.into();
             check_vector(vector_name, &query_vector, &config)
                 .err()
                 .unwrap();

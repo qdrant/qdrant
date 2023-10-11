@@ -2,12 +2,14 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use common::types::ScoredPointOffset;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
+use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
@@ -21,7 +23,7 @@ pub trait VectorIndex {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-    ) -> Vec<Vec<ScoredPointOffset>>;
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
     /// Force internal index rebuild.
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
@@ -38,6 +40,7 @@ pub enum VectorIndexEnum {
     Plain(PlainIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),
     HnswMmap(HNSWIndex<GraphLinksMmap>),
+    Sparse(SparseVectorIndex<InvertedIndexRam>),
 }
 
 impl VectorIndexEnum {
@@ -46,6 +49,7 @@ impl VectorIndexEnum {
             Self::Plain(_) => false,
             Self::HnswRam(_) => true,
             Self::HnswMmap(_) => true,
+            Self::Sparse(_) => true,
         }
     }
 }
@@ -58,13 +62,16 @@ impl VectorIndex for VectorIndexEnum {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-    ) -> Vec<Vec<ScoredPointOffset>> {
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match self {
             VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params, is_stopped),
             VectorIndexEnum::HnswRam(index) => {
                 index.search(vectors, filter, top, params, is_stopped)
             }
             VectorIndexEnum::HnswMmap(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
+            VectorIndexEnum::Sparse(index) => {
                 index.search(vectors, filter, top, params, is_stopped)
             }
         }
@@ -75,6 +82,7 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.build_index(stopped),
             VectorIndexEnum::HnswRam(index) => index.build_index(stopped),
             VectorIndexEnum::HnswMmap(index) => index.build_index(stopped),
+            VectorIndexEnum::Sparse(index) => index.build_index(stopped),
         }
     }
 
@@ -83,6 +91,7 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.get_telemetry_data(),
             VectorIndexEnum::HnswRam(index) => index.get_telemetry_data(),
             VectorIndexEnum::HnswMmap(index) => index.get_telemetry_data(),
+            VectorIndexEnum::Sparse(index) => index.get_telemetry_data(),
         }
     }
 
@@ -91,6 +100,7 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.files(),
             VectorIndexEnum::HnswRam(index) => index.files(),
             VectorIndexEnum::HnswMmap(index) => index.files(),
+            VectorIndexEnum::Sparse(index) => index.files(),
         }
     }
 
@@ -99,6 +109,7 @@ impl VectorIndex for VectorIndexEnum {
             Self::Plain(index) => index.indexed_vector_count(),
             Self::HnswRam(index) => index.indexed_vector_count(),
             Self::HnswMmap(index) => index.indexed_vector_count(),
+            Self::Sparse(index) => index.indexed_vector_count(),
         }
     }
 }

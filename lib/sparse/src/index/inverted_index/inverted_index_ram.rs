@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 
@@ -26,6 +26,13 @@ impl InvertedIndex for InvertedIndexRam {
 
     fn indexed_vector_count(&self) -> usize {
         self.postings.len()
+    }
+
+    fn from_builder<P: AsRef<Path>>(
+        mut builder: InvertedIndexBuilder,
+        _path: P,
+    ) -> std::io::Result<Self> {
+        Ok(builder.build())
     }
 }
 

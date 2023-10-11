@@ -10,6 +10,8 @@ mod mmap_vectors;
 pub mod quantized;
 pub mod raw_scorer;
 pub mod simple_vector_storage;
+mod sparse_raw_scorer;
+pub mod sparse_vector_storage_ram;
 mod vector_storage_base;
 
 #[cfg(test)]

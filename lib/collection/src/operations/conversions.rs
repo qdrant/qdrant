@@ -6,7 +6,7 @@ use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    Named, NamedRecoQuery, NamedVector, VectorStruct, DEFAULT_VECTOR_NAME,
+    Named, NamedRecoQuery, NamedVector, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -506,6 +506,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             ),
                         },
                     },
+                    sparse_vectors: None, // TODO(ivan) grpc
                     shard_number: NonZeroU32::new(params.shard_number)
                         .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
                     on_disk_payload: params.on_disk_payload,
@@ -752,9 +753,10 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
 
+        let vector: VectorType = request.vector.get_vector().to_owned().try_into().unwrap(); // TODO: avoid unwrap Fuuuuuuuuuu
         Self {
             collection_name: collection_id,
-            vector: request.vector.get_vector().to_vec(),
+            vector,
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
             with_vectors: request.with_vector.clone().map(|wv| wv.into()),
@@ -773,11 +775,14 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
 impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
     fn from(value: QueryEnum) -> Self {
         match value {
-            QueryEnum::Nearest(vector) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::NearestNeighbors(
-                    vector.to_vector().into(),
-                )),
-            },
+            QueryEnum::Nearest(vector) => {
+                let v: VectorType = vector.to_vector().try_into().unwrap(); // TODO(ivan) Fuuuuuuuuuuu
+                api::grpc::qdrant::QueryEnum {
+                    query: Some(api::grpc::qdrant::query_enum::Query::NearestNeighbors(
+                        v.into(),
+                    )),
+                }
+            }
             QueryEnum::RecommendBestScore(named) => api::grpc::qdrant::QueryEnum {
                 query: Some(api::grpc::qdrant::query_enum::Query::RecommendBestScore(
                     api::grpc::qdrant::RecoQuery {
@@ -785,13 +790,17 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
                             .query
                             .positives
                             .into_iter()
-                            .map(|v| api::grpc::qdrant::Vector { data: v })
+                            .map(|v| api::grpc::qdrant::Vector {
+                                data: v.try_into().unwrap(),
+                            }) // TODO(ivan) Fuuuuuuuuuuu
                             .collect(),
                         negatives: named
                             .query
                             .negatives
                             .into_iter()
-                            .map(|v| api::grpc::qdrant::Vector { data: v })
+                            .map(|v| api::grpc::qdrant::Vector {
+                                data: v.try_into().unwrap(),
+                            }) // TODO(ivan) Fuuuuuuuuuuu
                             .collect(),
                     },
                 )),
@@ -867,8 +876,8 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                 api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                     QueryEnum::RecommendBestScore(NamedRecoQuery {
                         query: RecoQuery::new(
-                            query.positives.into_iter().map(|v| v.data).collect(),
-                            query.negatives.into_iter().map(|v| v.data).collect(),
+                            query.positives.into_iter().map(|v| v.data.into()).collect(),
+                            query.negatives.into_iter().map(|v| v.data.into()).collect(),
                         ),
                         using: value.vector_name,
                     })

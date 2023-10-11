@@ -7,7 +7,7 @@ use std::sync::Arc;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{QueryVector, VectorElementType};
+use segment::data_types::vectors::{QueryVector, VectorOrSparse};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::telemetry::SegmentTelemetry;
@@ -408,7 +408,7 @@ impl SegmentEntry for ProxySegment {
         &self,
         vector_name: &str,
         point_id: PointIdType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    ) -> OperationResult<Option<VectorOrSparse>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment
                 .get()
@@ -437,6 +437,18 @@ impl SegmentEntry for ProxySegment {
             .read()
             .config()
             .vector_data
+            .keys()
+        {
+            if let Some(vector) = self.vector(vector_name, point_id)? {
+                result.insert(vector_name.clone(), vector);
+            }
+        }
+        for vector_name in self
+            .wrapped_segment
+            .get()
+            .read()
+            .config()
+            .sparse_vector_data
             .keys()
         {
             if let Some(vector) = self.vector(vector_name, point_id)? {
@@ -577,7 +589,8 @@ impl SegmentEntry for ProxySegment {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
 
-        let vector_name_count = self.config().vector_data.len();
+        let vector_name_count =
+            self.config().vector_data.len() + self.config().sparse_vector_data.len();
         let deleted_points_count = self.deleted_points.read().len();
 
         // This is a best estimate
@@ -1335,6 +1348,7 @@ mod tests {
                     },
                 ),
             ]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut original_segment = build_segment(dir.path(), &config, true).unwrap();

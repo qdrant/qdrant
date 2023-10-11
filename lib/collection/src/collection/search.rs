@@ -317,9 +317,7 @@ impl Collection {
             .into_iter()
             .zip(request.searches.iter())
             .map(|(res, request)| {
-                let distance = collection_params
-                    .get_vector_params(request.query.get_vector_name())?
-                    .distance;
+                let distance = collection_params.get_distance(request.query.get_vector_name())?;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
                         tools::peek_top_largest_iterable(res, request.limit + request.offset)

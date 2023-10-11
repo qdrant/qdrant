@@ -5,7 +5,9 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{
+    only_default_vector, QueryVector, VectorOrSparse, DEFAULT_VECTOR_NAME,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
@@ -49,6 +51,7 @@ fn test_filterable_hnsw() {
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 
@@ -140,7 +143,8 @@ fn test_filterable_hnsw() {
     let mut hits = 0;
     let attempts = 100;
     for i in 0..attempts {
-        let query = random_vector(&mut rnd, dim).into();
+        let query: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query: QueryVector = query.into();
 
         let range_size = 40;
         let left_range = rnd.gen_range(0..400);
@@ -159,16 +163,18 @@ fn test_filterable_hnsw() {
         let filter_query = Some(&filter);
         // let filter_query = None;
 
-        let index_result = hnsw_index.search(
-            &[&query],
-            filter_query,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
 
         // check that search was performed using HNSW index
         assert_eq!(
@@ -182,7 +188,8 @@ fn test_filterable_hnsw() {
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &false.into());
+            .search(&[&query], filter_query, top, None, &false.into())
+            .unwrap();
 
         if plain_result == index_result {
             hits += 1;

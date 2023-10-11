@@ -3,6 +3,7 @@ use std::cmp::max;
 use common::types::PointOffsetType;
 use ordered_float::OrderedFloat;
 
+use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimWeight;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -120,6 +121,17 @@ impl PostingList {
     }
 }
 
+impl From<SparseVector> for PostingList {
+    fn from(vector: SparseVector) -> PostingList {
+        let mut posting_list = PostingBuilder::new();
+        for (id, weight) in vector.indices.iter().zip(vector.weights.iter()) {
+            posting_list.add(*id, *weight);
+        }
+        posting_list.build()
+    }
+}
+
+#[derive(Default)]
 pub struct PostingBuilder {
     elements: Vec<PostingElement>,
 }

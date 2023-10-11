@@ -17,8 +17,8 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    Named, NamedRecoQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct,
-    VectorType, DEFAULT_VECTOR_NAME,
+    Named, NamedRecoQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorOrSparseRef,
+    VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
@@ -27,6 +27,7 @@ use segment::types::{
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
+use sparse::common::sparse_vector::SparseVector;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
@@ -383,6 +384,7 @@ pub struct PointRequest {
 pub enum RecommendExample {
     PointId(PointIdType),
     Vector(VectorType),
+    Sparse(SparseVector),
 }
 
 impl RecommendExample {
@@ -759,6 +761,9 @@ impl From<OperationError> for CollectionError {
             OperationError::ValidationError { .. } => Self::BadInput {
                 description: format!("{err}"),
             },
+            OperationError::WrongSparse => Self::BadInput {
+                description: "Conversion between sparse and regular vectors".to_string(),
+            },
         }
     }
 }
@@ -922,10 +927,12 @@ impl Record {
         }
     }
 
-    pub fn get_vector_by_name(&self, name: &str) -> Option<&VectorType> {
+    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorOrSparseRef> {
         match &self.vector {
-            Some(VectorStruct::Single(vector)) => (name == DEFAULT_VECTOR_NAME).then_some(vector),
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name),
+            Some(VectorStruct::Single(vector)) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
+            }
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(|r| r.into()),
             None => None,
         }
     }
@@ -979,6 +986,22 @@ impl Anonymize for VectorParams {
     }
 }
 
+/// Params of single sparse vector data storage
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct SparseVectorParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_disk: Option<bool>,
+
+    pub distance: Distance,
+}
+
+impl Anonymize for SparseVectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
+}
+
 /// Vector params separator for single and multiple vector modes
 /// Single mode:
 ///
@@ -997,6 +1020,13 @@ impl Anonymize for VectorParams {
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case", untagged)]
+pub enum SparseVectorsConfig {
+    Single(SparseVectorParams),
+    Multi(BTreeMap<String, SparseVectorParams>),
 }
 
 impl VectorsConfig {
@@ -1083,6 +1113,85 @@ impl VectorsConfig {
     }
 }
 
+impl SparseVectorsConfig {
+    pub fn empty() -> Self {
+        SparseVectorsConfig::Multi(BTreeMap::new())
+    }
+
+    pub fn vectors_num(&self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Multi(vectors) => vectors.len(),
+        }
+    }
+
+    pub fn get_params(&self, name: &str) -> Option<&SparseVectorParams> {
+        match self {
+            SparseVectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            SparseVectorsConfig::Multi(params) => params.get(name),
+        }
+    }
+
+    pub fn get_params_mut(&mut self, name: &str) -> Option<&mut SparseVectorParams> {
+        match self {
+            SparseVectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            SparseVectorsConfig::Multi(params) => params.get_mut(name),
+        }
+    }
+
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &SparseVectorParams)> + 'a> {
+        match self {
+            SparseVectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            SparseVectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
+
+    // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
+    pub fn check_compatible(&self, other: &Self) -> CollectionResult<()> {
+        match (self, other) {
+            (Self::Single(_), Self::Single(_)) | (Self::Multi(_), Self::Multi(_)) => (),
+            _ => {
+                return Err(incompatible_vectors_error(
+                    self.params_iter().map(|(name, _)| name),
+                    other.params_iter().map(|(name, _)| name),
+                ));
+            }
+        };
+
+        for (vector_name, _this) in self.params_iter() {
+            let Some(_other) = other.get_params(vector_name) else {
+                return Err(missing_vector_error(vector_name));
+            };
+        }
+
+        Ok(())
+    }
+
+    pub fn check_compatible_with_segment_config(
+        &self,
+        other: &HashMap<String, segment::types::SparseVectorDataConfig>,
+        exact: bool,
+    ) -> CollectionResult<()> {
+        if exact && self.vectors_num() != other.len() {
+            return Err(incompatible_vectors_error(
+                self.params_iter().map(|(name, _)| name),
+                other.keys().map(String::as_str),
+            ));
+        }
+
+        for (vector_name, _) in self.params_iter() {
+            if other.get(vector_name).is_none() {
+                return Err(missing_vector_error(vector_name));
+            };
+        }
+
+        Ok(())
+    }
+}
+
 fn incompatible_vectors_error<'a, 'b>(
     this: impl Iterator<Item = &'a str>,
     other: impl Iterator<Item = &'b str>,
@@ -1125,6 +1234,34 @@ impl Validate for VectorsConfig {
         match self {
             VectorsConfig::Single(single) => single.validate(),
             VectorsConfig::Multi(multi) => {
+                let errors = multi
+                    .values()
+                    .filter_map(|v| v.validate().err())
+                    .fold(Err(ValidationErrors::new()), |bag, err| {
+                        ValidationErrors::merge(bag, "?", Err(err))
+                    })
+                    .unwrap_err();
+                errors.errors().is_empty().then_some(()).ok_or(errors)
+            }
+        }
+    }
+}
+
+impl Anonymize for SparseVectorsConfig {
+    fn anonymize(&self) -> Self {
+        match self {
+            SparseVectorsConfig::Single(params) => SparseVectorsConfig::Single(params.anonymize()),
+            SparseVectorsConfig::Multi(params) => SparseVectorsConfig::Multi(params.anonymize()),
+        }
+    }
+}
+
+impl Validate for SparseVectorsConfig {
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            SparseVectorsConfig::Single(single) => single.validate(),
+            SparseVectorsConfig::Multi(multi) => {
                 let errors = multi
                     .values()
                     .filter_map(|v| v.validate().err())

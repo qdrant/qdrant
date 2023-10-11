@@ -3,7 +3,7 @@ use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
 };
-use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
+use collection::operations::types::{SparseVectorsConfig, VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
@@ -156,6 +156,10 @@ pub struct CreateCollection {
     #[serde(default, alias = "quantization")]
     #[validate]
     pub quantization_config: Option<QuantizationConfig>,
+    /// Sparse vector data config.
+    #[serde(default)]
+    #[validate]
+    pub sparse_vectors: Option<SparseVectorsConfig>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -335,6 +339,7 @@ impl From<CollectionConfig> for CreateCollection {
             optimizers_config: Some(value.optimizer_config.into()),
             init_from: None,
             quantization_config: value.quantization_config,
+            sparse_vectors: value.params.sparse_vectors,
         }
     }
 }

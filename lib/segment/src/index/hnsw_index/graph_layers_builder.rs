@@ -515,7 +515,7 @@ mod tests {
                 .for_each(|idx| {
                     let fake_filter_context = FakeFilterContext {};
                     let added_vector = vector_holder.vectors.get(idx).to_vec();
-                    let raw_scorer = vector_holder.get_raw_scorer(added_vector);
+                    let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
                     graph_layers.link_new_point(idx, scorer);
@@ -557,7 +557,7 @@ mod tests {
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers.link_new_point(idx, scorer);
         }
@@ -626,7 +626,7 @@ mod tests {
             .unwrap();
 
         let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_holder.get_raw_scorer(query.clone());
+        let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
@@ -709,7 +709,7 @@ mod tests {
             .unwrap();
 
         let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_holder.get_raw_scorer(query);
+        let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
@@ -734,7 +734,7 @@ mod tests {
         let fake_filter_context = FakeFilterContext {};
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let added_vector = vector_holder.vectors.get(idx).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector);
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
@@ -782,7 +782,7 @@ mod tests {
 
         let new_vector_to_insert = random_vector(&mut rng, DIM);
 
-        let scorer = vector_holder.get_raw_scorer(new_vector_to_insert);
+        let scorer = vector_holder.get_raw_scorer(new_vector_to_insert).unwrap();
 
         for i in 0..NUM_VECTORS {
             candidates.push(ScoredPointOffset {

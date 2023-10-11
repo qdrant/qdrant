@@ -123,6 +123,7 @@ impl ConfigMismatchOptimizer {
                 }
 
                 // Determine whether segment has mismatch
+                // TODO(ivan) do we have some mismathces in sparse config?
                 let has_mismatch =
                     segment_config
                         .vector_data

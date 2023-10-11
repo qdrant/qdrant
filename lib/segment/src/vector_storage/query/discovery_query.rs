@@ -2,7 +2,8 @@ use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, VectorType};
+use crate::common::operation_error::OperationError;
+use crate::data_types::vectors::{QueryVector, VectorOrSparse, VectorType};
 
 type RankType = i32;
 
@@ -44,6 +45,16 @@ impl<T> From<(T, T)> for DiscoveryPair<T> {
             positive: pair.0,
             negative: pair.1,
         }
+    }
+}
+
+impl TryFrom<DiscoveryPair<VectorOrSparse>> for DiscoveryPair<VectorType> {
+    type Error = OperationError;
+
+    fn try_from(query: DiscoveryPair<VectorOrSparse>) -> Result<Self, Self::Error> {
+        let positive = query.positive.try_into()?;
+        let negative = query.negative.try_into()?;
+        Ok(Self { positive, negative })
     }
 }
 
@@ -99,9 +110,23 @@ impl<T> Query<T> for DiscoveryQuery<T> {
     }
 }
 
-impl From<DiscoveryQuery<VectorType>> for QueryVector {
-    fn from(query: DiscoveryQuery<VectorType>) -> Self {
+impl From<DiscoveryQuery<VectorOrSparse>> for QueryVector {
+    fn from(query: DiscoveryQuery<VectorOrSparse>) -> Self {
         QueryVector::Discovery(query)
+    }
+}
+
+impl TryFrom<DiscoveryQuery<VectorOrSparse>> for DiscoveryQuery<VectorType> {
+    type Error = OperationError;
+
+    fn try_from(query: DiscoveryQuery<VectorOrSparse>) -> Result<Self, Self::Error> {
+        let target = query.target.try_into()?;
+        let pairs = query
+            .pairs
+            .into_iter()
+            .map(|pair| pair.try_into())
+            .collect::<Result<_, _>>()?;
+        Ok(Self { target, pairs })
     }
 }
 

@@ -126,8 +126,9 @@ where
         }
     }
 
-    pub fn get_raw_scorer(&self, query: VectorType) -> Box<dyn RawScorer + '_> {
-        let query = TMetric::preprocess(query).into();
+    pub fn get_raw_scorer(&self, query: VectorType) -> OperationResult<Box<dyn RawScorer + '_>> {
+        let v: VectorOrSparse = TMetric::preprocess(query).into();
+        let query = v.into();
         raw_scorer_impl(
             query,
             self,

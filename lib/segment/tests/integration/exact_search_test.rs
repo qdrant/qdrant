@@ -4,7 +4,9 @@ use std::sync::atomic::AtomicBool;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{
+    only_default_vector, QueryVector, VectorOrSparse, DEFAULT_VECTOR_NAME,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
@@ -48,6 +50,7 @@ fn exact_search_test() {
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 
@@ -140,23 +143,27 @@ fn exact_search_test() {
     let top = 3;
     let attempts = 50;
     for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim).into();
+        let query: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query: QueryVector = query.into();
 
-        let index_result = hnsw_index.search(
-            &[&query],
-            None,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                exact: true,
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                None,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: true,
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &false.into());
+            .search(&[&query], None, top, None, &false.into())
+            .unwrap();
 
         assert_eq!(
             index_result, plain_result,
@@ -178,21 +185,24 @@ fn exact_search_test() {
         )));
 
         let filter_query = Some(&filter);
-        let index_result = hnsw_index.search(
-            &[&query],
-            filter_query,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                exact: true,
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: true,
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &false.into());
+            .search(&[&query], filter_query, top, None, &false.into())
+            .unwrap();
 
         assert_eq!(
             index_result, plain_result,

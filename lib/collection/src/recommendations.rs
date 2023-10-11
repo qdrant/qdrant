@@ -4,7 +4,8 @@ use std::future::Future;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    NamedRecoQuery, NamedVector, VectorElementType, VectorType, DEFAULT_VECTOR_NAME,
+    NamedRecoQuery, NamedVector, SparseNamedVector, VectorElementType, VectorOrSparse,
+    VectorOrSparseRef, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -21,19 +22,22 @@ use crate::operations::types::{
     Record, SearchRequest, SearchRequestBatch, UsingVector,
 };
 
-fn avg_vectors<'a>(
-    vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-) -> Vec<VectorElementType> {
+fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorOrSparseRef<'a>>) -> VectorOrSparse {
     let mut count: usize = 0;
-    let mut avg_vector: Vec<VectorElementType> = vec![];
+    let mut avg_vector: VectorType = Default::default();
     for vector in vectors {
-        count += 1;
-        for i in 0..vector.len() {
-            if i >= avg_vector.len() {
-                avg_vector.push(vector[i])
-            } else {
-                avg_vector[i] += vector[i];
+        match vector {
+            VectorOrSparseRef::Vector(vector) => {
+                count += 1;
+                for i in 0..vector.len() {
+                    if i >= avg_vector.len() {
+                        avg_vector.push(vector[i])
+                    } else {
+                        avg_vector[i] += vector[i];
+                    }
+                }
             }
+            VectorOrSparseRef::Sparse(_) => unimplemented!(), // TODO(ivan)
         }
     }
 
@@ -41,7 +45,24 @@ fn avg_vectors<'a>(
         *item /= count as VectorElementType;
     }
 
-    avg_vector
+    avg_vector.into()
+}
+
+fn merge_positive_and_negative_avg(
+    positive: VectorOrSparse,
+    negative: VectorOrSparse,
+) -> VectorOrSparse {
+    match (positive, negative) {
+        (VectorOrSparse::Vector(positive), VectorOrSparse::Vector(negative)) => {
+            let vector: VectorType = positive
+                .iter()
+                .zip(negative.iter())
+                .map(|(pos, neg)| pos + pos - neg)
+                .collect();
+            vector.into()
+        }
+        _ => unimplemented!(), // TODO(ivan)
+    }
 }
 
 pub async fn recommend_by<'a, F, Fut>(
@@ -376,10 +397,11 @@ fn batch_by_strategy(
         }
     })
 }
+
 fn recommend_by_avg_vector<'a>(
     request: RecommendRequest,
-    positive: impl Iterator<Item = &'a VectorType>,
-    negative: impl Iterator<Item = &'a VectorType>,
+    positive: impl Iterator<Item = VectorOrSparseRef<'a>>,
+    negative: impl Iterator<Item = VectorOrSparseRef<'a>>,
     vector_name: &str,
     reference_vectors_ids: Vec<ExtendedPointId>,
 ) -> SearchRequest {
@@ -401,20 +423,22 @@ fn recommend_by_avg_vector<'a>(
         avg_positive
     } else {
         let avg_negative = avg_vectors(negative.into_iter());
-
-        avg_positive
-            .iter()
-            .zip(avg_negative.iter())
-            .map(|(pos, neg)| pos + pos - neg)
-            .collect()
+        merge_positive_and_negative_avg(avg_positive, avg_negative)
     };
 
     SearchRequest {
-        vector: NamedVector {
-            name: vector_name.to_string(),
-            vector: search_vector,
-        }
-        .into(),
+        vector: match search_vector {
+            VectorOrSparse::Vector(vector) => NamedVector {
+                name: vector_name.to_string(),
+                vector,
+            }
+            .into(),
+            VectorOrSparse::Sparse(vector) => SparseNamedVector {
+                name: vector_name.to_string(),
+                vector,
+            }
+            .into(),
+        },
         filter: Some(Filter {
             should: None,
             must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
@@ -433,12 +457,12 @@ fn recommend_by_avg_vector<'a>(
 
 fn recommend_by_best_score<'a>(
     request: RecommendRequest,
-    positive: impl Iterator<Item = &'a VectorType>,
-    negative: impl Iterator<Item = &'a VectorType>,
+    positive: impl Iterator<Item = VectorOrSparseRef<'a>>,
+    negative: impl Iterator<Item = VectorOrSparseRef<'a>>,
     reference_vectors_ids: Vec<PointIdType>,
 ) -> CoreSearchRequest {
-    let positive = positive.cloned().collect();
-    let negative = negative.cloned().collect();
+    let positive = positive.map(|v| v.to_owned()).collect();
+    let negative = negative.map(|v| v.to_owned()).collect();
 
     let query = QueryEnum::RecommendBestScore(NamedRecoQuery {
         query: RecoQuery::new(positive, negative),
@@ -473,15 +497,16 @@ fn convert_to_vectors<'a>(
     all_vectors_records_map: &'a HashMap<(Option<&String>, PointIdType), Record>,
     vector_name: &'a str,
     collection_name: Option<&'a String>,
-) -> impl Iterator<Item = &'a VectorType> + 'a {
+) -> impl Iterator<Item = VectorOrSparseRef<'a>> + 'a {
     examples.filter_map(move |example| match example {
-        RecommendExample::Vector(vector) => Some(vector),
+        RecommendExample::Vector(vector) => Some(vector.into()),
         RecommendExample::PointId(vid) => {
             let rec = all_vectors_records_map
                 .get(&(collection_name, *vid))
                 .unwrap();
             rec.get_vector_by_name(vector_name)
         }
+        RecommendExample::Sparse(vector) => Some(vector.into()),
     })
 }
 

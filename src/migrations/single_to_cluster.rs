@@ -36,6 +36,7 @@ pub async fn handle_existing_collections(
             collection.to_string(),
             CreateCollection {
                 vectors: collection_state.config.params.vectors,
+                sparse_vectors: collection_state.config.params.sparse_vectors,
                 shard_number: Some(shards_number),
                 sharding_method,
                 replication_factor: Some(collection_state.config.params.replication_factor.get()),

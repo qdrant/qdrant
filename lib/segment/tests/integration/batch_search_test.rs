@@ -3,7 +3,9 @@ use std::sync::atomic::AtomicBool;
 
 use rand::prelude::StdRng;
 use rand::SeedableRng;
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{
+    only_default_vector, QueryVector, VectorOrSparse, DEFAULT_VECTOR_NAME,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
@@ -40,6 +42,7 @@ fn test_batch_and_single_request_equivalency() {
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 
@@ -67,8 +70,10 @@ fn test_batch_and_single_request_equivalency() {
     }
 
     for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rnd, dim).into();
-        let query_vector_2 = random_vector(&mut rnd, dim).into();
+        let query_vector_1: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query_vector_1: QueryVector = query_vector_1.into();
+        let query_vector_2: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query_vector_2: QueryVector = query_vector_2.into();
 
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
@@ -154,8 +159,10 @@ fn test_batch_and_single_request_equivalency() {
     hnsw_index.build_index(&stopped).unwrap();
 
     for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rnd, dim).into();
-        let query_vector_2 = random_vector(&mut rnd, dim).into();
+        let query_vector_1: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query_vector_1: QueryVector = query_vector_1.into();
+        let query_vector_2: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query_vector_2: QueryVector = query_vector_2.into();
 
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
@@ -164,19 +171,23 @@ fn test_batch_and_single_request_equivalency() {
             payload_value.into(),
         )));
 
-        let search_res_1 =
-            hnsw_index.search(&[&query_vector_1], Some(&filter), 10, None, &false.into());
+        let search_res_1 = hnsw_index
+            .search(&[&query_vector_1], Some(&filter), 10, None, &false.into())
+            .unwrap();
 
-        let search_res_2 =
-            hnsw_index.search(&[&query_vector_2], Some(&filter), 10, None, &false.into());
+        let search_res_2 = hnsw_index
+            .search(&[&query_vector_2], Some(&filter), 10, None, &false.into())
+            .unwrap();
 
-        let batch_res = hnsw_index.search(
-            &[&query_vector_1, &query_vector_2],
-            Some(&filter),
-            10,
-            None,
-            &false.into(),
-        );
+        let batch_res = hnsw_index
+            .search(
+                &[&query_vector_1, &query_vector_2],
+                Some(&filter),
+                10,
+                None,
+                &false.into(),
+            )
+            .unwrap();
 
         assert_eq!(search_res_1[0], batch_res[0]);
         assert_eq!(search_res_2[0], batch_res[1]);

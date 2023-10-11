@@ -6,8 +6,11 @@ use quantization::EncodedVectors;
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
 use super::quantized_query_scorer::QuantizedQueryScorer;
 use super::quantized_vectors::QuantizedVectorStorage;
-use crate::data_types::vectors::QueryVector;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::types::Distance;
+use crate::vector_storage::query::discovery_query::DiscoveryQuery;
+use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
 pub(super) struct QuantizedScorerBuilder<'a> {
@@ -38,7 +41,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         }
     }
 
-    pub fn build(self) -> Box<dyn RawScorer + 'a> {
+    pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.quantized_storage {
             QuantizedVectorStorage::ScalarRam(storage) => self.new_quantized_scorer(storage),
             QuantizedVectorStorage::ScalarMmap(storage) => self.new_quantized_scorer(storage),
@@ -53,7 +56,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
     fn new_quantized_scorer<TEncodedQuery: 'a>(
         self,
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
-    ) -> Box<dyn RawScorer + 'a> {
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let Self {
             quantized_storage: _same_as_quantized_storage_in_args,
             query,
@@ -65,15 +68,18 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
         match query {
             QueryVector::Nearest(vector) => {
-                let query_scorer = QuantizedQueryScorer::new(vector, quantized_storage, *distance);
+                let query_scorer =
+                    QuantizedQueryScorer::new(vector.try_into()?, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Recommend(reco_query) => {
+                let reco_query: RecoQuery<VectorType> = reco_query.try_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(reco_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Discovery(discovery_query) => {
+                let discovery_query: DiscoveryQuery<VectorType> = discovery_query.try_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(discovery_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
