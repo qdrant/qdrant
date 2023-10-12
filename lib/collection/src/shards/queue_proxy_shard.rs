@@ -13,8 +13,8 @@ use super::remote_shard::RemoteShard;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest, CountResult,
-    PointRequest, Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
+    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -140,6 +140,24 @@ impl QueueProxyShard {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Finalize. Transfer all missed updates to remote and unwrap the wrapped shard.
+    ///
+    /// This method helps with safely destructing the queue proxy shard, ensuring that remaining
+    /// queue updates are transferred to the remote shard, and only unwrapping the local shard
+    /// on success.
+    pub async fn finalize(self) -> Result<LocalShard, (CollectionError, Self)> {
+        // Transfer all missed updates, do not unwrap on failure but return error with self
+        let transfer_result = self.transfer_all_missed_updates().await;
+        if let Err(err) = transfer_result {
+            return Err((err, self));
+        }
+
+        // Release max acknowledged version for WAL because we unwrap the queue proxy
+        self.set_max_ack_version(None).await;
+
+        Ok(self.wrapped_shard)
     }
 
     /// Set or release maximum version to acknowledge in WAL
