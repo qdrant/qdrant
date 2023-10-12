@@ -820,13 +820,9 @@ fn test_any_matcher_cardinality_estimation() {
         .borrow()
         .estimate_cardinality(&filter);
 
-    // each `any` keyword generates a separate primary clause
-    assert_eq!(estimation.primary_clauses.len(), 2);
-    for (index, clause) in estimation.primary_clauses.iter().enumerate() {
-        let expected_primary_clause = FieldCondition::new_match(
-            STR_KEY.to_owned(),
-            format!("value{}", index + 1).to_string().into(),
-        );
+    assert_eq!(estimation.primary_clauses.len(), 1);
+    for (_, clause) in estimation.primary_clauses.iter().enumerate() {
+        let expected_primary_clause = any_match.clone();
 
         match clause {
             PrimaryCondition::Condition(field_condition) => {
