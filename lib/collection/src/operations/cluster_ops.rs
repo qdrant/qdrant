@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
 
-use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard::{PeerId, ShardId, ShardKey};
 use crate::shards::transfer::shard_transfer::ShardTransferMethod;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -17,6 +17,24 @@ pub enum ClusterOperations {
     AbortTransfer(AbortTransferOperation),
     /// Drop replica of a shard from a peer
     DropReplica(DropReplicaOperation),
+    /// Create a custom shard partition for a given key
+    CreateShardingKey(CreateShardingKeyOperation),
+    /// Drop a custom shard partition for a given key
+    DropShardingKey(DropShardingKeyOperation),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateShardingKeyOperation {
+    pub shard_key: ShardKey,
+    #[serde(default)]
+    pub placement: Option<Vec<PeerId>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct DropShardingKeyOperation {
+    pub shard_key: ShardKey,
 }
 
 impl Validate for ClusterOperations {
@@ -26,6 +44,8 @@ impl Validate for ClusterOperations {
             ClusterOperations::ReplicateShard(op) => op.validate(),
             ClusterOperations::AbortTransfer(op) => op.validate(),
             ClusterOperations::DropReplica(op) => op.validate(),
+            ClusterOperations::CreateShardingKey(op) => op.validate(),
+            ClusterOperations::DropShardingKey(op) => op.validate(),
         }
     }
 }

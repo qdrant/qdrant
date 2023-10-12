@@ -77,6 +77,12 @@ impl TableOfContent {
                 self.set_shard_replica_state(operation).await.map(|()| true)
             }
             CollectionMetaOperations::Nop { .. } => Ok(true),
+            CollectionMetaOperations::CreateShardKey(_) => {
+                todo!("CreateShardKey is not yet implemented")
+            }
+            CollectionMetaOperations::DropShardKey(_) => {
+                todo!("DropShardKey is not yet implemented")
+            }
         }
     }
 
@@ -236,6 +242,7 @@ impl TableOfContent {
                     config: _,
                     shards,
                     transfers,
+                    shards_key_mapping: _,
                 } = collection.state().await;
                 let all_peers: HashSet<_> = self
                     .channel_service

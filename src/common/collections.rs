@@ -13,9 +13,10 @@ use collection::shards::replica_set;
 use collection::shards::shard::ShardId;
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use itertools::Itertools;
+use rand::prelude::SliceRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, UpdateCollectionOperation,
+    CollectionMetaOperations, CreateShardKey, DropShardKey, UpdateCollectionOperation,
 };
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -113,6 +114,17 @@ pub async fn do_update_collection_cluster(
         });
     }
     let consensus_state = dispatcher.consensus_state().unwrap();
+
+    let get_all_peer_ids = || {
+        consensus_state
+            .persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .keys()
+            .cloned()
+            .collect_vec()
+    };
 
     let validate_peer_exists = |peer_id| {
         let target_peer_exist = consensus_state
@@ -249,6 +261,102 @@ pub async fn do_update_collection_cluster(
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::UpdateCollection(update_operation),
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::CreateShardingKey(crete_sharding_key) => {
+            // Validate that:
+            // - key does not exist yet
+            //
+            // If placement suggested:
+            // - Correct amount of peers provided
+            // - Peers exist
+
+            let state = collection.state().await;
+
+            let shards_numer = state.config.params.shard_number.get() as usize;
+
+            let shard_keys_mapping = state.shards_key_mapping;
+            if shard_keys_mapping.contains_key(&crete_sharding_key.shard_key) {
+                return Err(StorageError::BadRequest {
+                    description: format!(
+                        "Sharding key {} already exists for collection {}",
+                        crete_sharding_key.shard_key, collection_name
+                    ),
+                });
+            }
+
+            let placement = if let Some(placement) = crete_sharding_key.placement {
+                if placement.len() != shards_numer {
+                    return Err(StorageError::BadRequest {
+                        description: format!(
+                            "Placement for sharding key {} should contain {} peers, but {} provided",
+                            crete_sharding_key.shard_key,
+                            shards_numer,
+                            placement.len()
+                        ),
+                    });
+                }
+                for peer_id in placement.iter().copied() {
+                    validate_peer_exists(peer_id)?;
+                }
+                placement
+            } else {
+                // Suggest random placement
+                let all_peer_ids = get_all_peer_ids();
+
+                let mut rng = rand::thread_rng();
+
+                let placement: Vec<_> = if all_peer_ids.len() < shards_numer {
+                    // random select `shards_numer` from all_peer_ids with repetition
+                    (0..shards_numer)
+                        .filter_map(|_| all_peer_ids.choose(&mut rng))
+                        .copied()
+                        .collect()
+                } else {
+                    // random select `shards_numer` from all_peer_ids without repetition
+                    all_peer_ids
+                        .choose_multiple(&mut rng, shards_numer)
+                        .copied()
+                        .collect()
+                };
+                placement
+            };
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                        collection_name,
+                        shard_key: crete_sharding_key.shard_key,
+                        placement,
+                    }),
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::DropShardingKey(drop_sharding_key) => {
+            // Validate that:
+            // - key does exist
+
+            let state = collection.state().await;
+
+            let shard_keys_mapping = state.shards_key_mapping;
+            if !shard_keys_mapping.contains_key(&drop_sharding_key.shard_key) {
+                return Err(StorageError::BadRequest {
+                    description: format!(
+                        "Sharding key {} does not exists for collection {}",
+                        drop_sharding_key.shard_key, collection_name
+                    ),
+                });
+            }
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::DropShardKey(DropShardKey {
+                        collection_name,
+                        shard_key: drop_sharding_key.shard_key,
+                    }),
                     wait_timeout,
                 )
                 .await

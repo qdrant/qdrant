@@ -1,4 +1,5 @@
 use core::marker::{Send, Sync};
+use std::fmt::Display;
 use std::future::{self, Future};
 use std::path::Path;
 
@@ -24,6 +25,15 @@ pub type PeerId = u64;
 pub enum ShardKey {
     Keyword(String),
     Number(u64),
+}
+
+impl Display for ShardKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
+            ShardKey::Number(number) => write!(f, "{}", number),
+        }
+    }
 }
 
 /// Shard

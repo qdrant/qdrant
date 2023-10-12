@@ -66,6 +66,10 @@ impl ShardHolder {
             .collect()
     }
 
+    pub fn get_shard_key_to_ids_mapping(&self) -> ShardKeyMapping {
+        self.key_mapping.read().clone()
+    }
+
     pub fn add_shard(
         &mut self,
         shard_id: ShardId,

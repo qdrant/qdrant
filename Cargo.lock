@@ -3754,6 +3754,7 @@ dependencies = [
  "prost 0.11.9",
  "raft",
  "raft-proto",
+ "rand 0.8.5",
  "reqwest",
  "rstack-self",
  "rustls",
