@@ -190,4 +190,14 @@ impl ShardReplicaSet {
             )))
         }
     }
+
+    /// If we have a local queue proxy shard, transfer all missed updates to remote.
+    pub async fn queue_proxy_transfer_updates(&self) -> CollectionResult<()> {
+        let read_local = self.local.read().await;
+        if let Some(Shard::QueueProxy(proxy)) = &*read_local {
+            proxy.transfer_all_missed_updates().await?;
+        }
+
+        Ok(())
+    }
 }

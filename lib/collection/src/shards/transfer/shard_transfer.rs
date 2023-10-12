@@ -372,6 +372,9 @@ pub async fn handle_transferred_shard_proxy(
 
     replica_set.add_remote(to, ReplicaState::Active).await?;
 
+    // Transfer all queue proxy items to the remote if we have any
+    replica_set.queue_proxy_transfer_updates().await?;
+
     if sync {
         // Keep local shard in the replica set
         replica_set.un_proxify_local().await?;
