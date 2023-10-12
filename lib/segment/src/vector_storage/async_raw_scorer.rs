@@ -272,8 +272,8 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     is_stopped.unwrap_or(&DEFAULT_STOPPED),
                 ))
             }
-            QueryVector::Recommend(query) => {
-                let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(query, storage);
+            QueryVector::Recommend(reco_query) => {
+                let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(reco_query, storage);
                 Box::new(AsyncRawScorerImpl::new(
                     points_count,
                     query_scorer,
