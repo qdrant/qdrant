@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
+use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
 use tokio::fs;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
 use crate::common::file_utils::FileCleaner;
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, ShardingMethod};
 use crate::operations::snapshot_ops::{self, SnapshotDescription};
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
@@ -14,6 +15,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
+use crate::shards::shard_holder::{ShardKeyMapping, SHARD_KEY_MAPPING_FILE};
 use crate::shards::shard_versioning;
 
 impl Collection {
@@ -93,6 +95,11 @@ impl Collection {
             .await
             .save(&snapshot_temp_target_dir_path)?;
 
+        self.shards_holder
+            .read()
+            .await
+            .save_key_mapping_to_dir(&snapshot_temp_target_dir_path)?;
+
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
         let mut snapshot_temp_arc_file = tempfile::Builder::new()
             .prefix(&format!("{snapshot_name}-arc-"))
@@ -148,7 +155,29 @@ impl Collection {
         config.validate_and_warn();
         let configured_shards = config.params.shard_number.get();
 
-        for shard_id in 0..configured_shards {
+        let shard_ids_list: Vec<_> = match config.params.sharding_method.unwrap_or_default() {
+            ShardingMethod::Auto => (0..configured_shards).collect(),
+            ShardingMethod::Custom => {
+                // Load shard mapping from disk
+                let mapping_path = target_dir.join(SHARD_KEY_MAPPING_FILE);
+                debug_assert!(
+                    mapping_path.exists(),
+                    "Shard mapping file must exist once custom sharding is used"
+                );
+                if !mapping_path.exists() {
+                    Vec::new()
+                } else {
+                    let shard_key_mapping: ShardKeyMapping = read_json(&mapping_path)?;
+                    shard_key_mapping
+                        .values()
+                        .flat_map(|v| v.iter())
+                        .copied()
+                        .collect()
+                }
+            }
+        };
+
+        for shard_id in shard_ids_list {
             let shard_path = shard_versioning::versioned_shard_path(target_dir, shard_id, 0);
             let shard_config_opt = ShardConfig::load(&shard_path)?;
             if let Some(shard_config) = shard_config_opt {

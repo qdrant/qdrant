@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use collection::collection_state;
+use collection::config::ShardingMethod;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::transfer::shard_transfer;
 use collection::shards::CollectionId;
@@ -12,6 +13,7 @@ use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
 impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
@@ -30,10 +32,17 @@ impl TableOfContent {
             CollectionMetaOperations::CreateCollection(mut operation) => {
                 log::debug!("Creating collection {}", operation.collection_name);
                 let distribution = match operation.take_distribution() {
-                    None => CollectionShardDistribution::all_local(
-                        operation.create_collection.shard_number,
-                        self.this_peer_id,
-                    ),
+                    None => match operation
+                        .create_collection
+                        .sharding_method
+                        .unwrap_or_default()
+                    {
+                        ShardingMethod::Auto => CollectionShardDistribution::all_local(
+                            operation.create_collection.shard_number,
+                            self.this_peer_id,
+                        ),
+                        ShardingMethod::Custom => ShardDistributionProposal::empty().into(),
+                    },
                     Some(distribution) => distribution.into(),
                 };
                 self.create_collection(

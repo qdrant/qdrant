@@ -113,7 +113,7 @@ impl Anonymize for CollectionParams {
     }
 }
 
-fn default_shard_number() -> NonZeroU32 {
+pub fn default_shard_number() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 

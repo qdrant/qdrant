@@ -65,6 +65,7 @@
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
     - [ReplicaState](#qdrant-ReplicaState)
+    - [ShardingMethod](#qdrant-ShardingMethod)
     - [TokenizerType](#qdrant-TokenizerType)
   
 - [collections_service.proto](#collections_service-proto)
@@ -422,6 +423,7 @@
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
+| sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 
 
 
@@ -482,6 +484,7 @@
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
 | init_from_collection | [string](#string) | optional | Specify name of the other collection to copy data from |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
+| sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 
 
 
@@ -1228,6 +1231,18 @@ Note: 1kB = 1 vector of size 256. |
 | Partial | 2 | The shard is partially loaded and is currently receiving data from other shards |
 | Initializing | 3 | Collection is being created |
 | Listener | 4 | A shard which receives data, but is not used for search; Useful for backup shards |
+
+
+
+<a name="qdrant-ShardingMethod"></a>
+
+### ShardingMethod
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Auto | 0 | Auto-sharding based on record ids |
+| Custom | 1 | Shard by user-defined key |
 
 
 
