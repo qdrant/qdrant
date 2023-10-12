@@ -9,6 +9,7 @@ use std::time::Duration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
+use url::Url;
 
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -36,7 +37,7 @@ pub struct ShardTransfer {
     pub method: Option<ShardTransferMethod>,
 }
 
-/// Unique identifier of a transfer
+/// Unique identifier of a transfer, agnostic of transfer method
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferKey {
     pub shard_id: ShardId,
@@ -84,7 +85,12 @@ pub async fn transfer_shard(
     let shard_id = transfer_config.shard_id;
 
     // Initiate shard on a remote peer
-    let remote_shard = RemoteShard::new(shard_id, collection_id.clone(), peer_id, channel_service);
+    let remote_shard = RemoteShard::new(
+        shard_id,
+        collection_id.clone(),
+        peer_id,
+        channel_service.clone(),
+    );
 
     remote_shard.initiate_transfer().await?;
     {
@@ -93,10 +99,12 @@ pub async fn transfer_shard(
         if let Some(replica_set) = transferring_shard {
             match transfer_config.method {
                 Some(ShardTransferMethod::StreamRecords) | None => {
-                    replica_set.proxify_local(remote_shard).await?;
+                    replica_set.proxify_local(remote_shard.clone()).await?;
                 }
                 Some(ShardTransferMethod::Snapshot) => {
-                    replica_set.queue_proxify_local(remote_shard).await?;
+                    replica_set
+                        .queue_proxify_local(remote_shard.clone())
+                        .await?;
                 }
             }
         } else {
@@ -116,11 +124,51 @@ pub async fn transfer_shard(
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
+            // Get local and remote REST addresses
+            // TODO: do not expect here!
+            let local_rest_address = {
+                let local_peer_id = {
+                    channel_service
+                        .id_to_address
+                        .read()
+                        .get(&transfer_config.from)
+                        .cloned()
+                        .expect("could not get local address")
+                };
+                Url::parse(&format!(
+                    "{}://{}:{}",
+                    local_peer_id.scheme().expect("Missing scheme"),
+                    local_peer_id.host().expect("Missing host"),
+                    // TODO: get local REST port from config
+                    local_peer_id.port_u16().expect("No port") - 2,
+                ))
+                .expect("Invalid URL")
+            };
+            let remote_rest_address = {
+                let remote_peer_id = {
+                    channel_service
+                        .id_to_address
+                        .read()
+                        .get(&transfer_config.to)
+                        .cloned()
+                        .expect("could not get remote address")
+                };
+                Url::parse(&format!(
+                    "{}://{}:{}",
+                    remote_peer_id.scheme().expect("Missing scheme"),
+                    remote_peer_id.host().expect("Missing host"),
+                    remote_shard.request_http_port().await?,
+                ))
+                .expect("Invalid URL")
+            };
+
             transfer_snapshot(
                 shard_holder.clone(),
                 shard_id,
                 snapshots_path,
                 collection_name,
+                &local_rest_address,
+                &remote_rest_address,
                 temp_dir,
                 stopped.clone(),
             )
@@ -184,6 +232,8 @@ async fn transfer_snapshot(
     shard_id: ShardId,
     snapshots_path: &Path,
     collection_name: &str,
+    local_rest_address: &Url,
+    remote_rest_address: &Url,
     temp_dir: &Path,
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
@@ -201,9 +251,21 @@ async fn transfer_snapshot(
     }
 
     // Create shard snapshot
-    let _snapshot_description = shard_holder_read
+    let snapshot_description = shard_holder_read
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
+
+    let _shard_download_url = local_rest_address
+        .join(&format!(
+            "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
+            &snapshot_description.name,
+        ))
+        .expect("Invalid shard snapshot download URL");
+    let _shard_recover_url = remote_rest_address
+        .join(&format!(
+            "/collections/{collection_name}/shards/{shard_id}/snapshots/recover"
+        ))
+        .expect("Invalid shard snapshot recover URL");
 
     // TODO: instruct remote to download/recover this snapshot
     todo!();
@@ -569,10 +631,9 @@ where
                         return false;
                     }
                     log::error!(
-                        "Failed to transfer shard {} -> {}: {}",
+                        "Failed to transfer shard {} -> {}: {error}",
                         transfer.shard_id,
                         transfer.to,
-                        error
                     );
                     false
                 }
