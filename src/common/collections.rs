@@ -143,10 +143,8 @@ pub async fn do_update_collection_cluster(
                 });
             };
 
-            // validate target peer exists
+            // validate target and source peer exists
             validate_peer_exists(move_shard.to_peer_id)?;
-
-            // validate source peer exists
             validate_peer_exists(move_shard.from_peer_id)?;
 
             // submit operation to consensus
