@@ -73,6 +73,24 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         false
     }
 
+    /// Perform an operation over the stored data,
+    /// persisting the result to disk if the operation returns `Some`.
+    ///
+    /// If the operation returns `None`, assumes that data has not changed
+    pub fn write_optional(&self, f: impl FnOnce(&T) -> Option<T>) -> Result<bool, Error> {
+        let read_data = self.data.upgradable_read();
+        let output_opt = f(&read_data);
+        if let Some(output) = output_opt {
+            Self::save_data_to(&self.path, &output)?;
+            let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
+            *write_data = output;
+            self.change_notification.notify_all();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     pub fn write<O>(&self, f: impl FnOnce(&mut T) -> O) -> Result<O, Error> {
         let read_data = self.data.upgradable_read();
         let mut data_copy = (*read_data).clone();

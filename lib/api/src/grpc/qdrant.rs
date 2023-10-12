@@ -728,6 +728,27 @@ pub struct CollectionClusterInfoRequest {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardKey {
+    #[prost(oneof = "shard_key::Key", tags = "1, 2")]
+    pub key: ::core::option::Option<shard_key::Key>,
+}
+/// Nested message and enum types in `ShardKey`.
+pub mod shard_key {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Key {
+        /// String key
+        #[prost(string, tag = "1")]
+        Keyword(::prost::alloc::string::String),
+        /// Number key
+        #[prost(uint64, tag = "2")]
+        Number(u64),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LocalShardInfo {
     /// Local shard id
     #[prost(uint32, tag = "1")]
@@ -738,6 +759,9 @@ pub struct LocalShardInfo {
     /// Is replica active
     #[prost(enumeration = "ReplicaState", tag = "3")]
     pub state: i32,
+    /// User-defined shard key
+    #[prost(message, optional, tag = "4")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -752,6 +776,9 @@ pub struct RemoteShardInfo {
     /// Is replica active
     #[prost(enumeration = "ReplicaState", tag = "3")]
     pub state: i32,
+    /// User-defined shard key
+    #[prost(message, optional, tag = "4")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

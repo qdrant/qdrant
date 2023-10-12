@@ -392,16 +392,25 @@ enum ReplicaState {
   Listener = 4; // A shard which receives data, but is not used for search; Useful for backup shards
 }
 
+message ShardKey {
+  oneof key {
+    string keyword = 1; // String key
+    uint64 number = 2; // Number key
+  }
+}
+
 message LocalShardInfo {
   uint32 shard_id = 1; // Local shard id
   uint64 points_count = 2; // Number of points in the shard
   ReplicaState state = 3;  // Is replica active
+  optional ShardKey shard_key = 4; // User-defined shard key
 }
 
 message RemoteShardInfo {
   uint32 shard_id = 1; // Local shard id
   uint64 peer_id = 2; // Remote peer id
   ReplicaState state = 3; // Is replica active
+  optional ShardKey shard_key = 4; // User-defined shard key
 }
 
 message ShardTransferInfo {

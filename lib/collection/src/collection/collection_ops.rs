@@ -238,6 +238,8 @@ impl Collection {
             filter: None,
             exact: false, // Don't need exact count of unique ids here, only size estimation
         });
+        let shard_to_key = shards_holder.get_shard_id_to_key_mapping();
+
         // extract shards info
         for (shard_id, replica_set) in shards_holder.get_shards() {
             let shard_id = *shard_id;
@@ -257,6 +259,7 @@ impl Collection {
                     shard_id,
                     points_count,
                     state,
+                    shard_key: shard_to_key.get(&shard_id).cloned(),
                 })
             }
             for (peer_id, state) in replica_set.peers().into_iter() {
@@ -267,6 +270,7 @@ impl Collection {
                     shard_id,
                     peer_id,
                     state,
+                    shard_key: shard_to_key.get(&shard_id).cloned(),
                 });
             }
         }
