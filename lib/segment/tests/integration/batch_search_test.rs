@@ -140,10 +140,12 @@ fn test_batch_and_single_request_equivalency() {
     };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
+    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
         vector_storage.clone(),
+        quantized_vectors.clone(),
         payload_index_ptr,
         hnsw_config,
     )

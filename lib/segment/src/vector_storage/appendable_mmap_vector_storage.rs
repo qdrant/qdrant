@@ -11,10 +11,9 @@ use common::types::PointOffsetType;
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::types::{Distance, QuantizationConfig};
+use crate::types::Distance;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dynamic_mmap_flags::DynamicMmapFlags;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -25,7 +24,6 @@ pub struct AppendableMmapVectorStorage {
     deleted: DynamicMmapFlags,
     distance: Distance,
     deleted_count: usize,
-    quantized_vectors: Option<QuantizedVectors>,
 }
 
 pub fn open_appendable_memmap_vector_storage(
@@ -57,7 +55,6 @@ pub fn open_appendable_memmap_vector_storage(
         deleted,
         distance,
         deleted_count,
-        quantized_vectors: None,
     };
 
     Ok(Arc::new(AtomicRefCell::new(
@@ -93,6 +90,10 @@ impl VectorStorage for AppendableMmapVectorStorage {
 
     fn distance(&self) -> Distance {
         self.distance
+    }
+
+    fn is_on_disk(&self) -> bool {
+        true
     }
 
     fn total_vector_count(&self) -> usize {
@@ -144,45 +145,9 @@ impl VectorStorage for AppendableMmapVectorStorage {
         })
     }
 
-    fn quantize(
-        &mut self,
-        path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
-        self.quantized_vectors = Some(QuantizedVectors::create(
-            vector_data_iterator,
-            quantization_config,
-            self.distance,
-            self.vectors.dim(),
-            self.vectors.len(),
-            path,
-            true,
-            max_threads,
-            stopped,
-        )?);
-        Ok(())
-    }
-
-    fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
-        if QuantizedVectors::config_exists(path) {
-            self.quantized_vectors = Some(QuantizedVectors::load(path, true, self.distance)?);
-        }
-        Ok(())
-    }
-
-    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
-        self.quantized_vectors.as_ref()
-    }
-
     fn files(&self) -> Vec<PathBuf> {
         let mut files = self.vectors.files();
         files.extend(self.deleted.files());
-        if let Some(quantized_vectors) = &self.quantized_vectors {
-            files.extend(quantized_vectors.files())
-        }
         files
     }
 

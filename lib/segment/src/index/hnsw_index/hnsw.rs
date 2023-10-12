@@ -50,6 +50,7 @@ const HNSW_USE_HEURISTIC: bool = true;
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
@@ -71,6 +72,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         path: &Path,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
@@ -106,6 +108,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         Ok(HNSWIndex {
             id_tracker,
             vector_storage,
+            quantized_vectors,
             payload_index,
             config,
             path: path.to_owned(),
@@ -156,6 +159,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
+        let quantized_vectors = self.quantized_vectors.as_ref().map(|q| q.borrow());
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
@@ -189,7 +193,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     check_process_stopped(stopped)?;
 
                     let vector = vector_storage.get_vector(block_point_id).into();
-                    let raw_scorer = match vector_storage.quantized_storage() {
+                    let raw_scorer = match &quantized_vectors {
                         Some(quantized_storage) => quantized_storage.raw_scorer(
                             vector,
                             id_tracker.deleted_point_bitslice(),
@@ -230,18 +234,17 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let quantized_storage = vector_storage.quantized_storage();
+        let quantized_vectors = self.quantized_vectors.as_ref().map(|q| q.borrow());
 
         let raw_scorer = Self::construct_search_scorer(
             vector,
             &vector_storage,
-            quantized_storage,
+            quantized_vectors.as_deref(),
             id_tracker.deref(),
             params,
             is_stopped,
         );
-        let oversampled_top =
-            Self::get_oversampled_top(vector_storage.quantized_storage(), params, top);
+        let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_deref(), params, top);
 
         let filter_context = filter.map(|f| payload_index.filter_context(f));
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
@@ -280,18 +283,17 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let quantized_storage = vector_storage.quantized_storage();
+        let quantized_vectors = self.quantized_vectors.as_ref().map(|q| q.borrow());
 
         let raw_scorer = Self::construct_search_scorer(
             vector,
             &vector_storage,
-            quantized_storage,
+            quantized_vectors.as_deref(),
             id_tracker.deref(),
             params,
             is_stopped,
         );
-        let oversampled_top =
-            Self::get_oversampled_top(vector_storage.quantized_storage(), params, top);
+        let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_deref(), params, top);
 
         let filtered_points = payload_index.query_points(filter);
         let search_result =
@@ -380,11 +382,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     ) -> Vec<ScoredPointOffset> {
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let quantized_storage = vector_storage.quantized_storage();
+        let quantized_vectors = self.quantized_vectors.as_ref().map(|q| q.borrow());
 
-        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
+        let quantization_enabled = Self::is_quantized_search(quantized_vectors.as_deref(), params);
 
-        let default_rescoring = quantized_storage
+        let default_rescoring = quantized_vectors
             .map(|q| q.default_rescoring())
             .unwrap_or(false);
         let rescore = quantization_enabled
@@ -555,6 +557,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         // Build main index graph
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
+        let quantized_vectors = self.quantized_vectors.as_ref().map(|q| q.borrow());
         let mut rng = thread_rng();
 
         let total_vector_count = vector_storage.total_vector_count();
@@ -597,9 +600,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 ids.into_par_iter().try_for_each(|vector_id| {
                     check_process_stopped(stopped)?;
                     let vector = vector_storage.get_vector(vector_id).into();
-                    let raw_scorer = if let Some(quantized_storage) =
-                        vector_storage.quantized_storage()
-                    {
+                    let raw_scorer = if let Some(quantized_storage) = &quantized_vectors {
                         quantized_storage.raw_scorer(
                             vector,
                             id_tracker.deleted_point_bitslice(),

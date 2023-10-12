@@ -31,6 +31,7 @@ use crate::types::{
 };
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorage;
 
@@ -135,14 +136,18 @@ fn create_segment(
             );
         }
 
-        if config.quantization_config(vector_name).is_some() {
+        let quantized_vectors = if config.quantization_config(vector_name).is_some() {
             let quantized_data_path = vector_storage_path;
-            // Try to load quantization data from disk, if exists
-            // If not exists or it's a new segment, just ignore it
-            vector_storage
-                .borrow_mut()
-                .load_quantization(&quantized_data_path)?;
-        }
+            if QuantizedVectors::config_exists(&quantized_data_path) {
+                let quantized_vectors =
+                    QuantizedVectors::load(&vector_storage.borrow(), &quantized_data_path)?;
+                Some(quantized_vectors)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &vector_config.index {
             Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
@@ -155,6 +160,7 @@ fn create_segment(
                     &vector_index_path,
                     id_tracker.clone(),
                     vector_storage.clone(),
+                    quantized_vectors.clone(),
                     payload_index.clone(),
                     vector_hnsw_config.clone(),
                 )?)
@@ -163,6 +169,7 @@ fn create_segment(
                     &vector_index_path,
                     id_tracker.clone(),
                     vector_storage.clone(),
+                    quantized_vectors.clone(),
                     payload_index.clone(),
                     vector_hnsw_config.clone(),
                 )?)
@@ -174,6 +181,7 @@ fn create_segment(
             VectorData {
                 vector_storage,
                 vector_index,
+                quantized_vectors,
             },
         );
     }

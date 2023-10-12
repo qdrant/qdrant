@@ -12,6 +12,7 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::VectorStorage;
 
 /// Structure for constructing segment out of several other segments
@@ -191,7 +192,7 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
-            Self::update_quantization(&segment, stopped)?;
+            Self::update_quantization(&mut segment, stopped)?;
 
             for vector_data in segment.vector_data.values_mut() {
                 vector_data.vector_index.borrow_mut().build_index(stopped)?;
@@ -215,16 +216,11 @@ impl SegmentBuilder {
         Ok(loaded_segment)
     }
 
-    fn update_quantization(segment: &Segment, stopped: &AtomicBool) -> OperationResult<()> {
-        let config = segment.config();
-        for (vector_name, vector_data) in &segment.vector_data {
+    fn update_quantization(segment: &mut Segment, stopped: &AtomicBool) -> OperationResult<()> {
+        let config = segment.config().clone();
+        for (vector_name, vector_data) in &mut segment.vector_data {
             if let Some(quantization) = config.quantization_config(vector_name) {
-                let segment_path = segment.current_path.as_path();
-                check_process_stopped(stopped)?;
-
-                let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
-                let max_threads = match segment
-                    .config()
+                let max_threads = match config
                     .vector_data
                     .get(vector_name)
                     .map(|config| &config.index)
@@ -232,12 +228,19 @@ impl SegmentBuilder {
                     Some(Indexes::Hnsw(hnsw)) => max_rayon_threads(hnsw.max_indexing_threads),
                     _ => 1,
                 };
-                vector_data.vector_storage.borrow_mut().quantize(
-                    &vector_storage_path,
+
+                let segment_path = segment.current_path.as_path();
+                check_process_stopped(stopped)?;
+
+                let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+                let vector_storage = vector_data.vector_storage.borrow();
+                vector_data.quantized_vectors = Some(QuantizedVectors::create(
+                    &vector_storage,
                     quantization,
+                    &vector_storage_path,
                     max_threads,
                     stopped,
-                )?;
+                )?);
             }
         }
         Ok(())

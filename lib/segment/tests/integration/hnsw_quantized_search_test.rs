@@ -18,7 +18,7 @@ use segment::types::{
     ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
     ScalarQuantizationConfig, SearchParams, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use serde_json::json;
 use tempfile::Builder;
 
@@ -94,11 +94,15 @@ fn hnsw_quantized_search_test(
     }
 
     segment.vector_data.values_mut().for_each(|vector_storage| {
-        vector_storage
-            .vector_storage
-            .borrow_mut()
-            .quantize(quantized_data_path, &quantization_config, 3, &stopped)
-            .unwrap();
+        let quantized_vectors = QuantizedVectors::create(
+            &vector_storage.vector_storage.borrow(),
+            &quantization_config,
+            quantized_data_path,
+            4,
+            &stopped,
+        )
+        .unwrap();
+        vector_storage.quantized_vectors = Some(quantized_vectors);
     });
 
     let hnsw_config = HnswConfig {
@@ -115,6 +119,9 @@ fn hnsw_quantized_search_test(
         segment.id_tracker.clone(),
         segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
+            .clone(),
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .quantized_vectors
             .clone(),
         segment.payload_index.clone(),
         hnsw_config,

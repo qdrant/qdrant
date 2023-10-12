@@ -87,6 +87,9 @@ fn exact_search_test() {
         segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .clone(),
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .quantized_vectors
+            .clone(),
         payload_index_ptr.clone(),
         hnsw_config,
     )
