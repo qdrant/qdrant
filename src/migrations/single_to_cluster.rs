@@ -29,12 +29,14 @@ pub async fn handle_existing_collections(
 
         let collection_state = collection_obj.state().await;
         let shards_number = collection_state.config.params.shard_number.get();
+        let sharding_method = collection_state.config.params.sharding_method;
 
         let mut collection_create_operation = CreateCollectionOperation::new(
             collection.to_string(),
             CreateCollection {
                 vectors: collection_state.config.params.vectors,
                 shard_number: Some(shards_number),
+                sharding_method,
                 replication_factor: Some(collection_state.config.params.replication_factor.get()),
                 write_consistency_factor: Some(
                     collection_state

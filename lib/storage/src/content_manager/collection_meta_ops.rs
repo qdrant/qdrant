@@ -1,4 +1,4 @@
-use collection::config::CollectionConfig;
+use collection::config::{CollectionConfig, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
@@ -104,11 +104,21 @@ pub struct CreateCollection {
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
     #[validate]
     pub vectors: VectorsConfig,
+    /// For auto sharding:
     /// Number of shards in collection.
-    /// Default is 1 for standalone, otherwise equal to the number of nodes
-    /// Minimum is 1
+    ///  - Default is 1 for standalone, otherwise equal to the number of nodes
+    ///  - Minimum is 1
+    /// For custom sharding:
+    /// Number of shards in collection per shard group.
+    ///  - Default is 1, meaning that each shard key will be mapped to a single shard
+    ///  - Minimum is 1
     #[serde(default)]
     pub shard_number: Option<u32>,
+    /// Sharding method
+    /// Default is Auto - points are distributed across all available shards
+    /// Custom - points are distributed across shards according to shard key
+    #[serde(default)]
+    pub sharding_method: Option<ShardingMethod>,
     /// Number of shards replicas.
     /// Default is 1
     /// Minimum is 1
@@ -313,6 +323,7 @@ impl From<CollectionConfig> for CreateCollection {
         Self {
             vectors: value.params.vectors,
             shard_number: Some(value.params.shard_number.get()),
+            sharding_method: value.params.sharding_method,
             replication_factor: Some(value.params.replication_factor.get()),
             write_consistency_factor: Some(value.params.write_consistency_factor.get()),
             on_disk_payload: Some(value.params.on_disk_payload),

@@ -31,6 +31,7 @@ impl TableOfContent {
         let CreateCollection {
             vectors,
             shard_number,
+            sharding_method,
             on_disk_payload,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
@@ -85,6 +86,7 @@ impl TableOfContent {
                 .ok_or(StorageError::BadInput {
                     description: "`shard_number` cannot be 0".to_string(),
                 })?,
+            sharding_method,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
             replication_factor: NonZeroU32::new(replication_factor).ok_or(
                 StorageError::BadInput {
