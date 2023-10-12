@@ -1060,6 +1060,7 @@ dependencies = [
  "parking_lot",
  "pprof",
  "rand 0.8.5",
+ "reqwest",
  "rmp-serde",
  "rstest",
  "schemars",
