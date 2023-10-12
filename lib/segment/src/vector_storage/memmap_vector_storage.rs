@@ -10,12 +10,11 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
-use super::quantized::quantized_vectors::QuantizedVectors;
 use super::VectorStorageEnum;
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::types::{Distance, QuantizationConfig};
+use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::VectorStorage;
@@ -96,6 +95,10 @@ impl VectorStorage for MemmapVectorStorage {
         self.distance
     }
 
+    fn is_on_disk(&self) -> bool {
+        true
+    }
+
     fn total_vector_count(&self) -> usize {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
@@ -174,41 +177,8 @@ impl VectorStorage for MemmapVectorStorage {
         }
     }
 
-    fn quantize(
-        &mut self,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(
-            self.distance,
-            data_path,
-            quantization_config,
-            max_threads,
-            stopped,
-        )
-    }
-
-    fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
-        let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.load_quantization(data_path, self.distance)
-    }
-
-    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
-        let mmap_store = self.mmap_store.as_ref().unwrap();
-        mmap_store.quantized_vectors.as_ref()
-    }
-
     fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![self.vectors_path.clone(), self.deleted_path.clone()];
-        if let Some(Some(quantized_vectors)) =
-            &self.mmap_store.as_ref().map(|x| &x.quantized_vectors)
-        {
-            files.extend(quantized_vectors.files())
-        }
-        files
+        vec![self.vectors_path.clone(), self.deleted_path.clone()]
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
@@ -251,8 +221,9 @@ mod tests {
     use crate::data_types::vectors::QueryVector;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
-    use crate::types::{PointIdType, ScalarQuantizationConfig};
+    use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::new_raw_scorer;
+    use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]
@@ -663,14 +634,14 @@ mod tests {
         .into();
 
         let stopped = Arc::new(AtomicBool::new(false));
-        borrowed_storage
-            .quantize(dir.path(), &config, 1, &stopped)
-            .unwrap();
+        let quantized_vectors =
+            QuantizedVectors::create(&borrowed_storage, &config, dir.path(), 1, &stopped).unwrap();
 
         let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
         {
-            let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
+            let borrowed_quantized_vectors = quantized_vectors.borrow();
+            let scorer_quant = borrowed_quantized_vectors.raw_scorer(
                 query.clone(),
                 borrowed_id_tracker.deleted_point_bitslice(),
                 borrowed_storage.deleted_vector_bitslice(),
@@ -691,11 +662,16 @@ mod tests {
                 assert!((orig - quant).abs() < 0.15);
             }
         }
+        let files = borrowed_storage.files();
+        let quantization_files = quantized_vectors.borrow().files();
 
         // test save-load
-        borrowed_storage.load_quantization(dir.path()).unwrap();
+        let quantized_vectors = QuantizedVectors::load(&borrowed_storage, dir.path()).unwrap();
+        assert_eq!(files, borrowed_storage.files());
+        assert_eq!(quantization_files, quantized_vectors.borrow().files());
 
-        let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
+        let borrowed_quantized_vectors = quantized_vectors.borrow();
+        let scorer_quant = borrowed_quantized_vectors.raw_scorer(
             query.clone(),
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),

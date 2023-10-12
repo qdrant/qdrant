@@ -39,6 +39,7 @@ use crate::types::{
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -91,6 +92,7 @@ pub struct Segment {
 pub struct VectorData {
     pub vector_index: Arc<AtomicRefCell<VectorIndexEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    pub quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
 }
 
 impl VectorData {
@@ -1460,6 +1462,17 @@ impl SegmentEntry for Segment {
                     &file,
                     &files,
                 )?;
+            }
+
+            if let Some(quantized_vectors) = &vector_data.quantized_vectors {
+                for file in quantized_vectors.borrow().files() {
+                    utils::tar::append_file_relative_to_base(
+                        &mut builder,
+                        &self.current_path,
+                        &file,
+                        &files,
+                    )?;
+                }
             }
         }
 

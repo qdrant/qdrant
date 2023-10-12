@@ -1,17 +1,16 @@
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
-use super::quantized::quantized_vectors::QuantizedVectors;
 use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::types::{Distance, QuantizationConfig};
+use crate::types::Distance;
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
 
 /// Trait for vector storage
@@ -21,6 +20,8 @@ pub trait VectorStorage {
     fn vector_dim(&self) -> usize;
 
     fn distance(&self) -> Distance;
+
+    fn is_on_disk(&self) -> bool;
 
     /// Number of vectors
     ///
@@ -56,20 +57,6 @@ pub trait VectorStorage {
     ) -> OperationResult<Range<PointOffsetType>>;
 
     fn flusher(&self) -> Flusher;
-
-    // Generate quantized vectors and store them on disk
-    fn quantize(
-        &mut self,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()>;
-
-    // Load quantized vectors from disk
-    fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()>;
-
-    fn quantized_storage(&self) -> Option<&QuantizedVectors>;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -127,6 +114,14 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
+    fn is_on_disk(&self) -> bool {
+        match self {
+            VectorStorageEnum::Simple(v) => v.is_on_disk(),
+            VectorStorageEnum::Memmap(v) => v.is_on_disk(),
+            VectorStorageEnum::AppendableMemmap(v) => v.is_on_disk(),
+        }
+    }
+
     fn total_vector_count(&self) -> usize {
         match self {
             VectorStorageEnum::Simple(v) => v.total_vector_count(),
@@ -173,42 +168,6 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.flusher(),
             VectorStorageEnum::Memmap(v) => v.flusher(),
             VectorStorageEnum::AppendableMemmap(v) => v.flusher(),
-        }
-    }
-
-    fn quantize(
-        &mut self,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::Simple(v) => {
-                v.quantize(data_path, quantization_config, max_threads, stopped)
-            }
-            VectorStorageEnum::Memmap(v) => {
-                v.quantize(data_path, quantization_config, max_threads, stopped)
-            }
-            VectorStorageEnum::AppendableMemmap(v) => {
-                v.quantize(data_path, quantization_config, max_threads, stopped)
-            }
-        }
-    }
-
-    fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::Simple(v) => v.load_quantization(data_path),
-            VectorStorageEnum::Memmap(v) => v.load_quantization(data_path),
-            VectorStorageEnum::AppendableMemmap(v) => v.load_quantization(data_path),
-        }
-    }
-
-    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
-        match self {
-            VectorStorageEnum::Simple(v) => v.quantized_storage(),
-            VectorStorageEnum::Memmap(v) => v.quantized_storage(),
-            VectorStorageEnum::AppendableMemmap(v) => v.quantized_storage(),
         }
     }
 

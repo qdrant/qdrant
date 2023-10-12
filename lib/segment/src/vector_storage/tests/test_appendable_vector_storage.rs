@@ -11,6 +11,7 @@ use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
@@ -296,14 +297,14 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         .unwrap();
 
     let stopped = AtomicBool::new(false);
-    borrowed_storage
-        .quantize(dir.path(), &config, 1, &stopped)
-        .unwrap();
+    let quantized_vectors =
+        QuantizedVectors::create(&borrowed_storage, &config, dir.path(), 1, &stopped).unwrap();
 
     let query: QueryVector = vec![0.5, 0.5, 0.5, 0.5].into();
 
     {
-        let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
+        let borrowed_quantized_vectors = quantized_vectors.borrow();
+        let scorer_quant = borrowed_quantized_vectors.raw_scorer(
             query.clone(),
             borrowed_id_tracker.deleted_point_bitslice(),
             borrowed_storage.deleted_vector_bitslice(),
@@ -325,12 +326,15 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         }
     }
     let files = borrowed_storage.files();
+    let quantization_files = quantized_vectors.borrow().files();
 
     // test save-load
-    borrowed_storage.load_quantization(dir.path()).unwrap();
+    let quantized_vectors = QuantizedVectors::load(&borrowed_storage, dir.path()).unwrap();
     assert_eq!(files, borrowed_storage.files());
+    assert_eq!(quantization_files, quantized_vectors.borrow().files());
 
-    let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
+    let borrowed_quantized_vectors = quantized_vectors.borrow();
+    let scorer_quant = borrowed_quantized_vectors.raw_scorer(
         query.clone(),
         borrowed_id_tracker.deleted_point_bitslice(),
         borrowed_storage.deleted_vector_bitslice(),

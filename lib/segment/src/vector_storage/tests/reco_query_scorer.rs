@@ -22,6 +22,7 @@ use crate::types::{
 };
 #[cfg(target_os = "linux")]
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
@@ -165,9 +166,18 @@ fn scoring_equivalency(
     other_storage.update_from(&raw_storage, &mut (0..NUM_POINTS as _), &Default::default())?;
 
     let quant_dir = tempfile::Builder::new().prefix("quant-storage").tempdir()?;
-    if let Some(config) = &quant_config {
-        other_storage.quantize(quant_dir.path(), config, 4, &AtomicBool::new(false))?;
-    }
+    let quantized_vectors = if let Some(config) = &quant_config {
+        Some(QuantizedVectors::create(
+            &other_storage,
+            config,
+            quant_dir.path(),
+            4,
+            &AtomicBool::new(false),
+        )?)
+    } else {
+        None
+    };
+    let quantized_vectors = quantized_vectors.as_ref().map(|q| q.borrow());
 
     let attempts = 50;
     for _i in 0..attempts {
@@ -181,7 +191,7 @@ fn scoring_equivalency(
 
         let is_stopped = AtomicBool::new(false);
 
-        let other_scorer = match other_storage.quantized_storage() {
+        let other_scorer = match &quantized_vectors {
             Some(quantized_storage) => quantized_storage.raw_scorer(
                 query,
                 id_tracker.deleted_point_bitslice(),
@@ -198,7 +208,7 @@ fn scoring_equivalency(
         let other_scores = score(&*other_scorer, &points);
 
         // Compare scores
-        if other_storage.quantized_storage().is_none() {
+        if quantized_vectors.is_none() {
             // both calculations are done on raw vectors, so score should be exactly the same
             assert_eq!(
                 raw_scores, other_scores,

@@ -1,7 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use bitvec::slice::BitSlice;
+use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
@@ -19,7 +22,7 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
-use crate::vector_storage::RawScorer;
+use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
@@ -98,18 +101,19 @@ impl QuantizedVectors {
         ]
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn create<'a>(
-        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
+    pub fn create(
+        vector_storage: &VectorStorageEnum,
         quantization_config: &QuantizationConfig,
-        distance: Distance,
-        dim: usize,
-        count: usize,
         path: &Path,
-        on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+        let count = vector_storage.total_vector_count();
+        let vectors = (0..count as PointOffsetType).map(|i| vector_storage.get_vector(i));
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let distance = vector_storage.distance();
+        let dim = vector_storage.vector_dim();
+
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
         let quantized_storage = match quantization_config {
@@ -160,7 +164,7 @@ impl QuantizedVectors {
 
         quantized_vectors.save_to(path)?;
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
-        Ok(quantized_vectors)
+        Ok(Arc::new(AtomicRefCell::new(quantized_vectors)))
     }
 
     pub fn config_exists(path: &Path) -> bool {
@@ -168,10 +172,12 @@ impl QuantizedVectors {
     }
 
     pub fn load(
+        vector_storage: &VectorStorageEnum,
         path: &Path,
-        on_disk_vector_storage: bool,
-        distance: Distance,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let distance = vector_storage.distance();
+
         let data_path = path.join(QUANTIZED_DATA_PATH);
         let meta_path = path.join(QUANTIZED_META_PATH);
         let config_path = path.join(QUANTIZED_CONFIG_PATH);
@@ -230,12 +236,12 @@ impl QuantizedVectors {
             }
         };
 
-        Ok(QuantizedVectors {
+        Ok(Arc::new(AtomicRefCell::new(QuantizedVectors {
             storage_impl: quantized_store,
             config,
             path: path.to_path_buf(),
             distance,
-        })
+        })))
     }
 
     fn create_scalar<'a>(
