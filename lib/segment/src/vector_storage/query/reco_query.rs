@@ -1,5 +1,6 @@
 use common::types::ScoreType;
 
+use super::{Query, TransformInto};
 use crate::data_types::vectors::{QueryVector, VectorType};
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,21 @@ impl<T> RecoQuery<T> {
         let negative_similarities = self.negatives.iter().map(&similarity);
 
         merge_similarities(positive_similarities, negative_similarities)
+    }
+}
+
+impl<T> Query<T> for RecoQuery<T> {
+    fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
+        self.score_by(similarity)
+    }
+}
+
+impl<T, U> TransformInto<RecoQuery<U>, T, U> for RecoQuery<T> {
+    fn transform<F>(self, f: F) -> RecoQuery<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        self.transform(f)
     }
 }
 

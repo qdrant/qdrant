@@ -4,7 +4,7 @@ use bitvec::prelude::BitSlice;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
-use super::query_scorer::reco_query_scorer::RecoQueryScorer;
+use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::spaces::metric::Metric;
@@ -273,7 +273,19 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 ))
             }
             QueryVector::Recommend(query) => {
-                let query_scorer = RecoQueryScorer::<TMetric, _>::new(query, storage);
+                let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(query, storage);
+                Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                ))
+            }
+            QueryVector::Discovery(discovery_query) => {
+                let query_scorer =
+                    CustomQueryScorer::<TMetric, _, _>::new(discovery_query, storage);
                 Box::new(AsyncRawScorerImpl::new(
                     points_count,
                     query_scorer,
