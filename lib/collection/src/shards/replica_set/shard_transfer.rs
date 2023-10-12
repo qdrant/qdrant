@@ -143,20 +143,25 @@ impl ShardReplicaSet {
             Some(Shard::ForwardProxy(proxy)) => {
                 let local_shard = proxy.wrapped_shard;
                 let _ = local_write.insert(Shard::Local(local_shard));
+                Ok(())
             }
-            Some(Shard::QueueProxy(proxy)) => {
-                // Transfer queue to remote before unproxying
-                proxy.transfer_all_missed_updates().await?;
-
-                // TODO: also switch state of remote here?
-
-                let local_shard = proxy.wrapped_shard;
-                let _ = local_write.insert(Shard::Local(local_shard));
-            }
+            Some(Shard::QueueProxy(proxy)) => match proxy.finalize().await {
+                // Transfer remaining queue items and convert into local shard
+                Ok(local_shard) => {
+                    let _ = local_write.insert(Shard::Local(local_shard));
+                    Ok(())
+                }
+                // Transferring remaining queue items failed
+                // Keep shard as proxy so we don't loose queue state and return error
+                // TODO: what happens here if remote is dead? Can never unwrap?
+                Err((err, proxy)) => {
+                    log::error!("Failed to un-proxify local shard because transferring remaining queue items to remote failed: {err}");
+                    let _ = local_write.insert(Shard::QueueProxy(proxy));
+                    Err(err)
+                }
+            },
             _ => unreachable!(),
         }
-
-        Ok(())
     }
 
     /// Custom operation for transferring data from one shard to another during transfer
