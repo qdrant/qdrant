@@ -12,6 +12,9 @@ use tokio::time::sleep;
 use url::Url;
 
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
+use crate::operations::snapshot_ops::{
+    ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority,
+};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
@@ -257,20 +260,30 @@ async fn transfer_snapshot(
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
 
-    let _shard_download_url = local_rest_address
+    // Select local shard snapshot download and remote recover URLs
+    let shard_download_url = local_rest_address
         .join(&format!(
             "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
             &snapshot_description.name,
         ))
         .expect("Invalid shard snapshot download URL");
-    let _shard_recover_url = remote_rest_address
+    let shard_recover_url = remote_rest_address
         .join(&format!(
-            "/collections/{collection_name}/shards/{shard_id}/snapshots/recover"
+            "/collections/{collection_name}/shards/{shard_id}/snapshots/recover?wait=true"
         ))
         .expect("Invalid shard snapshot recover URL");
 
-    // TODO: instruct remote to download/recover this snapshot
-    todo!();
+    // Instruct remote to download and recover shard snapshot
+    // TODO: remove reqwest client (and reqwest dependency), implement call in gRPC instead
+    reqwest::Client::new()
+        .put(shard_recover_url)
+        .json(&ShardSnapshotRecover {
+            location: ShardSnapshotLocation::Url(shard_download_url),
+            priority: Some(SnapshotPriority::NoSync),
+        })
+        .send()
+        .await
+        .expect("failed to send POST request to remote to recover shard snapshot");
 
     // TODO: switch remote to partial state
     todo!();

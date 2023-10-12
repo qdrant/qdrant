@@ -65,6 +65,9 @@ tempfile = "3.8.0"
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }
 
+# TODO: shard snapshot transfer should recover over gRPC not REST, remove this once switched
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+
 [[bench]]
 name = "hash_ring_bench"
 harness = false
