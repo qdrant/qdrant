@@ -285,15 +285,10 @@ async fn transfer_snapshot(
         .await
         .expect("failed to send POST request to remote to recover shard snapshot");
 
-    // TODO: switch remote to partial state
-    todo!();
-
     // We must keep partial state for 10 seconds to allow all nodes to catch up
     // TODO: or confirm all nodes have reached a specific commit
+    log::trace!("Shard snapshot transfer is waiting 10 seconds for consensus to catch up");
     sleep(Duration::from_secs(10)).await;
-
-    // TODO: queue-proxy to forward proxy?
-    todo!();
 
     Ok(())
 }
