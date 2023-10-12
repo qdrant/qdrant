@@ -41,6 +41,7 @@ use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId, ShardKey};
+use crate::shards::transfer::shard_transfer::ShardTransferMethod;
 use crate::wal::WalError;
 
 /// Current state of the collection.
@@ -151,6 +152,8 @@ pub struct ShardTransferInfo {
     /// If `true` transfer is a synchronization of a replicas
     /// If `false` transfer is a moving of a shard from one peer to another
     pub sync: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<ShardTransferMethod>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
