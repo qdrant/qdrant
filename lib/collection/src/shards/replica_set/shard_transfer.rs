@@ -148,9 +148,6 @@ impl ShardReplicaSet {
                 // Transfer queue to remote before unproxying
                 proxy.transfer_all_missed_updates().await?;
 
-                // Release max ack version in update handler
-                proxy.set_max_ack_version(None).await;
-
                 // TODO: also switch state of remote here?
 
                 let local_shard = proxy.wrapped_shard;
