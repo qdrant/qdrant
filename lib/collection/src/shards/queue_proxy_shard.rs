@@ -59,7 +59,7 @@ impl QueueProxyShard {
             update_lock: Default::default(),
         };
 
-        // Set max ack version in WAL to not truncate parts we still need to transfer later
+        // Set max acknowledged version for WAL to not truncate parts we still need to transfer later
         shard.set_max_ack_version(Some(last_idx)).await;
 
         shard
@@ -81,8 +81,9 @@ impl QueueProxyShard {
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
         while !self.transfer_wal_batch(&self.remote_shard).await? {}
 
-        // Release max ack version in update handler
-        self.set_max_ack_version(None).await;
+        // Set max acknowledged version for WAL to last item we transferred
+        let last_idx = self.last_update_idx.load(Ordering::Relaxed);
+        self.set_max_ack_version(Some(last_idx)).await;
 
         Ok(())
     }
