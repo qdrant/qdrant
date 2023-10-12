@@ -179,11 +179,13 @@ impl ShardHolder {
             let to = shard_transfer.to;
             let from = shard_transfer.from;
             let sync = shard_transfer.sync;
+            let method = shard_transfer.method;
             shard_transfers.push(ShardTransferInfo {
                 shard_id,
                 from,
                 to,
                 sync,
+                method,
             })
         }
         shard_transfers.sort_by_key(|k| k.shard_id);
