@@ -320,6 +320,13 @@ impl ShardReplicaSet {
             .collect()
     }
 
+    /// Wait for a local shard to be initialized.
+    ///
+    /// Returns `true` if initialized, `false` if timed out.
+    pub fn wait_for_local(&self, timeout: Duration) -> bool {
+        self.wait_for(|replica_set_state| replica_set_state.is_local, timeout)
+    }
+
     /// Wait for a replica set state condition to be true.
     ///
     /// Returns `true` if condition is true, `false` if timed out.
