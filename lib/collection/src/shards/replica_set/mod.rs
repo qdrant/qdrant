@@ -112,49 +112,6 @@ pub enum Change {
     Remove(ShardId, PeerId),
 }
 
-/// Represents a replica set state
-#[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq, Clone)]
-pub struct ReplicaSetState {
-    pub is_local: bool,
-    pub this_peer_id: PeerId,
-    peers: HashMap<PeerId, ReplicaState>,
-}
-
-impl ReplicaSetState {
-    pub fn get_peer_state(&self, peer_id: &PeerId) -> Option<&ReplicaState> {
-        self.peers.get(peer_id)
-    }
-
-    pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {
-        self.peers.insert(peer_id, state);
-    }
-
-    pub fn remove_peer_state(&mut self, peer_id: &PeerId) -> Option<ReplicaState> {
-        self.peers.remove(peer_id)
-    }
-
-    pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
-        self.peers.clone()
-    }
-
-    pub fn active_peers(&self) -> Vec<PeerId> {
-        self.peers
-            .iter()
-            .filter_map(|(peer_id, state)| {
-                if *state == ReplicaState::Active {
-                    Some(*peer_id)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
-        self.peers = peers;
-    }
-}
-
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.
@@ -735,5 +692,48 @@ impl ShardReplicaSet {
     fn notify_peer_failure(&self, peer_id: PeerId) {
         log::debug!("Notify peer failure: {}", peer_id);
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
+    }
+}
+
+/// Represents a replica set state
+#[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq, Clone)]
+pub struct ReplicaSetState {
+    pub is_local: bool,
+    pub this_peer_id: PeerId,
+    peers: HashMap<PeerId, ReplicaState>,
+}
+
+impl ReplicaSetState {
+    pub fn get_peer_state(&self, peer_id: &PeerId) -> Option<&ReplicaState> {
+        self.peers.get(peer_id)
+    }
+
+    pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {
+        self.peers.insert(peer_id, state);
+    }
+
+    pub fn remove_peer_state(&mut self, peer_id: &PeerId) -> Option<ReplicaState> {
+        self.peers.remove(peer_id)
+    }
+
+    pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
+        self.peers.clone()
+    }
+
+    pub fn active_peers(&self) -> Vec<PeerId> {
+        self.peers
+            .iter()
+            .filter_map(|(peer_id, state)| {
+                if *state == ReplicaState::Active {
+                    Some(*peer_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
+        self.peers = peers;
     }
 }
