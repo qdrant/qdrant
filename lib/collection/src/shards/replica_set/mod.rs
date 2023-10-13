@@ -643,10 +643,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
-        self.locally_disabled_peers.read().contains(peer_id)
-    }
-
     /// Check whether a peer is registered as `active`.
     /// Unknown peers are not active.
     pub fn peer_is_active(&self, peer_id: &PeerId) -> bool {
@@ -700,6 +696,10 @@ impl ShardReplicaSet {
                 )
             })
             .collect()
+    }
+
+    fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
+        self.locally_disabled_peers.read().contains(peer_id)
     }
 
     // Make sure that locally disabled peers do not contradict the consensus
