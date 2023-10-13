@@ -12,6 +12,7 @@ use collection::collection_state;
 use collection::common::is_ready::IsReady;
 use collection::shards::shard::PeerId;
 use collection::shards::CollectionId;
+pub use common::defaults::CONSENSUS_DEFAULT_META_OP_WAIT as DEFAULT_META_OP_WAIT;
 use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
@@ -34,8 +35,6 @@ use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
     PeerInfo, RaftInfo,
 };
-
-pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
