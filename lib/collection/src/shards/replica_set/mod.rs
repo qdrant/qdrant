@@ -549,8 +549,8 @@ impl ShardReplicaSet {
 
                         log::error!(
                             "Failed to load local shard {shard_path:?}, \
-                         initializing \"dummy\" shard instead: \
-                         {err}"
+                             initializing \"dummy\" shard instead: \
+                             {err}"
                         );
 
                         Dummy(DummyShard::new(format!(
