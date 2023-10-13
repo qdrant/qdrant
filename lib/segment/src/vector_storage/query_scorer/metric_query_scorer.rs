@@ -5,7 +5,7 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::{DenseVectorStorage, VectorStorage};
 
 pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
     vector_storage: &'a TVectorStorage,
@@ -13,7 +13,7 @@ pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
     MetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     pub fn new(query: VectorType, vector_storage: &'a TVectorStorage) -> Self {
@@ -25,12 +25,12 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer
     for MetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        TMetric::similarity(&self.query, self.vector_storage.get_vector(idx))
+        TMetric::similarity(&self.query, self.vector_storage.get_dense(idx))
     }
 
     #[inline]
@@ -39,8 +39,8 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        let v1 = self.vector_storage.get_vector(point_a);
-        let v2 = self.vector_storage.get_vector(point_b);
+        let v1 = self.vector_storage.get_dense(point_a);
+        let v2 = self.vector_storage.get_dense(point_b);
         TMetric::similarity(v1, v2)
     }
 }

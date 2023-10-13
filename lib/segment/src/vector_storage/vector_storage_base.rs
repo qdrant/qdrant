@@ -91,6 +91,10 @@ pub trait VectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice;
 }
 
+pub trait DenseVectorStorage: VectorStorage {
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType];
+}
+
 pub enum VectorStorageEnum {
     Simple(SimpleVectorStorage),
     Memmap(Box<MemmapVectorStorage>),
