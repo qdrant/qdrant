@@ -3,10 +3,6 @@ use super::*;
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl ShardReplicaSet {
-    fn highest_replica_peer_id(&self) -> Option<PeerId> {
-        self.replica_state.read().peers.keys().max().cloned()
-    }
-
     fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
         let read_lock = self.replica_state.read();
         let peer_ids = read_lock.peers.keys().cloned().collect::<Vec<_>>();
@@ -146,6 +142,10 @@ impl ShardReplicaSet {
             WriteOrdering::Medium => self.highest_alive_replica_peer_id(), // consistency with highest alive replica
             WriteOrdering::Strong => self.highest_replica_peer_id(), // consistency with highest replica
         }
+    }
+
+    fn highest_replica_peer_id(&self) -> Option<PeerId> {
+        self.replica_state.read().peers.keys().max().cloned()
     }
 
     /// Forward update to the leader replica
