@@ -848,6 +848,7 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "6")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
