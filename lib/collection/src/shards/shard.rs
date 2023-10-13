@@ -2,6 +2,9 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
 use super::update_tracker::UpdateTracker;
 use crate::operations::types::CollectionResult;
 use crate::shards::dummy_shard::DummyShard;
@@ -15,6 +18,13 @@ use crate::shards::telemetry::LocalShardTelemetry;
 pub type ShardId = u32;
 
 pub type PeerId = u64;
+
+#[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum ShardKey {
+    Keyword(String),
+    Number(u64),
+}
 
 /// Shard
 ///

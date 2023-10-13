@@ -40,7 +40,7 @@ use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard::{PeerId, ShardId, ShardKey};
 use crate::wal::WalError;
 
 /// Current state of the collection.
@@ -143,6 +143,9 @@ pub struct ShardTransferInfo {
 pub struct LocalShardInfo {
     /// Local shard id
     pub shard_id: ShardId,
+    /// User-defined sharding key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
     /// Number of points in the shard
     pub points_count: usize,
     /// Is replica active
@@ -154,6 +157,9 @@ pub struct LocalShardInfo {
 pub struct RemoteShardInfo {
     /// Remote shard id
     pub shard_id: ShardId,
+    /// User-defined sharding key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
     /// Remote peer id
     pub peer_id: PeerId,
     /// Is replica active
