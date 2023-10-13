@@ -1050,6 +1050,7 @@ dependencies = [
  "fs_extra",
  "futures",
  "hashring",
+ "http",
  "indicatif",
  "io",
  "itertools 0.11.0",

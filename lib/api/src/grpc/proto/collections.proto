@@ -442,7 +442,6 @@ message MoveShard {
   optional ShardTransferMethod method = 4;
 }
 
-// TODO: switch to oneof to allow future variants with parameters?
 enum ShardTransferMethod {
   StreamRecords = 0;
   Snapshot = 1;

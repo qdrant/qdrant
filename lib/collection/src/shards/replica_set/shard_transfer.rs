@@ -60,7 +60,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    // TODO: similar to function above, merge?
     pub async fn queue_proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
