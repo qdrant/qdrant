@@ -333,6 +333,24 @@ mod tests {
     use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::optimizers_builder::OptimizersConfig;
 
+    #[tokio::test]
+    async fn test_highest_replica_peer_id() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let rs = new_shard_replica_set(&collection_dir).await;
+
+        assert_eq!(rs.highest_replica_peer_id(), Some(5));
+        // at build time the replicas are all dead, they need to be activated
+        assert_eq!(rs.highest_alive_replica_peer_id(), None);
+
+        rs.set_replica_state(&1, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&3, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&4, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&5, ReplicaState::Partial).unwrap();
+
+        assert_eq!(rs.highest_replica_peer_id(), Some(5));
+        assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
+    }
+
     const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
         deleted_threshold: 0.9,
         vacuum_min_vector_number: 1000,
@@ -397,23 +415,5 @@ mod tests {
         )
         .await
         .unwrap()
-    }
-
-    #[tokio::test]
-    async fn test_highest_replica_peer_id() {
-        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
-        let rs = new_shard_replica_set(&collection_dir).await;
-
-        assert_eq!(rs.highest_replica_peer_id(), Some(5));
-        // at build time the replicas are all dead, they need to be activated
-        assert_eq!(rs.highest_alive_replica_peer_id(), None);
-
-        rs.set_replica_state(&1, ReplicaState::Active).unwrap();
-        rs.set_replica_state(&3, ReplicaState::Active).unwrap();
-        rs.set_replica_state(&4, ReplicaState::Active).unwrap();
-        rs.set_replica_state(&5, ReplicaState::Partial).unwrap();
-
-        assert_eq!(rs.highest_replica_peer_id(), Some(5));
-        assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
     }
 }
