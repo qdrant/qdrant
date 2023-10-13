@@ -643,12 +643,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    /// Check whether a peer is registered as `active`.
-    /// Unknown peers are not active.
-    pub fn peer_is_active(&self, peer_id: &PeerId) -> bool {
-        self.peer_state(peer_id) == Some(ReplicaState::Active) && !self.is_locally_disabled(peer_id)
-    }
-
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(shard) = &*read_local {
@@ -696,6 +690,12 @@ impl ShardReplicaSet {
                 )
             })
             .collect()
+    }
+
+    /// Check whether a peer is registered as `active`.
+    /// Unknown peers are not active.
+    fn peer_is_active(&self, peer_id: &PeerId) -> bool {
+        self.peer_state(peer_id) == Some(ReplicaState::Active) && !self.is_locally_disabled(peer_id)
     }
 
     fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
