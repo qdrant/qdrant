@@ -111,6 +111,19 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
     shard_id = collection_cluster_info["local_shards"][0]["shard_id"]
     source_peer_id = collection_cluster_info["peer_id"]
 
+    # Test that we cannot move shard to ourselves
+    r = requests.post(
+        f"{source_uri}/collections/test_collection/cluster", json={
+            "move_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": source_peer_id,
+                "to_peer_id": source_peer_id
+            }
+        })
+    assert not r.ok
+    assert r.status_code == 422
+    assert r.json()["status"]["error"].__contains__("Validation error in JSON body: [move_shard.to_peer_id: cannot move shard to itself")
+
     # Move shard `shard_id` to peer `target_peer_id`
     r = requests.post(
         f"{source_uri}/collections/test_collection/cluster", json={
