@@ -1,4 +1,5 @@
 use common::validation::validate_move_shard_different_peers;
+use std::num::NonZeroU32;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
@@ -27,6 +28,15 @@ pub enum ClusterOperations {
 #[serde(rename_all = "snake_case")]
 pub struct CreateShardingKeyOperation {
     pub shard_key: ShardKey,
+    /// How many shards to create for this key
+    /// If not specified, will use the default value from config
+    pub num_shards: Option<NonZeroU32>,
+    /// How many replicas to create for each shard
+    /// If not specified, will use the default value from config
+    pub replication_factor: Option<NonZeroU32>,
+    /// Placement of shards for this key
+    /// List of peer ids, that can be used to place shards for this key
+    /// If not specified, will be randomly placed among all peers
     #[serde(default)]
     pub placement: Option<Vec<PeerId>>,
 }

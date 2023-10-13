@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use api::grpc::models::{CollectionDescription, CollectionsResponse};
+use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicateShardOperation,
@@ -10,7 +11,7 @@ use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
 };
 use collection::shards::replica_set;
-use collection::shards::shard::ShardId;
+use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
@@ -40,6 +41,42 @@ pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
         .collect_vec();
 
     CollectionsResponse { collections }
+}
+
+/// Construct shards-replicas layout for the shard from the given scope of peers
+/// Example:
+///   Shards: 3
+///   Replicas: 2
+///   Peers: [A, B, C]
+///
+/// Placement:
+/// [
+///         [A, B]
+///         [B, C]
+///         [A, C]
+/// ]
+fn generate_even_placement(
+    mut pool: Vec<PeerId>,
+    shard_number: usize,
+    replication_factor: usize,
+) -> Vec<Vec<PeerId>> {
+    let mut exact_placement = Vec::new();
+    let mut rng = rand::thread_rng();
+    pool.shuffle(&mut rng);
+    let mut next_pool = pool.clone();
+
+    let max_replication_factor = std::cmp::min(replication_factor, pool.len());
+    for _shard in 0..shard_number {
+        let mut shard_placement = Vec::new();
+        for _replica in 0..max_replication_factor {
+            if next_pool.is_empty() {
+                next_pool = pool.clone();
+            }
+            shard_placement.push(next_pool.pop().unwrap());
+        }
+        exact_placement.push(shard_placement);
+    }
+    exact_placement
 }
 
 pub async fn do_list_collection_aliases(
@@ -265,71 +302,71 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::CreateShardingKey(crete_sharding_key) => {
+        ClusterOperations::CreateShardingKey(create_sharding_key) => {
             // Validate that:
+            // - proper sharding method is used
             // - key does not exist yet
             //
             // If placement suggested:
-            // - Correct amount of peers provided
             // - Peers exist
 
             let state = collection.state().await;
 
-            let shard_number = state.config.params.shard_number.get() as usize;
+            match state.config.params.sharding_method.unwrap_or_default() {
+                ShardingMethod::Auto => {
+                    return Err(StorageError::bad_request(
+                        "Shard Key cannot be created with Auto sharding method",
+                    ));
+                }
+                ShardingMethod::Custom => {}
+            }
+
+            let shard_number = create_sharding_key
+                .num_shards
+                .unwrap_or(state.config.params.shard_number)
+                .get() as usize;
+            let replication_factor = create_sharding_key
+                .replication_factor
+                .unwrap_or(state.config.params.replication_factor)
+                .get() as usize;
 
             let shard_keys_mapping = state.shards_key_mapping;
-            if shard_keys_mapping.contains_key(&crete_sharding_key.shard_key) {
+            if shard_keys_mapping.contains_key(&create_sharding_key.shard_key) {
                 return Err(StorageError::BadRequest {
                     description: format!(
                         "Sharding key {} already exists for collection {}",
-                        crete_sharding_key.shard_key, collection_name
+                        create_sharding_key.shard_key, collection_name
                     ),
                 });
             }
 
-            let placement = if let Some(placement) = crete_sharding_key.placement {
-                if placement.len() != shard_number {
+            let peers_pool: Vec<_> = if let Some(placement) = create_sharding_key.placement {
+                if placement.is_empty() {
                     return Err(StorageError::BadRequest {
                         description: format!(
-                            "Placement for sharding key {} should contain {} peers, but {} provided",
-                            crete_sharding_key.shard_key,
-                            shard_number,
-                            placement.len()
+                            "Sharding key {} placement cannot be empty. If you want to use random placement, do not specify placement",
+                            create_sharding_key.shard_key
                         ),
                     });
                 }
+
                 for peer_id in placement.iter().copied() {
                     validate_peer_exists(peer_id)?;
                 }
                 placement
             } else {
-                // Suggest random placement
-                let all_peer_ids = get_all_peer_ids();
-
-                let mut rng = rand::thread_rng();
-
-                let placement: Vec<_> = if all_peer_ids.len() < shard_number {
-                    // random select `shards_numer` from all_peer_ids with repetition
-                    (0..shard_number)
-                        .filter_map(|_| all_peer_ids.choose(&mut rng))
-                        .copied()
-                        .collect()
-                } else {
-                    // random select `shards_numer` from all_peer_ids without repetition
-                    all_peer_ids
-                        .choose_multiple(&mut rng, shard_number)
-                        .copied()
-                        .collect()
-                };
-                placement
+                get_all_peer_ids()
             };
+
+            let exact_placement =
+                generate_even_placement(peers_pool, shard_number, replication_factor);
 
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::CreateShardKey(CreateShardKey {
                         collection_name,
-                        shard_key: crete_sharding_key.shard_key,
-                        placement,
+                        shard_key: create_sharding_key.shard_key,
+                        placement: exact_placement,
                     }),
                     wait_timeout,
                 )
@@ -337,9 +374,19 @@ pub async fn do_update_collection_cluster(
         }
         ClusterOperations::DropShardingKey(drop_sharding_key) => {
             // Validate that:
+            // - proper sharding method is used
             // - key does exist
 
             let state = collection.state().await;
+
+            match state.config.params.sharding_method.unwrap_or_default() {
+                ShardingMethod::Auto => {
+                    return Err(StorageError::bad_request(
+                        "Shard Key cannot be created with Auto sharding method",
+                    ));
+                }
+                ShardingMethod::Custom => {}
+            }
 
             let shard_keys_mapping = state.shards_key_mapping;
             if !shard_keys_mapping.contains_key(&drop_sharding_key.shard_key) {
@@ -360,6 +407,51 @@ pub async fn do_update_collection_cluster(
                     wait_timeout,
                 )
                 .await
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn test_generate_even_placement() {
+        let pool = vec![1, 2, 3];
+        let placement = generate_even_placement(pool, 3, 2);
+
+        assert_eq!(placement.len(), 3);
+        for shard_placement in placement {
+            assert_eq!(shard_placement.len(), 2);
+            assert_ne!(shard_placement[0], shard_placement[1]);
+        }
+
+        let pool = vec![1, 2, 3];
+        let placement = generate_even_placement(pool, 3, 3);
+
+        assert_eq!(placement.len(), 3);
+        for shard_placement in placement {
+            assert_eq!(shard_placement.len(), 3);
+            let set: HashSet<_> = shard_placement.into_iter().collect();
+            assert_eq!(set.len(), 3);
+        }
+
+        let pool = vec![1, 2, 3, 4, 5, 6];
+        let placement = generate_even_placement(pool, 3, 2);
+
+        assert_eq!(placement.len(), 3);
+        let flat_placement: Vec<_> = placement.into_iter().flatten().collect();
+        let set: HashSet<_> = flat_placement.into_iter().collect();
+        assert_eq!(set.len(), 6);
+
+        let pool = vec![1, 2, 3, 4, 5];
+        let placement = generate_even_placement(pool, 3, 10);
+
+        assert_eq!(placement.len(), 3);
+        for shard_placement in placement {
+            assert_eq!(shard_placement.len(), 5);
         }
     }
 }

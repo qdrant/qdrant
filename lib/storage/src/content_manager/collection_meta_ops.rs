@@ -315,7 +315,7 @@ pub struct SetShardReplicaState {
 pub struct CreateShardKey {
     pub collection_name: String,
     pub shard_key: ShardKey,
-    pub placement: Vec<PeerId>,
+    pub placement: Vec<Vec<PeerId>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]

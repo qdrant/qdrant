@@ -19,7 +19,6 @@ use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
-use crate::hash_ring::HashRing;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::channel_service::ChannelService;
@@ -30,7 +29,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::shard_transfer::{check_transfer_conflicts_strict, ShardTransfer};
 use crate::shards::transfer::transfer_tasks_pool::TransferTasksPool;
-use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
+use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
 /// Collection's data is split into several shards.
@@ -57,6 +56,8 @@ pub struct Collection {
     updates_lock: RwLock<()>,
     // Update runtime handle.
     update_runtime: Handle,
+    // Search runtime handle.
+    search_runtime: Handle,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -82,7 +83,7 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
-        let mut shard_holder = ShardHolder::new(path, HashRing::fair(HASH_RING_SHARD_SCALE))?;
+        let mut shard_holder = ShardHolder::new(path)?;
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
@@ -129,6 +130,7 @@ impl Collection {
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
+            search_runtime: search_runtime.unwrap_or_else(Handle::current),
         })
     }
 
@@ -179,8 +181,7 @@ impl Collection {
         });
         collection_config.validate_and_warn();
 
-        let ring = HashRing::fair(HASH_RING_SHARD_SCALE);
-        let mut shard_holder = ShardHolder::new(path, ring).expect("Can not create shard holder");
+        let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
@@ -216,6 +217,7 @@ impl Collection {
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
+            search_runtime: search_runtime.unwrap_or_else(Handle::current),
         }
     }
 

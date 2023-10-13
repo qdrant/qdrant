@@ -26,6 +26,8 @@ use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
+const HASH_RING_SHARD_SCALE: u32 = 100;
+
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
@@ -34,20 +36,22 @@ pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
-    ring: HashRing<ShardId>,
+    rings: HashMap<Option<ShardKey>, HashRing<ShardId>>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
-    pub fn new(collection_path: &Path, hashring: HashRing<ShardId>) -> CollectionResult<Self> {
+    pub fn new(collection_path: &Path) -> CollectionResult<Self> {
+        let mut rings = HashMap::new();
+        rings.insert(None, HashRing::fair(HASH_RING_SHARD_SCALE));
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let key_mapping = SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
         Ok(Self {
             shards: HashMap::new(),
             shard_transfers,
-            ring: hashring,
+            rings,
             key_mapping,
         })
     }
@@ -77,7 +81,11 @@ impl ShardHolder {
         shard_key: Option<ShardKey>,
     ) -> Result<(), CollectionError> {
         self.shards.insert(shard_id, shard);
-        self.ring.add(shard_id);
+        self.rings
+            .entry(shard_key.clone())
+            .or_insert_with(|| HashRing::fair(HASH_RING_SHARD_SCALE))
+            .add(shard_id);
+
         if let Some(shard_key) = shard_key {
             self.key_mapping.write_optional(|key_mapping| {
                 let has_id = key_mapping
@@ -97,28 +105,31 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn remove_shard(
-        &mut self,
-        shard_id: ShardId,
-    ) -> Result<Option<ShardReplicaSet>, CollectionError> {
-        let shard_opt = self.shards.remove(&shard_id);
+    pub fn remove_shard_key(&mut self, shard_key: &ShardKey) -> Result<(), CollectionError> {
+        let mut remove_shard_ids = Vec::new();
+
         self.key_mapping.write_optional(|key_mapping| {
-            let has_id = key_mapping
-                .values()
-                .any(|shard_ids| shard_ids.contains(&shard_id));
-
-            if !has_id {
-                return None;
+            if key_mapping.contains_key(shard_key) {
+                let mut new_key_mapping = key_mapping.clone();
+                if let Some(shard_ids) = new_key_mapping.remove(shard_key) {
+                    for shard_id in shard_ids {
+                        remove_shard_ids.push(shard_id);
+                    }
+                }
+                Some(new_key_mapping)
+            } else {
+                None
             }
-
-            let mut copy_of_mapping = key_mapping.clone();
-            for shard_ids in copy_of_mapping.values_mut() {
-                shard_ids.remove(&shard_id);
-            }
-            Some(copy_of_mapping)
         })?;
-        self.ring.remove(&shard_id);
-        Ok(shard_opt)
+
+        self.rings.remove(&Some(shard_key.clone()));
+        for shard_id in remove_shard_ids {
+            if let Some(replica_set) = self.shards.remove(&shard_id) {
+                // Drop replica set data
+                drop(replica_set);
+            }
+        }
+        Ok(())
     }
 
     /// Take shard
@@ -148,7 +159,11 @@ impl ShardHolder {
         &self,
         operation: O,
     ) -> Vec<(&ShardReplicaSet, O)> {
-        let operation_to_shard = operation.split_by_shard(&self.ring);
+        let Some(hashring) = self.rings.get(&None) else {
+            return vec![];
+        };
+
+        let operation_to_shard = operation.split_by_shard(hashring);
         let shard_ops: Vec<_> = match operation_to_shard {
             OperationToShard::ByShard(by_shard) => by_shard
                 .into_iter()
