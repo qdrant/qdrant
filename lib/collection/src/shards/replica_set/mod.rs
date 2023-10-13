@@ -480,18 +480,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub async fn remove_remote(&self, peer_id: PeerId) -> CollectionResult<()> {
-        self.replica_state.write(|rs| {
-            rs.remove_peer_state(&peer_id);
-        })?;
-
-        self.update_locally_disabled(peer_id);
-
-        let mut remotes = self.remotes.write().await;
-        remotes.retain(|remote| remote.peer_id != peer_id);
-        Ok(())
-    }
-
     pub async fn add_remote(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
         self.replica_state.write(|rs| {
             rs.set_peer_state(peer_id, state);
@@ -513,6 +501,18 @@ impl ShardReplicaSet {
             self.channel_service.clone(),
         ));
 
+        Ok(())
+    }
+
+    pub async fn remove_remote(&self, peer_id: PeerId) -> CollectionResult<()> {
+        self.replica_state.write(|rs| {
+            rs.remove_peer_state(&peer_id);
+        })?;
+
+        self.update_locally_disabled(peer_id);
+
+        let mut remotes = self.remotes.write().await;
+        remotes.retain(|remote| remote.peer_id != peer_id);
         Ok(())
     }
 
