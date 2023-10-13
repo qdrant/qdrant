@@ -458,6 +458,28 @@ impl ShardReplicaSet {
         Ok(old_shard)
     }
 
+    pub async fn remove_local(&self) -> CollectionResult<()> {
+        self.replica_state.write(|rs| {
+            rs.is_local = false;
+            let this_peer_id = rs.this_peer_id;
+            rs.remove_peer_state(&this_peer_id);
+        })?;
+
+        self.update_locally_disabled(self.this_peer_id());
+
+        let removing_local = {
+            let mut local = self.local.write().await;
+            local.take()
+        };
+
+        if let Some(removing_local) = removing_local {
+            // stop ongoing tasks and delete data
+            drop(removing_local);
+            LocalShard::clear(&self.shard_path).await?;
+        }
+        Ok(())
+    }
+
     pub async fn remove_remote(&self, peer_id: PeerId) -> CollectionResult<()> {
         self.replica_state.write(|rs| {
             rs.remove_peer_state(&peer_id);
@@ -491,28 +513,6 @@ impl ShardReplicaSet {
             self.channel_service.clone(),
         ));
 
-        Ok(())
-    }
-
-    pub async fn remove_local(&self) -> CollectionResult<()> {
-        self.replica_state.write(|rs| {
-            rs.is_local = false;
-            let this_peer_id = rs.this_peer_id;
-            rs.remove_peer_state(&this_peer_id);
-        })?;
-
-        self.update_locally_disabled(self.this_peer_id());
-
-        let removing_local = {
-            let mut local = self.local.write().await;
-            local.take()
-        };
-
-        if let Some(removing_local) = removing_local {
-            // stop ongoing tasks and delete data
-            drop(removing_local);
-            LocalShard::clear(&self.shard_path).await?;
-        }
         Ok(())
     }
 
