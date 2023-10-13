@@ -652,6 +652,15 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Check if the are any locally disabled peers
+    /// And if so, report them to the consensus
+    pub async fn sync_local_state(&self) -> CollectionResult<()> {
+        for failed_peer in self.locally_disabled_peers.read().iter() {
+            self.notify_peer_failure(*failed_peer);
+        }
+        Ok(())
+    }
+
     pub(crate) async fn get_telemetry_data(&self) -> ReplicaSetTelemetry {
         let local_shard = self.local.read().await;
         let local = local_shard
@@ -726,14 +735,5 @@ impl ShardReplicaSet {
     fn notify_peer_failure(&self, peer_id: PeerId) {
         log::debug!("Notify peer failure: {}", peer_id);
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
-    }
-
-    /// Check if the are any locally disabled peers
-    /// And if so, report them to the consensus
-    pub async fn sync_local_state(&self) -> CollectionResult<()> {
-        for failed_peer in self.locally_disabled_peers.read().iter() {
-            self.notify_peer_failure(*failed_peer);
-        }
-        Ok(())
     }
 }
