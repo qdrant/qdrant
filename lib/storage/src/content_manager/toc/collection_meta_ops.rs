@@ -77,11 +77,13 @@ impl TableOfContent {
                 self.set_shard_replica_state(operation).await.map(|()| true)
             }
             CollectionMetaOperations::Nop { .. } => Ok(true),
-            CollectionMetaOperations::CreateShardKey(_) => {
-                todo!("CreateShardKey is not yet implemented")
+            CollectionMetaOperations::CreateShardKey(create_shard_key) => {
+                log::debug!("Create shard key {:?}", create_shard_key);
+                self.create_shard_key(create_shard_key).await.map(|()| true)
             }
-            CollectionMetaOperations::DropShardKey(_) => {
-                todo!("DropShardKey is not yet implemented")
+            CollectionMetaOperations::DropShardKey(drop_shard_key) => {
+                log::debug!("Drop shard key {:?}", drop_shard_key);
+                self.drop_shard_key(drop_shard_key).await.map(|()| true)
             }
         }
     }
@@ -370,6 +372,22 @@ impl TableOfContent {
                 operation.state,
                 operation.from_state,
             )
+            .await?;
+        Ok(())
+    }
+
+    async fn create_shard_key(&self, operation: CreateShardKey) -> Result<(), StorageError> {
+        self.get_collection(&operation.collection_name)
+            .await?
+            .create_shard_key(operation.shard_key, operation.placement)
+            .await?;
+        Ok(())
+    }
+
+    async fn drop_shard_key(&self, operation: DropShardKey) -> Result<(), StorageError> {
+        self.get_collection(&operation.collection_name)
+            .await?
+            .drop_shard_key(operation.shard_key)
             .await?;
         Ok(())
     }
