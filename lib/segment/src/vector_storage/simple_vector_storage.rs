@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use super::VectorStorageEnum;
+use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -127,6 +127,12 @@ impl SimpleVectorStorage {
     }
 }
 
+impl DenseVectorStorage for SimpleVectorStorage {
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+        self.vectors.get(key)
+    }
+}
+
 impl VectorStorage for SimpleVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
@@ -145,7 +151,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.vectors.get(key)
+        self.get_dense(key)
     }
 
     fn insert_vector(

@@ -6,15 +6,15 @@ use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::DenseVectorStorage;
 
-pub struct RecoQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
+pub struct RecoQueryScorer<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> {
     vector_storage: &'a TVectorStorage,
     query: RecoQuery<VectorType>,
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
     RecoQueryScorer<'a, TMetric, TVectorStorage>
 {
     pub fn new(query: RecoQuery<VectorType>, vector_storage: &'a TVectorStorage) -> Self {
@@ -28,12 +28,12 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer
     for RecoQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_vector(idx);
+        let stored = self.vector_storage.get_dense(idx);
         self.score(stored)
     }
 

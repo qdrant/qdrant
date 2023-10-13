@@ -15,7 +15,8 @@ use crate::spaces::metric::Metric;
 use crate::types::Distance;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
-    raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum, DEFAULT_STOPPED,
+    raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
+    DEFAULT_STOPPED,
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
@@ -37,6 +38,12 @@ pub struct TestRawScorerProducer<TMetric: Metric> {
     pub metric: PhantomData<TMetric>,
 }
 
+impl<TMetric: Metric> DenseVectorStorage for TestRawScorerProducer<TMetric> {
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+        self.vectors.get(key)
+    }
+}
+
 impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
     fn vector_dim(&self) -> usize {
         self.vectors.get(0).len()
@@ -55,7 +62,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.vectors.get(key)
+        self.get_dense(key)
     }
 
     fn insert_vector(

@@ -10,7 +10,7 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
-use super::VectorStorageEnum;
+use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -86,6 +86,12 @@ impl MemmapVectorStorage {
     }
 }
 
+impl DenseVectorStorage for MemmapVectorStorage {
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+        self.mmap_store.as_ref().unwrap().get_vector(key)
+    }
+}
+
 impl VectorStorage for MemmapVectorStorage {
     fn vector_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim
@@ -104,7 +110,7 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.mmap_store.as_ref().unwrap().get_vector(key)
+        self.get_dense(key)
     }
 
     fn insert_vector(
