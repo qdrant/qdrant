@@ -85,17 +85,6 @@ impl ShardReplicaSet {
         .await
     }
 
-    pub async fn count_local(
-        &self,
-        request: Arc<CountRequest>,
-    ) -> CollectionResult<Option<CountResult>> {
-        let local = self.local.read().await;
-        match &*local {
-            None => Ok(None),
-            Some(shard) => Ok(Some(shard.get().count(request).await?)),
-        }
-    }
-
     pub async fn count(
         &self,
         request: Arc<CountRequest>,
@@ -142,5 +131,16 @@ impl ShardReplicaSet {
             local_only,
         )
         .await
+    }
+
+    pub async fn count_local(
+        &self,
+        request: Arc<CountRequest>,
+    ) -> CollectionResult<Option<CountResult>> {
+        let local = self.local.read().await;
+        match &*local {
+            None => Ok(None),
+            Some(shard) => Ok(Some(shard.get().count(request).await?)),
+        }
     }
 }
