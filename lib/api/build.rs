@@ -137,7 +137,6 @@ fn configure_validation(builder: Builder) -> Builder {
             "Disabled",
             "QuantizationConfigDiff",
             "quantization_config_diff::Quantization",
-            "MoveShard",
             "Replica",
         ])
         // Service: collections_internal.proto

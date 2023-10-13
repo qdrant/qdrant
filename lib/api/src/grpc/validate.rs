@@ -128,6 +128,30 @@ impl Validate for crate::grpc::qdrant::update_collection_cluster_setup_request::
     }
 }
 
+impl Validate for crate::grpc::qdrant::MoveShard {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        // Custom struct validator: source and target peer may not be the same
+        // Matches implementation in: lib/collection/src/operations/cluster_ops.rs
+        if self.to_peer_id == self.from_peer_id {
+            let mut errors = ValidationErrors::new();
+            errors.add("to_peer_id", {
+                let mut error = ValidationError::new("must_not_match");
+                error.add_param(Cow::from("value"), &self.to_peer_id.to_string());
+                error.add_param(Cow::from("other_field"), &"from_peer_id");
+                error.add_param(Cow::from("other_value"), &self.from_peer_id.to_string());
+                error.add_param(
+                    Cow::from("message"),
+                    &format!("cannot move shard to itself, \"to_peer_id\" must be different than {} in \"from_peer_id\"", self.from_peer_id),
+                );
+                error
+            });
+            return Err(errors);
+        }
+
+        Ok(())
+    }
+}
+
 impl Validate for crate::grpc::qdrant::condition::ConditionOneOf {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use crate::grpc::qdrant::condition::ConditionOneOf;
