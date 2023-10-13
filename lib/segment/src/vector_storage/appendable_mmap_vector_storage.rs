@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 
+use super::DenseVectorStorage;
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -83,6 +84,12 @@ impl AppendableMmapVectorStorage {
     }
 }
 
+impl DenseVectorStorage for AppendableMmapVectorStorage {
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+        self.vectors.get(key)
+    }
+}
+
 impl VectorStorage for AppendableMmapVectorStorage {
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
@@ -101,7 +108,7 @@ impl VectorStorage for AppendableMmapVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.vectors.get(key)
+        self.get_dense(key)
     }
 
     fn insert_vector(

@@ -6,18 +6,18 @@ use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::DenseVectorStorage;
 
 // TODO(luis): maybe find a way to generalize DiscoveryQueryScorer and RecoQueryScorer by
 //     using a single Query trait. The crux is that `transform` function is hard to convert
 //     nicely into a trait function
-pub struct DiscoveryQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
+pub struct DiscoveryQueryScorer<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> {
     vector_storage: &'a TVectorStorage,
     query: DiscoveryQuery<VectorType>,
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
     DiscoveryQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[allow(dead_code)] // TODO(luis): remove once integrated
@@ -32,12 +32,12 @@ impl<'a, TMetric: Metric, TVectorStorage: VectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: VectorStorage> QueryScorer
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer
     for DiscoveryQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_vector(idx);
+        let stored = self.vector_storage.get_dense(idx);
         self.score(stored)
     }
 

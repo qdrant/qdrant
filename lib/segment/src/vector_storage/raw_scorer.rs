@@ -4,7 +4,7 @@ use bitvec::prelude::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::query_scorer::reco_query_scorer::RecoQueryScorer;
-use super::{VectorStorage, VectorStorageEnum};
+use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::QueryVector;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -124,7 +124,7 @@ pub fn new_raw_scorer<'a>(
     new_stoppable_raw_scorer(vector, vector_storage, point_deleted, &DEFAULT_STOPPED)
 }
 
-pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
+pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
@@ -152,7 +152,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     }
 }
 
-fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: VectorStorage>(
+fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorStorage>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
