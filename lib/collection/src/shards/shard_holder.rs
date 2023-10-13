@@ -72,7 +72,7 @@ impl ShardHolder {
                     .map(|shard_ids| shard_ids.contains(&shard_id))
                     .unwrap_or(false);
 
-                if !has_id {
+                if has_id {
                     return None;
                 }
                 let mut copy_of_mapping = key_mapping.clone();
