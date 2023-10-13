@@ -387,7 +387,6 @@ impl ShardHolder {
         }
     }
 
-    // TODO: do we want to keep this?
     async fn assert_shard_is_local_or_queue_proxy(
         &self,
         shard_id: ShardId,
@@ -415,7 +414,6 @@ impl ShardHolder {
     }
 
     /// Returns true if shard it explicitly local, false otherwise.
-    // TODO: do we want to keep this?
     pub async fn is_shard_local_or_queue_proxy(&self, shard_id: &ShardId) -> Option<bool> {
         match self.get_shard(shard_id) {
             Some(shard) => Some(shard.is_local().await || shard.is_queue_proxy_local().await),

@@ -1173,7 +1173,6 @@ impl ReplicaState {
         }
     }
 }
-/// TODO: switch to oneof to allow future variants with parameters?
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

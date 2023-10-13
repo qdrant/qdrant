@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
+use http::uri::Scheme;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -129,38 +130,48 @@ pub async fn transfer_shard(
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
             // Get local and remote REST addresses
-            // TODO: do not expect here!
             let local_rest_address = {
-                let local_peer_id = {
+                let local_peer_uri = {
                     channel_service
                         .id_to_address
                         .read()
                         .get(&transfer_config.from)
                         .cloned()
-                        .expect("could not get local address")
+                        .expect("Could not get local address")
                 };
                 Url::parse(&format!(
                     "{}://{}:{}",
-                    local_peer_id.scheme().expect("Missing scheme"),
-                    local_peer_id.host().expect("Missing host"),
+                    local_peer_uri.scheme().unwrap_or(&Scheme::HTTP),
+                    local_peer_uri.host().ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Local peer address does not have a host specified",
+                        )
+                    })?,
                     // TODO: get local REST port from config
-                    local_peer_id.port_u16().expect("No port") - 2,
+                    local_peer_uri.port_u16().expect("No port") - 2,
                 ))
                 .expect("Invalid URL")
             };
+
             let remote_rest_address = {
-                let remote_peer_id = {
+                let remote_peer_uri = {
                     channel_service
                         .id_to_address
                         .read()
                         .get(&transfer_config.to)
                         .cloned()
-                        .expect("could not get remote address")
+                        .ok_or_else(|| {
+                            CollectionError::service_error("Could not get address of remote")
+                        })?
                 };
                 Url::parse(&format!(
                     "{}://{}:{}",
-                    remote_peer_id.scheme().expect("Missing scheme"),
-                    remote_peer_id.host().expect("Missing host"),
+                    remote_peer_uri.scheme().unwrap_or(&Scheme::HTTP),
+                    remote_peer_uri.host().ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Remote peer address does not have a host specified",
+                        )
+                    })?,
                     remote_shard.request_http_port().await?,
                 ))
                 .expect("Invalid URL")
@@ -266,12 +277,16 @@ async fn transfer_snapshot(
             "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
             &snapshot_description.name,
         ))
-        .expect("Invalid shard snapshot download URL");
+        .map_err(|err| {
+            CollectionError::service_error(format!("Invalid shard snapshot download URL: {err}"))
+        })?;
     let shard_recover_url = remote_rest_address
         .join(&format!(
             "/collections/{collection_name}/shards/{shard_id}/snapshots/recover?wait=true"
         ))
-        .expect("Invalid shard snapshot recover URL");
+        .map_err(|err| {
+            CollectionError::service_error(format!("Invalid shard snapshot recover URL: {err}"))
+        })?;
 
     // Instruct remote to download and recover shard snapshot
     // TODO: remove reqwest client (and reqwest dependency), implement call in gRPC instead
@@ -283,7 +298,11 @@ async fn transfer_snapshot(
         })
         .send()
         .await
-        .expect("failed to send POST request to remote to recover shard snapshot");
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to request shard snapshot recovery on remote: {err}"
+            ))
+        })?;
 
     // We must keep partial state for 10 seconds to allow all nodes to catch up
     // TODO: or confirm all nodes have reached a specific commit
