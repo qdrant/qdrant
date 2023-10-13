@@ -5,48 +5,26 @@ mod snapshots;
 mod update;
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write as _;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
-use futures::future::{self, BoxFuture};
-use futures::stream::FuturesUnordered;
-use futures::{FutureExt as _, StreamExt as _};
-use itertools::Itertools;
-use rand::seq::SliceRandom as _;
 use schemars::JsonSchema;
-use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
-    WithVector,
-};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 use super::local_shard::LocalShard;
-use super::queue_proxy_shard::QueueProxyShard;
 use super::remote_shard::RemoteShard;
-use super::resolve::{Resolve, ResolveCondition};
-use super::{create_shard_dir, CollectionId};
+use super::CollectionId;
 use crate::config::CollectionConfig;
-use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
-use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult,
-};
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::types::CollectionResult;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
-use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::shard::Shard::{Dummy, ForwardProxy, Local, QueueProxy};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
 //    │    Collection Created
@@ -133,7 +111,7 @@ impl ShardReplicaSet {
         update_runtime: Handle,
         search_runtime: Handle,
     ) -> CollectionResult<Self> {
-        let shard_path = create_shard_dir(collection_path, shard_id).await?;
+        let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
             let shard = LocalShard::build(
                 shard_id,
@@ -144,7 +122,7 @@ impl ShardReplicaSet {
                 update_runtime.clone(),
             )
             .await?;
-            Some(Local(shard))
+            Some(Shard::Local(shard))
         } else {
             None
         };
@@ -238,7 +216,7 @@ impl ShardReplicaSet {
         let mut local_load_failure = false;
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
-                Dummy(DummyShard::new(recovery_reason))
+                Shard::Dummy(DummyShard::new(recovery_reason))
             } else {
                 let res = LocalShard::load(
                     shard_id,
@@ -251,7 +229,7 @@ impl ShardReplicaSet {
                 .await;
 
                 match res {
-                    Ok(shard) => Local(shard),
+                    Ok(shard) => Shard::Local(shard),
                     Err(err) => {
                         if !shared_storage_config.handle_collection_load_errors {
                             panic!("Failed to load local shard {shard_path:?}: {err}")
@@ -265,7 +243,7 @@ impl ShardReplicaSet {
                              {err}"
                         );
 
-                        Dummy(DummyShard::new(format!(
+                        Shard::Dummy(DummyShard::new(format!(
                             "Failed to load local shard {shard_path:?}: {err}"
                         )))
                     }
@@ -315,12 +293,12 @@ impl ShardReplicaSet {
 
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
-        matches!(*local_read, Some(Local(_) | Dummy(_)))
+        matches!(*local_read, Some(Shard::Local(_) | Shard::Dummy(_)))
     }
 
     pub async fn is_dummy(&self) -> bool {
         let local_read = self.local.read().await;
-        matches!(*local_read, Some(Dummy(_)))
+        matches!(*local_read, Some(Shard::Dummy(_)))
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
@@ -359,7 +337,7 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
-                *local = Some(Local(local_shard));
+                *local = Some(Shard::Local(local_shard));
                 Ok(())
             }
             Err(err) => {
@@ -378,7 +356,7 @@ impl ShardReplicaSet {
         local: LocalShard,
         state: Option<ReplicaState>,
     ) -> CollectionResult<Option<Shard>> {
-        let old_shard = self.local.write().await.replace(Local(local));
+        let old_shard = self.local.write().await.replace(Shard::Local(local));
 
         if !self.replica_state.read().is_local || state.is_some() {
             self.replica_state.write(|rs| {
