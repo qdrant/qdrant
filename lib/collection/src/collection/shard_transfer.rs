@@ -46,9 +46,10 @@ impl Collection {
         // Select transfer method
         // TODO: dynamically select transfer method, send in batches below indexing threshold?
         // TODO: should decision on this be consistent on sender/receiver?
-        shard_transfer
-            .method
-            .replace(ShardTransferMethod::StreamRecords);
+        if shard_transfer.method.is_none() {
+            log::warn!("No shard transfer method selected, defaulting to \"snapshot\"");
+            shard_transfer.method.replace(ShardTransferMethod::Snapshot);
+        }
 
         let shard_id = shard_transfer.shard_id;
         let do_transfer = {

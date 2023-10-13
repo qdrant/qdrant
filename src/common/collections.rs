@@ -159,7 +159,7 @@ pub async fn do_update_collection_cluster(
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
-                            method: None,
+                            method: move_shard.method,
                         }),
                     ),
                     wait_timeout,
