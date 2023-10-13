@@ -1,4 +1,5 @@
 use actix_web_validator::error::flatten_errors;
+use serde_json::Value;
 use validator::{ValidationError, ValidationErrors};
 
 /// Warn about validation errors in the log.
@@ -44,6 +45,8 @@ fn describe_error(
 ) -> String {
     // Prefer to return message if set
     if let Some(message) = message {
+        return message.to_string();
+    } else if let Some(Value::String(message)) = params.get("message") {
         return message.to_string();
     }
 

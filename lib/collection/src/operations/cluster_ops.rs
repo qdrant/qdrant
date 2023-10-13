@@ -76,6 +76,10 @@ impl Validate for MoveShard {
                 error.add_param(Cow::from("value"), &self.to_peer_id.to_string());
                 error.add_param(Cow::from("other_field"), &"from_peer_id");
                 error.add_param(Cow::from("other_value"), &self.from_peer_id.to_string());
+                error.add_param(
+                    Cow::from("message"),
+                    &format!("cannot move shard to itself, \"to_peer_id\" must be different than {} in \"from_peer_id\"", self.from_peer_id),
+                );
                 error
             });
             return Err(errors);
