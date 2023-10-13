@@ -375,6 +375,10 @@ impl ShardReplicaSet {
         self.replica_state.read().this_peer_id
     }
 
+    pub async fn has_local_shard(&self) -> bool {
+        self.local.read().await.is_some()
+    }
+
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Local(_) | Dummy(_)))
@@ -383,10 +387,6 @@ impl ShardReplicaSet {
     pub async fn is_dummy(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Dummy(_)))
-    }
-
-    pub async fn has_local_shard(&self) -> bool {
-        self.local.read().await.is_some()
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
