@@ -275,7 +275,7 @@ pub async fn do_update_collection_cluster(
 
             let state = collection.state().await;
 
-            let shards_numer = state.config.params.shard_number.get() as usize;
+            let shard_number = state.config.params.shard_number.get() as usize;
 
             let shard_keys_mapping = state.shards_key_mapping;
             if shard_keys_mapping.contains_key(&crete_sharding_key.shard_key) {
@@ -288,12 +288,12 @@ pub async fn do_update_collection_cluster(
             }
 
             let placement = if let Some(placement) = crete_sharding_key.placement {
-                if placement.len() != shards_numer {
+                if placement.len() != shard_number {
                     return Err(StorageError::BadRequest {
                         description: format!(
                             "Placement for sharding key {} should contain {} peers, but {} provided",
                             crete_sharding_key.shard_key,
-                            shards_numer,
+                            shard_number,
                             placement.len()
                         ),
                     });
@@ -308,16 +308,16 @@ pub async fn do_update_collection_cluster(
 
                 let mut rng = rand::thread_rng();
 
-                let placement: Vec<_> = if all_peer_ids.len() < shards_numer {
+                let placement: Vec<_> = if all_peer_ids.len() < shard_number {
                     // random select `shards_numer` from all_peer_ids with repetition
-                    (0..shards_numer)
+                    (0..shard_number)
                         .filter_map(|_| all_peer_ids.choose(&mut rng))
                         .copied()
                         .collect()
                 } else {
                     // random select `shards_numer` from all_peer_ids without repetition
                     all_peer_ids
-                        .choose_multiple(&mut rng, shards_numer)
+                        .choose_multiple(&mut rng, shard_number)
                         .copied()
                         .collect()
                 };
