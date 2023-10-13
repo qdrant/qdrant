@@ -516,15 +516,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub async fn remove_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
-        if self.this_peer_id() == peer_id {
-            self.remove_local().await?;
-        } else {
-            self.remove_remote(peer_id).await?;
-        }
-        Ok(())
-    }
-
     pub fn notify_peer_failure(&self, peer_id: PeerId) {
         log::debug!("Notify peer failure: {}", peer_id);
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
@@ -561,6 +552,15 @@ impl ShardReplicaSet {
             rs.set_peer_state(*peer_id, state);
         })?;
         self.update_locally_disabled(*peer_id);
+        Ok(())
+    }
+
+    pub async fn remove_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        if self.this_peer_id() == peer_id {
+            self.remove_local().await?;
+        } else {
+            self.remove_remote(peer_id).await?;
+        }
         Ok(())
     }
 
