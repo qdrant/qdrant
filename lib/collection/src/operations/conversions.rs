@@ -43,6 +43,7 @@ use crate::operations::types::{
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
 use crate::shards::shard::ShardKey;
+use crate::shards::transfer::shard_transfer::ShardTransferMethod;
 
 pub fn sharding_method_to_proto(sharding_method: ShardingMethod) -> i32 {
     match sharding_method {
@@ -1235,6 +1236,26 @@ impl From<api::grpc::qdrant::MoveShard> for MoveShard {
             shard_id: value.shard_id,
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
+            method: value.method.map(|method| method.try_into().unwrap()),
+        }
+    }
+}
+
+impl TryFrom<i32> for ShardTransferMethod {
+    type Error = Status;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            n if n == api::grpc::qdrant::ShardTransferMethod::StreamRecords as i32 => {
+                Ok(ShardTransferMethod::StreamRecords)
+            }
+            n if n == api::grpc::qdrant::ShardTransferMethod::Snapshot as i32 => {
+                Ok(ShardTransferMethod::Snapshot)
+            }
+            n => Err(Status::invalid_argument(format!(
+                "Unknown shard transfer method: {}",
+                n,
+            ))),
         }
     }
 }

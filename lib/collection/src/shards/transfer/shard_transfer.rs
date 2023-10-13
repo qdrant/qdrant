@@ -63,6 +63,7 @@ impl ShardTransfer {
 
 /// Methods for transferring a shard from one node to another.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ShardTransferMethod {
     /// Stream all shard records in batches until the whole shard is transferred.
     StreamRecords,
@@ -227,6 +228,7 @@ async fn transfer_batches(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn transfer_snapshot(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
