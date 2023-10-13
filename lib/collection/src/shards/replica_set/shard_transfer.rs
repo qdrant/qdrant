@@ -1,4 +1,11 @@
-use super::*;
+use segment::types::PointIdType;
+
+use super::ShardReplicaSet;
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::forward_proxy_shard::ForwardProxyShard;
+use crate::shards::queue_proxy_shard::QueueProxyShard;
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::shard::Shard;
 
 impl ShardReplicaSet {
     pub async fn proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
@@ -6,9 +13,9 @@ impl ShardReplicaSet {
 
         match &*local_write {
             // Expected state, continue
-            Some(Local(_)) => {}
+            Some(Shard::Local(_)) => {}
             // Unexpected states, error
-            Some(ForwardProxy(proxy)) => {
+            Some(Shard::ForwardProxy(proxy)) => {
                 return if proxy.remote_shard.peer_id == remote_shard.peer_id {
                     Ok(())
                 } else {
@@ -18,7 +25,7 @@ impl ShardReplicaSet {
                     )))
                 };
             }
-            Some(QueueProxy(_)) => {
+            Some(Shard::QueueProxy(_)) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot proxify local shard {} to peer {} because it is already queue proxified",
                     self.shard_id, remote_shard.peer_id,
@@ -39,9 +46,9 @@ impl ShardReplicaSet {
             }
         };
 
-        if let Some(Local(local)) = local_write.take() {
+        if let Some(Shard::Local(local)) = local_write.take() {
             let proxy_shard = ForwardProxyShard::new(local, remote_shard);
-            let _ = local_write.insert(ForwardProxy(proxy_shard));
+            let _ = local_write.insert(Shard::ForwardProxy(proxy_shard));
         }
 
         Ok(())
@@ -55,8 +62,8 @@ impl ShardReplicaSet {
 
         match &*local_write {
             // Expected states, continue
-            Some(ForwardProxy(_)) => {}
-            Some(Local(_)) => return Ok(()),
+            Some(Shard::ForwardProxy(_)) => {}
+            Some(Shard::Local(_)) => return Ok(()),
             // Unexpected states, error
             Some(shard) => {
                 return Err(CollectionError::service_error(format!(
@@ -74,9 +81,9 @@ impl ShardReplicaSet {
             }
         };
 
-        if let Some(ForwardProxy(proxy)) = local_write.take() {
+        if let Some(Shard::ForwardProxy(proxy)) = local_write.take() {
             let local_shard = proxy.wrapped_shard;
-            let _ = local_write.insert(Local(local_shard));
+            let _ = local_write.insert(Shard::Local(local_shard));
         }
 
         Ok(())
@@ -87,16 +94,17 @@ impl ShardReplicaSet {
 
         match &*local_write {
             // Expected state, continue
-            Some(Local(_)) => {}
-            Some(ForwardProxy(proxy)) if proxy.remote_shard.peer_id == remote_shard.peer_id => {}
+            Some(Shard::Local(_)) => {}
+            Some(Shard::ForwardProxy(proxy))
+                if proxy.remote_shard.peer_id == remote_shard.peer_id => {}
             // Unexpected states, error
-            Some(QueueProxy(_)) => {
+            Some(Shard::QueueProxy(_)) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot queue proxify local shard {} to peer {} because it is already queue proxified",
                     self.shard_id, remote_shard.peer_id,
                 )));
             }
-            Some(ForwardProxy(proxy)) => {
+            Some(Shard::ForwardProxy(proxy)) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot queue proxify local shard {} to peer {} because it is already proxified to peer {}",
                     self.shard_id, remote_shard.peer_id, proxy.remote_shard.peer_id
@@ -117,9 +125,9 @@ impl ShardReplicaSet {
             }
         };
 
-        if let Some(Local(local)) = local_write.take() {
+        if let Some(Shard::Local(local)) = local_write.take() {
             let proxy_shard = QueueProxyShard::new(local).await;
-            let _ = local_write.insert(QueueProxy(proxy_shard));
+            let _ = local_write.insert(Shard::QueueProxy(proxy_shard));
         }
 
         Ok(())
@@ -133,8 +141,8 @@ impl ShardReplicaSet {
 
         match &*local_write {
             // Expected states, continue
-            Some(QueueProxy(_)) => {}
-            Some(Local(_)) => return Ok(()),
+            Some(Shard::QueueProxy(_)) => {}
+            Some(Shard::Local(_)) => return Ok(()),
             // Unexpected states, error
             Some(shard) => {
                 return Err(CollectionError::service_error(format!(
@@ -152,7 +160,7 @@ impl ShardReplicaSet {
             }
         };
 
-        if let Some(QueueProxy(proxy)) = local_write.take() {
+        if let Some(Shard::QueueProxy(proxy)) = local_write.take() {
             // Transfer queue to remote before unproxying
             proxy.transfer_all_missed_updates(remote_shard).await?;
 
@@ -162,7 +170,7 @@ impl ShardReplicaSet {
             // TODO: also switch state of remote here?
 
             let local_shard = proxy.wrapped_shard;
-            let _ = local_write.insert(Local(local_shard));
+            let _ = local_write.insert(Shard::Local(local_shard));
         }
 
         Ok(())
@@ -175,7 +183,7 @@ impl ShardReplicaSet {
         batch_size: usize,
     ) -> CollectionResult<Option<PointIdType>> {
         let read_local = self.local.read().await;
-        if let Some(ForwardProxy(proxy)) = &*read_local {
+        if let Some(Shard::ForwardProxy(proxy)) = &*read_local {
             proxy
                 .transfer_batch(offset, batch_size, &self.search_runtime)
                 .await
@@ -190,7 +198,7 @@ impl ShardReplicaSet {
     /// Custom operation for transferring indexes from one shard to another during transfer
     pub async fn transfer_indexes(&self) -> CollectionResult<()> {
         let read_local = self.local.read().await;
-        if let Some(ForwardProxy(proxy)) = &*read_local {
+        if let Some(Shard::ForwardProxy(proxy)) = &*read_local {
             proxy.transfer_indexes().await
         } else {
             Err(CollectionError::service_error(format!(
