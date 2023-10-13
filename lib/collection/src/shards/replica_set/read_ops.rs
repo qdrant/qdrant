@@ -1,4 +1,11 @@
-use super::*;
+use std::sync::Arc;
+
+use futures::FutureExt as _;
+use segment::types::*;
+
+use super::ShardReplicaSet;
+use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::types::*;
 
 impl ShardReplicaSet {
     #[allow(clippy::too_many_arguments)]
