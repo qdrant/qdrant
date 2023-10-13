@@ -42,6 +42,7 @@ use crate::operations::types::{
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
+use crate::shards::shard::ShardKey;
 
 pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
     api::grpc::qdrant::WriteOrdering {
@@ -1135,12 +1136,26 @@ impl From<AliasDescription> for api::grpc::qdrant::AliasDescription {
     }
 }
 
+impl From<ShardKey> for api::grpc::qdrant::ShardKey {
+    fn from(value: ShardKey) -> Self {
+        match value {
+            ShardKey::Keyword(keyword) => Self {
+                key: Some(api::grpc::qdrant::shard_key::Key::Keyword(keyword)),
+            },
+            ShardKey::Number(number) => Self {
+                key: Some(api::grpc::qdrant::shard_key::Key::Number(number)),
+            },
+        }
+    }
+}
+
 impl From<LocalShardInfo> for api::grpc::qdrant::LocalShardInfo {
     fn from(value: LocalShardInfo) -> Self {
         Self {
             shard_id: value.shard_id,
             points_count: value.points_count as u64,
             state: value.state as i32,
+            shard_key: value.shard_key.map(Into::into),
         }
     }
 }
@@ -1151,6 +1166,7 @@ impl From<RemoteShardInfo> for api::grpc::qdrant::RemoteShardInfo {
             shard_id: value.shard_id,
             peer_id: value.peer_id,
             state: value.state as i32,
+            shard_key: value.shard_key.map(Into::into),
         }
     }
 }

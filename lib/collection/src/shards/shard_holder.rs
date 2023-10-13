@@ -19,18 +19,20 @@ use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet}; // TODO rename ReplicaShard to ReplicaSetShard
-use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard::{PeerId, ShardId, ShardKey};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
+const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     ring: HashRing<ShardId>,
+    key_mapping: SaveOnDisk<HashMap<ShardKey, HashSet<ShardId>>>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -38,22 +40,72 @@ pub type LockedShardHolder = RwLock<ShardHolder>;
 impl ShardHolder {
     pub fn new(collection_path: &Path, hashring: HashRing<ShardId>) -> CollectionResult<Self> {
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
+        let key_mapping = SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
         Ok(Self {
             shards: HashMap::new(),
             shard_transfers,
             ring: hashring,
+            key_mapping,
         })
     }
 
-    pub fn add_shard(&mut self, shard_id: ShardId, shard: ShardReplicaSet) {
-        self.shards.insert(shard_id, shard);
-        self.ring.add(shard_id);
+    pub fn get_shard_id_to_key_mapping(&self) -> HashMap<ShardId, ShardKey> {
+        self.key_mapping
+            .read()
+            .iter()
+            .flat_map(|(key, shard_ids)| shard_ids.iter().map(|shard_id| (*shard_id, key.clone())))
+            .collect()
     }
 
-    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<ShardReplicaSet> {
-        let shard = self.shards.remove(&shard_id);
+    pub fn add_shard(
+        &mut self,
+        shard_id: ShardId,
+        shard: ShardReplicaSet,
+        shard_key: Option<ShardKey>,
+    ) -> Result<(), CollectionError> {
+        self.shards.insert(shard_id, shard);
+        self.ring.add(shard_id);
+        if let Some(shard_key) = shard_key {
+            self.key_mapping.write_optional(|key_mapping| {
+                let has_id = key_mapping
+                    .get(&shard_key)
+                    .map(|shard_ids| shard_ids.contains(&shard_id))
+                    .unwrap_or(false);
+
+                if has_id {
+                    return None;
+                }
+                let mut copy_of_mapping = key_mapping.clone();
+                let shard_ids = copy_of_mapping.entry(shard_key).or_default();
+                shard_ids.insert(shard_id);
+                Some(copy_of_mapping)
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_shard(
+        &mut self,
+        shard_id: ShardId,
+    ) -> Result<Option<ShardReplicaSet>, CollectionError> {
+        let shard_opt = self.shards.remove(&shard_id);
+        self.key_mapping.write_optional(|key_mapping| {
+            let has_id = key_mapping
+                .values()
+                .any(|shard_ids| shard_ids.contains(&shard_id));
+
+            if !has_id {
+                return None;
+            }
+
+            let mut copy_of_mapping = key_mapping.clone();
+            for shard_ids in copy_of_mapping.values_mut() {
+                shard_ids.remove(&shard_id);
+            }
+            Some(copy_of_mapping)
+        })?;
         self.ring.remove(&shard_id);
-        shard
+        Ok(shard_opt)
     }
 
     /// Take shard
@@ -63,27 +115,12 @@ impl ShardHolder {
         self.shards.remove(&shard_id)
     }
 
-    /// Replace shard
-    ///
-    /// return old shard
-    pub fn replace_shard(
-        &mut self,
-        shard_id: ShardId,
-        shard: ShardReplicaSet,
-    ) -> Option<ShardReplicaSet> {
-        self.shards.insert(shard_id, shard)
-    }
-
     pub fn contains_shard(&self, shard_id: &ShardId) -> bool {
         self.shards.contains_key(shard_id)
     }
 
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&ShardReplicaSet> {
         self.shards.get(shard_id)
-    }
-
-    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut ShardReplicaSet> {
-        self.shards.get_mut(shard_id)
     }
 
     pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &ShardReplicaSet)> {
@@ -288,7 +325,7 @@ impl ShardHolder {
                         .expect("Failed to set local shard state");
                 }
 
-                self.add_shard(shard_id, replica_set);
+                self.add_shard(shard_id, replica_set, None).unwrap();
             }
         }
     }
