@@ -516,11 +516,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub fn notify_peer_failure(&self, peer_id: PeerId) {
-        log::debug!("Notify peer failure: {}", peer_id);
-        self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
-    }
-
     /// Change state of the replica to the given.
     /// Ensure that remote shard is initialized.
     pub async fn ensure_replica_with_state(
@@ -726,6 +721,11 @@ impl ShardReplicaSet {
             log::warn!("Resolving consensus/local state inconsistency");
             locally_disabled.clear();
         }
+    }
+
+    fn notify_peer_failure(&self, peer_id: PeerId) {
+        log::debug!("Notify peer failure: {}", peer_id);
+        self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
     }
 
     /// Check if the are any locally disabled peers
