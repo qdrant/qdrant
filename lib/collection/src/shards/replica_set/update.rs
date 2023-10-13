@@ -335,11 +335,14 @@ impl ShardReplicaSet {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::num::{NonZeroU32, NonZeroU64};
     use std::sync::Arc;
 
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
+    use tokio::runtime::Handle;
+    use tokio::sync::RwLock;
 
     use super::*;
     use crate::config::*;
