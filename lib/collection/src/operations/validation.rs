@@ -78,6 +78,28 @@ fn describe_error(
                 None => msg,
             }
         }
+        "must_not_match" => {
+            match (
+                params.get("value"),
+                params.get("other_field"),
+                params.get("other_value"),
+            ) {
+                (Some(value), Some(other_field), Some(other_value)) => {
+                    format!("value {value} must not match {other_value} in {other_field}")
+                }
+                (Some(value), Some(other_field), None) => {
+                    format!("value {value} must not match value in {other_field}")
+                }
+                (None, Some(other_field), Some(other_value)) => {
+                    format!("must not match {other_value} in {other_field}")
+                }
+                (None, Some(other_field), None) => {
+                    format!("must not match value in {other_field}")
+                }
+                // Should be unreachable
+                _ => err.to_string(),
+            }
+        }
         "does_not_contain" => match params.get("pattern") {
             Some(pattern) => format!("cannot contain {pattern}"),
             None => err.to_string(),
