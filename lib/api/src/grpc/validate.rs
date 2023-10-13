@@ -116,6 +116,18 @@ impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
     }
 }
 
+impl Validate for crate::grpc::qdrant::update_collection_cluster_setup_request::Operation {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::update_collection_cluster_setup_request::Operation;
+        match self {
+            Operation::MoveShard(op) => op.validate(),
+            Operation::ReplicateShard(op) => op.validate(),
+            Operation::AbortTransfer(op) => op.validate(),
+            Operation::DropReplica(op) => op.validate(),
+        }
+    }
+}
+
 impl Validate for crate::grpc::qdrant::condition::ConditionOneOf {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use crate::grpc::qdrant::condition::ConditionOneOf;

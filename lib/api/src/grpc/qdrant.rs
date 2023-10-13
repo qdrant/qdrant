@@ -815,6 +815,7 @@ pub struct CollectionClusterInfoResponse {
     #[prost(message, repeated, tag = "5")]
     pub shard_transfers: ::prost::alloc::vec::Vec<ShardTransferInfo>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -827,6 +828,7 @@ pub struct MoveShard {
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -851,6 +853,7 @@ pub struct UpdateCollectionClusterSetupRequest {
         oneof = "update_collection_cluster_setup_request::Operation",
         tags = "2, 3, 4, 5"
     )]
+    #[validate]
     pub operation: ::core::option::Option<
         update_collection_cluster_setup_request::Operation,
     >,
