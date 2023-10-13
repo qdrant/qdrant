@@ -53,11 +53,7 @@ impl ShardHolder {
         self.key_mapping
             .read()
             .iter()
-            .flat_map(|(key, shard_ids)| {
-                shard_ids
-                    .iter()
-                    .map(move |shard_id| (*shard_id, key.clone()))
-            })
+            .flat_map(|(key, shard_ids)| shard_ids.iter().map(|shard_id| (*shard_id, key.clone())))
             .collect()
     }
 
