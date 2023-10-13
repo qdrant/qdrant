@@ -439,6 +439,25 @@ impl ShardReplicaSet {
         }
     }
 
+    pub async fn set_local(
+        &self,
+        local: LocalShard,
+        state: Option<ReplicaState>,
+    ) -> CollectionResult<Option<Shard>> {
+        let old_shard = self.local.write().await.replace(Local(local));
+
+        if !self.replica_state.read().is_local || state.is_some() {
+            self.replica_state.write(|rs| {
+                rs.is_local = true;
+                if let Some(active) = state {
+                    rs.set_peer_state(self.this_peer_id(), active);
+                }
+            })?;
+        }
+        self.update_locally_disabled(self.this_peer_id());
+        Ok(old_shard)
+    }
+
     pub async fn remove_remote(&self, peer_id: PeerId) -> CollectionResult<()> {
         self.replica_state.write(|rs| {
             rs.remove_peer_state(&peer_id);
@@ -495,25 +514,6 @@ impl ShardReplicaSet {
             LocalShard::clear(&self.shard_path).await?;
         }
         Ok(())
-    }
-
-    pub async fn set_local(
-        &self,
-        local: LocalShard,
-        state: Option<ReplicaState>,
-    ) -> CollectionResult<Option<Shard>> {
-        let old_shard = self.local.write().await.replace(Local(local));
-
-        if !self.replica_state.read().is_local || state.is_some() {
-            self.replica_state.write(|rs| {
-                rs.is_local = true;
-                if let Some(active) = state {
-                    rs.set_peer_state(self.this_peer_id(), active);
-                }
-            })?;
-        }
-        self.update_locally_disabled(self.this_peer_id());
-        Ok(old_shard)
     }
 
     pub async fn remove_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
