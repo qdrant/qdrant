@@ -827,6 +827,7 @@ pub struct MoveShard {
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -846,11 +847,13 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "6")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
         tags = "2, 3, 4, 5"
     )]
+    #[validate]
     pub operation: ::core::option::Option<
         update_collection_cluster_setup_request::Operation,
     >,

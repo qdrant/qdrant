@@ -1,12 +1,12 @@
+use common::validation::validate_move_shard_different_peers;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
 
 use crate::shards::shard::{PeerId, ShardId};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum ClusterOperations {
     /// Move shard to a different peer
     MoveShard(MoveShardOperation),
@@ -18,45 +18,6 @@ pub enum ClusterOperations {
     DropReplica(DropReplicaOperation),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct MoveShardOperation {
-    pub move_shard: MoveShard,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct ReplicateShardOperation {
-    pub replicate_shard: MoveShard,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct DropReplicaOperation {
-    pub drop_replica: Replica,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct AbortTransferOperation {
-    pub abort_transfer: MoveShard,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct MoveShard {
-    pub shard_id: ShardId,
-    pub to_peer_id: PeerId,
-    pub from_peer_id: PeerId,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct Replica {
-    pub shard_id: ShardId,
-    pub peer_id: PeerId,
-}
-
 impl Validate for ClusterOperations {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
@@ -66,4 +27,53 @@ impl Validate for ClusterOperations {
             ClusterOperations::DropReplica(op) => op.validate(),
         }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct MoveShardOperation {
+    #[validate]
+    pub move_shard: MoveShard,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ReplicateShardOperation {
+    #[validate]
+    pub replicate_shard: MoveShard,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct DropReplicaOperation {
+    #[validate]
+    pub drop_replica: Replica,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct AbortTransferOperation {
+    #[validate]
+    pub abort_transfer: MoveShard,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct MoveShard {
+    pub shard_id: ShardId,
+    pub to_peer_id: PeerId,
+    pub from_peer_id: PeerId,
+}
+
+impl Validate for MoveShard {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_move_shard_different_peers(self.from_peer_id, self.to_peer_id)
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Replica {
+    pub shard_id: ShardId,
+    pub peer_id: PeerId,
 }
