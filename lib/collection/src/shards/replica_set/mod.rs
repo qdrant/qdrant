@@ -89,23 +89,6 @@ const REPLICA_STATE_FILE: &str = "replica_state.json";
 //    └─────────────────────────────────────────┘
 //
 
-/// State of the single shard within a replica set.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
-pub enum ReplicaState {
-    // Active and sound
-    #[default]
-    Active,
-    // Failed for some reason
-    Dead,
-    // The shard is partially loaded and is currently receiving data from other shards
-    Partial,
-    // Collection is being created
-    Initializing,
-    // A shard which receives data, but is not used for search
-    // Useful for backup shards
-    Listener,
-}
-
 /// Represents a change in replica set, due to scaling of `replication_factor`
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
@@ -736,4 +719,21 @@ impl ReplicaSetState {
     pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
         self.peers = peers;
     }
+}
+
+/// State of the single shard within a replica set.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum ReplicaState {
+    // Active and sound
+    #[default]
+    Active,
+    // Failed for some reason
+    Dead,
+    // The shard is partially loaded and is currently receiving data from other shards
+    Partial,
+    // Collection is being created
+    Initializing,
+    // A shard which receives data, but is not used for search
+    // Useful for backup shards
+    Listener,
 }
