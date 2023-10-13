@@ -43,14 +43,6 @@ impl ShardReplicaSet {
         .await
     }
 
-    pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
-        self.execute_read_operation(
-            |shard| async move { shard.info().await }.boxed(),
-            local_only,
-        )
-        .await
-    }
-
     // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
     // ! please replicate any changes to both methods
     pub async fn search(
@@ -139,6 +131,14 @@ impl ShardReplicaSet {
                 async move { shard.retrieve(request, &with_payload, &with_vector).await }.boxed()
             },
             read_consistency,
+            local_only,
+        )
+        .await
+    }
+
+    pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
+        self.execute_read_operation(
+            |shard| async move { shard.info().await }.boxed(),
             local_only,
         )
         .await
