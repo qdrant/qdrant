@@ -1,4 +1,16 @@
-use super::*;
+use std::ops::Deref as _;
+use std::time::Duration;
+
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt as _, StreamExt as _};
+use itertools::Itertools as _;
+
+use super::{ReplicaSetState, ReplicaState, ShardReplicaSet};
+use crate::operations::point_ops::WriteOrdering;
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult};
+use crate::operations::CollectionUpdateOperations;
+use crate::shards::shard::PeerId;
+use crate::shards::shard_trait::ShardOperation as _;
 
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -324,6 +336,7 @@ impl ShardReplicaSet {
 #[cfg(test)]
 mod tests {
     use std::num::{NonZeroU32, NonZeroU64};
+    use std::sync::Arc;
 
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
@@ -332,6 +345,7 @@ mod tests {
     use crate::config::*;
     use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::optimizers_builder::OptimizersConfig;
+    use crate::shards::replica_set::ChangePeerState;
 
     #[tokio::test]
     async fn test_highest_replica_peer_id() {
