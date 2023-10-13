@@ -1,4 +1,5 @@
 use actix_web_validator::error::flatten_errors;
+use serde_json::Value;
 use validator::{ValidationError, ValidationErrors};
 
 /// Warn about validation errors in the log.
@@ -45,6 +46,8 @@ fn describe_error(
     // Prefer to return message if set
     if let Some(message) = message {
         return message.to_string();
+    } else if let Some(Value::String(message)) = params.get("message") {
+        return message.to_string();
     }
 
     // Generate messages based on codes
@@ -76,6 +79,28 @@ fn describe_error(
             match params.get("value") {
                 Some(value) => format!("value {value} invalid, {msg}"),
                 None => msg,
+            }
+        }
+        "must_not_match" => {
+            match (
+                params.get("value"),
+                params.get("other_field"),
+                params.get("other_value"),
+            ) {
+                (Some(value), Some(other_field), Some(other_value)) => {
+                    format!("value {value} must not match {other_value} in {other_field}")
+                }
+                (Some(value), Some(other_field), None) => {
+                    format!("value {value} must not match value in {other_field}")
+                }
+                (None, Some(other_field), Some(other_value)) => {
+                    format!("must not match {other_value} in {other_field}")
+                }
+                (None, Some(other_field), None) => {
+                    format!("must not match value in {other_field}")
+                }
+                // Should be unreachable
+                _ => err.to_string(),
             }
         }
         "does_not_contain" => match params.get("pattern") {

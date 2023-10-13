@@ -124,6 +124,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("QuantizationConfig.quantization", ""),
             ("QuantizationConfigDiff.quantization", ""),
             ("ScalarQuantization.quantile", "custom = \"crate::grpc::validate::validate_f32_range_min_0_5_max_1\""),
+            ("UpdateCollectionClusterSetupRequest.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("UpdateCollectionClusterSetupRequest.operation", ""),
         ], &[
             "ListCollectionsRequest",
             "CollectionParamsDiff",
@@ -134,7 +136,8 @@ fn configure_validation(builder: Builder) -> Builder {
             "BinaryQuantization",
             "Disabled",
             "QuantizationConfigDiff",
-            "quantization_config_diff::Quantization"
+            "quantization_config_diff::Quantization",
+            "Replica",
         ])
         // Service: collections_internal.proto
         .validates(&[

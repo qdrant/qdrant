@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use common::validation::validate_range_generic;
+use common::validation::{validate_move_shard_different_peers, validate_range_generic};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant::{GeoLineString, NamedVectors};
@@ -113,6 +113,24 @@ impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
             Quantization::Binary(binary) => binary.validate(),
             Quantization::Disabled(_) => Ok(()),
         }
+    }
+}
+
+impl Validate for crate::grpc::qdrant::update_collection_cluster_setup_request::Operation {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::update_collection_cluster_setup_request::Operation;
+        match self {
+            Operation::MoveShard(op) => op.validate(),
+            Operation::ReplicateShard(op) => op.validate(),
+            Operation::AbortTransfer(op) => op.validate(),
+            Operation::DropReplica(op) => op.validate(),
+        }
+    }
+}
+
+impl Validate for crate::grpc::qdrant::MoveShard {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_move_shard_different_peers(self.from_peer_id, self.to_peer_id)
     }
 }
 

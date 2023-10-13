@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use serde::Serialize;
-use validator::ValidationError;
+use validator::{ValidationError, ValidationErrors};
 
 /// Validate the value is in `[min, max]`
 #[inline]
@@ -77,6 +77,30 @@ where
     }
 
     Ok(())
+}
+
+/// Validate that move shard request has two different peers.
+pub fn validate_move_shard_different_peers(
+    from_peer_id: u64,
+    to_peer_id: u64,
+) -> Result<(), ValidationErrors> {
+    if to_peer_id != from_peer_id {
+        return Ok(());
+    }
+
+    let mut errors = ValidationErrors::new();
+    errors.add("to_peer_id", {
+        let mut error = ValidationError::new("must_not_match");
+        error.add_param(Cow::from("value"), &to_peer_id.to_string());
+        error.add_param(Cow::from("other_field"), &"from_peer_id");
+        error.add_param(Cow::from("other_value"), &from_peer_id.to_string());
+        error.add_param(
+            Cow::from("message"),
+            &format!("cannot move shard to itself, \"to_peer_id\" must be different than {} in \"from_peer_id\"", from_peer_id),
+        );
+        error
+    });
+    Err(errors)
 }
 
 #[cfg(test)]
