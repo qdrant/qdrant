@@ -49,8 +49,6 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
-const REPLICA_STATE_FILE: &str = "replica_state.json";
-
 //    │    Collection Created
 //    │
 //    ▼
@@ -115,6 +113,8 @@ pub struct ShardReplicaSet {
 }
 
 pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+
+const REPLICA_STATE_FILE: &str = "replica_state.json";
 
 impl ShardReplicaSet {
     /// Create a new fresh replica set, no previous state is expected.
