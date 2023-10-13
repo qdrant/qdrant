@@ -1230,14 +1230,21 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
     }
 }
 
-impl From<api::grpc::qdrant::MoveShard> for MoveShard {
-    fn from(value: api::grpc::qdrant::MoveShard) -> Self {
-        Self {
+impl TryFrom<api::grpc::qdrant::MoveShard> for MoveShard {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::MoveShard) -> Result<Self, Self::Error> {
+        let method: Option<ShardTransferMethod> = match value.method {
+            Some(method) => Some(method.try_into()?),
+            None => None,
+        };
+
+        Ok(Self {
             shard_id: value.shard_id,
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
-            method: value.method.map(|method| method.try_into().unwrap()),
-        }
+            method,
+        })
     }
 }
 
@@ -1260,22 +1267,24 @@ impl TryFrom<i32> for ShardTransferMethod {
     }
 }
 
-impl From<ClusterOperationsPb> for ClusterOperations {
-    fn from(value: ClusterOperationsPb) -> Self {
-        match value {
+impl TryFrom<ClusterOperationsPb> for ClusterOperations {
+    type Error = Status;
+
+    fn try_from(value: ClusterOperationsPb) -> Result<Self, Self::Error> {
+        Ok(match value {
             ClusterOperationsPb::MoveShard(op) => {
                 ClusterOperations::MoveShard(MoveShardOperation {
-                    move_shard: op.into(),
+                    move_shard: op.try_into()?,
                 })
             }
             ClusterOperationsPb::ReplicateShard(op) => {
                 ClusterOperations::ReplicateShard(ReplicateShardOperation {
-                    replicate_shard: op.into(),
+                    replicate_shard: op.try_into()?,
                 })
             }
             ClusterOperationsPb::AbortTransfer(op) => {
                 ClusterOperations::AbortTransfer(AbortTransferOperation {
-                    abort_transfer: op.into(),
+                    abort_transfer: op.try_into()?,
                 })
             }
             ClusterOperationsPb::DropReplica(op) => {
@@ -1286,6 +1295,6 @@ impl From<ClusterOperationsPb> for ClusterOperations {
                     },
                 })
             }
-        }
+        })
     }
 }
