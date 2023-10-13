@@ -24,52 +24,6 @@ impl ShardReplicaSet {
         }
     }
 
-    fn handle_failed_replicas(
-        &self,
-        failures: &Vec<(PeerId, CollectionError)>,
-        state: &ReplicaSetState,
-    ) -> bool {
-        let mut wait_for_deactivation = false;
-
-        for (peer_id, err) in failures {
-            log::warn!(
-                "Failed to update shard {}:{} on peer {}, error: {}",
-                self.collection_id,
-                self.shard_id,
-                peer_id,
-                err
-            );
-
-            let Some(&peer_state) = state.get_peer_state(peer_id) else {
-                continue;
-            };
-
-            if peer_state != ReplicaState::Active && peer_state != ReplicaState::Initializing {
-                continue;
-            }
-
-            if err.is_transient() || peer_state == ReplicaState::Initializing {
-                // If the error is transient, we should not deactivate the peer
-                // before allowing other operations to continue.
-                // Otherwise, the failed node can become responsive again, before
-                // the other nodes deactivate it, so the storage might be inconsistent.
-                wait_for_deactivation = true;
-            }
-
-            log::debug!(
-                "Deactivating peer {} because of failed update of shard {}:{}",
-                peer_id,
-                self.collection_id,
-                self.shard_id
-            );
-
-            self.locally_disabled_peers.write().insert(*peer_id);
-            self.notify_peer_failure(*peer_id);
-        }
-
-        wait_for_deactivation
-    }
-
     pub async fn update_with_consistency(
         &self,
         operation: CollectionUpdateOperations,
@@ -319,6 +273,52 @@ impl ShardReplicaSet {
             None => false,
         };
         res && !self.is_locally_disabled(peer_id)
+    }
+
+    fn handle_failed_replicas(
+        &self,
+        failures: &Vec<(PeerId, CollectionError)>,
+        state: &ReplicaSetState,
+    ) -> bool {
+        let mut wait_for_deactivation = false;
+
+        for (peer_id, err) in failures {
+            log::warn!(
+                "Failed to update shard {}:{} on peer {}, error: {}",
+                self.collection_id,
+                self.shard_id,
+                peer_id,
+                err
+            );
+
+            let Some(&peer_state) = state.get_peer_state(peer_id) else {
+                continue;
+            };
+
+            if peer_state != ReplicaState::Active && peer_state != ReplicaState::Initializing {
+                continue;
+            }
+
+            if err.is_transient() || peer_state == ReplicaState::Initializing {
+                // If the error is transient, we should not deactivate the peer
+                // before allowing other operations to continue.
+                // Otherwise, the failed node can become responsive again, before
+                // the other nodes deactivate it, so the storage might be inconsistent.
+                wait_for_deactivation = true;
+            }
+
+            log::debug!(
+                "Deactivating peer {} because of failed update of shard {}:{}",
+                peer_id,
+                self.collection_id,
+                self.shard_id
+            );
+
+            self.locally_disabled_peers.write().insert(*peer_id);
+            self.notify_peer_failure(*peer_id);
+        }
+
+        wait_for_deactivation
     }
 }
 
