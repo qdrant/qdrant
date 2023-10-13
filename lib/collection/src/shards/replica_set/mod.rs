@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -317,6 +318,16 @@ impl ShardReplicaSet {
             .into_iter()
             .filter(|peer_id| !self.is_locally_disabled(peer_id) && *peer_id != this_peer_id)
             .collect()
+    }
+
+    /// Wait for a replica set state condition to be true.
+    ///
+    /// Returns `true` if condition is true, `false` if timed out.
+    fn wait_for<F>(&self, check: F, timeout: Duration) -> bool
+    where
+        F: Fn(&ReplicaSetState) -> bool,
+    {
+        self.replica_state.wait_for(check, timeout)
     }
 
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
