@@ -78,6 +78,14 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     QuantizedCustomQueryScorer::new(discovery_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
+            QueryVector::Context(discovery_context_query) => {
+                let query_scorer = QuantizedCustomQueryScorer::new(
+                    discovery_context_query,
+                    quantized_storage,
+                    *distance,
+                );
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::named_vectors::NamedVectors;
 use crate::common::utils::transpose_map_into_named_vector;
+use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
 
@@ -234,6 +235,7 @@ pub enum QueryVector {
     Nearest(VectorType),
     Recommend(RecoQuery<VectorType>),
     Discovery(DiscoveryQuery<VectorType>),
+    Context(ContextQuery<VectorType>),
 }
 
 impl From<VectorType> for QueryVector {

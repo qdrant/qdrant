@@ -52,6 +52,9 @@ fn _check_query_vector(
         QueryVector::Discovery(discovery_query) => discovery_query
             .iter_all()
             .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
+        QueryVector::Context(discovery_context_query) => discovery_context_query
+            .iter_all()
+            .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
     }
 
     Ok(())
