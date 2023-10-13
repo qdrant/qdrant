@@ -362,10 +362,6 @@ mod tests {
         max_optimization_threads: 2,
     };
 
-    pub fn dummy_on_replica_failure() -> ChangePeerState {
-        Arc::new(move |_peer_id, _shard_id| {})
-    }
-
     async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
         let update_runtime = Handle::current();
         let search_runtime = Handle::current();
@@ -415,5 +411,9 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    fn dummy_on_replica_failure() -> ChangePeerState {
+        Arc::new(move |_peer_id, _shard_id| {})
     }
 }
