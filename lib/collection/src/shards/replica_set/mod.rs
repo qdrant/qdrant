@@ -89,12 +89,6 @@ const REPLICA_STATE_FILE: &str = "replica_state.json";
 //    └─────────────────────────────────────────┘
 //
 
-/// Represents a change in replica set, due to scaling of `replication_factor`
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
-pub enum Change {
-    Remove(ShardId, PeerId),
-}
-
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.
@@ -736,4 +730,10 @@ pub enum ReplicaState {
     // A shard which receives data, but is not used for search
     // Useful for backup shards
     Listener,
+}
+
+/// Represents a change in replica set, due to scaling of `replication_factor`
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub enum Change {
+    Remove(ShardId, PeerId),
 }
