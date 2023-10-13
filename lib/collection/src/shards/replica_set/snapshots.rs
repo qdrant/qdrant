@@ -1,4 +1,13 @@
-use super::*;
+use std::ops::Deref as _;
+use std::path::Path;
+
+use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, REPLICA_STATE_FILE};
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::save_on_disk::SaveOnDisk;
+use crate::shards::dummy_shard::DummyShard;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::shard::{PeerId, Shard};
+use crate::shards::shard_config::ShardConfig;
 
 impl ShardReplicaSet {
     pub async fn create_snapshot(
@@ -97,13 +106,15 @@ impl ShardReplicaSet {
 
         match restore.await {
             Ok(new_local) => {
-                local.replace(Local(new_local));
+                local.replace(Shard::Local(new_local));
                 Ok(true)
             }
 
             Err(restore_err) => {
                 // Initialize "dummy" replica
-                local.replace(Dummy(DummyShard::new("Failed to restore local replica")));
+                local.replace(Shard::Dummy(DummyShard::new(
+                    "Failed to restore local replica",
+                )));
 
                 // TODO: Handle single-node mode!? (How!? 😰)
 
