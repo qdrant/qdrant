@@ -257,6 +257,120 @@ impl ShardReplicaSet {
         })
     }
 
+    /// Recovers shard from disk.
+    ///
+    /// WARN: This method intended to be used only on the initial start of the node.
+    /// It does not implement any logic to recover from a failure.
+    /// Will panic or load partial state if there is a failure.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn load(
+        shard_id: ShardId,
+        collection_id: CollectionId,
+        shard_path: &Path,
+        collection_config: Arc<RwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
+        channel_service: ChannelService,
+        on_peer_failure: ChangePeerState,
+        this_peer_id: PeerId,
+        update_runtime: Handle,
+        search_runtime: Handle,
+    ) -> Self {
+        let replica_state: SaveOnDisk<ReplicaSetState> =
+            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
+
+        if replica_state.read().this_peer_id != this_peer_id {
+            replica_state
+                .write(|rs| {
+                    let this_peer_id = rs.this_peer_id;
+                    let local_state = rs.remove_peer_state(&this_peer_id);
+                    if let Some(state) = local_state {
+                        rs.set_peer_state(this_peer_id, state);
+                    }
+                    rs.this_peer_id = this_peer_id;
+                })
+                .map_err(|e| {
+                    panic!("Failed to update replica state in {shard_path:?}: {e}");
+                })
+                .unwrap();
+        }
+
+        let remote_shards: Vec<_> = Self::init_remote_shards(
+            shard_id,
+            collection_id.clone(),
+            &replica_state.read(),
+            &channel_service,
+        );
+
+        let mut local_load_failure = false;
+        let local = if replica_state.read().is_local {
+            let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
+                Dummy(DummyShard::new(recovery_reason))
+            } else {
+                let res = LocalShard::load(
+                    shard_id,
+                    collection_id.clone(),
+                    shard_path,
+                    collection_config.clone(),
+                    shared_storage_config.clone(),
+                    update_runtime.clone(),
+                )
+                .await;
+
+                match res {
+                    Ok(shard) => Local(shard),
+                    Err(err) => {
+                        if !shared_storage_config.handle_collection_load_errors {
+                            panic!("Failed to load local shard {shard_path:?}: {err}")
+                        }
+
+                        local_load_failure = true;
+
+                        log::error!(
+                            "Failed to load local shard {shard_path:?}, \
+                             initializing \"dummy\" shard instead: \
+                             {err}"
+                        );
+
+                        Dummy(DummyShard::new(format!(
+                            "Failed to load local shard {shard_path:?}: {err}"
+                        )))
+                    }
+                }
+            };
+
+            Some(shard)
+        } else {
+            None
+        };
+
+        let replica_set = Self {
+            shard_id,
+            local: RwLock::new(local),
+            remotes: RwLock::new(remote_shards),
+            replica_state: replica_state.into(),
+            // TODO: move to collection config
+            locally_disabled_peers: Default::default(),
+            shard_path: shard_path.to_path_buf(),
+            notify_peer_failure_cb: on_peer_failure,
+            channel_service,
+            collection_id,
+            collection_config,
+            shared_storage_config,
+            update_runtime,
+            search_runtime,
+            write_ordering_lock: Mutex::new(()),
+        };
+
+        if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
+            replica_set
+                .locally_disabled_peers
+                .write()
+                .insert(this_peer_id);
+        }
+
+        replica_set
+    }
+
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Local(_) | Dummy(_)))
@@ -426,120 +540,6 @@ impl ShardReplicaSet {
             self.remove_remote(peer_id).await?;
         }
         Ok(())
-    }
-
-    /// Recovers shard from disk.
-    ///
-    /// WARN: This method intended to be used only on the initial start of the node.
-    /// It does not implement any logic to recover from a failure.
-    /// Will panic or load partial state if there is a failure.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn load(
-        shard_id: ShardId,
-        collection_id: CollectionId,
-        shard_path: &Path,
-        collection_config: Arc<RwLock<CollectionConfig>>,
-        shared_storage_config: Arc<SharedStorageConfig>,
-        channel_service: ChannelService,
-        on_peer_failure: ChangePeerState,
-        this_peer_id: PeerId,
-        update_runtime: Handle,
-        search_runtime: Handle,
-    ) -> Self {
-        let replica_state: SaveOnDisk<ReplicaSetState> =
-            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
-
-        if replica_state.read().this_peer_id != this_peer_id {
-            replica_state
-                .write(|rs| {
-                    let this_peer_id = rs.this_peer_id;
-                    let local_state = rs.remove_peer_state(&this_peer_id);
-                    if let Some(state) = local_state {
-                        rs.set_peer_state(this_peer_id, state);
-                    }
-                    rs.this_peer_id = this_peer_id;
-                })
-                .map_err(|e| {
-                    panic!("Failed to update replica state in {shard_path:?}: {e}");
-                })
-                .unwrap();
-        }
-
-        let remote_shards: Vec<_> = Self::init_remote_shards(
-            shard_id,
-            collection_id.clone(),
-            &replica_state.read(),
-            &channel_service,
-        );
-
-        let mut local_load_failure = false;
-        let local = if replica_state.read().is_local {
-            let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
-                Dummy(DummyShard::new(recovery_reason))
-            } else {
-                let res = LocalShard::load(
-                    shard_id,
-                    collection_id.clone(),
-                    shard_path,
-                    collection_config.clone(),
-                    shared_storage_config.clone(),
-                    update_runtime.clone(),
-                )
-                .await;
-
-                match res {
-                    Ok(shard) => Local(shard),
-                    Err(err) => {
-                        if !shared_storage_config.handle_collection_load_errors {
-                            panic!("Failed to load local shard {shard_path:?}: {err}")
-                        }
-
-                        local_load_failure = true;
-
-                        log::error!(
-                            "Failed to load local shard {shard_path:?}, \
-                             initializing \"dummy\" shard instead: \
-                             {err}"
-                        );
-
-                        Dummy(DummyShard::new(format!(
-                            "Failed to load local shard {shard_path:?}: {err}"
-                        )))
-                    }
-                }
-            };
-
-            Some(shard)
-        } else {
-            None
-        };
-
-        let replica_set = Self {
-            shard_id,
-            local: RwLock::new(local),
-            remotes: RwLock::new(remote_shards),
-            replica_state: replica_state.into(),
-            // TODO: move to collection config
-            locally_disabled_peers: Default::default(),
-            shard_path: shard_path.to_path_buf(),
-            notify_peer_failure_cb: on_peer_failure,
-            channel_service,
-            collection_id,
-            collection_config,
-            shared_storage_config,
-            update_runtime,
-            search_runtime,
-            write_ordering_lock: Mutex::new(()),
-        };
-
-        if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
-            replica_set
-                .locally_disabled_peers
-                .write()
-                .insert(this_peer_id);
-        }
-
-        replica_set
     }
 
     pub fn notify_peer_failure(&self, peer_id: PeerId) {
