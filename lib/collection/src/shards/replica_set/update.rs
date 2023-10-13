@@ -90,30 +90,6 @@ impl ShardReplicaSet {
         self.replica_state.read().peers.keys().max().cloned()
     }
 
-    /// Forward update to the leader replica
-    async fn forward_update(
-        &self,
-        leader_peer: PeerId,
-        operation: CollectionUpdateOperations,
-        wait: bool,
-        ordering: WriteOrdering,
-    ) -> CollectionResult<UpdateResult> {
-        let remotes_guard = self.remotes.read().await;
-        let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
-
-        match remote_leader {
-            Some(remote_leader) => {
-                remote_leader
-                    .forward_update(operation, wait, ordering)
-                    .await
-            }
-            None => Err(CollectionError::service_error(format!(
-                "Cannot forward update to shard {} because was removed from the replica set",
-                self.shard_id
-            ))),
-        }
-    }
-
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
@@ -319,6 +295,29 @@ impl ShardReplicaSet {
         }
 
         wait_for_deactivation
+    }
+    /// Forward update to the leader replica
+    async fn forward_update(
+        &self,
+        leader_peer: PeerId,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+        ordering: WriteOrdering,
+    ) -> CollectionResult<UpdateResult> {
+        let remotes_guard = self.remotes.read().await;
+        let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
+
+        match remote_leader {
+            Some(remote_leader) => {
+                remote_leader
+                    .forward_update(operation, wait, ordering)
+                    .await
+            }
+            None => Err(CollectionError::service_error(format!(
+                "Cannot forward update to shard {} because was removed from the replica set",
+                self.shard_id
+            ))),
+        }
     }
 }
 
