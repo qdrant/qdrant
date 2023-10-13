@@ -1,6 +1,28 @@
 use super::*;
 
 impl ShardReplicaSet {
+    pub async fn create_snapshot(
+        &self,
+        temp_path: &Path,
+        target_path: &Path,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
+        let local_read = self.local.read().await;
+
+        if let Some(local) = &*local_read {
+            local
+                .create_snapshot(temp_path, target_path, save_wal)
+                .await?
+        }
+
+        self.replica_state
+            .save_to(target_path.join(REPLICA_STATE_FILE))?;
+
+        let shard_config = ShardConfig::new_replica_set();
+        shard_config.save(target_path)?;
+        Ok(())
+    }
+
     /// Returns if local shard was recovered from path
     pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
         if !LocalShard::check_data(replica_path) {
@@ -115,28 +137,6 @@ impl ShardReplicaSet {
         if replica_state.read().is_local {
             LocalShard::restore_snapshot(snapshot_path)?;
         }
-        Ok(())
-    }
-
-    pub async fn create_snapshot(
-        &self,
-        temp_path: &Path,
-        target_path: &Path,
-        save_wal: bool,
-    ) -> CollectionResult<()> {
-        let local_read = self.local.read().await;
-
-        if let Some(local) = &*local_read {
-            local
-                .create_snapshot(temp_path, target_path, save_wal)
-                .await?
-        }
-
-        self.replica_state
-            .save_to(target_path.join(REPLICA_STATE_FILE))?;
-
-        let shard_config = ShardConfig::new_replica_set();
-        shard_config.save(target_path)?;
         Ok(())
     }
 }
