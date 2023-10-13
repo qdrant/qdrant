@@ -407,27 +407,6 @@ impl ShardReplicaSet {
             .collect()
     }
 
-    fn init_remote_shards(
-        shard_id: ShardId,
-        collection_id: CollectionId,
-        state: &ReplicaSetState,
-        channel_service: &ChannelService,
-    ) -> Vec<RemoteShard> {
-        state
-            .peers()
-            .iter()
-            .filter(|(peer, _)| **peer != state.this_peer_id)
-            .map(|(peer_id, _is_active)| {
-                RemoteShard::new(
-                    shard_id,
-                    collection_id.clone(),
-                    *peer_id,
-                    channel_service.clone(),
-                )
-            })
-            .collect()
-    }
-
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
@@ -705,6 +684,27 @@ impl ShardReplicaSet {
                 .collect(),
             replicate_states: self.replica_state.read().peers(),
         }
+    }
+
+    fn init_remote_shards(
+        shard_id: ShardId,
+        collection_id: CollectionId,
+        state: &ReplicaSetState,
+        channel_service: &ChannelService,
+    ) -> Vec<RemoteShard> {
+        state
+            .peers()
+            .iter()
+            .filter(|(peer, _)| **peer != state.this_peer_id)
+            .map(|(peer_id, _is_active)| {
+                RemoteShard::new(
+                    shard_id,
+                    collection_id.clone(),
+                    *peer_id,
+                    channel_service.clone(),
+                )
+            })
+            .collect()
     }
 
     // Make sure that locally disabled peers do not contradict the consensus
