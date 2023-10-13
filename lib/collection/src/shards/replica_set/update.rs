@@ -3,18 +3,6 @@ use super::*;
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl ShardReplicaSet {
-    fn peer_is_active_or_pending(&self, peer_id: &PeerId) -> bool {
-        let res = match self.peer_state(peer_id) {
-            Some(ReplicaState::Active) => true,
-            Some(ReplicaState::Partial) => true,
-            Some(ReplicaState::Initializing) => true,
-            Some(ReplicaState::Dead) => false,
-            Some(ReplicaState::Listener) => true,
-            None => false,
-        };
-        res && !self.is_locally_disabled(peer_id)
-    }
-
     /// Update local shard if any without forwarding to remote shards
     pub async fn update_local(
         &self,
@@ -319,6 +307,18 @@ impl ShardReplicaSet {
             .next()
             .expect("successes is not empty");
         Ok(res)
+    }
+
+    fn peer_is_active_or_pending(&self, peer_id: &PeerId) -> bool {
+        let res = match self.peer_state(peer_id) {
+            Some(ReplicaState::Active) => true,
+            Some(ReplicaState::Partial) => true,
+            Some(ReplicaState::Initializing) => true,
+            Some(ReplicaState::Dead) => false,
+            Some(ReplicaState::Listener) => true,
+            None => false,
+        };
+        res && !self.is_locally_disabled(peer_id)
     }
 }
 
