@@ -2,8 +2,8 @@ mod collection_ops;
 mod point_ops;
 mod search;
 mod shard_transfer;
-mod snapshots;
 mod sharding_keys;
+mod snapshots;
 
 use std::collections::HashSet;
 use std::ops::Deref;
