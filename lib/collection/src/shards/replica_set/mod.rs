@@ -393,6 +393,10 @@ impl ShardReplicaSet {
         self.replica_state.read().peers()
     }
 
+    pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
+        self.replica_state.read().get_peer_state(peer_id).copied()
+    }
+
     pub async fn active_remote_shards(&self) -> Vec<PeerId> {
         let replica_state = self.replica_state.read();
         let this_peer_id = replica_state.this_peer_id;
@@ -673,10 +677,6 @@ impl ShardReplicaSet {
     /// Unknown peers are not active.
     pub fn peer_is_active(&self, peer_id: &PeerId) -> bool {
         self.peer_state(peer_id) == Some(ReplicaState::Active) && !self.is_locally_disabled(peer_id)
-    }
-
-    pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
-        self.replica_state.read().get_peer_state(peer_id).copied()
     }
 
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
