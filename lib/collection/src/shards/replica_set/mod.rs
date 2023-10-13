@@ -43,9 +43,7 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
-pub type ActivatePeer = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
-pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -216,15 +214,6 @@ impl ShardReplicaSet {
             .into_iter()
             .filter(|peer_id| self.peer_is_active(peer_id)) // re-acquire replica_state read lock
             .max()
-    }
-
-    pub async fn remote_peers(&self) -> Vec<PeerId> {
-        self.remotes
-            .read()
-            .await
-            .iter()
-            .map(|r| r.peer_id)
-            .collect()
     }
 
     pub async fn active_remote_shards(&self) -> Vec<PeerId> {
@@ -446,35 +435,6 @@ impl ShardReplicaSet {
             self.remove_local().await?;
         } else {
             self.remove_remote(peer_id).await?;
-        }
-        Ok(())
-    }
-
-    pub async fn add_peer(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
-        if self.this_peer_id() == peer_id {
-            let mut local = self.local.write().await;
-            let new_local = if local.is_none() {
-                Some(Local(
-                    LocalShard::build(
-                        self.shard_id,
-                        self.collection_id.clone(),
-                        &self.shard_path,
-                        self.collection_config.clone(),
-                        self.shared_storage_config.clone(),
-                        self.update_runtime.clone(),
-                    )
-                    .await?,
-                ))
-            } else {
-                None
-            };
-
-            self.set_replica_state(&peer_id, state)?;
-            if new_local.is_some() {
-                *local = new_local;
-            }
-        } else {
-            self.add_remote(peer_id, state).await?;
         }
         Ok(())
     }
