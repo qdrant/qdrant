@@ -183,6 +183,80 @@ pub struct ShardReplicaSet {
 }
 
 impl ShardReplicaSet {
+    /// Create a new fresh replica set, no previous state is expected.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn build(
+        shard_id: ShardId,
+        collection_id: CollectionId,
+        this_peer_id: PeerId,
+        local: bool,
+        remotes: HashSet<PeerId>,
+        on_peer_failure: ChangePeerState,
+        collection_path: &Path,
+        collection_config: Arc<RwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
+        channel_service: ChannelService,
+        update_runtime: Handle,
+        search_runtime: Handle,
+    ) -> CollectionResult<Self> {
+        let shard_path = create_shard_dir(collection_path, shard_id).await?;
+        let local = if local {
+            let shard = LocalShard::build(
+                shard_id,
+                collection_id.clone(),
+                &shard_path,
+                collection_config.clone(),
+                shared_storage_config.clone(),
+                update_runtime.clone(),
+            )
+            .await?;
+            Some(Local(shard))
+        } else {
+            None
+        };
+        let replica_state: SaveOnDisk<ReplicaSetState> =
+            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
+        replica_state.write(|rs| {
+            rs.this_peer_id = this_peer_id;
+            if local.is_some() {
+                rs.is_local = true;
+                rs.set_peer_state(this_peer_id, ReplicaState::Initializing);
+            }
+            for peer in remotes {
+                rs.set_peer_state(peer, ReplicaState::Initializing);
+            }
+        })?;
+
+        let remote_shards = Self::init_remote_shards(
+            shard_id,
+            collection_id.clone(),
+            &replica_state.read(),
+            &channel_service,
+        );
+
+        // Save shard config as the last step, to ensure that the file state is consistent
+        // Presence of shard config indicates that the shard is ready to be used
+        let replica_set_shard_config = ShardConfig::new_replica_set();
+        replica_set_shard_config.save(&shard_path)?;
+
+        Ok(Self {
+            shard_id,
+            local: RwLock::new(local),
+            remotes: RwLock::new(remote_shards),
+            replica_state: replica_state.into(),
+            locally_disabled_peers: Default::default(),
+            shard_path,
+            notify_peer_failure_cb: on_peer_failure,
+            channel_service,
+            collection_id,
+            collection_config,
+            shared_storage_config,
+            update_runtime,
+            search_runtime,
+            write_ordering_lock: Mutex::new(()),
+        })
+    }
+
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Local(_) | Dummy(_)))
@@ -266,80 +340,6 @@ impl ShardReplicaSet {
                 Err(err)
             }
         }
-    }
-
-    /// Create a new fresh replica set, no previous state is expected.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn build(
-        shard_id: ShardId,
-        collection_id: CollectionId,
-        this_peer_id: PeerId,
-        local: bool,
-        remotes: HashSet<PeerId>,
-        on_peer_failure: ChangePeerState,
-        collection_path: &Path,
-        collection_config: Arc<RwLock<CollectionConfig>>,
-        shared_storage_config: Arc<SharedStorageConfig>,
-        channel_service: ChannelService,
-        update_runtime: Handle,
-        search_runtime: Handle,
-    ) -> CollectionResult<Self> {
-        let shard_path = create_shard_dir(collection_path, shard_id).await?;
-        let local = if local {
-            let shard = LocalShard::build(
-                shard_id,
-                collection_id.clone(),
-                &shard_path,
-                collection_config.clone(),
-                shared_storage_config.clone(),
-                update_runtime.clone(),
-            )
-            .await?;
-            Some(Local(shard))
-        } else {
-            None
-        };
-        let replica_state: SaveOnDisk<ReplicaSetState> =
-            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
-        replica_state.write(|rs| {
-            rs.this_peer_id = this_peer_id;
-            if local.is_some() {
-                rs.is_local = true;
-                rs.set_peer_state(this_peer_id, ReplicaState::Initializing);
-            }
-            for peer in remotes {
-                rs.set_peer_state(peer, ReplicaState::Initializing);
-            }
-        })?;
-
-        let remote_shards = Self::init_remote_shards(
-            shard_id,
-            collection_id.clone(),
-            &replica_state.read(),
-            &channel_service,
-        );
-
-        // Save shard config as the last step, to ensure that the file state is consistent
-        // Presence of shard config indicates that the shard is ready to be used
-        let replica_set_shard_config = ShardConfig::new_replica_set();
-        replica_set_shard_config.save(&shard_path)?;
-
-        Ok(Self {
-            shard_id,
-            local: RwLock::new(local),
-            remotes: RwLock::new(remote_shards),
-            replica_state: replica_state.into(),
-            locally_disabled_peers: Default::default(),
-            shard_path,
-            notify_peer_failure_cb: on_peer_failure,
-            channel_service,
-            collection_id,
-            collection_config,
-            shared_storage_config,
-            update_runtime,
-            search_runtime,
-            write_ordering_lock: Mutex::new(()),
-        })
     }
 
     pub async fn remove_remote(&self, peer_id: PeerId) -> CollectionResult<()> {
