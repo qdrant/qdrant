@@ -1,4 +1,18 @@
-use super::*;
+use std::fmt::Write as _;
+use std::ops::Deref as _;
+
+use futures::future::{self, BoxFuture};
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt as _, StreamExt as _};
+use rand::seq::SliceRandom as _;
+
+use super::ShardReplicaSet;
+use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::resolve::{Resolve, ResolveCondition};
+use crate::shards::shard::Shard;
+use crate::shards::shard_trait::ShardOperation;
 
 impl ShardReplicaSet {
     /// Execute read op. on replica set:
@@ -95,10 +109,7 @@ impl ShardReplicaSet {
         }
     }
 
-    async fn execute_local_read_operation<Res, F>(
-        &self,
-        read_operation: F,
-    ) -> CollectionResult<Res>
+    async fn execute_local_read_operation<Res, F>(&self, read_operation: F) -> CollectionResult<Res>
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
