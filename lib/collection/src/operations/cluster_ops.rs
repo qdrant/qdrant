@@ -1,5 +1,6 @@
-use common::validation::validate_move_shard_different_peers;
 use std::num::NonZeroU32;
+
+use common::validation::validate_move_shard_different_peers;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
