@@ -113,6 +113,7 @@ pub struct CreateCollection {
     ///  - Default is 1, meaning that each shard key will be mapped to a single shard
     ///  - Minimum is 1
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub shard_number: Option<u32>,
     /// Sharding method
     /// Default is Auto - points are distributed across all available shards
@@ -123,12 +124,14 @@ pub struct CreateCollection {
     /// Default is 1
     /// Minimum is 1
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub replication_factor: Option<u32>,
     /// Defines how many replicas should apply the operation for us to consider it successful.
     /// Increasing this number will make the collection more resilient to inconsistencies, but will
     /// also make it fail if not enough replicas are available.
     /// Does not have any performance impact.
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub write_consistency_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.

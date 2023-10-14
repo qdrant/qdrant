@@ -6613,7 +6613,7 @@
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "sharding_method": {
@@ -6633,7 +6633,7 @@
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "write_consistency_factor": {
@@ -6641,7 +6641,7 @@
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "on_disk_payload": {

@@ -177,6 +177,16 @@ impl Collection {
             }
         };
 
+        // Check that all shard ids are unique
+        debug_assert!(
+            shard_ids_list.len()
+                == shard_ids_list
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
+            "Shard mapping must contain all shards"
+        );
+
         for shard_id in shard_ids_list {
             let shard_path = shard_versioning::versioned_shard_path(target_dir, shard_id, 0);
             let shard_config_opt = ShardConfig::load(&shard_path)?;
