@@ -4,9 +4,39 @@ use crate::collection::Collection;
 use crate::config::ShardingMethod;
 use crate::operations::types::CollectionError;
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::shard::{PeerId, ShardKey};
+use crate::shards::shard::{PeerId, ShardId, ShardKey};
 
 impl Collection {
+    pub async fn create_replica_set(
+        &self,
+        shard_id: ShardId,
+        replicas: &[PeerId],
+    ) -> Result<ShardReplicaSet, CollectionError> {
+        let is_local = replicas.contains(&self.this_peer_id);
+
+        let peers = replicas
+            .iter()
+            .copied()
+            .filter(|peer_id| *peer_id != self.this_peer_id)
+            .collect();
+
+        ShardReplicaSet::build(
+            shard_id,
+            self.name(),
+            self.this_peer_id,
+            is_local,
+            peers,
+            self.notify_peer_failure_cb.clone(),
+            &self.path,
+            self.collection_config.clone(),
+            self.shared_storage_config.clone(),
+            self.channel_service.clone(),
+            self.update_runtime.clone(),
+            self.search_runtime.clone(),
+        )
+        .await
+    }
+
     pub async fn create_shard_key(
         &self,
         shard_key: ShardKey,
@@ -59,32 +89,12 @@ impl Collection {
             .copied()
             .unwrap_or(0);
 
-        for shard_replicas_placement in placement {
-            let shard_id = max_shard_id + 1;
+        for (idx, shard_replicas_placement) in placement.iter().enumerate() {
+            let shard_id = max_shard_id + idx as ShardId;
 
-            let is_local = shard_replicas_placement.contains(&self.this_peer_id);
-
-            let peers = shard_replicas_placement
-                .iter()
-                .copied()
-                .filter(|peer_id| *peer_id != self.this_peer_id)
-                .collect();
-
-            let replica_set = ShardReplicaSet::build(
-                shard_id,
-                self.name(),
-                self.this_peer_id,
-                is_local,
-                peers,
-                self.notify_peer_failure_cb.clone(),
-                &self.path,
-                self.collection_config.clone(),
-                self.shared_storage_config.clone(),
-                self.channel_service.clone(),
-                self.update_runtime.clone(),
-                self.search_runtime.clone(),
-            )
-            .await?;
+            let replica_set = self
+                .create_replica_set(shard_id, shard_replicas_placement)
+                .await?;
 
             self.shards_holder.write().await.add_shard(
                 shard_id,
@@ -112,5 +122,6 @@ impl Collection {
             .write()
             .await
             .remove_shard_key(&shard_key)
+            .await
     }
 }

@@ -74,6 +74,15 @@ impl ShardHolder {
         self.key_mapping.read().clone()
     }
 
+    async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> Result<(), CollectionError> {
+        if let Some(replica_set) = self.shards.remove(&shard_id) {
+            let shard_path = replica_set.shard_path.clone();
+            drop(replica_set);
+            tokio::fs::remove_dir_all(shard_path).await?;
+        }
+        Ok(())
+    }
+
     pub fn add_shard(
         &mut self,
         shard_id: ShardId,
@@ -105,7 +114,7 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn remove_shard_key(&mut self, shard_key: &ShardKey) -> Result<(), CollectionError> {
+    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> Result<(), CollectionError> {
         let mut remove_shard_ids = Vec::new();
 
         self.key_mapping.write_optional(|key_mapping| {
@@ -124,11 +133,47 @@ impl ShardHolder {
 
         self.rings.remove(&Some(shard_key.clone()));
         for shard_id in remove_shard_ids {
-            if let Some(replica_set) = self.shards.remove(&shard_id) {
-                // Drop replica set data
-                drop(replica_set);
+            self.drop_and_remove_shard(shard_id).await?;
+        }
+        Ok(())
+    }
+
+    fn rebuild_rings(&mut self) {
+        let mut rings = HashMap::new();
+        rings.insert(None, HashRing::fair(HASH_RING_SHARD_SCALE));
+        let ids_to_key = self.get_shard_id_to_key_mapping();
+        for shard_id in self.shards.keys() {
+            let shard_key = ids_to_key.get(shard_id).cloned();
+            rings
+                .entry(shard_key)
+                .or_insert_with(|| HashRing::fair(HASH_RING_SHARD_SCALE))
+                .add(*shard_id);
+        }
+
+        self.rings = rings;
+    }
+
+    pub async fn apply_shards_state(
+        &mut self,
+        shard_ids: HashSet<ShardId>,
+        shard_key_mapping: ShardKeyMapping,
+        extra_shards: HashMap<ShardId, ShardReplicaSet>,
+    ) -> Result<(), CollectionError> {
+        self.shards.extend(extra_shards.into_iter());
+
+        let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();
+
+        self.key_mapping
+            .write_optional(|_key_mapping| Some(shard_key_mapping))?;
+
+        self.rebuild_rings();
+
+        for shard_id in all_shard_ids {
+            if !shard_ids.contains(&shard_id) {
+                self.drop_and_remove_shard(shard_id).await?;
             }
         }
+
         Ok(())
     }
 

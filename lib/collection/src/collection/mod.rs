@@ -4,6 +4,7 @@ mod search;
 mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
+mod state_management;
 
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -398,15 +399,6 @@ impl Collection {
             transfers,
             shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
         }
-    }
-
-    pub async fn apply_state(
-        &self,
-        state: State,
-        this_peer_id: PeerId,
-        abort_transfer: impl FnMut(ShardTransfer),
-    ) -> CollectionResult<()> {
-        state.apply(this_peer_id, self, abort_transfer).await
     }
 
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
