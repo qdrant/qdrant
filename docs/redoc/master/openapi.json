@@ -8909,7 +8909,7 @@
           "shard_key": {
             "$ref": "#/components/schemas/ShardKey"
           },
-          "num_shards": {
+          "shards_number": {
             "description": "How many shards to create for this key If not specified, will use the default value from config",
             "type": "integer",
             "format": "uint32",

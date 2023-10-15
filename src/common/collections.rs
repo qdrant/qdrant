@@ -324,7 +324,7 @@ pub async fn do_update_collection_cluster(
             }
 
             let shard_number = create_sharding_key
-                .num_shards
+                .shards_number
                 .unwrap_or(state.config.params.shard_number)
                 .get() as usize;
             let replication_factor = create_sharding_key

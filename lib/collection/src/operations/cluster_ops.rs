@@ -43,7 +43,7 @@ pub struct CreateShardingKey {
     pub shard_key: ShardKey,
     /// How many shards to create for this key
     /// If not specified, will use the default value from config
-    pub num_shards: Option<NonZeroU32>,
+    pub shards_number: Option<NonZeroU32>,
     /// How many replicas to create for each shard
     /// If not specified, will use the default value from config
     pub replication_factor: Option<NonZeroU32>,
