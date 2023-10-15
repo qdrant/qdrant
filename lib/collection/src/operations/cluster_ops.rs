@@ -25,9 +25,23 @@ pub enum ClusterOperations {
     DropShardingKey(DropShardingKeyOperation),
 }
 
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateShardingKeyOperation {
+    pub create_sharding_key: CreateShardingKey,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct DropShardingKeyOperation {
+    pub drop_sharding_key: DropShardingKey,
+}
+
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateShardingKey {
     pub shard_key: ShardKey,
     /// How many shards to create for this key
     /// If not specified, will use the default value from config
@@ -44,7 +58,7 @@ pub struct CreateShardingKeyOperation {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct DropShardingKeyOperation {
+pub struct DropShardingKey {
     pub shard_key: ShardKey,
 }
 

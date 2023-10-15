@@ -80,7 +80,7 @@ impl Collection {
                 shard_key, unknown_peers
             )));
         }
-
+        
         let max_shard_id = state
             .shards_key_mapping
             .values()
@@ -90,7 +90,7 @@ impl Collection {
             .unwrap_or(0);
 
         for (idx, shard_replicas_placement) in placement.iter().enumerate() {
-            let shard_id = max_shard_id + idx as ShardId;
+            let shard_id = max_shard_id + idx as ShardId + 1;
 
             let replica_set = self
                 .create_replica_set(shard_id, shard_replicas_placement)

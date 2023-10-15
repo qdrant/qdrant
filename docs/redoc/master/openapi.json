@@ -8892,6 +8892,17 @@
       "CreateShardingKeyOperation": {
         "type": "object",
         "required": [
+          "create_sharding_key"
+        ],
+        "properties": {
+          "create_sharding_key": {
+            "$ref": "#/components/schemas/CreateShardingKey"
+          }
+        }
+      },
+      "CreateShardingKey": {
+        "type": "object",
+        "required": [
           "shard_key"
         ],
         "properties": {
@@ -8926,6 +8937,17 @@
         }
       },
       "DropShardingKeyOperation": {
+        "type": "object",
+        "required": [
+          "drop_sharding_key"
+        ],
+        "properties": {
+          "drop_sharding_key": {
+            "$ref": "#/components/schemas/DropShardingKey"
+          }
+        }
+      },
+      "DropShardingKey": {
         "type": "object",
         "required": [
           "shard_key"

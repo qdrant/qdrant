@@ -302,7 +302,9 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::CreateShardingKey(create_sharding_key) => {
+        ClusterOperations::CreateShardingKey(create_sharding_key_op) => {
+            let create_sharding_key = create_sharding_key_op.create_sharding_key;
+
             // Validate that:
             // - proper sharding method is used
             // - key does not exist yet
@@ -372,7 +374,8 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::DropShardingKey(drop_sharding_key) => {
+        ClusterOperations::DropShardingKey(drop_sharding_key_op) => {
+            let drop_sharding_key = drop_sharding_key_op.drop_sharding_key;
             // Validate that:
             // - proper sharding method is used
             // - key does exist
