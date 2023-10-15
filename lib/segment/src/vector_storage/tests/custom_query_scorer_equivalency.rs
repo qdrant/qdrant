@@ -23,13 +23,14 @@ use crate::types::{
 #[cfg(target_os = "linux")]
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::query::discovery_query::{DiscoveryPair, DiscoveryQuery};
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 const DIMS: usize = 128;
-const NUM_POINTS: usize = 500;
+const NUM_POINTS: usize = 600;
 const DISTANCE: Distance = Distance::Dot;
 const MAX_EXAMPLES: usize = 10;
 const SAMPLE_SIZE: usize = 100;
@@ -43,23 +44,52 @@ type WithQuantization = (
     Box<dyn Iterator<Item = VectorElementType>>,
 );
 
+fn random_query<R: Rng + ?Sized>(
+    query_variant: &QueryVariant,
+    rnd: &mut R,
+    sampler: &mut impl Iterator<Item = f32>,
+) -> QueryVector {
+    match query_variant {
+        QueryVariant::Recommend => random_reco_query(rnd, sampler),
+        QueryVariant::Discovery => random_discovery_query(rnd, sampler),
+    }
+}
+
 fn random_reco_query<R: Rng + ?Sized>(
     rnd: &mut R,
-    dim: usize,
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
     let num_positives: usize = rnd.gen_range(0..MAX_EXAMPLES);
     let num_negatives: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
     let positives = (0..num_positives)
-        .map(|_| sampler.take(dim).collect())
+        .map(|_| sampler.take(DIMS).collect())
         .collect_vec();
 
     let negatives = (0..num_negatives)
-        .map(|_| sampler.take(dim).collect())
+        .map(|_| sampler.take(DIMS).collect())
         .collect_vec();
 
     RecoQuery::new(positives, negatives).into()
+}
+
+fn random_discovery_query<R: Rng + ?Sized>(
+    rnd: &mut R,
+    sampler: &mut impl Iterator<Item = f32>,
+) -> QueryVector {
+    let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
+
+    let target = sampler.take(DIMS).collect();
+
+    let pairs = (0..num_pairs)
+        .map(|_| {
+            let positive = sampler.take(DIMS).collect();
+            let negative = sampler.take(DIMS).collect();
+            DiscoveryPair { positive, negative }
+        })
+        .collect_vec();
+
+    DiscoveryQuery::new(target, pairs).into()
 }
 
 fn ram_storage(dir: &Path) -> AtomicRefCell<VectorStorageEnum> {
@@ -128,7 +158,13 @@ fn binary() -> Option<WithQuantization> {
     Some((config, sampler))
 }
 
+enum QueryVariant {
+    Recommend,
+    Discovery,
+}
+
 fn scoring_equivalency(
+    query_variant: QueryVariant,
     other_storage: impl FnOnce(&std::path::Path) -> AtomicRefCell<VectorStorageEnum>,
     with_quantization: Option<WithQuantization>,
 ) -> Result<()> {
@@ -181,7 +217,7 @@ fn scoring_equivalency(
 
     let attempts = 50;
     for _i in 0..attempts {
-        let query = random_reco_query(&mut rng, DIMS, &mut sampler);
+        let query = random_query(&query_variant, &mut rng, &mut sampler);
 
         let raw_scorer = new_raw_scorer(
             query.clone(),
@@ -254,6 +290,7 @@ fn scoring_equivalency(
 
 #[rstest]
 fn compare_scoring_equivalency(
+    #[values(QueryVariant::Recommend, QueryVariant::Discovery)] query_variant: QueryVariant,
     #[values(ram_storage)] other_storage: impl FnOnce(
         &std::path::Path,
     ) -> AtomicRefCell<VectorStorageEnum>,
@@ -262,15 +299,17 @@ fn compare_scoring_equivalency(
         WithQuantization,
     >,
 ) -> Result<()> {
-    scoring_equivalency(other_storage, quantization_config)
+    scoring_equivalency(query_variant, other_storage, quantization_config)
 }
 
 #[cfg(target_os = "linux")]
 #[rstest]
 fn async_compare_scoring_equivalency(
+    #[values(QueryVariant::Recommend, QueryVariant::Discovery)] query_variant: QueryVariant,
+
     #[values(async_memmap_storage)] other_storage: impl FnOnce(
         &std::path::Path,
     ) -> AtomicRefCell<VectorStorageEnum>,
 ) -> Result<()> {
-    scoring_equivalency(other_storage, None)
+    scoring_equivalency(query_variant, other_storage, None)
 }

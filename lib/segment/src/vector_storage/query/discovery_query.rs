@@ -1,11 +1,14 @@
 use common::types::ScoreType;
 
+use super::{Query, TransformInto};
+use crate::data_types::vectors::{QueryVector, VectorType};
+
 type RankType = i32;
 
 #[derive(Debug, Clone)]
 pub struct DiscoveryPair<T> {
-    positive: T,
-    negative: T,
+    pub positive: T,
+    pub negative: T,
 }
 
 impl<T> DiscoveryPair<T> {
@@ -63,7 +66,17 @@ impl<T> DiscoveryQuery<T> {
         std::iter::once(&self.target).chain(pairs_iter)
     }
 
-    pub fn transform<F, U>(self, mut f: F) -> DiscoveryQuery<U>
+    fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
+        self.pairs
+            .iter()
+            .map(|pair| pair.rank_by(&similarity))
+            // get overall rank
+            .sum()
+    }
+}
+
+impl<T, U> TransformInto<DiscoveryQuery<U>, T, U> for DiscoveryQuery<T> {
+    fn transform<F>(self, mut f: F) -> DiscoveryQuery<U>
     where
         F: FnMut(T) -> U,
     {
@@ -75,16 +88,10 @@ impl<T> DiscoveryQuery<T> {
                 .collect(),
         )
     }
+}
 
-    fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
-        self.pairs
-            .iter()
-            .map(|pair| pair.rank_by(&similarity))
-            // get overall rank
-            .sum()
-    }
-
-    pub fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
+impl<T> Query<T> for DiscoveryQuery<T> {
+    fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let rank = self.rank_by(&similarity);
 
         let target_similarity = similarity(&self.target);
@@ -111,11 +118,11 @@ fn fast_sigmoid(x: ScoreType) -> ScoreType {
     x / (1.0 + x.abs())
 }
 
-// impl From<DiscoveryQuery<VectorType>> for QueryVector {
-//     fn from(query: DiscoveryQuery<VectorType>) -> Self {
-//         QueryVector::Discovery(query)
-//     }
-// }
+impl From<DiscoveryQuery<VectorType>> for QueryVector {
+    fn from(query: DiscoveryQuery<VectorType>) -> Self {
+        QueryVector::Discovery(query)
+    }
+}
 
 #[cfg(test)]
 mod test {
