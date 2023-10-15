@@ -1,5 +1,3 @@
-use std::cmp::min_by;
-
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
@@ -26,12 +24,16 @@ impl<T> DiscoveryPair<T> {
     ///
     /// Output will always be in the range (-1, 0]
     pub fn loss_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
-        let positive = scaled_fast_sigmoid(similarity(&self.positive));
-        let negative = scaled_fast_sigmoid(similarity(&self.negative));
+        let positive = similarity(&self.positive);
+        let negative = similarity(&self.negative);
 
-        min_by(positive - negative - ScoreType::EPSILON, 0.0, |a, b| {
-            a.total_cmp(b)
-        })
+        const MARGIN: ScoreType = ScoreType::EPSILON;
+
+        if positive > negative + MARGIN {
+            0.0
+        } else {
+            scaled_fast_sigmoid(positive) - scaled_fast_sigmoid(negative)
+        }
     }
 }
 
