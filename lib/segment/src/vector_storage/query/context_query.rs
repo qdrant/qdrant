@@ -81,39 +81,40 @@ impl From<ContextQuery<VectorType>> for QueryVector {
 
 #[cfg(test)]
 mod test {
-    use std::cmp::Ordering;
 
     use common::types::ScoreType;
     use rstest::rstest;
 
     use super::*;
 
-    fn dummy_similarity(x: &isize) -> ScoreType {
+    fn dummy_similarity(x: &i32) -> ScoreType {
         *x as ScoreType
     }
 
-    /// Compares the score of a query against a fixed score
+    /// Test that the score is calculated correctly
     ///
-    //TODO(luis): set actual cases
+    /// for reference:
+    /// scaled_fast_sigmoid(0.0) = 0.5
+    /// scaled_fast_sigmoid(1.0) = 0.75
     #[rstest]
-    #[case::no_pairs(vec![], Ordering::Less)]
-    #[case::just_above(vec![(1,0),(1,0)], Ordering::Greater)]
-    #[case::just_below(vec![(1,0),(1,0)], Ordering::Less)]
-    #[case::bad_target_good_context(vec![(1,0),(1,0),(1, 0)], Ordering::Greater)]
-    #[case::good_target_bad_context(vec![(1,0),(0,1)], Ordering::Less)]
-    fn score_better(#[case] pairs: Vec<(isize, isize)>, #[case] expected: Ordering) {
-        let fixed_score: f32 = -0.5;
-
+    #[case::no_pairs(vec![], 0.0)] // having no input always scores 0
+    #[case::on_negative(vec![(0, 1)], -0.25)]
+    #[case::on_positive(vec![(1, 0)], 0.0)]
+    #[case::on_both(vec![(1, 0), (0, 1)], -0.25)]
+    #[case::positive_positive_negative(vec![(1,0),(1,0),(0,1)], -0.25)]
+    #[case::positive_negative_negative(vec![(1,0),(0,1),(0,1)], -0.5)]
+    fn scoring(#[case] pairs: Vec<(i32, i32)>, #[case] expected: f32) {
         let pairs = pairs.into_iter().map(DiscoveryPair::from).collect();
 
         let query = ContextQuery::new(pairs);
 
         let score = query.score_by(dummy_similarity);
 
-        assert_eq!(
-            score.total_cmp(&fixed_score),
-            expected,
-            "Comparison is incorrect, expected {expected:?} for {score} against {fixed_score}"
+        assert!(
+            score > expected - 0.00001 && score < expected + 0.00001,
+            "score: {}, expected: {}",
+            score,
+            expected
         );
     }
 }
