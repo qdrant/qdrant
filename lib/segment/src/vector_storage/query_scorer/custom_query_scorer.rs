@@ -4,24 +4,29 @@ use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
-use crate::vector_storage::query::discovery_query::DiscoveryQuery;
+use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::DenseVectorStorage;
 
-// TODO(luis): maybe find a way to generalize DiscoveryQueryScorer and RecoQueryScorer by
-//     using a single Query trait. The crux is that `transform` function is hard to convert
-//     nicely into a trait function
-pub struct DiscoveryQueryScorer<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> {
+pub struct CustomQueryScorer<
+    'a,
+    TMetric: Metric,
+    TVectorStorage: DenseVectorStorage,
+    TQuery: Query<VectorType>,
+> {
     vector_storage: &'a TVectorStorage,
-    query: DiscoveryQuery<VectorType>,
+    query: TQuery,
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
-    DiscoveryQueryScorer<'a, TMetric, TVectorStorage>
+impl<
+        'a,
+        TMetric: Metric,
+        TVectorStorage: DenseVectorStorage,
+        TQuery: Query<VectorType> + TransformInto<TQuery>,
+    > CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
-    #[allow(dead_code)] // TODO(luis): remove once integrated
-    pub fn new(query: DiscoveryQuery<VectorType>, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(query: TQuery, vector_storage: &'a TVectorStorage) -> Self {
         let query = query.transform(|vector| TMetric::preprocess(vector));
 
         Self {
@@ -32,8 +37,8 @@ impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer
-    for DiscoveryQueryScorer<'a, TMetric, TVectorStorage>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage, TQuery: Query<VectorType>> QueryScorer
+    for CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
@@ -48,6 +53,6 @@ impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
-        unimplemented!("Custom scorer compares against multiple vectors, not just one")
+        unimplemented!("Custom scorer can compare against multiple vectors, not just one")
     }
 }

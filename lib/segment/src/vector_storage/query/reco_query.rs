@@ -1,5 +1,6 @@
 use common::types::ScoreType;
 
+use super::{Query, TransformInto};
 use crate::data_types::vectors::{QueryVector, VectorType};
 
 #[derive(Debug, Clone)]
@@ -19,8 +20,10 @@ impl<T> RecoQuery<T> {
     pub fn iter_all(&self) -> impl Iterator<Item = &T> {
         self.positives.iter().chain(self.negatives.iter())
     }
+}
 
-    pub fn transform<F, U>(self, mut f: F) -> RecoQuery<U>
+impl<T, U> TransformInto<RecoQuery<U>, T, U> for RecoQuery<T> {
+    fn transform<F>(self, mut f: F) -> RecoQuery<U>
     where
         F: FnMut(T) -> U,
     {
@@ -29,10 +32,10 @@ impl<T> RecoQuery<T> {
             self.negatives.into_iter().map(&mut f).collect(),
         )
     }
+}
 
-    /// Compares all vectors of the query against a single vector via a similarity function,
-    /// then folds the similarites into a single score.
-    pub fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
+impl<T> Query<T> for RecoQuery<T> {
+    fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // get similarities to all positives
         let positive_similarities = self.positives.iter().map(&similarity);
 
@@ -43,6 +46,7 @@ impl<T> RecoQuery<T> {
     }
 }
 
+#[inline]
 fn merge_similarities(
     positives: impl Iterator<Item = ScoreType>,
     negatives: impl Iterator<Item = ScoreType>,
@@ -75,6 +79,7 @@ mod test {
     use rstest::rstest;
 
     use super::RecoQuery;
+    use crate::vector_storage::query::Query;
 
     #[rstest]
     #[case::higher_positive(vec![42], vec![4], 42.0)]

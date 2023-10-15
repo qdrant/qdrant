@@ -49,6 +49,9 @@ fn _check_query_vector(
         QueryVector::Recommend(reco_query) => reco_query
             .iter_all()
             .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
+        QueryVector::Discovery(discovery_query) => discovery_query
+            .iter_all()
+            .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
     }
 
     Ok(())

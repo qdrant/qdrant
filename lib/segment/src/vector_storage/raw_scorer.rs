@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use bitvec::prelude::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
-use super::query_scorer::reco_query_scorer::RecoQueryScorer;
+use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::QueryVector;
 use crate::spaces::metric::Metric;
@@ -161,13 +161,19 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<TMetric, TVectorStorage>::new(vector, vector_storage),
+            MetricQueryScorer::<TMetric, _>::new(vector, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
         ),
         QueryVector::Recommend(reco_query) => raw_scorer_from_query_scorer(
-            RecoQueryScorer::<TMetric, TVectorStorage>::new(reco_query, vector_storage),
+            CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+        QueryVector::Discovery(discovery_query) => raw_scorer_from_query_scorer(
+            CustomQueryScorer::<TMetric, _, _>::new(discovery_query, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,

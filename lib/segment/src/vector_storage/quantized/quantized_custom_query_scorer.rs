@@ -2,45 +2,65 @@ use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::types::Distance;
-use crate::vector_storage::query::reco_query::RecoQuery;
+use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedRecoQueryScorer<'a, TEncodedQuery, TEncodedVectors>
-where
+pub struct QuantizedCustomQueryScorer<
+    'a,
+    TEncodedQuery,
+    TEncodedVectors,
+    TQuery: Query<TEncodedQuery>,
+    TOriginalQuery: Query<VectorType>,
+> where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
-    original_query: RecoQuery<VectorType>,
-    query: RecoQuery<TEncodedQuery>,
+    original_query: TOriginalQuery,
+    query: TQuery,
     quantized_storage: &'a TEncodedVectors,
     distance: Distance,
+    phantom: std::marker::PhantomData<TEncodedQuery>,
 }
 
-impl<'a, TEncodedQuery, TEncodedVectors>
-    QuantizedRecoQueryScorer<'a, TEncodedQuery, TEncodedVectors>
+impl<
+        'a,
+        TEncodedQuery,
+        TEncodedVectors,
+        TQuery: Query<TEncodedQuery>,
+        TOriginalQuery: Query<VectorType>
+            + Clone
+            + TransformInto<TOriginalQuery>
+            + TransformInto<TQuery, VectorType, TEncodedQuery>,
+    > QuantizedCustomQueryScorer<'a, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     pub fn new(
-        raw_query: RecoQuery<VectorType>,
+        raw_query: TOriginalQuery,
         quantized_storage: &'a TEncodedVectors,
         distance: Distance,
     ) -> Self {
         let original_query = raw_query.transform(|v| distance.preprocess_vector(v));
         let query = original_query
             .clone()
-            .transform(|v| quantized_storage.encode_query(&v));
+            .transform(|v: VectorType| quantized_storage.encode_query(&v));
 
         Self {
             original_query,
             query,
             quantized_storage,
             distance,
+            phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<TEncodedQuery, TEncodedVectors> QueryScorer
-    for QuantizedRecoQueryScorer<'_, TEncodedQuery, TEncodedVectors>
+impl<
+        TEncodedQuery,
+        TEncodedVectors,
+        TOriginalQuery: Query<VectorType>,
+        TQuery: Query<TEncodedQuery>,
+    > QueryScorer
+    for QuantizedCustomQueryScorer<'_, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
@@ -59,6 +79,6 @@ where
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
-        unimplemented!("Recommendation scorer compares against multiple vectors, not just one")
+        unimplemented!("Custom scorer compares against multiple vectors, not just one")
     }
 }

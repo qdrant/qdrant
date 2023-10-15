@@ -3,8 +3,8 @@ use std::sync::atomic::AtomicBool;
 use bitvec::slice::BitSlice;
 use quantization::EncodedVectors;
 
+use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
 use super::quantized_query_scorer::QuantizedQueryScorer;
-use super::quantized_reco_query_scorer::QuantizedRecoQueryScorer;
 use super::quantized_vectors::QuantizedVectorStorage;
 use crate::data_types::vectors::QueryVector;
 use crate::types::Distance;
@@ -70,7 +70,12 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::Recommend(reco_query) => {
                 let query_scorer =
-                    QuantizedRecoQueryScorer::new(reco_query, quantized_storage, *distance);
+                    QuantizedCustomQueryScorer::new(reco_query, quantized_storage, *distance);
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
+            }
+            QueryVector::Discovery(discovery_query) => {
+                let query_scorer =
+                    QuantizedCustomQueryScorer::new(discovery_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
         }
