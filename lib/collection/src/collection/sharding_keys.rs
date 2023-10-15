@@ -80,7 +80,7 @@ impl Collection {
                 shard_key, unknown_peers
             )));
         }
-        
+
         let max_shard_id = state
             .shards_key_mapping
             .values()

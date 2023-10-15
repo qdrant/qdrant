@@ -25,7 +25,6 @@ pub enum ClusterOperations {
     DropShardingKey(DropShardingKeyOperation),
 }
 
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateShardingKeyOperation {
@@ -37,7 +36,6 @@ pub struct CreateShardingKeyOperation {
 pub struct DropShardingKeyOperation {
     pub drop_sharding_key: DropShardingKey,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
