@@ -3,9 +3,11 @@ use std::time::Instant;
 
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
-    CreateFullSnapshotRequest, CreateSnapshotRequest, CreateSnapshotResponse,
-    DeleteFullSnapshotRequest, DeleteSnapshotRequest, DeleteSnapshotResponse,
-    ListFullSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
+    CreateFullSnapshotRequest, CreateShardSnapshotRequest, CreateSnapshotRequest,
+    CreateSnapshotResponse, DeleteFullSnapshotRequest, DeleteShardSnapshotRequest,
+    DeleteSnapshotRequest, DeleteSnapshotResponse, ListFullSnapshotsRequest,
+    ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
+    RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::snapshots::{
@@ -126,5 +128,33 @@ impl Snapshots for SnapshotsService {
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
+    }
+
+    async fn create_shard(
+        &self,
+        request: Request<CreateShardSnapshotRequest>,
+    ) -> Result<Response<CreateSnapshotResponse>, Status> {
+        todo!()
+    }
+
+    async fn list_shard(
+        &self,
+        request: Request<ListShardSnapshotsRequest>,
+    ) -> Result<Response<ListSnapshotsResponse>, Status> {
+        todo!()
+    }
+
+    async fn delete_shard(
+        &self,
+        request: Request<DeleteShardSnapshotRequest>,
+    ) -> Result<Response<DeleteSnapshotResponse>, Status> {
+        todo!()
+    }
+
+    async fn recover_shard(
+        &self,
+        request: Request<RecoverShardSnapshotRequest>,
+    ) -> Result<Response<RecoverSnapshotResponse>, Status> {
+        todo!()
     }
 }
