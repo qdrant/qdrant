@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use common::defaults::CONSENSUS_DEFAULT_META_OP_WAIT;
+use common::defaults;
 
 use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -254,7 +254,7 @@ impl Collection {
 
             // Wait for the replica set to have the local shard initialized
             // This can take some time as this is arranged through consensus
-            replica_set.wait_for_local(CONSENSUS_DEFAULT_META_OP_WAIT);
+            replica_set.wait_for_local(defaults::CONSENSUS_META_OP_WAIT);
 
             if !replica_set.is_local().await {
                 // We have proxy or something, we need to unwrap it

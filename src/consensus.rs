@@ -12,6 +12,7 @@ use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftM
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
+use common::defaults;
 use prost::Message as _;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
@@ -168,7 +169,7 @@ impl Consensus {
             ..Default::default()
         };
         raft_config.validate()?;
-        let op_wait = storage::content_manager::consensus_manager::DEFAULT_META_OP_WAIT;
+        let op_wait = defaults::CONSENSUS_META_OP_WAIT;
         // Commit might take up to 4 ticks as:
         // 1 tick - send proposal to leader
         // 2 tick - leader sends append entries to peers
