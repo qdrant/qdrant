@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,7 @@ use super::remote_shard::RemoteShard;
 use super::CollectionId;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
@@ -317,6 +318,35 @@ impl ShardReplicaSet {
             .into_iter()
             .filter(|peer_id| !self.is_locally_disabled(peer_id) && *peer_id != this_peer_id)
             .collect()
+    }
+
+    /// Wait for a local shard to be initialized.
+    ///
+    /// Uses a blocking thread internally.
+    ///
+    /// Returns `true` if initialized, `false` if timed out.
+    pub async fn wait_for_local(&self, timeout: Duration) -> CollectionResult<bool> {
+        self.wait_for(|replica_set_state| replica_set_state.is_local, timeout)
+            .await
+    }
+
+    /// Wait for a replica set state condition to be true.
+    ///
+    /// Uses a blocking thread internally.
+    ///
+    /// Returns `true` if condition is true, `false` if timed out.
+    async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<bool>
+    where
+        F: Fn(&ReplicaSetState) -> bool + Send + 'static,
+    {
+        let replica_state = self.replica_state.clone();
+        tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to wait for replica set state: {err}"
+                ))
+            })
     }
 
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {

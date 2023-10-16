@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
@@ -52,7 +53,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     /// Wait for a condition on data to be true.
     ///
     /// Returns `true` if condition is true, `false` if timed out.
-    pub fn wait_for<F>(&self, check: F, timeout: std::time::Duration) -> bool
+    pub fn wait_for<F>(&self, check: F, timeout: Duration) -> bool
     where
         F: Fn(&T) -> bool,
     {

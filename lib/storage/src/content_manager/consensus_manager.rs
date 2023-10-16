@@ -12,6 +12,7 @@ use collection::collection_state;
 use collection::common::is_ready::IsReady;
 use collection::shards::shard::PeerId;
 use collection::shards::CollectionId;
+use common::defaults;
 use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
@@ -34,8 +35,6 @@ use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
     PeerInfo, RaftInfo,
 };
-
-pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
@@ -570,9 +569,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         async move {
             let await_for_all = join_all(receivers.iter_mut().map(|receiver| receiver.recv()));
-            let results =
-                tokio::time::timeout(wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT), await_for_all)
-                    .await?;
+            let results = tokio::time::timeout(
+                wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
+                await_for_all,
+            )
+            .await?;
             for result in results {
                 match result {
                     Ok(response_res) => match response_res {
@@ -639,7 +640,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
+        let wait_timeout = wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT);
 
         let is_leader_established = self.is_leader_established.clone();
 
