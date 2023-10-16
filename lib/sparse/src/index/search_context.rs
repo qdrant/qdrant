@@ -300,6 +300,85 @@ mod tests {
         _search_test(&inverted_index);
     }
 
+    #[test]
+    fn search_with_update_test() {
+        let mut inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+
+        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
+
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                weights: vec![1.0, 1.0, 1.0],
+            },
+            10,
+            &inverted_index,
+        );
+
+        assert_eq!(
+            search_context.search(),
+            vec![
+                ScoredPointOffset {
+                    score: 90.0,
+                    idx: 3
+                },
+                ScoredPointOffset {
+                    score: 60.0,
+                    idx: 2
+                },
+                ScoredPointOffset {
+                    score: 30.0,
+                    idx: 1
+                },
+            ]
+        );
+
+        // update index with new point
+        inverted_index_ram.upsert(
+            4,
+            SparseVector {
+                indices: vec![1, 2, 3],
+                weights: vec![40.0, 40.0, 40.0],
+            },
+        );
+        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
+
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                weights: vec![1.0, 1.0, 1.0],
+            },
+            10,
+            &inverted_index,
+        );
+
+        assert_eq!(
+            search_context.search(),
+            vec![
+                ScoredPointOffset {
+                    score: 120.0,
+                    idx: 4
+                },
+                ScoredPointOffset {
+                    score: 90.0,
+                    idx: 3
+                },
+                ScoredPointOffset {
+                    score: 60.0,
+                    idx: 2
+                },
+                ScoredPointOffset {
+                    score: 30.0,
+                    idx: 1
+                },
+            ]
+        );
+    }
+
     fn _search_with_hot_key_test(inverted_index: &InvertedIndex) {
         let mut search_context = SearchContext::new(
             SparseVector {

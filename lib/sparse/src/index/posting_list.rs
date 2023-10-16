@@ -1,4 +1,7 @@
+use std::cmp::max;
+
 use common::types::PointOffsetType;
+use ordered_float::OrderedFloat;
 
 use crate::common::types::DimWeight;
 
@@ -7,6 +10,20 @@ pub struct PostingElement {
     pub record_id: PointOffsetType,
     pub weight: DimWeight,
     pub max_next_weight: DimWeight,
+}
+
+const DEFAULT_MAX_NEXT_WEIGHT: DimWeight = f32::NEG_INFINITY;
+
+impl PostingElement {
+    /// Initialize negative infinity as max_next_weight.
+    /// Needs to be updated at insertion time.
+    pub(crate) fn new(record_id: PointOffsetType, weight: DimWeight) -> PostingElement {
+        PostingElement {
+            record_id,
+            weight,
+            max_next_weight: DEFAULT_MAX_NEXT_WEIGHT,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -24,6 +41,70 @@ impl PostingList {
         }
         posting_list.build()
     }
+
+    /// Upsert a posting element into the posting list.
+    ///
+    /// Worst case is adding a new element at the end of the list with a very large weight.
+    /// This forces to propagate it as potential max_next_weight to all the previous elements.
+    pub fn upsert(&mut self, mut posting_element: PostingElement) {
+        // find insertion point in sorted posting list
+        let index = self
+            .elements
+            .binary_search_by_key(&posting_element.record_id, |e| e.record_id);
+
+        let modified_index = match index {
+            Ok(found_index) => {
+                // Update existing element for the same id
+                let element = &mut self.elements[found_index];
+                if element.weight == posting_element.weight {
+                    // no need to update anything
+                    return;
+                }
+                element.weight = posting_element.weight;
+                found_index
+            }
+            Err(insert_index) => {
+                // Compute `max_next_weight` based on the element currently at `insert_index`
+                let next_element_max_weight = self
+                    .elements
+                    .get(insert_index)
+                    .map(|e| max(OrderedFloat(e.weight), OrderedFloat(e.max_next_weight)))
+                    .unwrap_or(OrderedFloat(DEFAULT_MAX_NEXT_WEIGHT))
+                    .0;
+                posting_element.max_next_weight = next_element_max_weight;
+                // Insert new element by shifting elements to the right
+                self.elements.insert(insert_index, posting_element);
+                insert_index
+            }
+        };
+        // Propagate max_next_weight update to the previous entries
+        self.propagate_max_next_weight_to_the_left(modified_index);
+    }
+
+    /// Propagates `max_next_weight` from the entry at `up_to_index` to previous entries.
+    /// If an entry has a weight larger than `max_next_weight`, the propagation stops.
+    fn propagate_max_next_weight_to_the_left(&mut self, up_to_index: usize) {
+        // used element at `up_to_index` as the starting point
+        let element = &self.elements[up_to_index];
+        let mut max_next_weight = max(
+            OrderedFloat(element.max_next_weight),
+            OrderedFloat(element.weight),
+        )
+        .0;
+
+        // propagate max_next_weight update to the previous entries
+        for element in self.elements[..up_to_index].iter_mut().rev() {
+            // update max_next_weight for element
+            element.max_next_weight = max_next_weight;
+            if element.weight >= max_next_weight {
+                // no need to propagate further because the current element is larger
+                break;
+            } else {
+                // update max_next_weight based on current element
+                max_next_weight = max_next_weight.max(element.weight);
+            }
+        }
+    }
 }
 
 pub struct PostingBuilder {
@@ -38,11 +119,7 @@ impl PostingBuilder {
     }
 
     pub fn add(&mut self, record_id: PointOffsetType, weight: DimWeight) {
-        self.elements.push(PostingElement {
-            record_id,
-            weight,
-            max_next_weight: f32::NEG_INFINITY,
-        });
+        self.elements.push(PostingElement::new(record_id, weight));
     }
 
     pub fn build(mut self) -> PostingList {
@@ -185,5 +262,89 @@ mod tests {
 
         assert!(iter.skip_to(21).is_none());
         assert!(iter.peek().is_none());
+    }
+
+    #[test]
+    fn test_upsert_insert() {
+        let mut builder = PostingBuilder::new();
+        builder.add(1, 1.0);
+        builder.add(3, 3.0);
+        builder.add(2, 2.0);
+
+        let mut posting_list = builder.build();
+
+        // sorted by id
+        assert_eq!(posting_list.elements[0].record_id, 1);
+        assert_eq!(posting_list.elements[0].weight, 1.0);
+        assert_eq!(posting_list.elements[0].max_next_weight, 3.0);
+
+        assert_eq!(posting_list.elements[1].record_id, 2);
+        assert_eq!(posting_list.elements[1].weight, 2.0);
+        assert_eq!(posting_list.elements[1].max_next_weight, 3.0);
+
+        assert_eq!(posting_list.elements[2].record_id, 3);
+        assert_eq!(posting_list.elements[2].weight, 3.0);
+        assert_eq!(
+            posting_list.elements[2].max_next_weight,
+            DEFAULT_MAX_NEXT_WEIGHT
+        );
+
+        // insert mew last element
+        posting_list.upsert(PostingElement::new(4, 4.0));
+        assert_eq!(posting_list.elements[3].record_id, 4);
+        assert_eq!(posting_list.elements[3].weight, 4.0);
+        assert_eq!(
+            posting_list.elements[3].max_next_weight,
+            DEFAULT_MAX_NEXT_WEIGHT
+        );
+
+        // must update max_next_weight of previous elements if necessary
+        for element in posting_list.elements.iter().take(3) {
+            assert_eq!(element.max_next_weight, 4.0);
+        }
+    }
+
+    #[test]
+    fn test_upsert_update() {
+        let mut builder = PostingBuilder::new();
+        builder.add(1, 1.0);
+        builder.add(3, 3.0);
+        builder.add(2, 2.0);
+
+        let mut posting_list = builder.build();
+
+        // sorted by id
+        assert_eq!(posting_list.elements[0].record_id, 1);
+        assert_eq!(posting_list.elements[0].weight, 1.0);
+        assert_eq!(posting_list.elements[0].max_next_weight, 3.0);
+
+        assert_eq!(posting_list.elements[1].record_id, 2);
+        assert_eq!(posting_list.elements[1].weight, 2.0);
+        assert_eq!(posting_list.elements[1].max_next_weight, 3.0);
+
+        assert_eq!(posting_list.elements[2].record_id, 3);
+        assert_eq!(posting_list.elements[2].weight, 3.0);
+        assert_eq!(
+            posting_list.elements[2].max_next_weight,
+            DEFAULT_MAX_NEXT_WEIGHT
+        );
+
+        // increase weight of existing element
+        posting_list.upsert(PostingElement::new(2, 4.0));
+
+        assert_eq!(posting_list.elements[0].record_id, 1);
+        assert_eq!(posting_list.elements[0].weight, 1.0);
+        assert_eq!(posting_list.elements[0].max_next_weight, 4.0); // update propagated
+
+        assert_eq!(posting_list.elements[1].record_id, 2);
+        assert_eq!(posting_list.elements[1].weight, 4.0); // updated
+        assert_eq!(posting_list.elements[1].max_next_weight, 3.0);
+
+        assert_eq!(posting_list.elements[2].record_id, 3);
+        assert_eq!(posting_list.elements[2].weight, 3.0);
+        assert_eq!(
+            posting_list.elements[2].max_next_weight,
+            DEFAULT_MAX_NEXT_WEIGHT
+        );
     }
 }
