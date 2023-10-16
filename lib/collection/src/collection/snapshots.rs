@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use io::file_operations::read_json;
@@ -178,13 +179,10 @@ impl Collection {
         };
 
         // Check that all shard ids are unique
-        debug_assert!(
-            shard_ids_list.len()
-                == shard_ids_list
-                    .iter()
-                    .collect::<std::collections::HashSet<_>>()
-                    .len(),
-            "Shard mapping must contain all shards"
+        debug_assert_eq!(
+            shard_ids_list.len(),
+            shard_ids_list.iter().collect::<HashSet<_>>().len(),
+            "Shard mapping must contain all shards",
         );
 
         for shard_id in shard_ids_list {
