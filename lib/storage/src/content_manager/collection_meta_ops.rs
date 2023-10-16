@@ -1,4 +1,4 @@
-use collection::config::CollectionConfig;
+use collection::config::{CollectionConfig, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
@@ -104,21 +104,34 @@ pub struct CreateCollection {
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
     #[validate]
     pub vectors: VectorsConfig,
+    /// For auto sharding:
     /// Number of shards in collection.
-    /// Default is 1 for standalone, otherwise equal to the number of nodes
-    /// Minimum is 1
+    ///  - Default is 1 for standalone, otherwise equal to the number of nodes
+    ///  - Minimum is 1
+    /// For custom sharding:
+    /// Number of shards in collection per shard group.
+    ///  - Default is 1, meaning that each shard key will be mapped to a single shard
+    ///  - Minimum is 1
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub shard_number: Option<u32>,
+    /// Sharding method
+    /// Default is Auto - points are distributed across all available shards
+    /// Custom - points are distributed across shards according to shard key
+    #[serde(default)]
+    pub sharding_method: Option<ShardingMethod>,
     /// Number of shards replicas.
     /// Default is 1
     /// Minimum is 1
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub replication_factor: Option<u32>,
     /// Defines how many replicas should apply the operation for us to consider it successful.
     /// Increasing this number will make the collection more resilient to inconsistencies, but will
     /// also make it fail if not enough replicas are available.
     /// Does not have any performance impact.
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub write_consistency_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
@@ -313,6 +326,7 @@ impl From<CollectionConfig> for CreateCollection {
         Self {
             vectors: value.params.vectors,
             shard_number: Some(value.params.shard_number.get()),
+            sharding_method: value.params.sharding_method,
             replication_factor: Some(value.params.replication_factor.get()),
             write_consistency_factor: Some(value.params.write_consistency_factor.get()),
             on_disk_payload: Some(value.params.on_disk_payload),

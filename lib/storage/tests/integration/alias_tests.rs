@@ -103,6 +103,7 @@ fn test_alias_operation() {
                         write_consistency_factor: None,
                         init_from: None,
                         quantization_config: None,
+                        sharding_method: None,
                     },
                 )),
                 None,

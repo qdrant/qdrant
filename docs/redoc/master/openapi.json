@@ -4963,6 +4963,17 @@
             "format": "uint32",
             "minimum": 1
           },
+          "sharding_method": {
+            "description": "Sharding method Default is Auto - points are distributed across all available shards Custom - points are distributed across shards according to shard key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardingMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "replication_factor": {
             "description": "Number of replicas for each shard",
             "default": 1,
@@ -5214,6 +5225,13 @@
             "nullable": true
           }
         }
+      },
+      "ShardingMethod": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "custom"
+        ]
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -6591,19 +6609,31 @@
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
-            "description": "Number of shards in collection. Default is 1 for standalone, otherwise equal to the number of nodes Minimum is 1",
+            "description": "For auto sharding: Number of shards in collection. - Default is 1 for standalone, otherwise equal to the number of nodes - Minimum is 1 For custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
+          },
+          "sharding_method": {
+            "description": "Sharding method Default is Auto - points are distributed across all available shards Custom - points are distributed across shards according to shard key",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardingMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "replication_factor": {
             "description": "Number of shards replicas. Default is 1 Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "write_consistency_factor": {
@@ -6611,7 +6641,7 @@
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "on_disk_payload": {

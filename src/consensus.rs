@@ -1233,6 +1233,7 @@ mod tests {
                             write_consistency_factor: None,
                             init_from: None,
                             quantization_config: None,
+                            sharding_method: None,
                         },
                     )),
                     None,

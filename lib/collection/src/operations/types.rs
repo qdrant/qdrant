@@ -113,6 +113,21 @@ pub struct CollectionInfo {
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }
 
+impl CollectionInfo {
+    pub fn empty(collection_config: CollectionConfig) -> Self {
+        Self {
+            status: CollectionStatus::Green,
+            optimizer_status: OptimizersStatus::Ok,
+            vectors_count: 0,
+            indexed_vectors_count: 0,
+            points_count: 0,
+            segments_count: 0,
+            config: collection_config,
+            payload_schema: HashMap::new(),
+        }
+    }
+}
+
 /// Current clustering distribution for the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionClusterInfo {

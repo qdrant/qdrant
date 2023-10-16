@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use itertools::Itertools;
 use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use crate::common::file_utils::move_file;
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::{
@@ -26,13 +27,15 @@ use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
-const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
+pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
+
+pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     ring: HashRing<ShardId>,
-    key_mapping: SaveOnDisk<HashMap<ShardKey, HashSet<ShardId>>>,
+    key_mapping: SaveOnDisk<ShardKeyMapping>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -47,6 +50,12 @@ impl ShardHolder {
             ring: hashring,
             key_mapping,
         })
+    }
+
+    pub fn save_key_mapping_to_dir(&self, dir: &Path) -> CollectionResult<()> {
+        let path = dir.join(SHARD_KEY_MAPPING_FILE);
+        self.key_mapping.save_to(path)?;
+        Ok(())
     }
 
     pub fn get_shard_id_to_key_mapping(&self) -> HashMap<ShardId, ShardKey> {
@@ -234,8 +243,32 @@ impl ShardHolder {
         search_runtime: Handle,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
+
+        let (shard_ids_list, shard_id_to_key_mapping) = match collection_config
+            .read()
+            .await
+            .params
+            .sharding_method
+            .unwrap_or_default()
+        {
+            ShardingMethod::Auto => {
+                let ids_list = (0..shard_number).collect::<Vec<_>>();
+                let shard_id_to_key_mapping = HashMap::new();
+                (ids_list, shard_id_to_key_mapping)
+            }
+            ShardingMethod::Custom => {
+                let shard_id_to_key_mapping = self.get_shard_id_to_key_mapping();
+                let ids_list = shard_id_to_key_mapping
+                    .keys()
+                    .cloned()
+                    .sorted()
+                    .collect::<Vec<_>>();
+                (ids_list, shard_id_to_key_mapping)
+            }
+        };
+
         // ToDo: remove after version 0.11.0
-        for shard_id in 0..shard_number {
+        for shard_id in shard_ids_list {
             for (path, _shard_version, shard_type) in
                 latest_shard_paths(collection_path, shard_id).await.unwrap()
             {
@@ -324,8 +357,8 @@ impl ShardHolder {
                         .set_replica_state(&local_peer_id, ReplicaState::Active)
                         .expect("Failed to set local shard state");
                 }
-
-                self.add_shard(shard_id, replica_set, None).unwrap();
+                let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
+                self.add_shard(shard_id, replica_set, shard_key).unwrap();
             }
         }
     }

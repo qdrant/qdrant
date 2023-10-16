@@ -3,6 +3,9 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use collection::config::ShardingMethod;
+
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
@@ -52,29 +55,40 @@ impl Dispatcher {
                 CollectionMetaOperations::CreateCollection(mut op) => {
                     self.toc.check_write_lock()?;
                     if !op.is_distribution_set() {
-                        // Suggest even distribution of shards across nodes
-                        let number_of_peers = state.0.peer_count();
-                        let shard_distribution = self
-                            .toc
-                            .suggest_shard_distribution(
-                                &op,
-                                NonZeroU32::new(number_of_peers as u32)
-                                    .expect("Peer count should be always >= 1"),
-                            )
-                            .await;
+                        match op.create_collection.sharding_method.unwrap_or_default() {
+                            ShardingMethod::Auto => {
+                                // Suggest even distribution of shards across nodes
+                                let number_of_peers = state.0.peer_count();
+                                let shard_distribution = self
+                                    .toc
+                                    .suggest_shard_distribution(
+                                        &op,
+                                        NonZeroU32::new(number_of_peers as u32)
+                                            .expect("Peer count should be always >= 1"),
+                                    )
+                                    .await;
 
-                        // Expect all replicas to become active eventually
-                        for (shard_id, peer_ids) in &shard_distribution.distribution {
-                            for peer_id in peer_ids {
-                                expect_operations.push(ConsensusOperations::initialize_replica(
-                                    op.collection_name.clone(),
-                                    *shard_id,
-                                    *peer_id,
-                                ));
+                                // Expect all replicas to become active eventually
+                                for (shard_id, peer_ids) in &shard_distribution.distribution {
+                                    for peer_id in peer_ids {
+                                        expect_operations.push(
+                                            ConsensusOperations::initialize_replica(
+                                                op.collection_name.clone(),
+                                                *shard_id,
+                                                *peer_id,
+                                            ),
+                                        );
+                                    }
+                                }
+
+                                op.set_distribution(shard_distribution);
+                            }
+                            ShardingMethod::Custom => {
+                                // If custom sharding is used - we don't create any shards in advance
+                                let empty_distribution = ShardDistributionProposal::empty();
+                                op.set_distribution(empty_distribution);
                             }
                         }
-
-                        op.set_distribution(shard_distribution);
                     }
                     CollectionMetaOperations::CreateCollection(op)
                 }

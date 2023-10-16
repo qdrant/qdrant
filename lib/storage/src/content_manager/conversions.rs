@@ -1,3 +1,4 @@
+use collection::operations::conversions::sharding_method_from_proto;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -44,6 +45,10 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 quantization_config: value
                     .quantization_config
                     .map(TryInto::try_into)
+                    .transpose()?,
+                sharding_method: value
+                    .sharding_method
+                    .map(sharding_method_from_proto)
                     .transpose()?,
             },
         )))

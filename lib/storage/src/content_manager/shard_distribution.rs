@@ -33,6 +33,15 @@ pub struct ShardDistributionProposal {
 }
 
 impl ShardDistributionProposal {
+    /// Suggest an empty shard distribution placement
+    /// This is useful when a collection is configured for custom sharding and
+    /// we don't want to create any shards in advance.
+    pub fn empty() -> Self {
+        Self {
+            distribution: Vec::new(),
+        }
+    }
+
     /// Builds a proposal for the distribution of shards.
     /// It will propose to allocate shards so that all peers have the same number of shards of this collection  at the end.
     pub fn new(

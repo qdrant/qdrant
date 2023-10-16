@@ -19,7 +19,7 @@ use super::types::{
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
-    CollectionParams, WalConfig,
+    CollectionParams, ShardingMethod, WalConfig,
 };
 use crate::lookup::types::WithLookupInterface;
 use crate::lookup::WithLookup;
@@ -43,6 +43,24 @@ use crate::operations::types::{
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
 use crate::shards::shard::ShardKey;
+
+pub fn sharding_method_to_proto(sharding_method: ShardingMethod) -> i32 {
+    match sharding_method {
+        ShardingMethod::Auto => api::grpc::qdrant::ShardingMethod::Auto as i32,
+        ShardingMethod::Custom => api::grpc::qdrant::ShardingMethod::Custom as i32,
+    }
+}
+
+pub fn sharding_method_from_proto(sharding_method: i32) -> Result<ShardingMethod, Status> {
+    match sharding_method {
+        x if x == api::grpc::qdrant::ShardingMethod::Auto as i32 => Ok(ShardingMethod::Auto),
+        x if x == api::grpc::qdrant::ShardingMethod::Custom as i32 => Ok(ShardingMethod::Custom),
+        _ => Err(Status::invalid_argument(format!(
+            "Cannot convert sharding method: {}",
+            sharding_method
+        ))),
+    }
+}
 
 pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
     api::grpc::qdrant::WriteOrdering {
@@ -263,6 +281,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     on_disk_payload: config.params.on_disk_payload,
                     write_consistency_factor: Some(config.params.write_consistency_factor.get()),
                     read_fan_out_factor: config.params.read_fan_out_factor,
+                    sharding_method: config.params.sharding_method.map(sharding_method_to_proto),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
@@ -508,6 +527,10 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     })?,
 
                     read_fan_out_factor: params.read_fan_out_factor,
+                    sharding_method: params
+                        .sharding_method
+                        .map(sharding_method_from_proto)
+                        .transpose()?,
                 },
             },
             hnsw_config: match config.hnsw_config {

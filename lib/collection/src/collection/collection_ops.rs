@@ -208,7 +208,10 @@ impl Collection {
             .map(|shard| shard.info(shard_selection.is_some()))
             .collect();
 
-        let mut info = requests.try_next().await?.expect("TODO");
+        let mut info = match requests.try_next().await? {
+            None => CollectionInfo::empty(self.collection_config.read().await.clone()),
+            Some(info) => info,
+        };
 
         while let Some(response) = requests.try_next().await? {
             info.status = cmp::max(info.status, response.status);
