@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::time::Duration;
 
+use common::defaults;
+
 use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::LocalShard;
@@ -250,10 +252,16 @@ impl Collection {
                 )));
             };
 
+            // Wait for the replica set to have the local shard initialized
+            // This can take some time as this is arranged through consensus
+            replica_set
+                .wait_for_local(defaults::CONSENSUS_META_OP_WAIT)
+                .await?;
+
             if !replica_set.is_local().await {
                 // We have proxy or something, we need to unwrap it
                 log::warn!("Unwrapping proxy shard {}", shard_id);
-                replica_set.un_proxify_local().await?
+                replica_set.un_proxify_local().await?;
             }
 
             if replica_set.is_dummy().await {
