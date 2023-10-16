@@ -1056,7 +1056,7 @@ dependencies = [
  "log",
  "merge",
  "num_cpus",
- "ordered-float 3.9.2",
+ "ordered-float 4.1.1",
  "parking_lot",
  "pprof",
  "rand 0.8.5",
@@ -1103,7 +1103,7 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
- "ordered-float 3.9.2",
+ "ordered-float 4.1.1",
  "serde",
  "validator",
 ]
@@ -3145,9 +3145,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "3.9.2"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
+checksum = "536900a8093134cf9ccf00a27deb3532421099e958d9dd431135d0c7543ca1e8"
 dependencies = [
  "num-traits",
 ]
@@ -4485,7 +4485,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_cpus",
- "ordered-float 3.9.2",
+ "ordered-float 4.1.1",
  "parking_lot",
  "pprof",
  "procfs",
