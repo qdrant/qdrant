@@ -8891,47 +8891,56 @@ pub struct DeleteSnapshotRequest {
     pub snapshot_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateShardSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListShardSnapshotsRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteShardSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
     /// Name of the shard snapshot
     #[prost(string, tag = "3")]
+    #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoverShardSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
