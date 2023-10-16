@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use http::uri::Scheme;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -130,51 +129,13 @@ pub async fn transfer_shard(
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
             // Get local and remote REST addresses
-            let local_rest_address = {
-                let local_peer_uri = {
-                    channel_service
-                        .id_to_address
-                        .read()
-                        .get(&transfer_config.from)
-                        .cloned()
-                        .expect("Could not get local address")
-                };
-                Url::parse(&format!(
-                    "{}://{}:{}",
-                    local_peer_uri.scheme().unwrap_or(&Scheme::HTTP),
-                    local_peer_uri.host().ok_or_else(|| {
-                        CollectionError::service_error(
-                            "Local peer address does not have a host specified",
-                        )
-                    })?,
-                    // TODO: get local REST port from config
-                    local_peer_uri.port_u16().expect("No port") - 2,
-                ))
-                .expect("Invalid URL")
-            };
-
+            let local_rest_address = channel_service.rest_address(transfer_config.from)?;
             let remote_rest_address = {
-                let remote_peer_uri = {
-                    channel_service
-                        .id_to_address
-                        .read()
-                        .get(&transfer_config.to)
-                        .cloned()
-                        .ok_or_else(|| {
-                            CollectionError::service_error("Could not get address of remote")
-                        })?
-                };
-                Url::parse(&format!(
-                    "{}://{}:{}",
-                    remote_peer_uri.scheme().unwrap_or(&Scheme::HTTP),
-                    remote_peer_uri.host().ok_or_else(|| {
-                        CollectionError::service_error(
-                            "Remote peer address does not have a host specified",
-                        )
-                    })?,
-                    remote_shard.request_http_port().await?,
-                ))
-                .expect("Invalid URL")
+                let mut address = channel_service.rest_address(transfer_config.to)?;
+                address
+                    .set_port(Some(remote_shard.request_http_port().await? as u16))
+                    .expect("Failed to set port");
+                address
             };
 
             transfer_snapshot(
