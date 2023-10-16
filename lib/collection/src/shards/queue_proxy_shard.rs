@@ -10,6 +10,7 @@ use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
+use super::transfer::shard_transfer::MAX_RETRY_COUNT;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
@@ -47,7 +48,7 @@ pub struct QueueProxyShard {
 const BATCH_SIZE: usize = 100;
 
 /// Number of times to retry transferring updates batch
-const BATCH_RETRIES: usize = 3;
+const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
 
 impl QueueProxyShard {
     pub async fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
@@ -150,14 +151,14 @@ impl QueueProxyShard {
     pub async fn finalize(self) -> Result<LocalShard, (CollectionError, Self)> {
         // Transfer all missed updates, do not unwrap on failure but return error with self
         let transfer_result = self.transfer_all_missed_updates().await;
-        if let Err(err) = transfer_result {
-            return Err((err, self));
-        }
 
         // Release max acknowledged version for WAL because we unwrap the queue proxy
         self.set_max_ack_version(None).await;
 
-        Ok(self.wrapped_shard)
+        match transfer_result {
+            Ok(_) => Ok(self.wrapped_shard),
+            Err(err) => Err((err, self)),
+        }
     }
 
     /// Set or release maximum version to acknowledge in WAL

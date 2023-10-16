@@ -25,7 +25,7 @@ use crate::shards::CollectionId;
 
 const TRANSFER_BATCH_SIZE: usize = 100;
 const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
-const MAX_RETRY_COUNT: usize = 3;
+pub const MAX_RETRY_COUNT: usize = 3;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransfer {
