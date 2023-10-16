@@ -144,21 +144,26 @@ impl ShardReplicaSet {
                 let _ = local_write.insert(Shard::Local(local_shard));
                 Ok(())
             }
-            Some(Shard::QueueProxy(proxy)) => match proxy.finalize().await {
-                // Transfer remaining queue items and convert into local shard
-                Ok(local_shard) => {
-                    let _ = local_write.insert(Shard::Local(local_shard));
-                    Ok(())
-                }
-                // Transferring remaining queue items failed
-                // Keep shard as proxy so we don't loose queue state and return error
-                // TODO: what happens here if remote is dead? Can never unwrap?
-                Err((err, proxy)) => {
-                    log::error!("Failed to un-proxify local shard because transferring remaining queue items to remote failed: {err}");
-                    let _ = local_write.insert(Shard::QueueProxy(proxy));
-                    Err(err)
-                }
-            },
+            Some(Shard::QueueProxy(proxy)) => {
+                // We should not unproxify a queue proxy shard directly because it can fail if it
+                // fails to send all updates to the remote shard.
+                // Instead we should transform it into a forward proxy shard before unproxify is
+                // called to handle errors at an earlier time.
+                // See `Self::queue_proxy_into_forward_proxy()` for more details.
+                log::warn!("Directly unproxifying queue proxy shard, this should not happen");
+
+                // Finalize, insert local shard back and return finalize result
+                let result = proxy.finalize().await;
+                let (result, local_shard) = match result {
+                    Ok((local_shard, _)) => (Ok(()), local_shard),
+                    Err((err, proxy)) => {
+                        log::error!("Failed to un-proxify local shard because transferring remaining queue items to remote failed: {err}");
+                        (Err(err), proxy.wrapped_shard)
+                    }
+                };
+                let _ = local_write.insert(Shard::Local(local_shard));
+                result
+            }
             _ => unreachable!(),
         }
     }
@@ -195,11 +200,49 @@ impl ShardReplicaSet {
         }
     }
 
-    /// If we have a local queue proxy shard, transfer all missed updates to remote.
-    pub async fn queue_proxy_transfer_updates(&self) -> CollectionResult<()> {
-        let read_local = self.local.read().await;
-        if let Some(Shard::QueueProxy(proxy)) = &*read_local {
-            proxy.transfer_all_missed_updates().await?;
+    /// Send all queue proxy updates to remote and transform into forward proxy
+    ///
+    /// When a queue or forward proxy shard needs to be unproxified into a local shard again we
+    /// typically don't have room to handle errors. A queue proxy shard may error if it fails to
+    /// send updates to the remote shard, while a forward proxy does not fail at all when
+    /// transforming.
+    ///
+    /// This method allows to transfer queued updates before the shard is unproxified. This allows
+    /// for proper error handling at the time this method is called. Because the shard is
+    /// transformed into a forward proxy after this operation it will not error again when the
+    /// shard is eventually unproxified again.
+    ///
+    /// If the local shard is a queue proxy:
+    /// - Transfers all missed updates to remote
+    /// - Transforms queue proxy into forward proxy
+    ///
+    /// Does nothing if the local shard is not a queue proxy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if transferring all updates to the remote failed.
+    pub async fn queue_proxy_into_forward_proxy(&self) -> CollectionResult<()> {
+        // First pass: transfer all missed updates with shared read lock
+        {
+            let local_read = self.local.read().await;
+            if let Some(Shard::QueueProxy(proxy)) = &*local_read {
+                proxy.transfer_all_missed_updates().await?;
+            } else {
+                return Ok(());
+            }
+        }
+
+        // Second pass: transfer new updates, safely finalize and transform
+        let mut local_write = self.local.write().await;
+        match local_write.take() {
+            Some(Shard::QueueProxy(proxy)) => {
+                let (local_shard, remote_shard) = proxy.finalize().await.map_err(|(err, _)| err)?;
+
+                let forward_proxy = ForwardProxyShard::new(local_shard, remote_shard);
+                let _ = local_write.insert(Shard::ForwardProxy(forward_proxy));
+            }
+            // Insert local back if we got wrong type this time
+            local => *local_write = local,
         }
 
         Ok(())
