@@ -305,7 +305,7 @@ async fn transfer_snapshot(
         })?;
 
     // We must keep partial state for 10 seconds to allow all nodes to catch up
-    // TODO: or confirm all nodes have reached a specific commit
+    // Future improvement: instead of waiting 10 seconds, confirm all nodes reached consensus
     log::trace!("Shard snapshot transfer is waiting 10 seconds for consensus to catch up");
     sleep(Duration::from_secs(10)).await;
 

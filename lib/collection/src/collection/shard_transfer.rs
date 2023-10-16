@@ -44,9 +44,6 @@ impl Collection {
         F: Future<Output = ()> + Send + 'static,
     {
         // Select transfer method
-        // TODO: change default to snapshot if it is fully integrated?
-        // TODO: dynamically select transfer method, use snapshot if above indexing threshold?
-        // TODO: should decision on this be consistent on sender/receiver?
         if shard_transfer.method.is_none() {
             log::warn!("No shard transfer method selected, defaulting to \"stream_records\"");
             shard_transfer
