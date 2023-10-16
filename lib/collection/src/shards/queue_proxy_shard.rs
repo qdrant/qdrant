@@ -143,20 +143,20 @@ impl QueueProxyShard {
         Ok(())
     }
 
-    /// Finalize. Transfer all missed updates to remote and unwrap the wrapped shard.
+    /// Finalize: transfer all updates to remote and unwrap the wrapped shard
     ///
     /// This method helps with safely destructing the queue proxy shard, ensuring that remaining
     /// queue updates are transferred to the remote shard, and only unwrapping the local shard
     /// on success.
-    pub async fn finalize(self) -> Result<LocalShard, (CollectionError, Self)> {
-        // Transfer all missed updates, do not unwrap on failure but return error with self
+    pub async fn finalize(self) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
+        // Transfer all updates, do not unwrap on failure but return error with self
         let transfer_result = self.transfer_all_missed_updates().await;
 
         // Release max acknowledged version for WAL because we unwrap the queue proxy
         self.set_max_ack_version(None).await;
 
         match transfer_result {
-            Ok(_) => Ok(self.wrapped_shard),
+            Ok(_) => Ok((self.wrapped_shard, self.remote_shard)),
             Err(err) => Err((err, self)),
         }
     }

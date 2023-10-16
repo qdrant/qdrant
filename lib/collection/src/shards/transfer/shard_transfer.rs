@@ -97,6 +97,7 @@ pub async fn transfer_shard(
     );
 
     remote_shard.initiate_transfer().await?;
+
     {
         let shard_holder_guard = shard_holder.read().await;
         let transferring_shard = shard_holder_guard.get_shard(&shard_id);
@@ -265,6 +266,20 @@ async fn transfer_snapshot(
             ))
         })?;
 
+    // Transfer all updates to remote shard and transform into forward proxy shard
+    // We do this right after the shard has been restored on the remote so that we can catch any
+    // errors early. The forward proxy shard we end up with will not error again once we unproxify.
+    {
+        let shard = shard_holder_read.get_shard(&shard_id);
+        if let Some(replica_set) = shard {
+            replica_set.queue_proxy_into_forward_proxy().await?;
+        } else {
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be transformed from queue to forward proxy because it does not exist"
+            )));
+        }
+    }
+
     // We must keep partial state for 10 seconds to allow all nodes to catch up
     // Future improvement: instead of waiting 10 seconds, confirm all nodes reached consensus
     log::trace!("Shard snapshot transfer is waiting 10 seconds for consensus to catch up");
@@ -346,9 +361,6 @@ pub async fn handle_transferred_shard_proxy(
     };
 
     replica_set.add_remote(to, ReplicaState::Active).await?;
-
-    // Transfer all queue proxy items to the remote if we have any
-    replica_set.queue_proxy_transfer_updates().await?;
 
     if sync {
         // Keep local shard in the replica set
