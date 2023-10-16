@@ -199,15 +199,23 @@
   
 - [snapshots_service.proto](#snapshots_service-proto)
     - [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest)
+    - [CreateShardSnapshotRequest](#qdrant-CreateShardSnapshotRequest)
     - [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest)
     - [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse)
     - [DeleteFullSnapshotRequest](#qdrant-DeleteFullSnapshotRequest)
+    - [DeleteShardSnapshotRequest](#qdrant-DeleteShardSnapshotRequest)
     - [DeleteSnapshotRequest](#qdrant-DeleteSnapshotRequest)
     - [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse)
     - [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest)
+    - [ListShardSnapshotsRequest](#qdrant-ListShardSnapshotsRequest)
     - [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest)
     - [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse)
+    - [RecoverShardSnapshotRequest](#qdrant-RecoverShardSnapshotRequest)
+    - [RecoverSnapshotResponse](#qdrant-RecoverSnapshotResponse)
+    - [ShardSnapshotLocation](#qdrant-ShardSnapshotLocation)
     - [SnapshotDescription](#qdrant-SnapshotDescription)
+  
+    - [SnapshotPriority](#qdrant-SnapshotPriority)
   
     - [Snapshots](#qdrant-Snapshots)
   
@@ -3238,6 +3246,22 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 
 
+<a name="qdrant-CreateShardSnapshotRequest"></a>
+
+### CreateShardSnapshotRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| shard_id | [uint32](#uint32) |  | Id of the shard |
+
+
+
+
+
+
 <a name="qdrant-CreateSnapshotRequest"></a>
 
 ### CreateSnapshotRequest
@@ -3278,6 +3302,23 @@ How to use positive and negative vectors to find the results, default is `Averag
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | snapshot_name | [string](#string) |  | Name of the full snapshot |
+
+
+
+
+
+
+<a name="qdrant-DeleteShardSnapshotRequest"></a>
+
+### DeleteShardSnapshotRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| shard_id | [uint32](#uint32) |  | Id of the shard |
+| snapshot_name | [string](#string) |  | Name of the shard snapshot |
 
 
 
@@ -3325,6 +3366,22 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 
 
+<a name="qdrant-ListShardSnapshotsRequest"></a>
+
+### ListShardSnapshotsRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| shard_id | [uint32](#uint32) |  | Id of the shard |
+
+
+
+
+
+
 <a name="qdrant-ListSnapshotsRequest"></a>
 
 ### ListSnapshotsRequest
@@ -3356,6 +3413,55 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 
 
+<a name="qdrant-RecoverShardSnapshotRequest"></a>
+
+### RecoverShardSnapshotRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| shard_id | [uint32](#uint32) |  | Id of the shard |
+| snapshot_location | [ShardSnapshotLocation](#qdrant-ShardSnapshotLocation) |  | Location of the shard snapshot |
+| snapshot_priority | [SnapshotPriority](#qdrant-SnapshotPriority) |  | Priority of the shard snapshot |
+
+
+
+
+
+
+<a name="qdrant-RecoverSnapshotResponse"></a>
+
+### RecoverSnapshotResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-ShardSnapshotLocation"></a>
+
+### ShardSnapshotLocation
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| url | [string](#string) |  | URL of the remote shard snapshot |
+| path | [string](#string) |  | Path of the local shard snapshot |
+
+
+
+
+
+
 <a name="qdrant-SnapshotDescription"></a>
 
 ### SnapshotDescription
@@ -3374,6 +3480,19 @@ How to use positive and negative vectors to find the results, default is `Averag
 
  
 
+
+<a name="qdrant-SnapshotPriority"></a>
+
+### SnapshotPriority
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| SnapshotPriorityNoSync | 0 | Restore snapshot without *any* additional synchronization |
+| SnapshotPrioritySnapshot | 1 | Prefer snapshot data over the current state |
+| SnapshotPriorityReplica | 2 | Prefer existing data over the snapshot |
+
+
  
 
  
@@ -3388,10 +3507,14 @@ How to use positive and negative vectors to find the results, default is `Averag
 | ----------- | ------------ | ------------- | ------------|
 | Create | [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create collection snapshot |
 | List | [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List collection snapshots |
-| Delete | [DeleteSnapshotRequest](#qdrant-DeleteSnapshotRequest) | [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse) | Delete collection snapshots |
+| Delete | [DeleteSnapshotRequest](#qdrant-DeleteSnapshotRequest) | [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse) | Delete collection snapshot |
 | CreateFull | [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create full storage snapshot |
 | ListFull | [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List full storage snapshots |
-| DeleteFull | [DeleteFullSnapshotRequest](#qdrant-DeleteFullSnapshotRequest) | [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse) | List full storage snapshots |
+| DeleteFull | [DeleteFullSnapshotRequest](#qdrant-DeleteFullSnapshotRequest) | [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse) | Delete full storage snapshot |
+| CreateShard | [CreateShardSnapshotRequest](#qdrant-CreateShardSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create shard snapshot |
+| ListShard | [ListShardSnapshotsRequest](#qdrant-ListShardSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List shard snapshots |
+| DeleteShard | [DeleteShardSnapshotRequest](#qdrant-DeleteShardSnapshotRequest) | [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse) | Delete shard snapshot |
+| RecoverShard | [RecoverShardSnapshotRequest](#qdrant-RecoverShardSnapshotRequest) | [RecoverSnapshotResponse](#qdrant-RecoverSnapshotResponse) | Recover shard snapshot |
 
  
 
