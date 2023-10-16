@@ -254,7 +254,9 @@ impl Collection {
 
             // Wait for the replica set to have the local shard initialized
             // This can take some time as this is arranged through consensus
-            replica_set.wait_for_local(defaults::CONSENSUS_META_OP_WAIT);
+            replica_set
+                .wait_for_local(defaults::CONSENSUS_META_OP_WAIT)
+                .await?;
 
             if !replica_set.is_local().await {
                 // We have proxy or something, we need to unwrap it
