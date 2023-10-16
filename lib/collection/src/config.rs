@@ -53,6 +53,14 @@ impl Default for WalConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardingMethod {
+    #[default]
+    Auto,
+    Custom,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
@@ -62,6 +70,12 @@ pub struct CollectionParams {
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
+    /// Sharding method
+    /// Default is Auto - points are distributed across all available shards
+    /// Custom - points are distributed across shards according to shard key
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sharding_method: Option<ShardingMethod>,
     /// Number of replicas for each shard
     #[serde(default = "default_replication_factor")]
     pub replication_factor: NonZeroU32,
@@ -90,6 +104,7 @@ impl Anonymize for CollectionParams {
         CollectionParams {
             vectors: self.vectors.anonymize(),
             shard_number: self.shard_number,
+            sharding_method: self.sharding_method,
             replication_factor: self.replication_factor,
             write_consistency_factor: self.write_consistency_factor,
             read_fan_out_factor: self.read_fan_out_factor,
@@ -98,7 +113,7 @@ impl Anonymize for CollectionParams {
     }
 }
 
-fn default_shard_number() -> NonZeroU32 {
+pub fn default_shard_number() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 
@@ -165,6 +180,7 @@ impl CollectionParams {
         CollectionParams {
             vectors: VectorsConfig::empty(),
             shard_number: default_shard_number(),
+            sharding_method: None,
             replication_factor: default_replication_factor(),
             write_consistency_factor: default_write_consistency_factor(),
             read_fan_out_factor: None,

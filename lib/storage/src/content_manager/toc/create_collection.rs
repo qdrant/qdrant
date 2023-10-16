@@ -1,7 +1,9 @@
 use std::num::NonZeroU32;
 
 use collection::collection::Collection;
-use collection::config::{self, CollectionConfig, CollectionParams};
+use collection::config::{
+    self, default_shard_number, CollectionConfig, CollectionParams, ShardingMethod,
+};
 use collection::operations::config_diff::DiffConfig as _;
 use collection::operations::types::{CollectionResult, VectorsConfig};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -31,6 +33,7 @@ impl TableOfContent {
         let CreateCollection {
             vectors,
             shard_number,
+            sharding_method,
             on_disk_payload,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
@@ -66,13 +69,28 @@ impl TableOfContent {
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
-        if let Some(shard_number) = shard_number {
-            debug_assert_eq!(
-                shard_number as usize,
-                collection_shard_distribution.shard_count(),
-                "If shard number was supplied then this exact number should be used in a distribution"
-            )
-        }
+        let shard_number = match sharding_method.unwrap_or_default() {
+            ShardingMethod::Auto => {
+                if let Some(shard_number) = shard_number {
+                    debug_assert_eq!(
+                        shard_number as usize,
+                        collection_shard_distribution.shard_count(),
+                        "If shard number was supplied then this exact number should be used in a distribution"
+                    );
+                    shard_number
+                } else {
+                    collection_shard_distribution.shard_count() as u32
+                }
+            }
+            ShardingMethod::Custom => {
+                if let Some(shard_number) = shard_number {
+                    shard_number
+                } else {
+                    default_shard_number().get()
+                }
+            }
+        };
+
         let replication_factor =
             replication_factor.unwrap_or_else(|| config::default_replication_factor().get());
 
@@ -81,10 +99,10 @@ impl TableOfContent {
 
         let collection_params = CollectionParams {
             vectors,
-            shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
-                .ok_or(StorageError::BadInput {
-                    description: "`shard_number` cannot be 0".to_string(),
-                })?,
+            shard_number: NonZeroU32::new(shard_number).ok_or(StorageError::BadInput {
+                description: "`shard_number` cannot be 0".to_string(),
+            })?,
+            sharding_method,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
             replication_factor: NonZeroU32::new(replication_factor).ok_or(
                 StorageError::BadInput {

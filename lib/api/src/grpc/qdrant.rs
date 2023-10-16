@@ -408,6 +408,9 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "14")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// Sharding method
+    #[prost(enumeration = "ShardingMethod", optional, tag = "15")]
+    pub sharding_method: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -492,6 +495,9 @@ pub struct CollectionParams {
     /// Fan-out every read request to these many additional remote nodes (and return first available response)
     #[prost(uint32, optional, tag = "8")]
     pub read_fan_out_factor: ::core::option::Option<u32>,
+    /// Sharding method
+    #[prost(enumeration = "ShardingMethod", optional, tag = "9")]
+    pub sharding_method: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1051,6 +1057,35 @@ impl CompressionRatio {
             "x16" => Some(Self::X16),
             "x32" => Some(Self::X32),
             "x64" => Some(Self::X64),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardingMethod {
+    /// Auto-sharding based on record ids
+    Auto = 0,
+    /// Shard by user-defined key
+    Custom = 1,
+}
+impl ShardingMethod {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardingMethod::Auto => "Auto",
+            ShardingMethod::Custom => "Custom",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Auto" => Some(Self::Auto),
+            "Custom" => Some(Self::Custom),
             _ => None,
         }
     }

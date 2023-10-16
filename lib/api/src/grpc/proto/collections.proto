@@ -233,6 +233,11 @@ message QuantizationConfigDiff {
   }
 }
 
+enum ShardingMethod {
+  Auto = 0; // Auto-sharding based on record ids
+  Custom = 1; // Shard by user-defined key
+}
+
 message CreateCollection {
   string collection_name = 1; // Name of the collection
   reserved 2; // Deprecated
@@ -248,6 +253,7 @@ message CreateCollection {
   optional uint32 write_consistency_factor = 12; // How many replicas should apply the operation for us to consider it successful, default = 1
   optional string init_from_collection = 13; // Specify name of the other collection to copy data from
   optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
+  optional ShardingMethod sharding_method = 15; // Sharding method
 }
 
 message UpdateCollection {
@@ -279,6 +285,7 @@ message CollectionParams {
   optional uint32 replication_factor = 6; // Number of replicas of each shard that network tries to maintain
   optional uint32 write_consistency_factor = 7; // How many replicas should apply the operation for us to consider it successful
   optional uint32 read_fan_out_factor = 8; // Fan-out every read request to these many additional remote nodes (and return first available response)
+  optional ShardingMethod sharding_method = 9; // Sharding method
 }
 
 message CollectionParamsDiff {
