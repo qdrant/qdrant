@@ -18,6 +18,7 @@ use storage::dispatcher::Dispatcher;
 use tonic::{async_trait, Request, Response, Status};
 
 use super::validate;
+use crate::common;
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 
 pub struct SnapshotsService {
@@ -134,27 +135,92 @@ impl Snapshots for SnapshotsService {
         &self,
         request: Request<CreateShardSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        validate(&request)?;
+
+        let timing = Instant::now();
+
+        let snapshot_description = common::snapshots::create_shard_snapshot(
+            self.dispatcher.toc().clone(),
+            request.collection_name,
+            request.shard_id,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(CreateSnapshotResponse {
+            snapshot_description: Some(snapshot_description.into()),
+            time: timing.elapsed().as_secs_f64(),
+        }))
     }
 
     async fn list_shard(
         &self,
         request: Request<ListShardSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        validate(&request)?;
+
+        let timing = Instant::now();
+
+        let snapshot_descriptions = common::snapshots::list_shard_snapshots(
+            self.dispatcher.toc().clone(),
+            request.collection_name,
+            request.shard_id,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(ListSnapshotsResponse {
+            snapshot_descriptions: snapshot_descriptions.into_iter().map(Into::into).collect(),
+            time: timing.elapsed().as_secs_f64(),
+        }))
     }
 
     async fn delete_shard(
         &self,
         request: Request<DeleteShardSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        validate(&request)?;
+
+        let timing = Instant::now();
+
+        common::snapshots::delete_shard_snapshot(
+            self.dispatcher.toc().clone(),
+            request.collection_name,
+            request.shard_id,
+            request.snapshot_name,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(DeleteSnapshotResponse {
+            time: timing.elapsed().as_secs_f64(),
+        }))
     }
 
     async fn recover_shard(
         &self,
         request: Request<RecoverShardSnapshotRequest>,
     ) -> Result<Response<RecoverSnapshotResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        validate(&request)?;
+
+        let timing = Instant::now();
+
+        common::snapshots::recover_shard_snapshot(
+            self.dispatcher.toc().clone(),
+            request.collection_name,
+            request.shard_id,
+            request.snapshot_location.try_into()?,
+            request.snapshot_priority.try_into()?,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(RecoverSnapshotResponse {
+            time: timing.elapsed().as_secs_f64(),
+        }))
     }
 }
