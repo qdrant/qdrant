@@ -105,6 +105,12 @@ impl QueueProxyShard {
             (items_left, batch)
         };
 
+        log::trace!(
+            "Queue proxy transferring batch of {} updates to peer {}",
+            batch.len(),
+            self.remote_shard.peer_id
+        );
+
         // Normally, we immediately release the update lock to allow new updates.
         // On the last batch we keep the lock to prevent accumulating more updates on the WAL,
         // so we can finalize the transfer after this batch, before accepting new updates.
