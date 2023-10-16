@@ -136,6 +136,11 @@ impl TableOfContent {
             Some(diff) => Some(diff),
         };
 
+        let storage_config = self
+            .storage_config
+            .to_shared_storage_config(self.is_distributed())
+            .into();
+
         let collection_config = CollectionConfig {
             wal_config,
             params: collection_params,
@@ -149,9 +154,7 @@ impl TableOfContent {
             &collection_path,
             &snapshots_path,
             &collection_config,
-            self.storage_config
-                .to_shared_storage_config(self.is_distributed())
-                .into(),
+            storage_config,
             collection_shard_distribution,
             self.channel_service.clone(),
             Self::change_peer_state_callback(
