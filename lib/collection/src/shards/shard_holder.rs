@@ -400,7 +400,7 @@ impl ShardHolder {
             Ok(())
         } else {
             Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local shard or queue proxy"
+                "Shard {shard_id} is not a local or queue proxy shard"
             )))
         }
     }
@@ -500,10 +500,9 @@ impl ShardHolder {
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        // TODO: also allow here if queue proxy?
         if !shard.is_local().await && !shard.is_queue_proxy_local().await {
             return Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local shard"
+                "Shard {shard_id} is not a local or queue proxy shard"
             )));
         }
 
@@ -651,7 +650,6 @@ impl ShardHolder {
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
-        // TODO: also allow here if queue proxy?
         self.assert_shard_is_local_or_queue_proxy(shard_id).await?;
         self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)
     }
