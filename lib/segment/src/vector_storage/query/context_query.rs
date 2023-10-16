@@ -1,5 +1,8 @@
+use std::cmp::min;
+
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
+use ordered_float::OrderedFloat;
 
 use super::discovery_query::DiscoveryPair;
 use super::{Query, TransformInto};
@@ -24,16 +27,14 @@ impl<T> DiscoveryPair<T> {
     ///
     /// Output will always be in the range (-1, 0]
     pub fn loss_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
-        let positive = similarity(&self.positive);
-        let negative = similarity(&self.negative);
-
         const MARGIN: ScoreType = ScoreType::EPSILON;
 
-        if positive > negative + MARGIN {
-            0.0
-        } else {
-            scaled_fast_sigmoid(positive) - scaled_fast_sigmoid(negative)
-        }
+        let positive = scaled_fast_sigmoid(similarity(&self.positive));
+        let negative = scaled_fast_sigmoid(similarity(&self.negative));
+
+        let difference = OrderedFloat(positive - negative - MARGIN);
+
+        *min(difference, OrderedFloat(0.0))
     }
 }
 
