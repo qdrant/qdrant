@@ -14,6 +14,24 @@ from .assertions import assert_http_ok
 
 # Tracks processes that need to be killed at the end of the test
 processes = []
+busy_ports = {}
+
+class PeerProcess:
+    def __init__(self, proc, http_port, grpc_port, p2p_port):
+            self.proc = proc
+            self.http_port = http_port
+            self.grpc_port = grpc_port
+            self.p2p_port = p2p_port
+            self.pid = proc.pid
+    
+    def kill(self):
+        self.proc.kill()
+        # remove allocated ports from the dictionary
+        # so they can be used afterwards
+        busy_ports[self.http_port] = None
+        busy_ports[self.grpc_port] = None
+        busy_ports[self.p2p_port] = None
+
 
 
 @pytest.fixture(autouse=True)
@@ -27,12 +45,17 @@ def every_test():
 
 
 def get_port() -> int:
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
-
-
+    while True:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            # get random port assigned by the OS
+            s.bind(('', 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            allocated_port = s.getsockname()[1]
+            if allocated_port in busy_ports:
+                continue
+            busy_ports[allocated_port] = True
+            return allocated_port
+        
 def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env = os.environ.copy()
     env["QDRANT__CLUSTER__ENABLED"] = "true"
@@ -89,9 +112,9 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
     this_peer_consensus_uri = get_uri(p2p_port)
-    processes.append(
-        Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri], env=env,
-              cwd=peer_dir, stdout=log_file))
+    proc = Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri], env=env,
+              cwd=peer_dir, stdout=log_file)
+    processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port)
 
 
@@ -112,8 +135,9 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None) -
     bootstrap_uri = get_uri(p2p_port)
     print(f"\nStarting first peer with uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
-    processes.append(
-        Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stdout=log_file))
+
+    proc = Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stdout=log_file)
+    processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port), bootstrap_uri
 
 
