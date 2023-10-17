@@ -19,7 +19,7 @@ use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::BYTES_IN_KB;
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -39,6 +39,7 @@ use crate::types::{
     Filter, HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::{
     new_raw_scorer, new_stoppable_raw_scorer, RawScorer, VectorStorage, VectorStorageEnum,
 };
@@ -295,7 +296,16 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     ) -> Vec<Vec<ScoredPointOffset>> {
         vectors
             .iter()
-            .map(|vector| self.search_with_graph(vector, filter, top, params, None, is_stopped))
+            .map(|&vector| match vector {
+                QueryVector::Discovery(discovery_query) => self.discovery_search_with_graph(
+                    discovery_query.clone(),
+                    filter,
+                    top,
+                    params,
+                    is_stopped,
+                ),
+                other => self.search_with_graph(other, filter, top, params, None, is_stopped),
+            })
             .collect()
     }
 
@@ -341,6 +351,45 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .iter()
             .map(|vector| self.search_plain(vector, filter, top, params, is_stopped))
             .collect()
+    }
+
+    fn discovery_search_with_graph(
+        &self,
+        discovery_query: DiscoveryQuery<VectorType>,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        // Stage 1: Find best entry points using Context search
+        let query_vector = QueryVector::Context(discovery_query.pairs.clone().into());
+
+        const DISCOVERY_ENTRY_POINT_COUNT: usize = 10;
+
+        let custom_entry_points = self
+            .search_with_graph(
+                &query_vector,
+                filter,
+                DISCOVERY_ENTRY_POINT_COUNT,
+                params,
+                None,
+                is_stopped,
+            )
+            .iter()
+            .map(|x| x.idx)
+            .collect::<Vec<_>>();
+
+        // Stage 2: Discovery search with entry points
+        let query_vector = QueryVector::Discovery(discovery_query);
+
+        self.search_with_graph(
+            &query_vector,
+            filter,
+            top,
+            params,
+            Some(&custom_entry_points),
+            is_stopped,
+        )
     }
 
     fn is_quantized_search(

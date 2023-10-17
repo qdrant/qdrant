@@ -71,9 +71,9 @@ impl<T> Query<T> for ContextQuery<T> {
     }
 }
 
-impl From<ContextQuery<Vector>> for QueryVector {
-    fn from(query: ContextQuery<Vector>) -> Self {
-        QueryVector::Context(query)
+impl<T> From<Vec<DiscoveryPair<T>>> for ContextQuery<T> {
+    fn from(pairs: Vec<DiscoveryPair<T>>) -> Self {
+        ContextQuery::new(pairs)
     }
 }
 
