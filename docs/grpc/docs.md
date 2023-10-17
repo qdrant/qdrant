@@ -207,7 +207,6 @@
     - [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest)
     - [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest)
     - [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse)
-    - [RecoverSnapshotResponse](#qdrant-RecoverSnapshotResponse)
     - [SnapshotDescription](#qdrant-SnapshotDescription)
   
     - [Snapshots](#qdrant-Snapshots)
@@ -3350,21 +3349,6 @@ How to use positive and negative vectors to find the results, default is `Averag
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | snapshot_descriptions | [SnapshotDescription](#qdrant-SnapshotDescription) | repeated |  |
-| time | [double](#double) |  | Time spent to process |
-
-
-
-
-
-
-<a name="qdrant-RecoverSnapshotResponse"></a>
-
-### RecoverSnapshotResponse
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
 | time | [double](#double) |  | Time spent to process |
 
 
