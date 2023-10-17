@@ -9724,7 +9724,7 @@ pub struct RecoverShardSnapshotRequest {
     #[prost(message, optional, tag = "3")]
     pub snapshot_location: ::core::option::Option<ShardSnapshotLocation>,
     /// Priority of the shard snapshot
-    #[prost(enumeration = "SnapshotPriority", tag = "4")]
+    #[prost(enumeration = "ShardSnapshotPriority", tag = "4")]
     pub snapshot_priority: i32,
 }
 #[derive(serde::Serialize)]
@@ -9759,32 +9759,36 @@ pub struct RecoverSnapshotResponse {
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum SnapshotPriority {
+pub enum ShardSnapshotPriority {
     /// Restore snapshot without *any* additional synchronization
     NoSync = 0,
     /// Prefer snapshot data over the current state
     Snapshot = 1,
     /// Prefer existing data over the snapshot
     Replica = 2,
+    /// Internal priority to use during snapshot shard transfer
+    ShardTransfer = 3,
 }
-impl SnapshotPriority {
+impl ShardSnapshotPriority {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            SnapshotPriority::NoSync => "SnapshotPriorityNoSync",
-            SnapshotPriority::Snapshot => "SnapshotPrioritySnapshot",
-            SnapshotPriority::Replica => "SnapshotPriorityReplica",
+            ShardSnapshotPriority::NoSync => "ShardSnapshotPriorityNoSync",
+            ShardSnapshotPriority::Snapshot => "ShardSnapshotPrioritySnapshot",
+            ShardSnapshotPriority::Replica => "ShardSnapshotPriorityReplica",
+            ShardSnapshotPriority::ShardTransfer => "ShardSnapshotPriorityShardTransfer",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "SnapshotPriorityNoSync" => Some(Self::NoSync),
-            "SnapshotPrioritySnapshot" => Some(Self::Snapshot),
-            "SnapshotPriorityReplica" => Some(Self::Replica),
+            "ShardSnapshotPriorityNoSync" => Some(Self::NoSync),
+            "ShardSnapshotPrioritySnapshot" => Some(Self::Snapshot),
+            "ShardSnapshotPriorityReplica" => Some(Self::Replica),
+            "ShardSnapshotPriorityShardTransfer" => Some(Self::ShardTransfer),
             _ => None,
         }
     }

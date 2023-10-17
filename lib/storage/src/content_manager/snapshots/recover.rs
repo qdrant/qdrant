@@ -258,6 +258,7 @@ async fn _do_recover_from_snapshot(
                             }
                         }
                     }
+
                     SnapshotPriority::Replica => {
                         // Replica is the source of truth, we need to sync recovered data with this replica
                         let (replica_peer_id, _state) =
@@ -278,6 +279,10 @@ async fn _do_recover_from_snapshot(
                             true,
                         )?;
                     }
+
+                    // `ShardTransfer` is only used during snapshot *shard transfer*.
+                    // It is only exposed in internal gRPC API and only used for *shard* snapshot recovery.
+                    SnapshotPriority::ShardTransfer => unreachable!(),
                 }
             }
         }

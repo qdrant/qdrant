@@ -21,24 +21,28 @@ pub enum SnapshotPriority {
     Snapshot,
     #[default]
     Replica,
+    // `ShardTransfer` is for internal use only, and should not be exposed/used in public API
+    #[serde(skip)]
+    ShardTransfer,
 }
 
 impl TryFrom<i32> for SnapshotPriority {
     type Error = tonic::Status;
 
     fn try_from(snapshot_priority: i32) -> Result<Self, Self::Error> {
-        api::grpc::qdrant::SnapshotPriority::from_i32(snapshot_priority)
+        api::grpc::qdrant::ShardSnapshotPriority::from_i32(snapshot_priority)
             .map(Into::into)
-            .ok_or_else(|| tonic::Status::invalid_argument("Malformed snapshot priority"))
+            .ok_or_else(|| tonic::Status::invalid_argument("Malformed shard snapshot priority"))
     }
 }
 
-impl From<api::grpc::qdrant::SnapshotPriority> for SnapshotPriority {
-    fn from(snapshot_priority: api::grpc::qdrant::SnapshotPriority) -> Self {
+impl From<api::grpc::qdrant::ShardSnapshotPriority> for SnapshotPriority {
+    fn from(snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority) -> Self {
         match snapshot_priority {
-            api::grpc::qdrant::SnapshotPriority::NoSync => Self::NoSync,
-            api::grpc::qdrant::SnapshotPriority::Snapshot => Self::Snapshot,
-            api::grpc::qdrant::SnapshotPriority::Replica => Self::Replica,
+            api::grpc::qdrant::ShardSnapshotPriority::NoSync => Self::NoSync,
+            api::grpc::qdrant::ShardSnapshotPriority::Snapshot => Self::Snapshot,
+            api::grpc::qdrant::ShardSnapshotPriority::Replica => Self::Replica,
+            api::grpc::qdrant::ShardSnapshotPriority::ShardTransfer => Self::ShardTransfer,
         }
     }
 }
