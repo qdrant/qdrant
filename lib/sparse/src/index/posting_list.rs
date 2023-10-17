@@ -7,8 +7,11 @@ use crate::common::types::DimWeight;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PostingElement {
+    /// Record ID
     pub record_id: PointOffsetType,
+    /// Weight of the record in the dimension
     pub weight: DimWeight,
+    /// Max weight of the next elements in the posting list.
     pub max_next_weight: DimWeight,
 }
 
@@ -26,7 +29,7 @@ impl PostingElement {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct PostingList {
     /// List of the posting elements ordered by id
     pub elements: Vec<PostingElement>,
@@ -40,6 +43,13 @@ impl PostingList {
             posting_list.add(id, weight);
         }
         posting_list.build()
+    }
+
+    /// Creates a new posting list with a single element.
+    pub fn new_one(record_id: PointOffsetType, weight: DimWeight) -> PostingList {
+        PostingList {
+            elements: vec![PostingElement::new(record_id, weight)],
+        }
     }
 
     /// Upsert a posting element into the posting list.
@@ -60,6 +70,7 @@ impl PostingList {
                     // no need to update anything
                     return;
                 }
+                // the structure of the posting list is not changed, no need to update max_next_weight
                 element.weight = posting_element.weight;
                 found_index
             }
@@ -68,9 +79,8 @@ impl PostingList {
                 let next_element_max_weight = self
                     .elements
                     .get(insert_index)
-                    .map(|e| max(OrderedFloat(e.weight), OrderedFloat(e.max_next_weight)))
-                    .unwrap_or(OrderedFloat(DEFAULT_MAX_NEXT_WEIGHT))
-                    .0;
+                    .map(|e| max(OrderedFloat(e.weight), OrderedFloat(e.max_next_weight)).0)
+                    .unwrap_or(DEFAULT_MAX_NEXT_WEIGHT);
                 posting_element.max_next_weight = next_element_max_weight;
                 // Insert new element by shifting elements to the right
                 self.elements.insert(insert_index, posting_element);

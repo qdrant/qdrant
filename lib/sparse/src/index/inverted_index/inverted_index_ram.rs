@@ -4,26 +4,31 @@ use common::types::PointOffsetType;
 
 use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimId;
-use crate::index::posting_list::{PostingBuilder, PostingElement, PostingList};
+use crate::index::posting_list::{PostingElement, PostingList};
 
 /// Inverted flatten index from dimension id to posting list
-
-/// Inverted flatten index from dimension id to posting list
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InvertedIndexRam {
     pub postings: Vec<PostingList>,
 }
 
 impl InvertedIndexRam {
+    /// New empty inverted index
+    pub fn empty() -> InvertedIndexRam {
+        InvertedIndexRam {
+            postings: Vec::new(),
+        }
+    }
+
+    /// Get posting list for dimension id
     pub fn get(&self, id: &DimId) -> Option<&PostingList> {
         self.postings.get((*id) as usize)
     }
 
     /// Upsert a vector into the inverted index.
     pub fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
-        for (index, dim_id) in vector.indices.into_iter().enumerate() {
+        for (dim_id, weight) in vector.indices.into_iter().zip(vector.weights.into_iter()) {
             let dim_id = dim_id as usize;
-            let weight = vector.weights[index];
             match self.postings.get_mut(dim_id) {
                 Some(posting) => {
                     // update existing posting list
@@ -31,12 +36,10 @@ impl InvertedIndexRam {
                     posting.upsert(posting_element);
                 }
                 None => {
-                    // initialize new posting for dimension
-                    let mut posting_builder = PostingBuilder::new();
-                    posting_builder.add(id, weight);
                     // resize postings vector
                     self.postings.resize(dim_id + 1, PostingList::default());
-                    self.postings[dim_id] = posting_builder.build();
+                    // initialize new posting for dimension
+                    self.postings[dim_id] = PostingList::new_one(id, weight);
                 }
             }
         }
@@ -135,5 +138,28 @@ mod tests {
         let posting = postings.get(0).unwrap();
         assert_eq!(posting.record_id, 4);
         assert_eq!(posting.weight, 40.0);
+    }
+
+    #[test]
+    fn test_upsert_insert_equivalence() {
+        let inverted_index_ram_built = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+
+        let mut inverted_index_ram_upserted = InvertedIndexRam::empty();
+        inverted_index_ram_upserted
+            .upsert(1, SparseVector::new(vec![1, 2, 3], vec![10.0, 10.0, 10.0]));
+        inverted_index_ram_upserted
+            .upsert(2, SparseVector::new(vec![1, 2, 3], vec![20.0, 20.0, 20.0]));
+        inverted_index_ram_upserted
+            .upsert(3, SparseVector::new(vec![1, 2, 3], vec![30.0, 30.0, 30.0]));
+
+        assert_eq!(
+            inverted_index_ram_built.postings.len(),
+            inverted_index_ram_upserted.postings.len()
+        );
+        assert_eq!(inverted_index_ram_built, inverted_index_ram_upserted);
     }
 }
