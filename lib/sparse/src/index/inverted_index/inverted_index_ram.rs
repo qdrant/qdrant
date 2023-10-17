@@ -67,6 +67,12 @@ pub struct InvertedIndexBuilder {
     postings: HashMap<DimId, PostingList>,
 }
 
+impl Default for InvertedIndexBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InvertedIndexBuilder {
     pub fn new() -> InvertedIndexBuilder {
         InvertedIndexBuilder {
