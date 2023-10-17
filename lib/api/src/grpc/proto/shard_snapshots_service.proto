@@ -58,3 +58,7 @@ enum SnapshotPriority {
     SnapshotPrioritySnapshot = 1; // Prefer snapshot data over the current state
     SnapshotPriorityReplica = 2; // Prefer existing data over the snapshot
 }
+
+message RecoverSnapshotResponse {
+  double time = 1; // Time in seconds spent to process request
+}

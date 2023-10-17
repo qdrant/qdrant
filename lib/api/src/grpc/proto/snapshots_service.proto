@@ -72,7 +72,3 @@ message ListSnapshotsResponse {
 message DeleteSnapshotResponse {
   double time = 1; // Time spent to process
 }
-
-message RecoverSnapshotResponse {
-  double time = 1; // Time spent to process
-}
