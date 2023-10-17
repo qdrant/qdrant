@@ -27,6 +27,7 @@ pub struct InvertedIndexFileHeader {
 
 /// Inverted flatten index from dimension id to posting list
 pub struct InvertedIndexMmap {
+    path: PathBuf,
     mmap: Arc<Mmap>,
     file_header: InvertedIndexFileHeader,
 }
@@ -40,6 +41,17 @@ struct PostingListFileHeader {
 impl InvertedIndex for InvertedIndexMmap {
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
         self.get(id).map(PostingListIterator::new)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![
+            Self::index_file_path(&self.path),
+            Self::index_config_file_path(&self.path),
+        ]
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        self.file_header.posting_count
     }
 }
 
@@ -92,6 +104,7 @@ impl InvertedIndexMmap {
         atomic_save_json(&config_file_path, &file_header)?;
 
         Ok(Self {
+            path: path.as_ref().to_owned(),
             mmap: Arc::new(mmap.make_read_only()?),
             file_header,
         })
@@ -107,6 +120,7 @@ impl InvertedIndexMmap {
         let mmap = open_read_mmap(file_path.as_ref())?;
         madvise::madvise(&mmap, madvise::get_global())?;
         Ok(Self {
+            path: path.as_ref().to_owned(),
             mmap: Arc::new(mmap),
             file_header,
         })

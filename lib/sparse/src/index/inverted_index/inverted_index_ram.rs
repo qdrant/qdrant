@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 
@@ -17,6 +18,14 @@ impl InvertedIndex for InvertedIndexRam {
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
         self.get(id)
             .map(|posting_list| PostingListIterator::new(&posting_list.elements))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        self.postings.len()
     }
 }
 
