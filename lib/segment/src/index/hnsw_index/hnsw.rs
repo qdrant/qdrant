@@ -5,9 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-#[cfg(debug_assertions)]
-use common::types::PointOffsetType;
-use common::types::ScoredPointOffset;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
