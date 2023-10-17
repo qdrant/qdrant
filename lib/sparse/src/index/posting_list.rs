@@ -56,7 +56,7 @@ impl PostingList {
     ///
     /// Worst case is adding a new element at the end of the list with a very large weight.
     /// This forces to propagate it as potential max_next_weight to all the previous elements.
-    pub fn upsert(&mut self, mut posting_element: PostingElement) {
+    pub fn upsert(&mut self, posting_element: PostingElement) {
         // find insertion point in sorted posting list
         let index = self
             .elements
@@ -75,16 +75,16 @@ impl PostingList {
                 found_index
             }
             Err(insert_index) => {
-                // Compute `max_next_weight` based on the element currently at `insert_index`
-                let next_element_max_weight = self
-                    .elements
-                    .get(insert_index)
-                    .map(|e| max(OrderedFloat(e.weight), OrderedFloat(e.max_next_weight)).0)
-                    .unwrap_or(DEFAULT_MAX_NEXT_WEIGHT);
-                posting_element.max_next_weight = next_element_max_weight;
                 // Insert new element by shifting elements to the right
                 self.elements.insert(insert_index, posting_element);
-                insert_index
+                // the structure of the posting list is changed, need to update max_next_weight
+                if insert_index == self.elements.len() - 1 {
+                    // inserted at the end
+                    insert_index
+                } else {
+                    // inserted in the middle - need to propagated max_next_weight from the right
+                    insert_index + 1
+                }
             }
         };
         // Propagate max_next_weight update to the previous entries
@@ -95,10 +95,10 @@ impl PostingList {
     /// If an entry has a weight larger than `max_next_weight`, the propagation stops.
     fn propagate_max_next_weight_to_the_left(&mut self, up_to_index: usize) {
         // used element at `up_to_index` as the starting point
-        let element = &self.elements[up_to_index];
+        let starting_element = &self.elements[up_to_index];
         let mut max_next_weight = max(
-            OrderedFloat(element.max_next_weight),
-            OrderedFloat(element.weight),
+            OrderedFloat(starting_element.max_next_weight),
+            OrderedFloat(starting_element.weight),
         )
         .0;
 
@@ -275,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn test_upsert_insert() {
+    fn test_upsert_insert_last() {
         let mut builder = PostingBuilder::new();
         builder.add(1, 1.0);
         builder.add(3, 3.0);
@@ -311,6 +311,58 @@ mod tests {
         // must update max_next_weight of previous elements if necessary
         for element in posting_list.elements.iter().take(3) {
             assert_eq!(element.max_next_weight, 4.0);
+        }
+    }
+
+    #[test]
+    fn test_upsert_insert_in_gap() {
+        let mut builder = PostingBuilder::new();
+        builder.add(1, 1.0);
+        builder.add(3, 3.0);
+        builder.add(2, 2.0);
+        // no entry for 4
+        builder.add(5, 5.0);
+
+        let mut posting_list = builder.build();
+
+        // sorted by id
+        assert_eq!(posting_list.elements[0].record_id, 1);
+        assert_eq!(posting_list.elements[0].weight, 1.0);
+        assert_eq!(posting_list.elements[0].max_next_weight, 5.0);
+
+        assert_eq!(posting_list.elements[1].record_id, 2);
+        assert_eq!(posting_list.elements[1].weight, 2.0);
+        assert_eq!(posting_list.elements[1].max_next_weight, 5.0);
+
+        assert_eq!(posting_list.elements[2].record_id, 3);
+        assert_eq!(posting_list.elements[2].weight, 3.0);
+        assert_eq!(posting_list.elements[2].max_next_weight, 5.0);
+
+        assert_eq!(posting_list.elements[3].record_id, 5);
+        assert_eq!(posting_list.elements[3].weight, 5.0);
+        assert_eq!(
+            posting_list.elements[3].max_next_weight,
+            DEFAULT_MAX_NEXT_WEIGHT
+        );
+
+        // insert mew last element
+        posting_list.upsert(PostingElement::new(4, 4.0));
+
+        // `4` is shifted to the right
+        assert_eq!(posting_list.elements[4].record_id, 5);
+        assert_eq!(posting_list.elements[4].weight, 5.0);
+        assert_eq!(
+            posting_list.elements[4].max_next_weight,
+            DEFAULT_MAX_NEXT_WEIGHT
+        );
+
+        // new element
+        assert_eq!(posting_list.elements[3].record_id, 4);
+        assert_eq!(posting_list.elements[3].weight, 4.0);
+
+        // must update max_next_weight of previous elements
+        for element in posting_list.elements.iter().take(4) {
+            assert_eq!(element.max_next_weight, 5.0);
         }
     }
 
