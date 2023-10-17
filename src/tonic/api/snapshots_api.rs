@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use api::grpc::qdrant::shard_snapshots_server::ShardSnapshots;
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
     CreateFullSnapshotRequest, CreateShardSnapshotRequest, CreateSnapshotRequest,
@@ -14,6 +15,7 @@ use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots,
 };
+use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tonic::{async_trait, Request, Response, Status};
 
@@ -130,7 +132,21 @@ impl Snapshots for SnapshotsService {
             time: timing.elapsed().as_secs_f64(),
         }))
     }
+}
 
+#[derive(Clone)]
+pub struct ShardSnapshotsService {
+    toc: Arc<TableOfContent>,
+}
+
+impl ShardSnapshotsService {
+    pub fn new(toc: Arc<TableOfContent>) -> Self {
+        Self { toc }
+    }
+}
+
+#[async_trait]
+impl ShardSnapshots for ShardSnapshotsService {
     async fn create_shard(
         &self,
         request: Request<CreateShardSnapshotRequest>,
@@ -141,7 +157,7 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
 
         let snapshot_description = common::snapshots::create_shard_snapshot(
-            self.dispatcher.toc().clone(),
+            self.toc.clone(),
             request.collection_name,
             request.shard_id,
         )
@@ -164,7 +180,7 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
 
         let snapshot_descriptions = common::snapshots::list_shard_snapshots(
-            self.dispatcher.toc().clone(),
+            self.toc.clone(),
             request.collection_name,
             request.shard_id,
         )
@@ -187,7 +203,7 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
 
         common::snapshots::delete_shard_snapshot(
-            self.dispatcher.toc().clone(),
+            self.toc.clone(),
             request.collection_name,
             request.shard_id,
             request.snapshot_name,
@@ -210,7 +226,7 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
 
         common::snapshots::recover_shard_snapshot(
-            self.dispatcher.toc().clone(),
+            self.toc.clone(),
             request.collection_name,
             request.shard_id,
             request.snapshot_location.try_into()?,
