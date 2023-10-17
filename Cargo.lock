@@ -4752,6 +4752,7 @@ dependencies = [
  "io",
  "memmap2 0.7.1",
  "memory",
+ "ordered-float 4.1.1",
  "serde",
  "serde_json",
  "tempfile",
