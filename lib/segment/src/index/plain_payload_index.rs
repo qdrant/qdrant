@@ -227,7 +227,6 @@ impl VectorIndex for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
-        _custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         match filter {

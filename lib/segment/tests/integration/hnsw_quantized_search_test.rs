@@ -183,7 +183,7 @@ fn check_matches(
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[&query], filter, top, None, None, &false.into())
+                .search(&[&query], filter, top, None, &false.into())
         })
         .collect::<Vec<_>>();
 
@@ -198,7 +198,6 @@ fn check_matches(
                 hnsw_ef: Some(ef),
                 ..Default::default()
             }),
-            None,
             &false.into(),
         );
         sames += sames_count(&index_result, plain_result);
@@ -230,7 +229,6 @@ fn check_oversampling(
                 }),
                 ..Default::default()
             }),
-            None,
             &false.into(),
         );
         let best_1 = oversampling_1_result[0][0];
@@ -249,7 +247,6 @@ fn check_oversampling(
                 }),
                 ..Default::default()
             }),
-            None,
             &false.into(),
         );
         let best_2 = oversampling_2_result[0][0];
@@ -285,7 +282,6 @@ fn check_rescoring(
                 }),
                 ..Default::default()
             }),
-            None,
             &false.into(),
         );
         for result in &index_result[0] {

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::ScoredPointOffset;
 
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
@@ -20,7 +20,6 @@ pub trait VectorIndex {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>>;
 
@@ -58,34 +57,16 @@ impl VectorIndex for VectorIndexEnum {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         match self {
-            VectorIndexEnum::Plain(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                custom_entry_points,
-                is_stopped,
-            ),
-            VectorIndexEnum::HnswRam(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                custom_entry_points,
-                is_stopped,
-            ),
-            VectorIndexEnum::HnswMmap(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                custom_entry_points,
-                is_stopped,
-            ),
+            VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params, is_stopped),
+            VectorIndexEnum::HnswRam(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
+            VectorIndexEnum::HnswMmap(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
         }
     }
 
