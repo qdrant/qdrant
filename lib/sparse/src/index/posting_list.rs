@@ -68,11 +68,12 @@ impl PostingList {
                 let element = &mut self.elements[found_index];
                 if element.weight == posting_element.weight {
                     // no need to update anything
-                    return;
+                    None
+                } else {
+                    // the structure of the posting list is not changed, no need to update max_next_weight
+                    element.weight = posting_element.weight;
+                    Some(found_index)
                 }
-                // the structure of the posting list is not changed, no need to update max_next_weight
-                element.weight = posting_element.weight;
-                found_index
             }
             Err(insert_index) => {
                 // Insert new element by shifting elements to the right
@@ -80,15 +81,17 @@ impl PostingList {
                 // the structure of the posting list is changed, need to update max_next_weight
                 if insert_index == self.elements.len() - 1 {
                     // inserted at the end
-                    insert_index
+                    Some(insert_index)
                 } else {
                     // inserted in the middle - need to propagated max_next_weight from the right
-                    insert_index + 1
+                    Some(insert_index + 1)
                 }
             }
         };
         // Propagate max_next_weight update to the previous entries
-        self.propagate_max_next_weight_to_the_left(modified_index);
+        if let Some(modified_index) = modified_index {
+            self.propagate_max_next_weight_to_the_left(modified_index);
+        }
     }
 
     /// Propagates `max_next_weight` from the entry at `up_to_index` to previous entries.
