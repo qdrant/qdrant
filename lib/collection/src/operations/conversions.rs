@@ -1252,17 +1252,21 @@ impl TryFrom<i32> for ShardTransferMethod {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
+        api::grpc::qdrant::ShardTransferMethod::from_i32(value)
+            .map(Into::into)
+            .ok_or_else(|| {
+                Status::invalid_argument(format!("Unknown shard transfer method: {}", value,))
+            })
+    }
+}
+
+impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
+    fn from(value: api::grpc::qdrant::ShardTransferMethod) -> Self {
         match value {
-            n if n == api::grpc::qdrant::ShardTransferMethod::StreamRecords as i32 => {
-                Ok(ShardTransferMethod::StreamRecords)
+            api::grpc::qdrant::ShardTransferMethod::StreamRecords => {
+                ShardTransferMethod::StreamRecords
             }
-            n if n == api::grpc::qdrant::ShardTransferMethod::Snapshot as i32 => {
-                Ok(ShardTransferMethod::Snapshot)
-            }
-            n => Err(Status::invalid_argument(format!(
-                "Unknown shard transfer method: {}",
-                n,
-            ))),
+            api::grpc::qdrant::ShardTransferMethod::Snapshot => ShardTransferMethod::Snapshot,
         }
     }
 }
