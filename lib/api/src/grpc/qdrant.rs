@@ -8933,14 +8933,6 @@ pub struct DeleteSnapshotResponse {
     #[prost(double, tag = "1")]
     pub time: f64,
 }
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RecoverSnapshotResponse {
-    /// Time spent to process
-    #[prost(double, tag = "1")]
-    pub time: f64,
-}
 /// Generated client implementations.
 pub mod snapshots_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -9720,6 +9712,14 @@ pub mod shard_snapshot_location {
         #[prost(string, tag = "2")]
         Path(::prost::alloc::string::String),
     }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecoverSnapshotResponse {
+    /// Time in seconds spent to process request
+    #[prost(double, tag = "1")]
+    pub time: f64,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
