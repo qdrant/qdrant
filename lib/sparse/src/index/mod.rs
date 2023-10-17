@@ -2,4 +2,4 @@
 
 pub mod inverted_index;
 mod posting_list;
-mod search_context;
+pub mod search_context;

@@ -1,8 +1,12 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::ScoredPointOffset;
+use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
+use sparse::index::search_context::SearchContext;
 
 use crate::id_tracker::IdTrackerSS;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -17,6 +21,7 @@ pub struct SparseVectorIndex<T: InvertedIndex> {
 }
 
 impl<T: InvertedIndex> SparseVectorIndex<T> {
+    /// Create new sparse vector index
     pub fn new(
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
@@ -31,6 +36,17 @@ impl<T: InvertedIndex> SparseVectorIndex<T> {
             path,
             inverted_index,
         }
+    }
+
+    /// Search index using sparse vector query
+    pub fn search_sparse(
+        &self,
+        query: SparseVector,
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> Vec<ScoredPointOffset> {
+        let mut search_context = SearchContext::new(query, top, &self.inverted_index, is_stopped);
+        search_context.search()
     }
 }
 
