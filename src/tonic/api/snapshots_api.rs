@@ -19,7 +19,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tonic::{async_trait, Request, Response, Status};
 
-use super::validate;
+use super::{validate, validate_and_log};
 use crate::common;
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 
@@ -152,7 +152,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         request: Request<CreateShardSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
         let request = request.into_inner();
-        validate(&request)?;
+        validate_and_log(&request);
 
         let timing = Instant::now();
 
@@ -175,7 +175,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         request: Request<ListShardSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         let request = request.into_inner();
-        validate(&request)?;
+        validate_and_log(&request);
 
         let timing = Instant::now();
 
@@ -198,7 +198,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         request: Request<DeleteShardSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         let request = request.into_inner();
-        validate(&request)?;
+        validate_and_log(&request);
 
         let timing = Instant::now();
 
@@ -221,7 +221,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         request: Request<RecoverShardSnapshotRequest>,
     ) -> Result<Response<RecoverSnapshotResponse>, Status> {
         let request = request.into_inner();
-        validate(&request)?;
+        validate_and_log(&request);
 
         let timing = Instant::now();
 
