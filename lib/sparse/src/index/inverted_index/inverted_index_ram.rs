@@ -4,12 +4,20 @@ use common::types::PointOffsetType;
 
 use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimId;
-use crate::index::posting_list::{PostingElement, PostingList};
+use crate::index::inverted_index::InvertedIndex;
+use crate::index::posting_list::{PostingElement, PostingList, PostingListIterator};
 
 /// Inverted flatten index from dimension id to posting list
 #[derive(Debug, Clone, PartialEq)]
 pub struct InvertedIndexRam {
     pub postings: Vec<PostingList>,
+}
+
+impl InvertedIndex for InvertedIndexRam {
+    fn get(&self, id: &DimId) -> Option<PostingListIterator> {
+        self.get(id)
+            .map(|posting_list| PostingListIterator::new(&posting_list.elements))
+    }
 }
 
 impl InvertedIndexRam {

@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::types::DimId;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use crate::index::posting_list::PostingElement;
+use crate::index::inverted_index::InvertedIndex;
+use crate::index::posting_list::{PostingElement, PostingListIterator};
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
 const INDEX_FILE_NAME: &str = "index.data";
@@ -34,6 +35,12 @@ pub struct InvertedIndexMmap {
 struct PostingListFileHeader {
     pub start_offset: u64,
     pub end_offset: u64,
+}
+
+impl InvertedIndex for InvertedIndexMmap {
+    fn get(&self, id: &DimId) -> Option<PostingListIterator> {
+        self.get(id).map(PostingListIterator::new)
+    }
 }
 
 impl InvertedIndexMmap {
