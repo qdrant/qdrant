@@ -8,6 +8,7 @@ use itertools::Itertools;
 use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
+use super::entry_points::EntryPoint;
 use super::graph_links::{GraphLinks, GraphLinksMmap};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::rev_range;
@@ -179,8 +180,33 @@ impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
 ///
 /// Assume all scores are similarities. Larger score = closer points
 impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
+    /// Returns the highest level this point is included in
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
         self.links.point_level(point_id)
+    }
+
+    fn get_entry_point(
+        &self,
+        points_scorer: &FilteredScorer,
+        custom_entry_points: Option<&[PointOffsetType]>,
+    ) -> Option<EntryPoint> {
+        // Try to get it from custom entry points
+        custom_entry_points
+            .and_then(|custom_entry_points| {
+                custom_entry_points
+                    .iter()
+                    .filter(|&&point_id| points_scorer.check_vector(point_id))
+                    .map(|&point_id| {
+                        let level = self.point_level(point_id);
+                        EntryPoint { point_id, level }
+                    })
+                    .max_by_key(|ep| ep.level)
+            })
+            .or_else(|| {
+                // Otherwise use normal entry points
+                self.entry_points
+                    .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+            })
     }
 
     pub fn search(
@@ -188,13 +214,10 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
         top: usize,
         ef: usize,
         mut points_scorer: FilteredScorer,
+        custom_entry_points: Option<&[PointOffsetType]>,
     ) -> Vec<ScoredPointOffset> {
-        let entry_point = match self
-            .entry_points
-            .get_entry_point(|point_id| points_scorer.check_vector(point_id))
-        {
-            None => return vec![],
-            Some(ep) => ep,
+        let Some(entry_point) = self.get_entry_point(&points_scorer, custom_entry_points) else {
+            return Vec::default();
         };
 
         let zero_level_entry = self.search_entry(
@@ -307,7 +330,7 @@ mod tests {
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        graph.search(top, ef, scorer)
+        graph.search(top, ef, scorer, None)
     }
 
     const M: usize = 8;

@@ -225,6 +225,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> Vec<ScoredPointOffset> {
         let ef = params
@@ -251,7 +252,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         match &self.graph {
             Some(graph) => {
-                let search_result = graph.search(oversampled_top, ef, points_scorer);
+                let search_result =
+                    graph.search(oversampled_top, ef, points_scorer, custom_entry_points);
                 self.postprocess_search_result(search_result, vector, params, top, is_stopped)
             }
             None => Default::default(),
@@ -264,11 +266,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         vectors
             .iter()
-            .map(|vector| self.search_with_graph(vector, filter, top, params, is_stopped))
+            .map(|vector| {
+                self.search_with_graph(vector, filter, top, params, custom_entry_points, is_stopped)
+            })
             .collect()
     }
 
@@ -430,6 +435,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> Vec<Vec<ScoredPointOffset>> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
@@ -467,7 +473,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
-                    self.search_vectors_with_graph(vectors, None, top, params, is_stopped)
+                    self.search_vectors_with_graph(
+                        vectors,
+                        None,
+                        top,
+                        params,
+                        custom_entry_points,
+                        is_stopped,
+                    )
                 }
             }
             Some(query_filter) => {
@@ -525,8 +538,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    return self
-                        .search_vectors_with_graph(vectors, filter, top, params, is_stopped);
+                    return self.search_vectors_with_graph(
+                        vectors,
+                        filter,
+                        top,
+                        params,
+                        custom_entry_points,
+                        is_stopped,
+                    );
                 }
 
                 let filter_context = payload_index.filter_context(query_filter);
@@ -542,7 +561,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    self.search_vectors_with_graph(vectors, filter, top, params, is_stopped)
+                    self.search_vectors_with_graph(
+                        vectors,
+                        filter,
+                        top,
+                        params,
+                        custom_entry_points,
+                        is_stopped,
+                    )
                 } else {
                     // if cardinality is small - use plain index
                     let _timer =

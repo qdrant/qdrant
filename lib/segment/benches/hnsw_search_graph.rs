@@ -47,7 +47,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let raw_scorer = vector_holder.get_raw_scorer(query);
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-            graph_layers.search(TOP, EF, scorer);
+            graph_layers.search(TOP, EF, scorer, None);
         })
     });
 
