@@ -80,7 +80,7 @@ impl QueueProxyShard {
 
     /// Transfer all updates that the remote missed from WAL
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
-        while !self.transfer_wal_batch(&self.remote_shard).await? {}
+        while !self.transfer_wal_batch().await? {}
 
         // Set max acknowledged version for WAL to last item we transferred
         let last_idx = self.last_update_idx.load(Ordering::Relaxed);
@@ -93,7 +93,7 @@ impl QueueProxyShard {
     ///
     /// Returns `true` if this was the last batch and we're now done. `false` if more batches must
     /// be sent.
-    async fn transfer_wal_batch(&self, remote_shard: &RemoteShard) -> CollectionResult<bool> {
+    async fn transfer_wal_batch(&self) -> CollectionResult<bool> {
         let mut update_lock = Some(self.update_lock.lock().await);
         let start_index = self.last_update_idx.load(Ordering::Relaxed) + 1;
 
@@ -108,7 +108,7 @@ impl QueueProxyShard {
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",
             batch.len(),
-            self.remote_shard.peer_id
+            remote_shard.peer_id,
         );
 
         // Normally, we immediately release the update lock to allow new updates.
