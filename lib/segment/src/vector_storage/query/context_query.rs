@@ -92,15 +92,15 @@ mod test {
     /// Test that the score is calculated correctly
     ///
     /// for reference:
-    /// scaled_fast_sigmoid(0.0) = 0.5
-    /// scaled_fast_sigmoid(1.0) = 0.75
     #[rstest]
     #[case::no_pairs(vec![], 0.0)] // having no input always scores 0
-    #[case::on_negative(vec![(0, 1)], -0.25)]
+    #[case::on_negative(vec![(0, 1)], -1.0)]
     #[case::on_positive(vec![(1, 0)], 0.0)]
-    #[case::on_both(vec![(1, 0), (0, 1)], -0.25)]
-    #[case::positive_positive_negative(vec![(1,0),(1,0),(0,1)], -0.25)]
-    #[case::positive_negative_negative(vec![(1,0),(0,1),(0,1)], -0.5)]
+    #[case::on_both(vec![(1, 0), (0, 1)], -1.0)]
+    #[case::positive_positive_negative(vec![(1,0),(1,0),(0,1)], -1.0)]
+    #[case::positive_negative_negative(vec![(1,0),(0,1),(0,1)], -2.0)]
+    #[case::only_positives(vec![(2,-1),(-1,-3),(4,0)], 0.0)]
+    #[case::only_negatives(vec![(-5,-4),(-1,3),(0,2)], -7.0)]
     fn scoring(#[case] pairs: Vec<(i32, i32)>, #[case] expected: f32) {
         let pairs = pairs.into_iter().map(DiscoveryPair::from).collect();
 
