@@ -17,7 +17,7 @@ impl<T> RecoQuery<T> {
         }
     }
 
-    pub fn iter_all(&self) -> impl Iterator<Item = &T> {
+    pub fn flat_iter(&self) -> impl Iterator<Item = &T> {
         self.positives.iter().chain(self.negatives.iter())
     }
 }

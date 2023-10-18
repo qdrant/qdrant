@@ -1,8 +1,4 @@
-use std::cmp::min;
-
-use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
-use ordered_float::OrderedFloat;
 
 use super::discovery_query::DiscoveryPair;
 use super::{Query, TransformInto};
@@ -25,16 +21,15 @@ impl<T> DiscoveryPair<T> {
     ///  -0.4        -0.1 │   +0
     ///                   │
     ///
-    /// Output will always be in the range (-1, 0]
     pub fn loss_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         const MARGIN: ScoreType = ScoreType::EPSILON;
 
-        let positive = scaled_fast_sigmoid(similarity(&self.positive));
-        let negative = scaled_fast_sigmoid(similarity(&self.negative));
+        let positive = similarity(&self.positive);
+        let negative = similarity(&self.negative);
 
-        let difference = OrderedFloat(positive - negative - MARGIN);
+        let difference = positive - negative - MARGIN;
 
-        *min(difference, OrderedFloat(0.0))
+        ScoreType::min(difference, 0.0)
     }
 }
 
@@ -48,7 +43,7 @@ impl<T> ContextQuery<T> {
         Self { pairs }
     }
 
-    pub fn iter_all(&self) -> impl Iterator<Item = &T> {
+    pub fn flat_iter(&self) -> impl Iterator<Item = &T> {
         self.pairs.iter().flat_map(|pair| pair.iter())
     }
 }

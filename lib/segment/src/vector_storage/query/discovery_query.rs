@@ -58,7 +58,7 @@ impl<T> DiscoveryQuery<T> {
         Self { target, pairs }
     }
 
-    pub fn iter_all(&self) -> impl Iterator<Item = &T> {
+    pub fn flat_iter(&self) -> impl Iterator<Item = &T> {
         let pairs_iter = self.pairs.iter().flat_map(|pair| pair.iter());
 
         std::iter::once(&self.target).chain(pairs_iter)
