@@ -9885,8 +9885,8 @@ pub struct SnapshotDescription {
     #[prost(int64, tag = "3")]
     pub size: i64,
     /// SHA256 digest of the snapshot file
-    #[prost(string, tag = "4")]
-    pub checksum: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "4")]
+    pub checksum: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

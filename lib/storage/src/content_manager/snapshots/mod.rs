@@ -4,8 +4,9 @@ pub mod recover;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use collection::common::sha_256::hash_file;
 use collection::operations::snapshot_ops::{
-    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
@@ -59,8 +60,14 @@ async fn _do_delete_full_snapshot(
     snapshot_name: &str,
 ) -> Result<bool, StorageError> {
     let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
+    let checksum_path = get_checksum_path(snapshot_dir.as_path());
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
-    tokio::fs::remove_file(snapshot_dir).await?;
+    let (delete_snapshot, delete_checksum) = tokio::join!(
+        tokio::fs::remove_file(snapshot_dir),
+        tokio::fs::remove_file(checksum_path)
+    );
+    delete_snapshot?;
+    delete_checksum?;
     Ok(true)
 }
 
@@ -92,8 +99,14 @@ async fn _do_delete_collection_snapshot(
 ) -> Result<bool, StorageError> {
     let collection = dispatcher.get_collection(collection_name).await?;
     let file_name = collection.get_snapshot_path(snapshot_name).await?;
+    let checksum_path = get_checksum_path(file_name.as_path());
     log::info!("Deleting collection snapshot {:?}", file_name);
-    tokio::fs::remove_file(file_name).await?;
+    let (delete_snapshot, delete_checksum) = tokio::join!(
+        tokio::fs::remove_file(file_name),
+        tokio::fs::remove_file(checksum_path)
+    );
+    delete_snapshot?;
+    delete_checksum?;
     Ok(true)
 }
 
@@ -182,7 +195,10 @@ async fn _do_create_full_snapshot(
                 .join(collection_name)
                 .join(&snapshot_details.name);
             builder.append_path_with_name(&snapshot_path, &snapshot_details.name)?;
-            std::fs::remove_file(snapshot_path)?;
+            std::fs::remove_file(&snapshot_path)?;
+            // remove associated checksum
+            let snapshot_checksum = get_checksum_path(snapshot_path.as_path());
+            std::fs::remove_file(snapshot_checksum)?;
         }
         builder.append_path_with_name(&config_path_clone, "config.json")?;
 
@@ -190,6 +206,13 @@ async fn _do_create_full_snapshot(
         Ok::<(), StorageError>(())
     });
     archiving.await??;
+
+    // compute and store the file's checksum
+    let checksum_path = get_checksum_path(full_snapshot_path.as_path());
+    let checksum = hash_file(full_snapshot_path.as_path()).await?;
+    let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
+    file.write_all(checksum.as_bytes()).await?;
+
     tokio::fs::remove_file(&config_path).await?;
 
     Ok(get_snapshot_description(&full_snapshot_path).await?)

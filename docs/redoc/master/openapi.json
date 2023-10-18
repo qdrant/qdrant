@@ -8079,7 +8079,6 @@
       "SnapshotDescription": {
         "type": "object",
         "required": [
-          "checksum",
           "name",
           "size"
         ],
@@ -8098,7 +8097,8 @@
             "minimum": 0
           },
           "checksum": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         }
       },

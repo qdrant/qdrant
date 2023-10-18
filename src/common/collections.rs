@@ -136,7 +136,7 @@ pub async fn do_create_snapshot(
             name: "".to_string(),
             creation_time: None,
             size: 0,
-            checksum: "".to_string(),
+            checksum: None,
         })
     }
 }

@@ -77,7 +77,7 @@ pub struct SnapshotDescription {
     pub name: String,
     pub creation_time: Option<NaiveDateTime>,
     pub size: u64,
-    pub checksum: String,
+    pub checksum: Option<String>,
 }
 
 impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
@@ -103,7 +103,7 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
             })
     });
 
-    let checksum = crate::common::sha_256::hash_file(path).await?;
+    let checksum = read_checksum_for_snapshot(path).await;
     let size = file_meta.len();
     Ok(SnapshotDescription {
         name: name.to_string(),
@@ -111,6 +111,20 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
         size,
         checksum,
     })
+}
+
+async fn read_checksum_for_snapshot(snapshot_path: &Path) -> Option<String> {
+    let checksum_path = get_checksum_path(snapshot_path);
+    match tokio::fs::read_to_string(&checksum_path).await {
+        Ok(content) => Some(content),
+        Err(_) => None,
+    }
+}
+
+pub fn get_checksum_path(snapshot_path: &Path) -> PathBuf {
+    let mut checksum_path = snapshot_path.to_path_buf().into_os_string();
+    checksum_path.push(".checksum");
+    checksum_path.into()
 }
 
 pub async fn list_snapshots_in_directory(

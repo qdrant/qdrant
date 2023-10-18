@@ -3817,7 +3817,7 @@ When using target (with or without context), the score behaves a little differen
 | name | [string](#string) |  | Name of the snapshot |
 | creation_time | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | Creation time of the snapshot |
 | size | [int64](#int64) |  | Size of the snapshot in bytes |
-| checksum | [string](#string) |  | SHA256 digest of the snapshot file |
+| checksum | [string](#string) | optional | SHA256 digest of the snapshot file |
 
 
 
