@@ -9,7 +9,7 @@ use rand::Rng;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{VectorElementType, VectorRef, VectorType};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::Distance;
@@ -61,16 +61,12 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.get_dense(key)
+    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+        self.get_dense(key).into()
     }
 
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: &[VectorElementType],
-    ) -> OperationResult<()> {
-        self.vectors.insert(key, vector)?;
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        self.vectors.insert(key, vector.into())?;
         Ok(())
     }
 

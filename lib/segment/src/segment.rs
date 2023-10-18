@@ -137,7 +137,7 @@ impl Segment {
             match vector {
                 Some(vector) => {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.insert_vector(internal_id, vector)?;
+                    vector_storage.insert_vector(internal_id, vector.into())?;
                 }
                 None => {
                     // No vector provided, so we remove it
@@ -174,7 +174,7 @@ impl Segment {
             vector_data
                 .vector_storage
                 .borrow_mut()
-                .insert_vector(internal_id, new_vector.as_ref())?;
+                .insert_vector(internal_id, new_vector.as_ref().into())?;
         }
         Ok(())
     }
@@ -198,11 +198,12 @@ impl Segment {
             match vector_opt {
                 None => {
                     let dim = vector_storage.vector_dim();
-                    vector_storage.insert_vector(new_index, &vec![1.0; dim])?;
+                    let vector = vec![1.0; dim];
+                    vector_storage.insert_vector(new_index, vector.as_slice().into())?;
                     vector_storage.delete_vector(new_index)?;
                 }
                 Some(vec) => {
-                    vector_storage.insert_vector(new_index, vec)?;
+                    vector_storage.insert_vector(new_index, vec.into())?;
                 }
             }
         }
@@ -399,7 +400,8 @@ impl Segment {
                     ),
                 })
             } else {
-                Ok(Some(vector_storage.get_vector(point_offset).to_vec()))
+                let vector: &[_] = vector_storage.get_vector(point_offset).into();
+                Ok(Some(vector.to_vec()))
             }
         } else {
             Ok(None)
@@ -417,14 +419,9 @@ impl Segment {
                 .borrow()
                 .is_deleted_vector(point_offset);
             if !is_vector_deleted {
-                vectors.insert(
-                    vector_name.clone(),
-                    vector_data
-                        .vector_storage
-                        .borrow()
-                        .get_vector(point_offset)
-                        .to_vec(),
-                );
+                let vector_storage = vector_data.vector_storage.borrow();
+                let vector: &[_] = vector_storage.get_vector(point_offset).into();
+                vectors.insert(vector_name.clone(), vector.to_vec());
             }
         }
         Ok(vectors)
