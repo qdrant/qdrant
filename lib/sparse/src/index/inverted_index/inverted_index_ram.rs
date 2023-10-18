@@ -1,15 +1,32 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 
 use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimId;
-use crate::index::posting_list::{PostingElement, PostingList};
+use crate::index::inverted_index::InvertedIndex;
+use crate::index::posting_list::{PostingElement, PostingList, PostingListIterator};
 
 /// Inverted flatten index from dimension id to posting list
 #[derive(Debug, Clone, PartialEq)]
 pub struct InvertedIndexRam {
     pub postings: Vec<PostingList>,
+}
+
+impl InvertedIndex for InvertedIndexRam {
+    fn get(&self, id: &DimId) -> Option<PostingListIterator> {
+        self.get(id)
+            .map(|posting_list| PostingListIterator::new(&posting_list.elements))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        self.postings.len()
+    }
 }
 
 impl InvertedIndexRam {
@@ -48,6 +65,12 @@ impl InvertedIndexRam {
 
 pub struct InvertedIndexBuilder {
     postings: HashMap<DimId, PostingList>,
+}
+
+impl Default for InvertedIndexBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InvertedIndexBuilder {
