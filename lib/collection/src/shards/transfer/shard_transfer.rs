@@ -127,9 +127,7 @@ pub async fn transfer_shard(
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
-            // Get local REST address
             let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
-
             transfer_snapshot(
                 shard_holder.clone(),
                 shard_id,
