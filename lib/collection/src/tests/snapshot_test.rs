@@ -112,6 +112,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         .await
         .unwrap();
 
+    assert_eq!(snapshot_description.checksum.len(), 64);
     // Do not recover in local mode if some shards are remote
     assert!(Collection::restore_snapshot(
         &snapshots_path.path().join(&snapshot_description.name),
