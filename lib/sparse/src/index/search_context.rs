@@ -1,3 +1,6 @@
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
+
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::ScoredPointOffset;
 
@@ -14,6 +17,7 @@ pub struct SearchContext<'a> {
     postings_iterators: Vec<IndexedPostingListIterator<'a>>,
     query: SparseVector,
     top: usize,
+    is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
 }
 
@@ -21,7 +25,8 @@ impl<'a> SearchContext<'a> {
     pub fn new(
         query: SparseVector,
         top: usize,
-        inverted_index: &'a InvertedIndex,
+        inverted_index: &'a impl InvertedIndex,
+        is_stopped: &'a AtomicBool,
     ) -> SearchContext<'a> {
         let mut postings_iterators = Vec::new();
 
@@ -39,6 +44,7 @@ impl<'a> SearchContext<'a> {
             postings_iterators,
             query,
             top,
+            is_stopped,
             result_queue,
         }
     }
@@ -128,6 +134,10 @@ impl<'a> SearchContext<'a> {
             return Vec::new();
         }
         while let Some(candidate) = self.advance() {
+            // check for cancellation
+            if self.is_stopped.load(Relaxed) {
+                break;
+            }
             // push candidate to result queue
             self.result_queue.push(candidate);
 
@@ -191,7 +201,8 @@ mod tests {
     use crate::index::inverted_index::inverted_index_ram::InvertedIndexBuilder;
     use crate::index::posting_list::PostingList;
 
-    fn _advance_test(inverted_index: &InvertedIndex) {
+    fn _advance_test(inverted_index: &impl InvertedIndex) {
+        let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
@@ -199,6 +210,7 @@ mod tests {
             },
             10,
             inverted_index,
+            &is_stopped,
         );
 
         assert_eq!(
@@ -232,10 +244,8 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
-
         // test with ram index
-        _advance_test(&inverted_index);
+        _advance_test(&inverted_index_ram);
 
         // test with mmap index
         let tmp_dir_path = tempfile::Builder::new()
@@ -244,11 +254,11 @@ mod tests {
             .unwrap();
         let inverted_index_mmap =
             InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
-        let inverted_index = InvertedIndex::Mmap(inverted_index_mmap);
-        _advance_test(&inverted_index);
+        _advance_test(&inverted_index_mmap);
     }
 
-    fn _search_test(inverted_index: &InvertedIndex) {
+    fn _search_test(inverted_index: &impl InvertedIndex) {
+        let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
@@ -256,6 +266,7 @@ mod tests {
             },
             10,
             inverted_index,
+            &is_stopped,
         );
 
         assert_eq!(
@@ -285,9 +296,8 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
         // test with ram index
-        _search_test(&inverted_index);
+        _search_test(&inverted_index_ram);
 
         // test with mmap index
         let tmp_dir_path = tempfile::Builder::new()
@@ -296,19 +306,17 @@ mod tests {
             .unwrap();
         let inverted_index_mmap =
             InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
-        let inverted_index = InvertedIndex::Mmap(inverted_index_mmap);
-        _search_test(&inverted_index);
+        _search_test(&inverted_index_mmap);
     }
 
     #[test]
     fn search_with_update_test() {
+        let is_stopped = AtomicBool::new(false);
         let mut inverted_index_ram = InvertedIndexBuilder::new()
             .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
-
-        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
 
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -316,7 +324,8 @@ mod tests {
                 weights: vec![1.0, 1.0, 1.0],
             },
             10,
-            &inverted_index,
+            &inverted_index_ram,
+            &is_stopped,
         );
 
         assert_eq!(
@@ -345,15 +354,14 @@ mod tests {
                 weights: vec![40.0, 40.0, 40.0],
             },
         );
-        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
-
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
                 weights: vec![1.0, 1.0, 1.0],
             },
             10,
-            &inverted_index,
+            &inverted_index_ram,
+            &is_stopped,
         );
 
         assert_eq!(
@@ -379,7 +387,8 @@ mod tests {
         );
     }
 
-    fn _search_with_hot_key_test(inverted_index: &InvertedIndex) {
+    fn _search_with_hot_key_test(inverted_index: &impl InvertedIndex) {
+        let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
@@ -387,6 +396,7 @@ mod tests {
             },
             3,
             inverted_index,
+            &is_stopped,
         );
 
         assert_eq!(
@@ -414,6 +424,7 @@ mod tests {
             },
             4,
             inverted_index,
+            &is_stopped,
         );
 
         assert_eq!(
@@ -457,9 +468,8 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
         // test with ram index
-        _search_with_hot_key_test(&inverted_index);
+        _search_with_hot_key_test(&inverted_index_ram);
 
         // test with mmap index
         let tmp_dir_path = tempfile::Builder::new()
@@ -468,11 +478,11 @@ mod tests {
             .unwrap();
         let inverted_index_mmap =
             InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
-        let inverted_index = InvertedIndex::Mmap(inverted_index_mmap);
-        _search_with_hot_key_test(&inverted_index);
+        _search_with_hot_key_test(&inverted_index_mmap);
     }
 
-    fn _prune_test(inverted_index: &InvertedIndex) {
+    fn _prune_test(inverted_index: &impl InvertedIndex) {
+        let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
@@ -480,6 +490,7 @@ mod tests {
             },
             3,
             inverted_index,
+            &is_stopped,
         );
 
         // initial state
@@ -575,10 +586,8 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        let inverted_index = InvertedIndex::Ram(inverted_index_ram.clone());
-
         // test with ram index
-        _prune_test(&inverted_index);
+        _prune_test(&inverted_index_ram);
 
         // test with mmap index
         let tmp_dir_path = tempfile::Builder::new()
@@ -587,7 +596,6 @@ mod tests {
             .unwrap();
         let inverted_index_mmap =
             InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
-        let inverted_index = InvertedIndex::Mmap(inverted_index_mmap);
-        _prune_test(&inverted_index);
+        _prune_test(&inverted_index_mmap);
     }
 }
