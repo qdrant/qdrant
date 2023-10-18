@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::thread;
 
 use async_trait::async_trait;
 use segment::types::{
@@ -247,7 +248,7 @@ impl ShardOperation for QueueProxyShard {
 #[cfg(debug_assertions)]
 impl Drop for QueueProxyShard {
     fn drop(&mut self) {
-        if !self.is_finalized() {
+        if !self.is_finalized() && !thread::panicking() {
             panic!("To drop a queue proxy shard, finalize() must be used");
         }
     }
