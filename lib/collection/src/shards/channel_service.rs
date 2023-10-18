@@ -14,17 +14,17 @@ pub struct ChannelService {
     // Shared with consensus_state
     pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
     pub channel_pool: Arc<TransportChannelPool>,
-    /// Port at which the public REST API is exposed.
-    pub rest_port: u16,
+    /// Port at which the public REST API is exposed for the current peer.
+    pub current_rest_port: u16,
 }
 
 impl ChannelService {
     /// Construct a new channel service with the given REST port.
-    pub fn new(rest_port: u16) -> Self {
+    pub fn new(current_rest_port: u16) -> Self {
         Self {
             id_to_address: Default::default(),
             channel_pool: Default::default(),
-            rest_port,
+            current_rest_port,
         }
     }
 
@@ -35,27 +35,30 @@ impl ChannelService {
         }
     }
 
-    /// Get the REST address for a given peer.
-    pub fn rest_address(&self, peer_id: PeerId) -> CollectionResult<Url> {
+    /// Get the REST address for the current peer.
+    pub fn current_rest_address(&self, this_peer_id: PeerId) -> CollectionResult<Url> {
+        // Get local peer URI
         let local_peer_uri = self
             .id_to_address
             .read()
-            .get(&peer_id)
+            .get(&this_peer_id)
             .cloned()
             .ok_or_else(|| {
                 CollectionError::service_error(format!(
-                    "Cannot determine REST address, peer {peer_id} not found in cluster",
+                    "Cannot determine REST address, this peer not found in cluster by ID {this_peer_id} ",
                 ))
             })?;
+
+        // Construct REST URL from URI
         Ok(Url::parse(&format!(
             "{}://{}:{}",
             local_peer_uri.scheme().unwrap_or(&Scheme::HTTP),
             local_peer_uri.host().ok_or_else(|| {
                 CollectionError::service_error(
-                    "Cannot determine REST address, peer {peer_id} has unknown host",
+                    "Cannot determine REST address, this peer  {this_peer_id} has unknown host",
                 )
             })?,
-            self.rest_port,
+            self.current_rest_port,
         ))
         .expect("Malformed URL"))
     }
@@ -67,7 +70,7 @@ impl Default for ChannelService {
         Self {
             id_to_address: Default::default(),
             channel_pool: Default::default(),
-            rest_port: 6333,
+            current_rest_port: 6333,
         }
     }
 }
