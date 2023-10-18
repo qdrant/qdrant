@@ -35,13 +35,26 @@ use crate::shards::telemetry::LocalShardTelemetry;
 /// any memory overhead while updates are accumulated. This type is called 'queue' even though it
 /// doesn't use a real queue, just so it is easy to understand its purpose.
 pub struct QueueProxyShard {
-    pub(crate) wrapped_shard: LocalShard,
-    pub(crate) remote_shard: RemoteShard,
+    /// Wrapped local shard to operate on.
+    ///
+    /// This is always `Some` until `finalize()` is called. This architecture is used to allow
+    /// taking out the wrapped shard when finalizing, because destructing is not possible as `Drop`
+    /// is implemented.
+    pub(super) wrapped_shard: Option<LocalShard>,
+    /// Wrapped remote shard, to transfer operations to.
+    ///
+    /// This is always `Some` until `finalize()` is called. This architecture is used to allow
+    /// taking out the wrapped shard when finalizing, because destructing is not possible as `Drop`
+    /// is implemented.
+    pub(super) remote_shard: Option<RemoteShard>,
     /// ID of the last WAL operation we consider transferred.
     last_update_idx: AtomicU64,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
+    /// Marks if this queue proxy shard is finalized with `finalize()`.
+    /// Required before dropping to release max acknowledged version.
+    finalized: bool,
 }
 
 /// Number of operations in batch when syncing
@@ -54,10 +67,11 @@ impl QueueProxyShard {
     pub async fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
         let last_idx = wrapped_shard.wal.lock().last_index();
         let shard = Self {
-            wrapped_shard,
-            remote_shard,
+            wrapped_shard: Some(wrapped_shard),
+            remote_shard: Some(remote_shard),
             last_update_idx: last_idx.into(),
             update_lock: Default::default(),
+            finalized: false,
         };
 
         // Set max acknowledged version for WAL to not truncate parts we still need to transfer later
@@ -74,6 +88,8 @@ impl QueueProxyShard {
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized")
             .create_snapshot(temp_path, target_path, save_wal)
             .await
     }
@@ -94,12 +110,20 @@ impl QueueProxyShard {
     /// Returns `true` if this was the last batch and we're now done. `false` if more batches must
     /// be sent.
     async fn transfer_wal_batch(&self) -> CollectionResult<bool> {
+        let wrapped_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
+        let remote_shard = self
+            .remote_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         let mut update_lock = Some(self.update_lock.lock().await);
         let start_index = self.last_update_idx.load(Ordering::Relaxed) + 1;
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, batch) = {
-            let wal = self.wrapped_shard.wal.lock();
+            let wal = wrapped_shard.wal.lock();
             let items_left = wal.last_index().saturating_sub(start_index - 1);
             let batch = wal.read(start_index).take(BATCH_SIZE).collect::<Vec<_>>();
             (items_left, batch)
@@ -153,16 +177,27 @@ impl QueueProxyShard {
     ///
     /// This method helps with safely destructing the queue proxy shard, ensuring that remaining
     /// queue updates are transferred to the remote shard, and only unwrapping the local shard
-    /// on success.
-    pub async fn finalize(self) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
+    /// on success. It also releases the max acknowledged WAL version.
+    pub async fn finalize(mut self) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
         // Transfer all updates, do not unwrap on failure but return error with self
         let transfer_result = self.transfer_all_missed_updates().await;
 
         // Release max acknowledged version for WAL because we unwrap the queue proxy
         self.set_max_ack_version(None).await;
+        self.finalized = true;
 
         match transfer_result {
-            Ok(_) => Ok((self.wrapped_shard, self.remote_shard)),
+            Ok(_) => {
+                let wrapped_shard = self
+                    .wrapped_shard
+                    .take()
+                    .expect("Queue proxy has already been finalized");
+                let remote_shard = self
+                    .remote_shard
+                    .take()
+                    .expect("Queue proxy has already been finalized");
+                Ok((wrapped_shard, remote_shard))
+            }
             Err(err) => Err((err, self)),
         }
     }
@@ -175,21 +210,35 @@ impl QueueProxyShard {
     ///
     /// Providing `None` will release this limitation.
     async fn set_max_ack_version(&self, max_version: Option<u64>) {
-        let update_handler = self.wrapped_shard.update_handler.lock().await;
+        let wrapped_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
+        let update_handler = wrapped_shard.update_handler.lock().await;
         let mut max_ack_version = update_handler.max_ack_version.lock().await;
         *max_ack_version = max_version;
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        self.wrapped_shard.on_optimizer_config_update().await
+        self.wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized")
+            .on_optimizer_config_update()
+            .await
     }
 
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data()
+        self.wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized")
+            .get_telemetry_data()
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {
-        self.wrapped_shard.update_tracker()
+        self.wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized")
+            .update_tracker()
     }
 }
 
@@ -202,7 +251,10 @@ impl ShardOperation for QueueProxyShard {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         let _update_lock = self.update_lock.lock().await;
-        let local_shard = &self.wrapped_shard;
+        let local_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
         local_shard.update(operation.clone(), wait).await
@@ -218,7 +270,10 @@ impl ShardOperation for QueueProxyShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
-        let local_shard = &self.wrapped_shard;
+        let local_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         local_shard
             .scroll_by(
                 offset,
@@ -233,7 +288,10 @@ impl ShardOperation for QueueProxyShard {
 
     /// Forward read-only `info` to `wrapped_shard`
     async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let local_shard = &self.wrapped_shard;
+        let local_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         local_shard.info().await
     }
 
@@ -245,7 +303,10 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let local_shard = &self.wrapped_shard;
+        let local_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         local_shard.search(request, search_runtime_handle).await
     }
 
@@ -256,7 +317,10 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let local_shard = &self.wrapped_shard;
+        let local_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         local_shard
             .core_search(request, search_runtime_handle)
             .await
@@ -264,7 +328,10 @@ impl ShardOperation for QueueProxyShard {
 
     /// Forward read-only `count` to `wrapped_shard`
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
-        let local_shard = &self.wrapped_shard;
+        let local_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         local_shard.count(request).await
     }
 
@@ -275,9 +342,22 @@ impl ShardOperation for QueueProxyShard {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
-        let local_shard = &self.wrapped_shard;
+        let local_shard = self
+            .wrapped_shard
+            .as_ref()
+            .expect("Queue proxy has been finalized");
         local_shard
             .retrieve(request, with_payload, with_vector)
             .await
+    }
+}
+
+// Safe guard in debug mode to ensure that `finalize()` is called before dropping
+#[cfg(debug_assertions)]
+impl Drop for QueueProxyShard {
+    fn drop(&mut self) {
+        if !self.finalized {
+            panic!("To drop a queue proxy shard, finalize() must be used");
+        }
     }
 }
