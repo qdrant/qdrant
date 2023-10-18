@@ -240,7 +240,7 @@ async fn transfer_snapshot(
             collection_name,
             shard_id,
             &shard_download_url,
-            SnapshotPriority::NoSync,
+            SnapshotPriority::ShardTransfer,
         )
         .await
         .map_err(|err| {
