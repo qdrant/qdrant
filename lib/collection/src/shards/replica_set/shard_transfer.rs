@@ -156,12 +156,10 @@ impl ShardReplicaSet {
                 let result = proxy.finalize().await;
                 let (result, local_shard) = match result {
                     Ok((local_shard, _)) => (Ok(()), local_shard),
-                    Err((err, mut queue_proxy)) => {
+                    Err((err, queue_proxy)) => {
                         log::error!("Failed to un-proxify local shard because transferring remaining queue items to remote failed: {err}");
-                        let wrapped_shard = queue_proxy
-                            .wrapped_shard
-                            .take()
-                            .expect("Queue proxy has already been finalized");
+                        let (wrapped_shard, _remote_shard) =
+                            queue_proxy.forget_updates_and_finalize().await;
                         (Err(err), wrapped_shard)
                     }
                 };
