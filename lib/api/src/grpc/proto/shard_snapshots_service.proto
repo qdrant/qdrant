@@ -43,7 +43,7 @@ message RecoverShardSnapshotRequest {
   string collection_name = 1; // Name of the collection
   uint32 shard_id = 2; // Id of the shard
   ShardSnapshotLocation snapshot_location = 3; // Location of the shard snapshot
-  SnapshotPriority snapshot_priority = 4; // Priority of the shard snapshot
+  ShardSnapshotPriority snapshot_priority = 4; // Priority of the shard snapshot
 }
 
 message ShardSnapshotLocation {
@@ -53,10 +53,11 @@ message ShardSnapshotLocation {
   }
 }
 
-enum SnapshotPriority {
-    SnapshotPriorityNoSync = 0; // Restore snapshot without *any* additional synchronization
-    SnapshotPrioritySnapshot = 1; // Prefer snapshot data over the current state
-    SnapshotPriorityReplica = 2; // Prefer existing data over the snapshot
+enum ShardSnapshotPriority {
+    ShardSnapshotPriorityNoSync = 0; // Restore snapshot without *any* additional synchronization
+    ShardSnapshotPrioritySnapshot = 1; // Prefer snapshot data over the current state
+    ShardSnapshotPriorityReplica = 2; // Prefer existing data over the snapshot
+    ShardSnapshotPriorityShardTransfer = 3; // Internal priority to use during snapshot shard transfer
 }
 
 message RecoverSnapshotResponse {

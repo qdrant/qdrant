@@ -163,6 +163,10 @@ pub async fn recover_shard_snapshot_impl(
                     None,
                 )?;
             }
+
+            // `ShardTransfer` is only used during snapshot *shard transfer*.
+            // State transitions are performed as part of shard transfer *later*, so this simply does *nothing*.
+            SnapshotPriority::ShardTransfer => (),
         }
     }
 
