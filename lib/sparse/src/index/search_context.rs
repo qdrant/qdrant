@@ -25,7 +25,7 @@ impl<'a> SearchContext<'a> {
     pub fn new(
         query: SparseVector,
         top: usize,
-        inverted_index: &'a (impl InvertedIndex + ?Sized),
+        inverted_index: &'a impl InvertedIndex,
         is_stopped: &'a AtomicBool,
     ) -> SearchContext<'a> {
         let mut postings_iterators = Vec::new();
@@ -201,7 +201,7 @@ mod tests {
     use crate::index::inverted_index::inverted_index_ram::InvertedIndexBuilder;
     use crate::index::posting_list::PostingList;
 
-    fn _advance_test(inverted_index: &dyn InvertedIndex) {
+    fn _advance_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -257,7 +257,7 @@ mod tests {
         _advance_test(&inverted_index_mmap);
     }
 
-    fn _search_test(inverted_index: &dyn InvertedIndex) {
+    fn _search_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -387,7 +387,7 @@ mod tests {
         );
     }
 
-    fn _search_with_hot_key_test(inverted_index: &dyn InvertedIndex) {
+    fn _search_with_hot_key_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -481,7 +481,7 @@ mod tests {
         _search_with_hot_key_test(&inverted_index_mmap);
     }
 
-    fn _prune_test(inverted_index: &dyn InvertedIndex) {
+    fn _prune_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             SparseVector {

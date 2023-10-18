@@ -12,22 +12,22 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::vector_storage::VectorStorageEnum;
 
-pub struct SparseVectorIndex<T: InvertedIndex> {
+pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     path: PathBuf,
-    inverted_index: T,
+    inverted_index: TInvertedIndex,
 }
 
-impl<T: InvertedIndex> SparseVectorIndex<T> {
+impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Create new sparse vector index
     pub fn new(
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         path: PathBuf,
-        inverted_index: T,
+        inverted_index: TInvertedIndex,
     ) -> Self {
         Self {
             id_tracker,
