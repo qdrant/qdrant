@@ -1,21 +1,26 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use api::grpc::qdrant::shard_snapshots_server::ShardSnapshots;
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
-    CreateFullSnapshotRequest, CreateSnapshotRequest, CreateSnapshotResponse,
-    DeleteFullSnapshotRequest, DeleteSnapshotRequest, DeleteSnapshotResponse,
-    ListFullSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
+    CreateFullSnapshotRequest, CreateShardSnapshotRequest, CreateSnapshotRequest,
+    CreateSnapshotResponse, DeleteFullSnapshotRequest, DeleteShardSnapshotRequest,
+    DeleteSnapshotRequest, DeleteSnapshotResponse, ListFullSnapshotsRequest,
+    ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
+    RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots,
 };
+use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tonic::{async_trait, Request, Response, Status};
 
-use super::validate;
+use super::{validate, validate_and_log};
+use crate::common;
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 
 pub struct SnapshotsService {
@@ -124,6 +129,113 @@ impl Snapshots for SnapshotsService {
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+}
+
+#[derive(Clone)]
+pub struct ShardSnapshotsService {
+    toc: Arc<TableOfContent>,
+}
+
+impl ShardSnapshotsService {
+    pub fn new(toc: Arc<TableOfContent>) -> Self {
+        Self { toc }
+    }
+}
+
+#[async_trait]
+impl ShardSnapshots for ShardSnapshotsService {
+    async fn create_shard(
+        &self,
+        request: Request<CreateShardSnapshotRequest>,
+    ) -> Result<Response<CreateSnapshotResponse>, Status> {
+        let request = request.into_inner();
+        validate_and_log(&request);
+
+        let timing = Instant::now();
+
+        let snapshot_description = common::snapshots::create_shard_snapshot(
+            self.toc.clone(),
+            request.collection_name,
+            request.shard_id,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(CreateSnapshotResponse {
+            snapshot_description: Some(snapshot_description.into()),
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn list_shard(
+        &self,
+        request: Request<ListShardSnapshotsRequest>,
+    ) -> Result<Response<ListSnapshotsResponse>, Status> {
+        let request = request.into_inner();
+        validate_and_log(&request);
+
+        let timing = Instant::now();
+
+        let snapshot_descriptions = common::snapshots::list_shard_snapshots(
+            self.toc.clone(),
+            request.collection_name,
+            request.shard_id,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(ListSnapshotsResponse {
+            snapshot_descriptions: snapshot_descriptions.into_iter().map(Into::into).collect(),
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn delete_shard(
+        &self,
+        request: Request<DeleteShardSnapshotRequest>,
+    ) -> Result<Response<DeleteSnapshotResponse>, Status> {
+        let request = request.into_inner();
+        validate_and_log(&request);
+
+        let timing = Instant::now();
+
+        common::snapshots::delete_shard_snapshot(
+            self.toc.clone(),
+            request.collection_name,
+            request.shard_id,
+            request.snapshot_name,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(DeleteSnapshotResponse {
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn recover_shard(
+        &self,
+        request: Request<RecoverShardSnapshotRequest>,
+    ) -> Result<Response<RecoverSnapshotResponse>, Status> {
+        let request = request.into_inner();
+        validate_and_log(&request);
+
+        let timing = Instant::now();
+
+        common::snapshots::recover_shard_snapshot(
+            self.toc.clone(),
+            request.collection_name,
+            request.shard_id,
+            request.snapshot_location.try_into()?,
+            request.snapshot_priority.try_into()?,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(RecoverSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
     }

@@ -243,6 +243,12 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("DeleteSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("DeleteFullSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("CreateShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
+            ("ListShardSnapshotsRequest.collection_name", "length(min = 1, max = 255)"),
+            ("DeleteShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
+            ("DeleteShardSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("RecoverShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
+            ("RecoverShardSnapshotRequest.snapshot_name", "length(min = 1)"),
         ], &[
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",

@@ -1,31 +1,26 @@
-use std::fmt;
-use std::path::Path;
-
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator as valid;
-use collection::collection::Collection;
 use collection::common::file_utils::move_file;
 use collection::operations::snapshot_ops::{
-    ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
+    ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
-use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
+use futures::TryFutureExt as _;
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
-use storage::content_manager::snapshots::recover::{activate_shard, do_recover_from_snapshot};
+use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
-    self, do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
+    do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots, get_full_snapshot_path,
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use tokio::sync::RwLockReadGuard;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -34,6 +29,7 @@ use crate::actix::helpers;
 use crate::actix::helpers::{
     accepted_response, collection_into_actix_error, process_response, storage_into_actix_error,
 };
+use crate::common;
 use crate::common::collections::*;
 
 #[derive(Deserialize, Validate)]
@@ -288,12 +284,9 @@ async fn list_shard_snapshots(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
 ) -> impl Responder {
-    let future = async move {
-        let (collection, shard) = path.into_inner();
-        let collection = toc.get_collection(&collection).await?;
-        let snapshots = collection.list_shard_snapshots(shard).await?;
-        Ok(snapshots)
-    };
+    let (collection, shard) = path.into_inner();
+    let future = common::snapshots::list_shard_snapshots(toc.into_inner(), collection, shard)
+        .map_err(Into::into);
 
     helpers::time(future).await
 }
@@ -304,15 +297,9 @@ async fn create_shard_snapshot(
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
 ) -> impl Responder {
-    let future = async move {
-        let (collection, shard) = path.into_inner();
-        let collection = toc.get_collection(&collection).await?;
-        let snapshot = collection
-            .create_shard_snapshot(shard, &toc.optional_temp_or_snapshot_temp_path()?)
-            .await?;
-
-        Ok(snapshot)
-    };
+    let (collection, shard) = path.into_inner();
+    let future = common::snapshots::create_shard_snapshot(toc.into_inner(), collection, shard)
+        .map_err(Into::into);
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
@@ -325,44 +312,15 @@ async fn recover_shard_snapshot(
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
-    let future = async move {
-        let (collection, shard) = path.into_inner();
-        let collection = toc.get_collection(&collection).await?;
-        collection.assert_shard_exists(shard).await?;
-
-        let download_dir = toc.snapshots_download_tempdir()?;
-
-        let snapshot_path = match request.location {
-            ShardSnapshotLocation::Url(url) => {
-                if !matches!(url.scheme(), "http" | "https") {
-                    let description = format!(
-                        "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
-                        url.scheme(),
-                    );
-
-                    return Err(StorageError::bad_input(description).into());
-                }
-                snapshots::download::download_snapshot(url, download_dir.path()).await?
-            }
-
-            ShardSnapshotLocation::Path(path) => {
-                let snapshot_path = collection.get_shard_snapshot_path(shard, path).await?;
-                check_shard_snapshot_file_exists(&snapshot_path)?;
-                snapshot_path
-            }
-        };
-
-        recover_shard_snapshot_impl(
-            &toc,
-            &collection,
-            shard,
-            &snapshot_path,
-            request.priority.unwrap_or_default(),
-        )
-        .await?;
-
-        Ok(())
-    };
+    let (collection, shard) = path.into_inner();
+    let future = common::snapshots::recover_shard_snapshot(
+        toc.into_inner(),
+        collection,
+        shard,
+        request.location,
+        request.priority.unwrap_or_default(),
+    )
+    .map_err(Into::into);
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
@@ -382,7 +340,7 @@ async fn upload_shard_snapshot(
         let collection = toc.get_collection(&collection).await?;
         collection.assert_shard_exists(shard).await?;
 
-        recover_shard_snapshot_impl(
+        common::snapshots::recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard,
@@ -415,106 +373,13 @@ async fn delete_shard_snapshot(
     path: web::Path<(String, ShardId, String)>,
     query: web::Query<SnapshottingParam>,
 ) -> impl Responder {
-    let future = async move {
-        let (collection, shard, snapshot) = path.into_inner();
-        let collection = toc.get_collection(&collection).await?;
-        let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
-
-        check_shard_snapshot_file_exists(&snapshot_path)?;
-        std::fs::remove_file(&snapshot_path)?;
-
-        Ok(true)
-    };
+    let (collection, shard, snapshot) = path.into_inner();
+    let future =
+        common::snapshots::delete_shard_snapshot(toc.into_inner(), collection, shard, snapshot)
+            .map_ok(|_| true)
+            .map_err(Into::into);
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
-}
-
-fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageError> {
-    let snapshot_path_display = snapshot_path.display();
-    let snapshot_file_name = snapshot_path.file_name().and_then(|str| str.to_str());
-
-    let snapshot: &dyn fmt::Display = snapshot_file_name
-        .as_ref()
-        .map_or(&snapshot_path_display, |str| str);
-
-    if !snapshot_path.exists() {
-        let description = format!("Snapshot {snapshot} not found");
-        Err(StorageError::NotFound { description })
-    } else if !snapshot_path.is_file() {
-        let description = format!("{snapshot} is not a file");
-        Err(StorageError::service_error(description))
-    } else {
-        Ok(())
-    }
-}
-
-async fn recover_shard_snapshot_impl(
-    toc: &TableOfContent,
-    collection: &RwLockReadGuard<'_, Collection>,
-    shard: ShardId,
-    snapshot_path: &std::path::Path,
-    priority: SnapshotPriority,
-) -> Result<(), StorageError> {
-    // TODO: Check snapshot compatibility?
-    // TODO: Switch replica into `Partial` state?
-
-    collection
-        .restore_shard_snapshot(
-            shard,
-            snapshot_path,
-            toc.this_peer_id,
-            toc.is_distributed(),
-            &toc.optional_temp_or_snapshot_temp_path()?,
-        )
-        .await?;
-
-    let state = collection.state().await;
-    let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
-
-    // TODO: Unify (and de-duplicate) "recovered shard state notification" logic in `_do_recover_from_snapshot` with this one!
-
-    let other_active_replicas: Vec<_> = shard_info
-        .replicas
-        .iter()
-        .map(|(&peer, &state)| (peer, state))
-        .filter(|&(peer, state)| peer != toc.this_peer_id && state == ReplicaState::Active)
-        .collect();
-
-    if other_active_replicas.is_empty() {
-        activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
-    } else {
-        match priority {
-            SnapshotPriority::NoSync => {
-                activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
-            }
-
-            SnapshotPriority::Snapshot => {
-                activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
-
-                for &(peer, _) in other_active_replicas.iter() {
-                    toc.send_set_replica_state_proposal(
-                        collection.name(),
-                        peer,
-                        shard,
-                        ReplicaState::Dead,
-                        None,
-                    )?;
-                }
-            }
-
-            SnapshotPriority::Replica => {
-                toc.send_set_replica_state_proposal(
-                    collection.name(),
-                    toc.this_peer_id,
-                    shard,
-                    ReplicaState::Dead,
-                    None,
-                )?;
-            }
-        }
-    }
-
-    Ok(())
 }
 
 // Configure services
