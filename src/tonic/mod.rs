@@ -21,6 +21,7 @@ use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_internal_server::{QdrantInternal, QdrantInternalServer};
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
+use ::api::grpc::qdrant::shard_snapshots_server::ShardSnapshotsServer;
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{
     HealthCheckReply, HealthCheckRequest, HttpPortRequest, HttpPortResponse,
@@ -43,7 +44,7 @@ use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
-use crate::tonic::api::snapshots_api::SnapshotsService;
+use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -264,6 +265,7 @@ pub fn init_internal(
                 QdrantInternalService::new(settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
+            let shard_snapshots_service = ShardSnapshotsService::new(toc.clone());
             let raft_service = RaftService::new(to_consensus, consensus_state);
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
@@ -316,6 +318,12 @@ pub fn init_internal(
                 )
                 .add_service(
                     PointsInternalServer::new(points_internal_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
+                )
+                .add_service(
+                    ShardSnapshotsServer::new(shard_snapshots_service)
                         .send_compressed(CompressionEncoding::Gzip)
                         .accept_compressed(CompressionEncoding::Gzip)
                         .max_decoding_message_size(usize::MAX),

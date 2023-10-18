@@ -23,6 +23,26 @@ pub enum SnapshotPriority {
     Replica,
 }
 
+impl TryFrom<i32> for SnapshotPriority {
+    type Error = tonic::Status;
+
+    fn try_from(snapshot_priority: i32) -> Result<Self, Self::Error> {
+        api::grpc::qdrant::SnapshotPriority::from_i32(snapshot_priority)
+            .map(Into::into)
+            .ok_or_else(|| tonic::Status::invalid_argument("Malformed snapshot priority"))
+    }
+}
+
+impl From<api::grpc::qdrant::SnapshotPriority> for SnapshotPriority {
+    fn from(snapshot_priority: api::grpc::qdrant::SnapshotPriority) -> Self {
+        match snapshot_priority {
+            api::grpc::qdrant::SnapshotPriority::NoSync => Self::NoSync,
+            api::grpc::qdrant::SnapshotPriority::Snapshot => Self::Snapshot,
+            api::grpc::qdrant::SnapshotPriority::Replica => Self::Replica,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SnapshotRecover {
     /// Examples:
@@ -103,4 +123,53 @@ pub struct ShardSnapshotRecover {
 pub enum ShardSnapshotLocation {
     Url(Url),
     Path(PathBuf),
+}
+
+impl TryFrom<Option<api::grpc::qdrant::ShardSnapshotLocation>> for ShardSnapshotLocation {
+    type Error = tonic::Status;
+
+    fn try_from(
+        snapshot_location: Option<api::grpc::qdrant::ShardSnapshotLocation>,
+    ) -> Result<Self, Self::Error> {
+        let Some(snapshot_location) = snapshot_location else {
+            return Err(tonic::Status::invalid_argument(
+                "Malformed shard snapshot location",
+            ));
+        };
+
+        snapshot_location.try_into()
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::ShardSnapshotLocation> for ShardSnapshotLocation {
+    type Error = tonic::Status;
+
+    fn try_from(location: api::grpc::qdrant::ShardSnapshotLocation) -> Result<Self, Self::Error> {
+        use api::grpc::qdrant::shard_snapshot_location;
+
+        let Some(location) = location.location else {
+            return Err(tonic::Status::invalid_argument(
+                "Malformed shard snapshot location",
+            ));
+        };
+
+        let location = match location {
+            shard_snapshot_location::Location::Url(url) => {
+                let url = Url::parse(&url).map_err(|err| {
+                    tonic::Status::invalid_argument(format!(
+                        "Invalid shard snapshot URL {url}: {err}",
+                    ))
+                })?;
+
+                Self::Url(url)
+            }
+
+            shard_snapshot_location::Location::Path(path) => {
+                let path = PathBuf::from(path);
+                Self::Path(path)
+            }
+        };
+
+        Ok(location)
+    }
 }

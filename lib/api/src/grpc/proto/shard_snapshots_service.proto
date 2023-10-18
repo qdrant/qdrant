@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package qdrant;
+
+import "snapshots_service.proto";
+
+service ShardSnapshots {
+  /*
+  Create shard snapshot
+   */
+  rpc CreateShard (CreateShardSnapshotRequest) returns (CreateSnapshotResponse) {}
+  /*
+  List shard snapshots
+   */
+  rpc ListShard (ListShardSnapshotsRequest) returns (ListSnapshotsResponse) {}
+  /*
+  Delete shard snapshot
+   */
+  rpc DeleteShard (DeleteShardSnapshotRequest) returns (DeleteSnapshotResponse) {}
+  /*
+  Recover shard snapshot
+   */
+  rpc RecoverShard (RecoverShardSnapshotRequest) returns (RecoverSnapshotResponse) {}
+}
+
+message CreateShardSnapshotRequest {
+  string collection_name = 1; // Name of the collection
+  uint32 shard_id = 2; // Id of the shard
+}
+
+message ListShardSnapshotsRequest {
+  string collection_name = 1; // Name of the collection
+  uint32 shard_id = 2; // Id of the shard
+}
+
+message DeleteShardSnapshotRequest {
+  string collection_name = 1; // Name of the collection
+  uint32 shard_id = 2; // Id of the shard
+  string snapshot_name = 3; // Name of the shard snapshot
+}
+
+message RecoverShardSnapshotRequest {
+  string collection_name = 1; // Name of the collection
+  uint32 shard_id = 2; // Id of the shard
+  ShardSnapshotLocation snapshot_location = 3; // Location of the shard snapshot
+  SnapshotPriority snapshot_priority = 4; // Priority of the shard snapshot
+}
+
+message ShardSnapshotLocation {
+  oneof location {
+    string url = 1; // URL of the remote shard snapshot
+    string path = 2; // Path of the local shard snapshot
+  }
+}
+
+enum SnapshotPriority {
+    SnapshotPriorityNoSync = 0; // Restore snapshot without *any* additional synchronization
+    SnapshotPrioritySnapshot = 1; // Prefer snapshot data over the current state
+    SnapshotPriorityReplica = 2; // Prefer existing data over the snapshot
+}
+
+message RecoverSnapshotResponse {
+  double time = 1; // Time in seconds spent to process request
+}
