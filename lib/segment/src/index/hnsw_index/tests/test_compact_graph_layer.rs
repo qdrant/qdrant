@@ -75,7 +75,7 @@ fn test_compact_graph_layers() {
         .map(|query| {
             let raw_scorer = vector_holder.get_raw_scorer(query.clone());
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            graph_layers.search(top, ef, scorer)
+            graph_layers.search(top, ef, scorer, None)
         })
         .collect_vec();
 

@@ -5,9 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-#[cfg(debug_assertions)]
-use common::types::PointOffsetType;
-use common::types::ScoredPointOffset;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
@@ -225,6 +223,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> Vec<ScoredPointOffset> {
         let ef = params
@@ -251,7 +250,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         match &self.graph {
             Some(graph) => {
-                let search_result = graph.search(oversampled_top, ef, points_scorer);
+                let search_result =
+                    graph.search(oversampled_top, ef, points_scorer, custom_entry_points);
                 self.postprocess_search_result(search_result, vector, params, top, is_stopped)
             }
             None => Default::default(),
@@ -268,7 +268,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     ) -> Vec<Vec<ScoredPointOffset>> {
         vectors
             .iter()
-            .map(|vector| self.search_with_graph(vector, filter, top, params, is_stopped))
+            .map(|vector| self.search_with_graph(vector, filter, top, params, None, is_stopped))
             .collect()
     }
 

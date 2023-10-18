@@ -629,7 +629,7 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(query.clone());
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        let graph_search = graph.search(top, ef, scorer);
+        let graph_search = graph.search(top, ef, scorer, None);
 
         assert_eq!(reference_top.into_vec(), graph_search);
     }
@@ -712,7 +712,7 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(query);
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        let graph_search = graph.search(top, ef, scorer);
+        let graph_search = graph.search(top, ef, scorer, None);
 
         assert_eq!(reference_top.into_vec(), graph_search);
     }
