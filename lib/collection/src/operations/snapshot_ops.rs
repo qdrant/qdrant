@@ -47,6 +47,19 @@ impl From<api::grpc::qdrant::ShardSnapshotPriority> for SnapshotPriority {
     }
 }
 
+impl From<SnapshotPriority> for api::grpc::qdrant::ShardSnapshotPriority {
+    fn from(snapshot_priority: SnapshotPriority) -> Self {
+        match snapshot_priority {
+            SnapshotPriority::NoSync => api::grpc::qdrant::ShardSnapshotPriority::NoSync,
+            SnapshotPriority::Snapshot => api::grpc::qdrant::ShardSnapshotPriority::Snapshot,
+            SnapshotPriority::Replica => api::grpc::qdrant::ShardSnapshotPriority::Replica,
+            SnapshotPriority::ShardTransfer => {
+                api::grpc::qdrant::ShardSnapshotPriority::ShardTransfer
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SnapshotRecover {
     /// Examples:

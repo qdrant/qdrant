@@ -12,9 +12,7 @@ use tokio::time::sleep;
 use url::Url;
 
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
-use crate::operations::snapshot_ops::{
-    ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority,
-};
+use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
@@ -129,23 +127,16 @@ pub async fn transfer_shard(
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
-            // Get local and remote REST addresses
+            // Get local REST address
             let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
-            let remote_rest_address = {
-                let mut address = channel_service.current_rest_address(transfer_config.to)?;
-                address
-                    .set_port(Some(remote_shard.request_http_port().await? as u16))
-                    .expect("Failed to set port");
-                address
-            };
 
             transfer_snapshot(
                 shard_holder.clone(),
                 shard_id,
+                remote_shard,
                 snapshots_path,
                 collection_name,
                 &local_rest_address,
-                &remote_rest_address,
                 temp_dir,
                 stopped.clone(),
             )
@@ -208,10 +199,10 @@ async fn transfer_batches(
 async fn transfer_snapshot(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
+    remote_shard: RemoteShard,
     snapshots_path: &Path,
     collection_name: &str,
     local_rest_address: &Url,
-    remote_rest_address: &Url,
     temp_dir: &Path,
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
@@ -233,7 +224,7 @@ async fn transfer_snapshot(
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
 
-    // Select local shard snapshot download and remote recover URLs
+    // Select local shard snapshot download URL
     let shard_download_url = local_rest_address
         .join(&format!(
             "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
@@ -242,27 +233,19 @@ async fn transfer_snapshot(
         .map_err(|err| {
             CollectionError::service_error(format!("Invalid shard snapshot download URL: {err}"))
         })?;
-    let shard_recover_url = remote_rest_address
-        .join(&format!(
-            "/collections/{collection_name}/shards/{shard_id}/snapshots/recover?wait=true"
-        ))
-        .map_err(|err| {
-            CollectionError::service_error(format!("Invalid shard snapshot recover URL: {err}"))
-        })?;
 
     // Instruct remote to download and recover shard snapshot
-    // TODO: remove reqwest client (and reqwest dependency), implement call in gRPC instead
-    reqwest::Client::new()
-        .put(shard_recover_url)
-        .json(&ShardSnapshotRecover {
-            location: ShardSnapshotLocation::Url(shard_download_url),
-            priority: Some(SnapshotPriority::NoSync),
-        })
-        .send()
+    remote_shard
+        .recover_shard_snapshot_from_url(
+            collection_name,
+            shard_id,
+            &shard_download_url,
+            SnapshotPriority::NoSync,
+        )
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
-                "Failed to request shard snapshot recovery on remote: {err}"
+                "Failed to recover shard snapshot on remote: {err}"
             ))
         })?;
 
