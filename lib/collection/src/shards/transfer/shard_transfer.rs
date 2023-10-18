@@ -130,9 +130,9 @@ pub async fn transfer_shard(
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
             // Get local and remote REST addresses
-            let local_rest_address = channel_service.rest_address(transfer_config.from)?;
+            let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
             let remote_rest_address = {
-                let mut address = channel_service.rest_address(transfer_config.to)?;
+                let mut address = channel_service.current_rest_address(transfer_config.to)?;
                 address
                     .set_port(Some(remote_shard.request_http_port().await? as u16))
                     .expect("Failed to set port");
