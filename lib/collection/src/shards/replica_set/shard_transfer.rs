@@ -236,17 +236,26 @@ impl ShardReplicaSet {
 
         // Second pass: transfer new updates, safely finalize and transform
         let mut local_write = self.local.write().await;
-        match local_write.take() {
-            Some(Shard::QueueProxy(proxy)) => {
-                let (local_shard, remote_shard) = proxy.finalize().await.map_err(|(err, _)| err)?;
-
+        if !matches!(&*local_write, Some(Shard::QueueProxy(_))) {
+            return Ok(());
+        }
+        let Some(Shard::QueueProxy(queue_proxy)) = local_write.take() else {
+            unreachable!()
+        };
+        match queue_proxy.finalize().await {
+            // When finalization is successful, transform into forward proxy
+            Ok((local_shard, remote_shard)) => {
                 let forward_proxy = ForwardProxyShard::new(local_shard, remote_shard);
                 let _ = local_write.insert(Shard::ForwardProxy(forward_proxy));
+                Ok(())
             }
-            // Insert local back if we got wrong type this time
-            local => *local_write = local,
+            // When finalization fails, put the queue proxy back
+            Err((err, queue_proxy)) => {
+                let _ = local_write.insert(Shard::QueueProxy(queue_proxy));
+                Err(CollectionError::service_error(format!(
+                    "Failed to finalize queue proxy and transform into forward proxy: {err}"
+                )))
+            }
         }
-
-        Ok(())
     }
 }
