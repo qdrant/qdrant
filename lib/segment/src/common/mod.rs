@@ -37,20 +37,23 @@ pub fn check_vector(
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
-    _check_query_vector(query_vector, vector_config)
+    check_query_vector(query_vector, vector_config)
 }
 
-fn _check_query_vector(
+fn check_query_vector(
     query_vector: &QueryVector,
     vector_config: &VectorDataConfig,
 ) -> OperationResult<()> {
     match query_vector {
         QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
         QueryVector::Recommend(reco_query) => reco_query
-            .iter_all()
+            .flat_iter()
             .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
         QueryVector::Discovery(discovery_query) => discovery_query
-            .iter_all()
+            .flat_iter()
+            .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
+        QueryVector::Context(discovery_context_query) => discovery_context_query
+            .flat_iter()
             .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
     }
 
@@ -68,7 +71,7 @@ pub fn check_query_vectors(
     let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
     query_vectors
         .iter()
-        .try_for_each(|qv| _check_query_vector(qv, vector_config))?;
+        .try_for_each(|qv| check_query_vector(qv, vector_config))?;
     Ok(())
 }
 

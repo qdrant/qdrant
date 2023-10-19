@@ -1,3 +1,4 @@
+use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
@@ -26,22 +27,19 @@ impl<T> DiscoveryPair<T> {
         }
     }
 
+    /// Calculates on which side of the space the point is, with respect to this pair
     pub fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
         let positive_similarity = similarity(&self.positive);
         let negative_similarity = similarity(&self.negative);
 
         // if closer to positive, return 1, else -1
-        if positive_similarity > negative_similarity {
-            1
-        } else {
-            -1
-        }
+        positive_similarity.total_cmp(&negative_similarity) as RankType
     }
 }
 
 #[cfg(test)]
-impl From<(isize, isize)> for DiscoveryPair<isize> {
-    fn from(pair: (isize, isize)) -> Self {
+impl<T> From<(T, T)> for DiscoveryPair<T> {
+    fn from(pair: (T, T)) -> Self {
         Self {
             positive: pair.0,
             negative: pair.1,
@@ -60,7 +58,7 @@ impl<T> DiscoveryQuery<T> {
         Self { target, pairs }
     }
 
-    pub fn iter_all(&self) -> impl Iterator<Item = &T> {
+    pub fn flat_iter(&self) -> impl Iterator<Item = &T> {
         let pairs_iter = self.pairs.iter().flat_map(|pair| pair.iter());
 
         std::iter::once(&self.target).chain(pairs_iter)
@@ -101,23 +99,6 @@ impl<T> Query<T> for DiscoveryQuery<T> {
     }
 }
 
-/// Acts as a substitute for sigmoid function, but faster because it doesn't do exponent.
-///
-/// Scales the output to fit within (0, 1)
-#[inline]
-fn scaled_fast_sigmoid(x: ScoreType) -> ScoreType {
-    0.5 * (fast_sigmoid(x) + 1.0)
-}
-
-/// Acts as a substitute for sigmoid function, but faster because it doesn't do exponent.
-///
-/// Range of output is (-1, 1)
-#[inline]
-fn fast_sigmoid(x: ScoreType) -> ScoreType {
-    // from https://stackoverflow.com/questions/10732027/fast-sigmoid-algorithm
-    x / (1.0 + x.abs())
-}
-
 impl From<DiscoveryQuery<VectorType>> for QueryVector {
     fn from(query: DiscoveryQuery<VectorType>) -> Self {
         QueryVector::Discovery(query)
@@ -143,7 +124,7 @@ mod test {
     #[case::no_pairs(vec![], 0)]
     #[case::closer_to_positive(vec![(10, 4)], 1)]
     #[case::closer_to_negative(vec![(4, 10)], -1)]
-    #[case::equal_scores(vec![(11, 11)], -1)]
+    #[case::equal_scores(vec![(11, 11)], 0)]
     #[case::neutral_zone(vec![(10, 4), (4, 10)], 0)]
     #[case::best_zone(vec![(10, 4), (4, 2)], 2)]
     #[case::worst_zone(vec![(4, 10), (2, 4)], -2)]

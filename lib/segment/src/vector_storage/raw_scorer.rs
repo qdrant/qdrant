@@ -178,6 +178,12 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             vec_deleted,
             is_stopped,
         ),
+        QueryVector::Context(discovery_context_query) => raw_scorer_from_query_scorer(
+            CustomQueryScorer::<TMetric, _, _>::new(discovery_context_query, vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
     }
 }
 

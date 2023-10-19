@@ -23,6 +23,7 @@ use crate::types::{
 #[cfg(target_os = "linux")]
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::{DiscoveryPair, DiscoveryQuery};
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
@@ -52,6 +53,7 @@ fn random_query<R: Rng + ?Sized>(
     match query_variant {
         QueryVariant::Recommend => random_reco_query(rnd, sampler),
         QueryVariant::Discovery => random_discovery_query(rnd, sampler),
+        QueryVariant::Context => random_context_query(rnd, sampler),
     }
 }
 
@@ -90,6 +92,23 @@ fn random_discovery_query<R: Rng + ?Sized>(
         .collect_vec();
 
     DiscoveryQuery::new(target, pairs).into()
+}
+
+fn random_context_query<R: Rng + ?Sized>(
+    rnd: &mut R,
+    sampler: &mut impl Iterator<Item = f32>,
+) -> QueryVector {
+    let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
+
+    let pairs = (0..num_pairs)
+        .map(|_| {
+            let positive = sampler.take(DIMS).collect();
+            let negative = sampler.take(DIMS).collect();
+            DiscoveryPair { positive, negative }
+        })
+        .collect_vec();
+
+    ContextQuery::new(pairs).into()
 }
 
 fn ram_storage(dir: &Path) -> AtomicRefCell<VectorStorageEnum> {
@@ -161,6 +180,7 @@ fn binary() -> Option<WithQuantization> {
 enum QueryVariant {
     Recommend,
     Discovery,
+    Context,
 }
 
 fn scoring_equivalency(
@@ -290,7 +310,12 @@ fn scoring_equivalency(
 
 #[rstest]
 fn compare_scoring_equivalency(
-    #[values(QueryVariant::Recommend, QueryVariant::Discovery)] query_variant: QueryVariant,
+    #[values(
+        QueryVariant::Recommend,
+        QueryVariant::Discovery,
+        QueryVariant::Context
+    )]
+    query_variant: QueryVariant,
     #[values(ram_storage)] other_storage: impl FnOnce(
         &std::path::Path,
     ) -> AtomicRefCell<VectorStorageEnum>,
@@ -305,7 +330,12 @@ fn compare_scoring_equivalency(
 #[cfg(target_os = "linux")]
 #[rstest]
 fn async_compare_scoring_equivalency(
-    #[values(QueryVariant::Recommend, QueryVariant::Discovery)] query_variant: QueryVariant,
+    #[values(
+        QueryVariant::Recommend,
+        QueryVariant::Discovery,
+        QueryVariant::Context
+    )]
+    query_variant: QueryVariant,
 
     #[values(async_memmap_storage)] other_storage: impl FnOnce(
         &std::path::Path,
