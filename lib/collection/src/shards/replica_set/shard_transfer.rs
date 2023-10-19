@@ -150,7 +150,9 @@ impl ShardReplicaSet {
                 // Instead we should transform it into a forward proxy shard before unproxify is
                 // called to handle errors at an earlier time.
                 // See `Self::queue_proxy_into_forward_proxy()` for more details.
-                log::warn!("Directly unproxifying queue proxy shard, this should not happen");
+                log::warn!(
+                    "Directly unproxifying queue proxy shard, this should not happen normally"
+                );
 
                 // Finalize, insert local shard back and return finalize result
                 let result = proxy.finalize().await;
@@ -168,6 +170,36 @@ impl ShardReplicaSet {
             }
             _ => unreachable!(),
         }
+    }
+
+    /// Revert usage of a `QueueProxy` shard and forget all updates, then un-proxify to local
+    ///
+    /// This can be used to intentionally forget all updates that are collected by the queue proxy
+    /// shard and revert back to a local shard. This is useful if a shard transfer operation using
+    /// a queue proxy must be aborted.
+    ///
+    /// Does nothing if the local shard is not a queue proxy shard.
+    /// This method cannot fail.
+    ///
+    /// # Warning
+    ///
+    /// This intentionally forgets and drops updates pending to be transferred to the remote shard.
+    /// The remote shard may therefore therefore be left in an inconsistent state, which should be
+    /// resolved separately.
+    pub async fn revert_queue_proxy_local(&self) {
+        let mut local_write = self.local.write().await;
+
+        // Take out queue proxy shard or return
+        if !matches!(*local_write, Some(Shard::QueueProxy(_))) {
+            return;
+        };
+        let Some(Shard::QueueProxy(queue_proxy)) = local_write.take() else {
+            unreachable!();
+        };
+
+        log::debug!("Forgetting queue proxy updates and reverting to local shard");
+        let (local_shard, _) = queue_proxy.forget_updates_and_finalize().await;
+        let _ = local_write.insert(Shard::Local(local_shard));
     }
 
     /// Custom operation for transferring data from one shard to another during transfer
@@ -236,11 +268,11 @@ impl ShardReplicaSet {
 
         // Second pass: transfer new updates, safely finalize and transform
         let mut local_write = self.local.write().await;
-        if !matches!(&*local_write, Some(Shard::QueueProxy(_))) {
+        if !matches!(*local_write, Some(Shard::QueueProxy(_))) {
             return Ok(());
         }
         let Some(Shard::QueueProxy(queue_proxy)) = local_write.take() else {
-            unreachable!()
+            unreachable!();
         };
         match queue_proxy.finalize().await {
             // When finalization is successful, transform into forward proxy

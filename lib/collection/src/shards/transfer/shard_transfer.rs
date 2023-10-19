@@ -243,6 +243,9 @@ async fn transfer_snapshot(
             ))
         })?;
 
+    // TODO: before transforing queue proxy and sending updates, make sure the remote shard is
+    // partial through consensus on all nodes
+
     // Transfer all updates to remote shard and transform into forward proxy shard
     // We do this right after the shard has been restored on the remote so that we can catch any
     // errors early. The forward proxy shard we end up with will not error again once we unproxify.
@@ -274,7 +277,13 @@ pub async fn revert_proxy_shard_to_local(
         None => return Ok(false),
         Some(replica_set) => replica_set,
     };
+
+    // Revert queue proxy if we still have any and forget all collected updates
+    replica_set.revert_queue_proxy_local().await;
+
+    // Un-proxify local shard
     replica_set.un_proxify_local().await?;
+
     Ok(true)
 }
 
