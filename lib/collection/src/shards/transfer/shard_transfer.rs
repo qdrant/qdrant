@@ -86,7 +86,6 @@ pub async fn transfer_shard(
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     let shard_id = transfer_config.shard_id;
-    let transfer_method = transfer_config.method.unwrap_or_default();
 
     // Initiate shard on a remote peer
     let remote_shard = RemoteShard::new(
@@ -98,31 +97,16 @@ pub async fn transfer_shard(
 
     remote_shard.initiate_transfer().await?;
 
-    {
-        let shard_holder_guard = shard_holder.read().await;
-        let transferring_shard = shard_holder_guard.get_shard(&shard_id);
-        if let Some(replica_set) = transferring_shard {
-            match transfer_method {
-                ShardTransferMethod::StreamRecords => {
-                    replica_set.proxify_local(remote_shard.clone()).await?;
-                }
-                ShardTransferMethod::Snapshot => {
-                    replica_set
-                        .queue_proxify_local(remote_shard.clone())
-                        .await?;
-                }
-            }
-        } else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be proxied because it does not exist"
-            )));
-        }
-    }
-
-    match transfer_method {
+    match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
+            transfer_batches(
+                shard_holder.clone(),
+                shard_id,
+                remote_shard,
+                stopped.clone(),
+            )
+            .await
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
@@ -145,21 +129,22 @@ pub async fn transfer_shard(
 async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
+    remote_shard: RemoteShard,
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
-    // Create payload indexes on the remote shard.
+    // Proxify local shard and create payload indexes on remote shard
     {
         let shard_holder_guard = shard_holder.read().await;
         let transferring_shard_opt = shard_holder_guard.get_shard(&shard_id);
-        if let Some(replica_set) = transferring_shard_opt {
-            replica_set.transfer_indexes().await?;
-        } else {
-            // Forward proxy gone?!
-            // That would be a programming error.
+        let Some(replica_set) = transferring_shard_opt else {
             return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} is not a forward proxy shard"
+                "Shard {shard_id} cannot be proxied because it does not exist"
             )));
-        }
+        };
+
+        replica_set.proxify_local(remote_shard).await?;
+
+        replica_set.transfer_indexes().await?;
     }
 
     // Transfer contents batch by batch
@@ -204,6 +189,20 @@ async fn transfer_snapshot(
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     let shard_holder_read = shard_holder.read().await;
+
+    // Queue proxify local shard
+    {
+        let transferring_shard = shard_holder_read.get_shard(&shard_id);
+        let Some(replica_set) = transferring_shard else {
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be queue proxied because it does not exist"
+            )));
+        };
+
+        replica_set
+            .queue_proxify_local(remote_shard.clone())
+            .await?;
+    }
 
     // Ensure we have configured a queue proxy
     let is_queue_proxy = match shard_holder_read.get_shard(&shard_id) {
