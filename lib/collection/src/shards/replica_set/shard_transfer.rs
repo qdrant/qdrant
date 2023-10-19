@@ -109,8 +109,6 @@ impl ShardReplicaSet {
     }
 
     /// Un-proxify local shard wrapped as `ForwardProxy` or `QueueProxy`.
-    ///
-    /// Returns true if the replica was un-proxified, false if it was already handled.
     pub async fn un_proxify_local(&self) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
@@ -257,11 +255,10 @@ impl ShardReplicaSet {
         // First pass: transfer all missed updates with shared read lock
         {
             let local_read = self.local.read().await;
-            if let Some(Shard::QueueProxy(proxy)) = &*local_read {
-                proxy.transfer_all_missed_updates().await?;
-            } else {
+            let Some(Shard::QueueProxy(proxy)) = &*local_read else {
                 return Ok(());
-            }
+            };
+            proxy.transfer_all_missed_updates().await?;
         }
 
         // Second pass: transfer new updates, safely finalize and transform
