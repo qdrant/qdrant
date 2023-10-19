@@ -79,9 +79,8 @@ async fn _do_recover_from_snapshot(
     let download_dir = toc.snapshots_download_tempdir()?;
 
     log::debug!(
-        "Downloading snapshot from {} to {}",
-        location,
-        download_dir.path().display()
+        "Downloading snapshot from {location} to {}",
+        download_dir.path().display(),
     );
 
     let (snapshot_path, is_downloaded) = download_snapshot(location, download_dir.path()).await?;
@@ -91,18 +90,17 @@ async fn _do_recover_from_snapshot(
     let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
 
     let tmp_collection_dir = tempfile::Builder::new()
-        .prefix(&format!("col-{}-recovery-", collection_name))
+        .prefix(&format!("col-{collection_name}-recovery-"))
         .tempdir_in(temp_storage_path)?;
 
     log::debug!(
-        "Recovering collection {} from snapshot {}",
-        collection_name,
-        snapshot_path.display()
+        "Recovering collection {collection_name} from snapshot {}",
+        snapshot_path.display(),
     );
 
     log::debug!(
         "Unpacking snapshot to {}",
-        tmp_collection_dir.path().display()
+        tmp_collection_dir.path().display(),
     );
 
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
