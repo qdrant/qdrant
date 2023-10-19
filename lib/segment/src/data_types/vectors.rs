@@ -21,6 +21,15 @@ pub enum VectorRef<'a> {
     Sparse(&'a SparseVector),
 }
 
+impl Vector {
+    pub fn to_vec_ref(&self) -> VectorRef {
+        match self {
+            Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
+            Vector::Sparse(v) => VectorRef::Sparse(v),
+        }
+    }
+}
+
 // TODO(ivan) temporary conversion while sparse vectors are under development
 impl<'a> From<VectorRef<'a>> for &'a [VectorElementType] {
     fn from(val: VectorRef<'a>) -> Self {
