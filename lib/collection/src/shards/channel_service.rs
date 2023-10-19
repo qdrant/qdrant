@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use api::grpc::transport_channel_pool::TransportChannelPool;
-use http::uri::Scheme;
 use tonic::transport::Uri;
 use url::Url;
 
@@ -50,17 +49,14 @@ impl ChannelService {
             })?;
 
         // Construct REST URL from URI
-        Ok(Url::parse(&format!(
-            "{}://{}:{}",
-            local_peer_uri.scheme().unwrap_or(&Scheme::HTTP),
-            local_peer_uri.host().ok_or_else(|| {
-                CollectionError::service_error(
-                    "Cannot determine REST address, this peer  {this_peer_id} has unknown host",
-                )
-            })?,
-            self.current_rest_port,
-        ))
-        .expect("Malformed URL"))
+        let mut url = Url::parse(&local_peer_uri.to_string()).expect("Malformed URL");
+        url.set_port(Some(self.current_rest_port))
+            .map_err(|()| {
+                CollectionError::service_error(format!(
+                    "Cannot determine REST address, cannot specify port on address {url} for peer ID {this_peer_id}",
+                ))
+            })?;
+        Ok(url)
     }
 }
 
