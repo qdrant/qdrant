@@ -28,9 +28,9 @@ class PeerProcess:
         self.proc.kill()
         # remove allocated ports from the dictionary
         # so they can be used afterwards
-        busy_ports[self.http_port] = None
-        busy_ports[self.grpc_port] = None
-        busy_ports[self.p2p_port] = None
+        del busy_ports[self.http_port]
+        del busy_ports[self.grpc_port]
+        del busy_ports[self.p2p_port]
 
 def _occupy_port(port):
     if port in busy_ports:
