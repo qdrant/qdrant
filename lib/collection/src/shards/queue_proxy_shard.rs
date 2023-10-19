@@ -328,7 +328,13 @@ impl Inner {
         for attempts in (0..BATCH_RETRIES).rev() {
             match transfer_operations_batch(&batch, &self.remote_shard).await {
                 Ok(()) => break,
-                Err(_) if attempts > 0 => continue,
+                Err(err) if attempts > 0 => {
+                    log::error!(
+                        "Failed to transfer batch of updates to peer {}, retrying: {err}",
+                        self.remote_shard.peer_id,
+                    );
+                    continue;
+                }
                 Err(err) => return Err(err),
             }
         }
