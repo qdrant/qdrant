@@ -9,7 +9,7 @@ use super::memmap_vector_storage::MemmapVectorStorage;
 use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
 
@@ -41,13 +41,9 @@ pub trait VectorStorage {
     }
 
     /// Number of all stored vectors including deleted
-    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType];
+    fn get_vector(&self, key: PointOffsetType) -> VectorRef;
 
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: &[VectorElementType],
-    ) -> OperationResult<()>;
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
 
     fn update_from(
         &mut self,
@@ -134,7 +130,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
+    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
         match self {
             VectorStorageEnum::Simple(v) => v.get_vector(key),
             VectorStorageEnum::Memmap(v) => v.get_vector(key),
@@ -142,11 +138,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: &[VectorElementType],
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         match self {
             VectorStorageEnum::Simple(v) => v.insert_vector(key, vector),
             VectorStorageEnum::Memmap(v) => v.insert_vector(key, vector),

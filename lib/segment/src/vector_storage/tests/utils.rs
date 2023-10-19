@@ -29,7 +29,7 @@ pub fn insert_distributed_vectors(
             *item = value;
         }
 
-        storage.insert_vector(offset, &vector)?;
+        storage.insert_vector(offset, vector.as_slice().into())?;
     }
 
     Ok(())

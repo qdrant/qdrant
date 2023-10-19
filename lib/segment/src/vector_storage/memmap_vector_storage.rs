@@ -13,7 +13,7 @@ use memory::mmap_ops;
 use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;
@@ -109,15 +109,11 @@ impl VectorStorage for MemmapVectorStorage {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.get_dense(key)
+    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+        self.get_dense(key).into()
     }
 
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: &[VectorElementType],
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         panic!("Can't directly update vector in mmap storage")
     }
 
@@ -142,7 +138,7 @@ impl VectorStorage for MemmapVectorStorage {
         let mut deleted_ids = vec![];
         for id in other_ids {
             check_process_stopped(stopped)?;
-            let vector = other.get_vector(id);
+            let vector = other.get_vector(id).into();
             let raw_bites = mmap_ops::transmute_to_u8_slice(vector);
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
@@ -263,9 +259,15 @@ mod tests {
             let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
-                borrowed_storage2.insert_vector(0, &points[0]).unwrap();
-                borrowed_storage2.insert_vector(1, &points[1]).unwrap();
-                borrowed_storage2.insert_vector(2, &points[2]).unwrap();
+                borrowed_storage2
+                    .insert_vector(0, points[0].as_slice().into())
+                    .unwrap();
+                borrowed_storage2
+                    .insert_vector(1, points[1].as_slice().into())
+                    .unwrap();
+                borrowed_storage2
+                    .insert_vector(2, points[2].as_slice().into())
+                    .unwrap();
             }
             borrowed_storage
                 .update_from(&storage2.borrow(), &mut Box::new(0..3), &Default::default())
@@ -274,7 +276,8 @@ mod tests {
 
         assert_eq!(borrowed_storage.total_vector_count(), 3);
 
-        let vector = borrowed_storage.get_vector(1).to_vec();
+        let vector: &[_] = borrowed_storage.get_vector(1).into();
+        let vector = vector.to_vec();
 
         assert_eq!(points[1], vector);
 
@@ -286,8 +289,12 @@ mod tests {
             let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
-                borrowed_storage2.insert_vector(3, &points[3]).unwrap();
-                borrowed_storage2.insert_vector(4, &points[4]).unwrap();
+                borrowed_storage2
+                    .insert_vector(3, points[3].as_slice().into())
+                    .unwrap();
+                borrowed_storage2
+                    .insert_vector(4, points[4].as_slice().into())
+                    .unwrap();
             }
             borrowed_storage
                 .update_from(&storage2.borrow(), &mut Box::new(0..2), &Default::default())
@@ -342,7 +349,7 @@ mod tests {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 points.iter().enumerate().for_each(|(i, vec)| {
                     borrowed_storage2
-                        .insert_vector(i as PointOffsetType, vec)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 });
             }
@@ -463,7 +470,7 @@ mod tests {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 points.iter().enumerate().for_each(|(i, vec)| {
                     borrowed_storage2
-                        .insert_vector(i as PointOffsetType, vec)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                     if delete_mask[i] {
                         borrowed_storage2
@@ -541,7 +548,7 @@ mod tests {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
                     borrowed_storage2
-                        .insert_vector(i as PointOffsetType, vec)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 }
             }
@@ -619,7 +626,7 @@ mod tests {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
                     borrowed_storage2
-                        .insert_vector(i as PointOffsetType, vec)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 }
             }

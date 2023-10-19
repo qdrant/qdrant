@@ -32,7 +32,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     for (i, vec) in points.iter().enumerate() {
         borrowed_storage
-            .insert_vector(i as PointOffsetType, vec)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
@@ -136,7 +136,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
             let mut borrowed_storage2 = storage2.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
                 borrowed_storage2
-                    .insert_vector(i as PointOffsetType, vec)
+                    .insert_vector(i as PointOffsetType, vec.as_slice().into())
                     .unwrap();
                 if delete_mask[i] {
                     borrowed_storage2
@@ -206,7 +206,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     for (i, vec) in points.iter().enumerate() {
         borrowed_storage
-            .insert_vector(i as PointOffsetType, vec)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
@@ -280,7 +280,7 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     for (i, vec) in points.iter().enumerate() {
         borrowed_storage
-            .insert_vector(i as PointOffsetType, vec)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 

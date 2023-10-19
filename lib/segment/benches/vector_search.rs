@@ -41,7 +41,7 @@ fn init_vector_storage(
         for i in 0..num {
             let vector: Vec<VectorElementType> = random_vector(dim);
             borrowed_storage
-                .insert_vector(i as PointOffsetType, &vector)
+                .insert_vector(i as PointOffsetType, vector.as_slice().into())
                 .unwrap();
         }
     }

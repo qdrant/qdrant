@@ -2,11 +2,82 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sparse::common::sparse_vector::SparseVector;
 
 use super::named_vectors::NamedVectors;
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Vector {
+    Dense(VectorType),
+    Sparse(SparseVector),
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum VectorRef<'a> {
+    Dense(&'a [VectorElementType]),
+    Sparse(&'a SparseVector),
+}
+
+impl Vector {
+    pub fn to_vec_ref(&self) -> VectorRef {
+        match self {
+            Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
+            Vector::Sparse(v) => VectorRef::Sparse(v),
+        }
+    }
+}
+
+// TODO(ivan) temporary conversion while sparse vectors are under development
+impl<'a> From<VectorRef<'a>> for &'a [VectorElementType] {
+    fn from(val: VectorRef<'a>) -> Self {
+        match val {
+            VectorRef::Dense(v) => v,
+            VectorRef::Sparse(_) => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&'a [VectorElementType]> for VectorRef<'a> {
+    fn from(val: &'a [VectorElementType]) -> Self {
+        VectorRef::Dense(val)
+    }
+}
+
+impl<'a> From<&'a VectorType> for VectorRef<'a> {
+    fn from(val: &'a VectorType) -> Self {
+        VectorRef::Dense(val.as_slice())
+    }
+}
+
+impl<'a> From<&'a SparseVector> for VectorRef<'a> {
+    fn from(val: &'a SparseVector) -> Self {
+        VectorRef::Sparse(val)
+    }
+}
+
+impl From<VectorType> for Vector {
+    fn from(val: VectorType) -> Self {
+        Vector::Dense(val)
+    }
+}
+
+impl From<SparseVector> for Vector {
+    fn from(val: SparseVector) -> Self {
+        Vector::Sparse(val)
+    }
+}
+
+impl<'a> From<&'a Vector> for VectorRef<'a> {
+    fn from(val: &'a Vector) -> Self {
+        match val {
+            Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
+            Vector::Sparse(v) => VectorRef::Sparse(v),
+        }
+    }
+}
 
 /// Type of vector element.
 pub type VectorElementType = f32;
@@ -250,6 +321,13 @@ impl<'a> From<&'a [VectorElementType]> for QueryVector {
 
 impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
     fn from(vec: [VectorElementType; N]) -> Self {
+        Self::Nearest(vec.to_vec())
+    }
+}
+
+impl<'a> From<VectorRef<'a>> for QueryVector {
+    fn from(vec: VectorRef<'a>) -> Self {
+        let vec: &[_] = vec.into();
         Self::Nearest(vec.to_vec())
     }
 }
