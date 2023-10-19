@@ -47,7 +47,13 @@ async fn download_file(url: &Url, path: &Path) -> Result<(), StorageError> {
     Ok(())
 }
 
-pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf, StorageError> {
+/// Download a snapshot from the given URI.
+///
+/// Returns `(path, is_downloaded)` on success.
+pub async fn download_snapshot(
+    url: Url,
+    snapshots_dir: &Path,
+) -> Result<(PathBuf, bool), StorageError> {
     match url.scheme() {
         "file" => {
             let local_path = url.to_file_path().map_err(|_| {
@@ -60,13 +66,13 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf
                     "Snapshot file {local_path:?} does not exist"
                 )));
             }
-            Ok(local_path)
+            Ok((local_path, false))
         }
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));
 
             download_file(&url, &download_to).await?;
-            Ok(download_to)
+            Ok((download_to, true))
         }
         _ => Err(StorageError::bad_request(format!(
             "URL {} with schema {} is not supported",
