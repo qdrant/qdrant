@@ -2,6 +2,7 @@ use common::types::ScoreType;
 
 use crate::data_types::vectors::VectorType;
 
+pub mod context_query;
 pub mod discovery_query;
 pub mod reco_query;
 

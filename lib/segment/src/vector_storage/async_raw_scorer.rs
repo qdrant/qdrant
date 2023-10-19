@@ -295,6 +295,17 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     is_stopped.unwrap_or(&DEFAULT_STOPPED),
                 ))
             }
+            QueryVector::Context(context_query) => {
+                let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(context_query, storage);
+                Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                ))
+            }
         }
     }
 }
