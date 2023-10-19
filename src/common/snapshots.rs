@@ -66,7 +66,7 @@ pub async fn recover_shard_snapshot(
 
     let download_dir = toc.snapshots_download_tempdir()?;
 
-    let snapshot_path = match snapshot_location {
+    let (snapshot_path, is_downloaded) = match snapshot_location {
         ShardSnapshotLocation::Url(url) => {
             if !matches!(url.scheme(), "http" | "https") {
                 let description = format!(
@@ -76,13 +76,14 @@ pub async fn recover_shard_snapshot(
 
                 return Err(StorageError::bad_input(description));
             }
-            snapshots::download::download_snapshot(url, download_dir.path()).await?
+            let snapshot_path = snapshots::download::download_snapshot(url, download_dir.path()).await?;
+            (snapshot_path, true)
         }
 
         ShardSnapshotLocation::Path(path) => {
             let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
             check_shard_snapshot_file_exists(&snapshot_path)?;
-            snapshot_path
+            (snapshot_path, false)
         }
     };
 
@@ -94,6 +95,14 @@ pub async fn recover_shard_snapshot(
         snapshot_priority,
     )
     .await?;
+
+    // Remove snapshot after recovery if downloaded
+    if is_downloaded {
+        let remove_result = std::fs::remove_file(&snapshot_path);
+        if let Err(err) = remove_result {
+            log::error!("Failed to remove downloaded shards snapshot after recovery: {err}");
+        }
+    }
 
     Ok(())
 }
