@@ -134,7 +134,7 @@ pub async fn transfer_shard(
                 remote_shard,
                 snapshots_path,
                 collection_name,
-                &local_rest_address,
+                local_rest_address,
                 temp_dir,
                 stopped.clone(),
             )
@@ -200,7 +200,7 @@ async fn transfer_snapshot(
     remote_shard: RemoteShard,
     snapshots_path: &Path,
     collection_name: &str,
-    local_rest_address: &Url,
+    local_rest_address: Url,
     temp_dir: &Path,
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
@@ -223,14 +223,11 @@ async fn transfer_snapshot(
         .await?;
 
     // Select local shard snapshot download URL
-    let shard_download_url = local_rest_address
-        .join(&format!(
-            "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
-            &snapshot_description.name,
-        ))
-        .map_err(|err| {
-            CollectionError::service_error(format!("Invalid shard snapshot download URL: {err}"))
-        })?;
+    let mut shard_download_url = local_rest_address;
+    shard_download_url.set_path(&format!(
+        "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
+        &snapshot_description.name,
+    ));
 
     // Instruct remote to download and recover shard snapshot
     remote_shard
