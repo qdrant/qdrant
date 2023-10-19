@@ -11,7 +11,7 @@ use common::types::PointOffsetType;
 use super::DenseVectorStorage;
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dynamic_mmap_flags::DynamicMmapFlags;
@@ -107,16 +107,12 @@ impl VectorStorage for AppendableMmapVectorStorage {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.get_dense(key)
+    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+        self.get_dense(key).into()
     }
 
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: &[VectorElementType],
-    ) -> OperationResult<()> {
-        self.vectors.insert(key, vector)?;
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        self.vectors.insert(key, vector.into())?;
         self.set_deleted(key, false)?;
         Ok(())
     }
@@ -132,7 +128,7 @@ impl VectorStorage for AppendableMmapVectorStorage {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_deleted = other.is_deleted_vector(point_id);
-            let other_vector = other.get_vector(point_id);
+            let other_vector = other.get_vector(point_id).into();
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted)?;
         }
