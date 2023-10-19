@@ -1,24 +1,22 @@
-use std::collections::{HashMap, HashSet};
 use std::future::Future;
 
-use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::data_types::vectors::{
     NamedRecoQuery, NamedVector, VectorElementType, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
-    WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::reco_query::RecoQuery;
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
+use crate::common::fetch_vectors::{convert_to_vectors, PointRef, ReferencedPoints};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, PointRequest,
-    QueryEnum, RecommendExample, RecommendRequest, RecommendRequestBatch, RecommendStrategy,
-    Record, SearchRequest, SearchRequestBatch, UsingVector,
+    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, QueryEnum,
+    RecommendRequest, RecommendRequestBatch, RecommendStrategy, SearchRequest, SearchRequestBatch,
+    UsingVector,
 };
 
 fn avg_vectors<'a>(
@@ -71,46 +69,6 @@ where
     Ok(results.into_iter().next().unwrap())
 }
 
-async fn retrieve_points(
-    collection: &Collection,
-    ids: Vec<PointIdType>,
-    vector_names: Vec<String>,
-    read_consistency: Option<ReadConsistency>,
-) -> CollectionResult<Vec<Record>> {
-    collection
-        .retrieve(
-            PointRequest {
-                ids,
-                with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: WithVector::Selector(vector_names),
-            },
-            read_consistency,
-            None,
-        )
-        .await
-}
-
-enum CollectionRefHolder<'a> {
-    Ref(&'a Collection),
-    Guard(RwLockReadGuard<'a, Collection>),
-}
-
-async fn retrieve_points_with_locked_collection(
-    collection_holder: CollectionRefHolder<'_>,
-    ids: Vec<PointIdType>,
-    vector_names: Vec<String>,
-    read_consistency: Option<ReadConsistency>,
-) -> CollectionResult<Vec<Record>> {
-    match collection_holder {
-        CollectionRefHolder::Ref(collection) => {
-            retrieve_points(collection, ids, vector_names, read_consistency).await
-        }
-        CollectionRefHolder::Guard(guard) => {
-            retrieve_points(&guard, ids, vector_names, read_consistency).await
-        }
-    }
-}
-
 fn get_search_vector_name(request: &RecommendRequest) -> String {
     match &request.lookup_from {
         None => match &request.using {
@@ -154,12 +112,9 @@ where
     if request_batch.searches.iter().all(|s| s.limit == 0) {
         return Ok(vec![]);
     }
-    // pack all reference vector ids
-    let mut all_reference_vectors_ids: HashMap<_, HashSet<PointIdType>> = Default::default();
-    let mut vector_names_per_collection: HashMap<_, HashSet<String>> = Default::default();
 
-    for request in &request_batch.searches {
-        // Validate amount of examples
+    // Validate amount of examples
+    request_batch.searches.iter().try_for_each(|request| {
         match request.strategy.unwrap_or_default() {
             RecommendStrategy::AverageVector => {
                 if request.positive.is_empty() {
@@ -178,80 +133,29 @@ where
                 }
             }
         }
+        Ok(())
+    })?;
 
+    // pack all reference vector ids
+    let mut all_referenced_ids = ReferencedPoints::new();
+    request_batch.searches.iter().for_each(|request| {
         let collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
 
-        let reference_vectors_ids = all_reference_vectors_ids
-            .entry(collection_name)
-            .or_insert_with(HashSet::new);
+        let vector_name = get_search_vector_name(request);
 
-        let vector_names = vector_names_per_collection
-            .entry(collection_name)
-            .or_insert_with(HashSet::new);
-
-        vector_names.insert(get_search_vector_name(request));
-
-        request
+        let point_ids_iter = request
             .positive
             .iter()
-            .chain(&request.negative)
-            .filter_map(|example| example.as_point_id())
-            .for_each(|point_id| {
-                reference_vectors_ids.insert(point_id);
-            });
-    }
+            .chain(request.negative.iter())
+            .filter_map(|example| example.as_point_id());
 
-    debug_assert!(all_reference_vectors_ids.len() == vector_names_per_collection.len());
+        all_referenced_ids.add_from_iter(point_ids_iter, vector_name, collection_name);
+    });
 
-    let mut collections_names = Vec::new();
-    let mut vector_retrieves = Vec::new();
-    for (collection_name, reference_vectors_ids) in all_reference_vectors_ids.into_iter() {
-        collections_names.push(collection_name);
-        let points: Vec<_> = reference_vectors_ids.into_iter().collect();
-        let vector_names: Vec<_> = vector_names_per_collection
-            .remove(&collection_name)
-            .unwrap()
-            .into_iter()
-            .collect();
-        match collection_name {
-            None => vector_retrieves.push(retrieve_points_with_locked_collection(
-                CollectionRefHolder::Ref(collection),
-                points,
-                vector_names,
-                read_consistency,
-            )),
-            Some(name) => {
-                let other_collection = collection_by_name(name.to_string()).await;
-                match other_collection {
-                    Some(other_collection) => {
-                        vector_retrieves.push(retrieve_points_with_locked_collection(
-                            CollectionRefHolder::Guard(other_collection),
-                            points,
-                            vector_names,
-                            read_consistency,
-                        ))
-                    }
-                    None => {
-                        return Err(CollectionError::NotFound {
-                            what: format!("Collection {name}"),
-                        })
-                    }
-                }
-            }
-        }
-    }
-
-    let all_reference_vectors: Vec<Vec<Record>> = try_join_all(vector_retrieves).await?;
-
-    let mut all_vectors_records_map: HashMap<_, _> = Default::default();
-
-    for (collection_name, reference_vectors) in
-        collections_names.into_iter().zip(all_reference_vectors)
-    {
-        for rec in reference_vectors {
-            all_vectors_records_map.insert((collection_name, rec.id), rec);
-        }
-    }
+    // Fetch all referenced vectors
+    let all_vectors_records_map = all_referenced_ids
+        .fetch_vectors(collection, read_consistency, collection_by_name)
+        .await?;
 
     let mut results = Vec::with_capacity(request_batch.searches.len());
 
@@ -289,7 +193,10 @@ where
             let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
 
             for &point_id in &reference_vectors_ids {
-                if !all_vectors_records_map.contains_key(&(lookup_collection_name, point_id)) {
+                if !all_vectors_records_map.contains_key(&PointRef {
+                    collection_name: lookup_collection_name,
+                    point_id,
+                }) {
                     return Err(CollectionError::PointNotFound {
                         missed_point_id: point_id,
                     });
@@ -323,7 +230,7 @@ where
                 }
                 RecommendStrategy::BestScore => {
                     let core_search = recommend_by_best_score(
-                        request.clone(),
+                        request,
                         positive_vectors,
                         negative_vectors,
                         reference_vectors_ids,
@@ -432,7 +339,7 @@ fn recommend_by_avg_vector<'a>(
 }
 
 fn recommend_by_best_score<'a>(
-    request: RecommendRequest,
+    request: &RecommendRequest,
     positive: impl Iterator<Item = &'a VectorType>,
     negative: impl Iterator<Item = &'a VectorType>,
     reference_vectors_ids: Vec<PointIdType>,
@@ -442,7 +349,7 @@ fn recommend_by_best_score<'a>(
 
     let query = QueryEnum::RecommendBestScore(NamedRecoQuery {
         query: RecoQuery::new(positive, negative),
-        using: request.using.map(|x| match x {
+        using: request.using.clone().map(|x| match x {
             UsingVector::Name(name) => name,
         }),
     });
@@ -462,27 +369,10 @@ fn recommend_by_best_score<'a>(
         params: request.params,
         limit: request.limit,
         offset: request.offset,
-        with_payload: request.with_payload,
-        with_vector: request.with_vector,
+        with_payload: request.with_payload.clone(),
+        with_vector: request.with_vector.clone(),
         score_threshold: request.score_threshold,
     }
-}
-
-fn convert_to_vectors<'a>(
-    examples: impl Iterator<Item = &'a RecommendExample> + 'a,
-    all_vectors_records_map: &'a HashMap<(Option<&String>, PointIdType), Record>,
-    vector_name: &'a str,
-    collection_name: Option<&'a String>,
-) -> impl Iterator<Item = &'a VectorType> + 'a {
-    examples.filter_map(move |example| match example {
-        RecommendExample::Vector(vector) => Some(vector),
-        RecommendExample::PointId(vid) => {
-            let rec = all_vectors_records_map
-                .get(&(collection_name, *vid))
-                .unwrap();
-            rec.get_vector_by_name(vector_name)
-        }
-    })
 }
 
 #[cfg(test)]
