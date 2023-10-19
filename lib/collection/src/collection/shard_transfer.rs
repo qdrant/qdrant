@@ -45,10 +45,9 @@ impl Collection {
     {
         // Select transfer method
         if shard_transfer.method.is_none() {
-            log::warn!("No shard transfer method selected, defaulting to \"stream_records\"");
-            shard_transfer
-                .method
-                .replace(ShardTransferMethod::StreamRecords);
+            let method = ShardTransferMethod::default();
+            log::warn!("No shard transfer method selected, defaulting to {method:?}");
+            shard_transfer.method.replace(method);
         }
 
         let shard_id = shard_transfer.shard_id;

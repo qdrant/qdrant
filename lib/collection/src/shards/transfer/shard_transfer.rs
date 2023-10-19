@@ -63,10 +63,11 @@ impl ShardTransfer {
 }
 
 /// Methods for transferring a shard from one node to another.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardTransferMethod {
     /// Stream all shard records in batches until the whole shard is transferred.
+    #[default]
     StreamRecords,
     /// Snapshot the shard, transfer and restore it on the receiver.
     Snapshot,
@@ -85,6 +86,7 @@ pub async fn transfer_shard(
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     let shard_id = transfer_config.shard_id;
+    let transfer_method = transfer_config.method.unwrap_or_default();
 
     // Initiate shard on a remote peer
     let remote_shard = RemoteShard::new(
@@ -100,11 +102,11 @@ pub async fn transfer_shard(
         let shard_holder_guard = shard_holder.read().await;
         let transferring_shard = shard_holder_guard.get_shard(&shard_id);
         if let Some(replica_set) = transferring_shard {
-            match transfer_config.method {
-                Some(ShardTransferMethod::StreamRecords) | None => {
+            match transfer_method {
+                ShardTransferMethod::StreamRecords => {
                     replica_set.proxify_local(remote_shard.clone()).await?;
                 }
-                Some(ShardTransferMethod::Snapshot) => {
+                ShardTransferMethod::Snapshot => {
                     replica_set
                         .queue_proxify_local(remote_shard.clone())
                         .await?;
@@ -117,10 +119,7 @@ pub async fn transfer_shard(
         }
     }
 
-    match transfer_config
-        .method
-        .expect("No shard transfer method selected")
-    {
+    match transfer_method {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
             transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
