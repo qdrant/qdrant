@@ -405,7 +405,7 @@ impl ShardHolder {
         }
     }
 
-    /// Returns true if shard it explicitly local, false otherwise.
+    /// Returns true if shard is explicitly local, false otherwise.
     pub async fn is_shard_local(&self, shard_id: &ShardId) -> Option<bool> {
         match self.get_shard(shard_id) {
             Some(shard) => Some(shard.is_local().await),
@@ -413,10 +413,10 @@ impl ShardHolder {
         }
     }
 
-    /// Returns true if shard it explicitly local, false otherwise.
+    /// Returns true if shard is explicitly local or is queue proxy shard, false otherwise.
     pub async fn is_shard_local_or_queue_proxy(&self, shard_id: &ShardId) -> Option<bool> {
         match self.get_shard(shard_id) {
-            Some(shard) => Some(shard.is_local().await || shard.is_queue_proxy_local().await),
+            Some(shard) => Some(shard.is_local().await || shard.is_queue_proxy().await),
             None => None,
         }
     }
@@ -500,7 +500,7 @@ impl ShardHolder {
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        if !shard.is_local().await && !shard.is_queue_proxy_local().await {
+        if !shard.is_local().await && !shard.is_queue_proxy().await {
             return Err(CollectionError::bad_input(format!(
                 "Shard {shard_id} is not a local or queue proxy shard"
             )));

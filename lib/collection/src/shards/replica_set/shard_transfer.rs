@@ -66,8 +66,6 @@ impl ShardReplicaSet {
         match &*local_write {
             // Expected state, continue
             Some(Shard::Local(_)) => {}
-            Some(Shard::ForwardProxy(proxy))
-                if proxy.remote_shard.peer_id == remote_shard.peer_id => {}
             // Unexpected states, error
             Some(Shard::QueueProxy(_)) => {
                 return Err(CollectionError::service_error(format!(

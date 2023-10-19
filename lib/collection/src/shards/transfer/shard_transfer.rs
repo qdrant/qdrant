@@ -207,7 +207,7 @@ async fn transfer_snapshot(
 
     // Ensure we have configured a queue proxy
     let is_queue_proxy = match shard_holder_read.get_shard(&shard_id) {
-        Some(shard_replica_set) => shard_replica_set.is_queue_proxy_local().await,
+        Some(shard_replica_set) => shard_replica_set.is_queue_proxy().await,
         None => false,
     };
     if !is_queue_proxy {

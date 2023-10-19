@@ -297,7 +297,7 @@ impl ShardReplicaSet {
         matches!(*local_read, Some(Shard::Local(_) | Shard::Dummy(_)))
     }
 
-    pub async fn is_queue_proxy_local(&self) -> bool {
+    pub async fn is_queue_proxy(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::QueueProxy(_)))
     }

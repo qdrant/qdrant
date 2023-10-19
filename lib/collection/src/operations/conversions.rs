@@ -1234,11 +1234,7 @@ impl TryFrom<api::grpc::qdrant::MoveShard> for MoveShard {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::MoveShard) -> Result<Self, Self::Error> {
-        let method: Option<ShardTransferMethod> = match value.method {
-            Some(method) => Some(method.try_into()?),
-            None => None,
-        };
-
+        let method = value.method.map(TryInto::try_into).transpose()?;
         Ok(Self {
             shard_id: value.shard_id,
             from_peer_id: value.from_peer_id,
@@ -1255,7 +1251,7 @@ impl TryFrom<i32> for ShardTransferMethod {
         api::grpc::qdrant::ShardTransferMethod::from_i32(value)
             .map(Into::into)
             .ok_or_else(|| {
-                Status::invalid_argument(format!("Unknown shard transfer method: {}", value,))
+                Status::invalid_argument(format!("Unknown shard transfer method: {value}"))
             })
     }
 }

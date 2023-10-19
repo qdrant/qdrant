@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use api::grpc::conversions::date_time_to_proto;
-use api::grpc::qdrant::ShardSnapshotPriority;
 use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,30 +30,30 @@ impl TryFrom<i32> for SnapshotPriority {
     type Error = tonic::Status;
 
     fn try_from(snapshot_priority: i32) -> Result<Self, Self::Error> {
-        ShardSnapshotPriority::from_i32(snapshot_priority)
+        api::grpc::qdrant::ShardSnapshotPriority::from_i32(snapshot_priority)
             .map(Into::into)
             .ok_or_else(|| tonic::Status::invalid_argument("Malformed shard snapshot priority"))
     }
 }
 
-impl From<ShardSnapshotPriority> for SnapshotPriority {
-    fn from(snapshot_priority: ShardSnapshotPriority) -> Self {
+impl From<api::grpc::qdrant::ShardSnapshotPriority> for SnapshotPriority {
+    fn from(snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority) -> Self {
         match snapshot_priority {
-            ShardSnapshotPriority::NoSync => Self::NoSync,
-            ShardSnapshotPriority::Snapshot => Self::Snapshot,
-            ShardSnapshotPriority::Replica => Self::Replica,
-            ShardSnapshotPriority::ShardTransfer => Self::ShardTransfer,
+            api::grpc::qdrant::ShardSnapshotPriority::NoSync => Self::NoSync,
+            api::grpc::qdrant::ShardSnapshotPriority::Snapshot => Self::Snapshot,
+            api::grpc::qdrant::ShardSnapshotPriority::Replica => Self::Replica,
+            api::grpc::qdrant::ShardSnapshotPriority::ShardTransfer => Self::ShardTransfer,
         }
     }
 }
 
-impl From<SnapshotPriority> for ShardSnapshotPriority {
+impl From<SnapshotPriority> for api::grpc::qdrant::ShardSnapshotPriority {
     fn from(snapshot_priority: SnapshotPriority) -> Self {
         match snapshot_priority {
-            SnapshotPriority::NoSync => ShardSnapshotPriority::NoSync,
-            SnapshotPriority::Snapshot => ShardSnapshotPriority::Snapshot,
-            SnapshotPriority::Replica => ShardSnapshotPriority::Replica,
-            SnapshotPriority::ShardTransfer => ShardSnapshotPriority::ShardTransfer,
+            SnapshotPriority::NoSync => Self::NoSync,
+            SnapshotPriority::Snapshot => Self::Snapshot,
+            SnapshotPriority::Replica => Self::Replica,
+            SnapshotPriority::ShardTransfer => Self::ShardTransfer,
         }
     }
 }
