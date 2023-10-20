@@ -4,7 +4,6 @@ import "points.proto";
 
 package qdrant;
 
-
 service Points {
   /*
   Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
@@ -74,10 +73,18 @@ service Points {
   Look for the points which are closer to stored positive examples and at the same time further to negative examples.
    */
   rpc RecommendBatch (RecommendBatchPoints) returns (RecommendBatchResponse) {}
-    /*
+  /*
   Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
    */
   rpc RecommendGroups (RecommendPointGroups) returns (RecommendGroupsResponse) {}
+  /*
+    TODO(luis): add description
+   */
+  rpc Discover (DiscoverPoints) returns (DiscoverResponse) {}
+  /*
+fkdslfjgdkls
+   */
+  rpc DiscoverBatch (DiscoverBatchPoints) returns (DiscoverBatchResponse) {}
   /*
    Count points in collection with given filtering conditions
    */

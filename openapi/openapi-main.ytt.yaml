@@ -483,6 +483,64 @@ paths:
             type: integer
             minimum: 1
       responses: #@ response(reference("GroupsResult"))
+  
+  /collections/{collection_name}/points/discover:
+    post:
+      tags:
+        - points
+      summary: Discover points
+      description: TODO(luis) add description
+      operationId: discover_points
+      requestBody:
+        description: Request points based on target and/or positive and negative example pairs.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoverRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+      responses: #@ response(array(reference("ScoredPoint")))
+      
+  /collections/{collection_name}/points/discover/batch:
+    post:
+      tags:
+        - points
+      summary: Discover batch points
+      description: Look for points based on target and/or positive and negative example pairs.
+      operationId: discover_batch_points
+      requestBody:
+        description: Request points based on positive and negative examples.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoverRequestBatch"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+      responses: #@ response(array(array(reference("ScoredPoint"))))
 
   /collections/{collection_name}/points/count:
     post:
