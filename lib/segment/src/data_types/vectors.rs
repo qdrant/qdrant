@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::named_vectors::NamedVectors;
+use crate::common::operation_error::OperationError;
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -37,6 +38,35 @@ impl<'a> From<VectorRef<'a>> for &'a [VectorElementType] {
         match val {
             VectorRef::Dense(v) => v,
             VectorRef::Sparse(_) => unreachable!(),
+        }
+    }
+}
+
+impl From<NamedVectorStruct> for Vector {
+    fn from(value: NamedVectorStruct) -> Self {
+        match value {
+            NamedVectorStruct::Default(v) => Vector::Dense(v),
+            NamedVectorStruct::Named(v) => Vector::Dense(v.vector),
+        }
+    }
+}
+
+impl From<Vector> for VectorType {
+    fn from(value: Vector) -> Self {
+        match value {
+            Vector::Dense(v) => v,
+            Vector::Sparse(_) => panic!("Can't convert sparse vector to dense"), // TODO(sparse)
+        }
+    }
+}
+
+impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
+    type Error = OperationError;
+
+    fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
+        match value {
+            VectorRef::Dense(_) => Err(OperationError::WrongSparse),
+            VectorRef::Sparse(v) => Ok(v),
         }
     }
 }
@@ -85,7 +115,7 @@ pub type VectorElementType = f32;
 
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
-/// Type for vector
+/// Type for dense vector
 pub type VectorType = Vec<VectorElementType>;
 
 pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
@@ -303,7 +333,7 @@ impl Named for NamedRecoQuery {
 
 #[derive(Debug, Clone)]
 pub enum QueryVector {
-    Nearest(VectorType),
+    Nearest(Vector),
     Recommend(RecoQuery<VectorType>),
     Discovery(DiscoveryQuery<VectorType>),
     Context(ContextQuery<VectorType>),
@@ -311,25 +341,25 @@ pub enum QueryVector {
 
 impl From<VectorType> for QueryVector {
     fn from(vec: VectorType) -> Self {
-        Self::Nearest(vec)
+        Self::Nearest(Vector::Dense(vec))
     }
 }
 
 impl<'a> From<&'a [VectorElementType]> for QueryVector {
     fn from(vec: &'a [VectorElementType]) -> Self {
-        Self::Nearest(vec.to_vec())
+        Self::Nearest(Vector::Dense(vec.to_vec()))
     }
 }
 
 impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
     fn from(vec: [VectorElementType; N]) -> Self {
-        Self::Nearest(vec.to_vec())
+        Self::Nearest(Vector::Dense(vec.to_vec()))
     }
 }
 
 impl<'a> From<VectorRef<'a>> for QueryVector {
     fn from(vec: VectorRef<'a>) -> Self {
         let vec: &[_] = vec.into();
-        Self::Nearest(vec.to_vec())
+        Self::Nearest(Vector::Dense(vec.to_vec()))
     }
 }

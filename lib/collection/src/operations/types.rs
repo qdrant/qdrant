@@ -759,6 +759,9 @@ impl From<OperationError> for CollectionError {
             OperationError::ValidationError { .. } => Self::BadInput {
                 description: format!("{err}"),
             },
+            OperationError::WrongSparse => Self::BadInput {
+                description: "Conversion between sparse and regular vectors failed".to_string(),
+            },
         }
     }
 }
@@ -1337,7 +1340,7 @@ impl From<SearchRequest> for CoreSearchRequest {
 impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
-            QueryEnum::Nearest(named) => QueryVector::Nearest(named.to_vector()),
+            QueryEnum::Nearest(named) => QueryVector::Nearest(named.into()),
             QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query),
         }
     }
