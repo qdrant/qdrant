@@ -32,6 +32,8 @@ jobs:
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci
+    - name: Run doc tests # nextest does not support doc tests yet
+      run: cargo test --workspace --doc
     - name: Upload test report
       uses: actions/upload-artifact@v3
       with:
