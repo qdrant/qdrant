@@ -4999,6 +4999,18 @@
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": false,
             "type": "boolean"
+          },
+          "sparse_vectors": {
+            "description": "Configuration of the sparse vector storage",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SparseVectorsConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -5232,6 +5244,35 @@
           "auto",
           "custom"
         ]
+      },
+      "SparseVectorsConfig": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/SparseVectorParams"
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SparseVectorParams"
+            }
+          }
+        ]
+      },
+      "SparseVectorParams": {
+        "description": "Params of single sparse vector data storage",
+        "type": "object",
+        "required": [
+          "distance"
+        ],
+        "properties": {
+          "on_disk": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
+          }
+        }
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -5627,6 +5668,19 @@
         "description": "Full vector data per point separator with single and multiple vector modes",
         "anyOf": [
           {
+            "$ref": "#/components/schemas/Vector"
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Vector"
+            }
+          }
+        ]
+      },
+      "Vector": {
+        "anyOf": [
+          {
             "type": "array",
             "items": {
               "type": "number",
@@ -5634,23 +5688,7 @@
             }
           },
           {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "number",
-                "format": "float"
-              }
-            }
-          },
-          {
             "$ref": "#/components/schemas/SparseVector"
-          },
-          {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/SparseVector"
-            }
           }
         ]
       },
@@ -6760,6 +6798,18 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "sparse_vectors": {
+            "description": "Sparse vector data config.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SparseVectorsConfig"
               },
               {
                 "nullable": true
@@ -8225,6 +8275,12 @@
               "$ref": "#/components/schemas/VectorDataConfig"
             }
           },
+          "sparse_vector_data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SparseVectorDataConfig"
+            }
+          },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
           }
@@ -8336,6 +8392,18 @@
             }
           }
         ]
+      },
+      "SparseVectorDataConfig": {
+        "description": "Config of single vector data storage",
+        "type": "object",
+        "required": [
+          "storage_type"
+        ],
+        "properties": {
+          "storage_type": {
+            "$ref": "#/components/schemas/VectorStorageType"
+          }
+        }
       },
       "PayloadStorageType": {
         "description": "Type of payload storage",
