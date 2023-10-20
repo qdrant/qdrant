@@ -2,7 +2,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
-use sparse::common::sparse_vector::SparseVector;
 
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::{DenseVectorStorage, VectorStorageEnum};
@@ -13,8 +12,6 @@ use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::sparse_raw_scorer::SparseRawScorer;
-use crate::vector_storage::VectorStorage;
 
 /// RawScorer            QueryScorer        Metric
 /// ┌────────────────┐   ┌──────────────┐   ┌───────────────────┐
@@ -169,13 +166,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
                     MetricQueryScorer::<TMetric, _>::new(dense_vector, vector_storage);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
-            Vector::Sparse(sparse_vector) => raw_sparse_scorer_from_query_scorer(
-                sparse_vector,
-                vector_storage,
-                point_deleted,
-                vec_deleted,
-                is_stopped,
-            ),
+            Vector::Sparse(_sparse_vector) => todo!("add sparse vector raw scorer"),
         },
         QueryVector::Recommend(reco_query) => raw_scorer_from_query_scorer(
             CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
@@ -196,22 +187,6 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             is_stopped,
         ),
     }
-}
-
-pub fn raw_sparse_scorer_from_query_scorer<'a, TVectorStorage: VectorStorage>(
-    vector: SparseVector,
-    vector_storage: &'a TVectorStorage,
-    point_deleted: &'a BitSlice,
-    vec_deleted: &'a BitSlice,
-    is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
-    Box::new(SparseRawScorer::new(
-        vector,
-        vector_storage,
-        point_deleted,
-        vec_deleted,
-        is_stopped,
-    ))
 }
 
 pub fn raw_scorer_from_query_scorer<'a, TQueryScorer: QueryScorer + 'a>(
