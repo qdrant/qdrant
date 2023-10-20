@@ -1140,7 +1140,7 @@ pub enum ReplicaState {
     Initializing = 3,
     /// A shard which receives data, but is not used for search; Useful for backup shards
     Listener = 4,
-    /// Snapshot shard transfer is in progress, updates aren't sent to the shard
+    /// Snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard
     PartialSnapshot = 5,
 }
 impl ReplicaState {
