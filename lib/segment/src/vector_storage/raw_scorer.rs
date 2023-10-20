@@ -5,7 +5,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::{DenseVectorStorage, VectorStorageEnum};
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::data_types::vectors::QueryVector;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -160,14 +160,12 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
 ) -> Box<dyn RawScorer + 'a> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
-        QueryVector::Nearest(vector) => match vector {
-            Vector::Dense(dense_vector) => {
-                let query_scorer =
-                    MetricQueryScorer::<TMetric, _>::new(dense_vector, vector_storage);
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
-            }
-            Vector::Sparse(_sparse_vector) => panic!("add sparse vector raw scorer"), // TODO(sparse)
-        },
+        QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
+            MetricQueryScorer::<TMetric, _>::new(vector.into(), vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
         QueryVector::Recommend(reco_query) => raw_scorer_from_query_scorer(
             CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
             point_deleted,

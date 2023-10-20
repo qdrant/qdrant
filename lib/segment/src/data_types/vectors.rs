@@ -51,6 +51,15 @@ impl From<NamedVectorStruct> for Vector {
     }
 }
 
+impl From<Vector> for VectorType {
+    fn from(value: Vector) -> Self {
+        match value {
+            Vector::Dense(v) => v,
+            Vector::Sparse(_) => panic!("Can't convert sparse vector to dense"), // TODO(sparse)
+        }
+    }
+}
+
 impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
     type Error = OperationError;
 
