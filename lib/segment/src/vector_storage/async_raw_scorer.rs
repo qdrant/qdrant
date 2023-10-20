@@ -4,6 +4,7 @@ use bitvec::prelude::BitSlice;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
+use super::query::context_query::ContextQuery;
 use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
@@ -301,15 +302,16 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 )))
             }
             QueryVector::Context(context_query) => {
+                let context_query: ContextQuery<VectorType> = context_query.try_into()?;
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(context_query, storage);
-                Box::new(AsyncRawScorerImpl::new(
+                Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,
                     query_scorer,
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
                     is_stopped.unwrap_or(&DEFAULT_STOPPED),
-                ))
+                )))
             }
         }
     }
