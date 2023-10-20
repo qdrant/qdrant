@@ -1337,7 +1337,7 @@ impl From<SearchRequest> for CoreSearchRequest {
 impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
-            QueryEnum::Nearest(named) => QueryVector::Nearest(named.to_vector()),
+            QueryEnum::Nearest(named) => QueryVector::Nearest(named.to_new_vector()),
             QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query),
         }
     }

@@ -6,7 +6,7 @@ use quantization::EncodedVectors;
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
 use super::quantized_query_scorer::QuantizedQueryScorer;
 use super::quantized_vectors::QuantizedVectorStorage;
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{QueryVector, Vector};
 use crate::types::Distance;
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
@@ -65,8 +65,19 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
         match query {
             QueryVector::Nearest(vector) => {
-                let query_scorer = QuantizedQueryScorer::new(vector, quantized_storage, *distance);
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
+                match vector {
+                    Vector::Dense(dense_vector) => {
+                        let query_scorer =
+                            QuantizedQueryScorer::new(dense_vector, quantized_storage, *distance);
+                        raw_scorer_from_query_scorer(
+                            query_scorer,
+                            point_deleted,
+                            vec_deleted,
+                            is_stopped,
+                        )
+                    }
+                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO AG
+                }
             }
             QueryVector::Recommend(reco_query) => {
                 let query_scorer =

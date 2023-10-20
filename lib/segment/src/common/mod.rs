@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{QueryVector, Vector, VectorElementType};
 use crate::types::{SegmentConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
@@ -45,7 +45,14 @@ fn check_query_vector(
     vector_config: &VectorDataConfig,
 ) -> OperationResult<()> {
     match query_vector {
-        QueryVector::Nearest(vector) => check_vector_against_config(vector, vector_config)?,
+        QueryVector::Nearest(vector) => {
+            match vector {
+                Vector::Dense(dense_vector) => {
+                    check_vector_against_config(dense_vector, vector_config)?;
+                }
+                Vector::Sparse(_sparse_vector) => (), // TODO: check sparse vector config
+            }
+        }
         QueryVector::Recommend(reco_query) => reco_query
             .flat_iter()
             .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,

@@ -21,6 +21,7 @@ mod async_io_mock;
 pub mod common;
 pub mod query;
 mod query_scorer;
+mod sparse_raw_scorer;
 
 pub use raw_scorer::*;
 pub use vector_storage_base::*;
