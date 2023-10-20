@@ -76,7 +76,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                             is_stopped,
                         )
                     }
-                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO AG
+                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO(sparse)
                 }
             }
             QueryVector::Recommend(reco_query) => {

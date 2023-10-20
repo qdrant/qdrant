@@ -275,7 +275,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                             is_stopped.unwrap_or(&DEFAULT_STOPPED),
                         ))
                     }
-                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO AG
+                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO(sparse)
                 }
             }
             QueryVector::Recommend(reco_query) => {

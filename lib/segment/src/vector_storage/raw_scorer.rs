@@ -166,7 +166,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
                     MetricQueryScorer::<TMetric, _>::new(dense_vector, vector_storage);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
-            Vector::Sparse(_sparse_vector) => todo!("add sparse vector raw scorer"),
+            Vector::Sparse(_sparse_vector) => panic!("add sparse vector raw scorer"), // TODO(sparse)
         },
         QueryVector::Recommend(reco_query) => raw_scorer_from_query_scorer(
             CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),

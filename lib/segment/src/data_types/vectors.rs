@@ -42,14 +42,21 @@ impl<'a> From<VectorRef<'a>> for &'a [VectorElementType] {
     }
 }
 
+impl From<NamedVectorStruct> for Vector {
+    fn from(value: NamedVectorStruct) -> Self {
+        match value {
+            NamedVectorStruct::Default(v) => Vector::Dense(v),
+            NamedVectorStruct::Named(v) => Vector::Dense(v.vector),
+        }
+    }
+}
+
 impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
     type Error = OperationError;
 
     fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
         match value {
-            VectorRef::Dense(_) => Err(OperationError::service_error(
-                "Cannot convert dense vector to sparse",
-            )),
+            VectorRef::Dense(_) => Err(OperationError::WrongSparse),
             VectorRef::Sparse(v) => Ok(v),
         }
     }
@@ -246,14 +253,6 @@ impl NamedVectorStruct {
         match self {
             NamedVectorStruct::Default(v) => v,
             NamedVectorStruct::Named(v) => v.vector,
-        }
-    }
-
-    // TODO unify with NamedVectors::to_new_vector when exposing API
-    pub fn to_new_vector(self) -> Vector {
-        match self {
-            NamedVectorStruct::Default(v) => Vector::Dense(v),
-            NamedVectorStruct::Named(v) => Vector::Dense(v.vector),
         }
     }
 }

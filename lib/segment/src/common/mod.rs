@@ -50,7 +50,7 @@ fn check_query_vector(
                 Vector::Dense(dense_vector) => {
                     check_vector_against_config(dense_vector, vector_config)?;
                 }
-                Vector::Sparse(_sparse_vector) => (), // TODO: check sparse vector config
+                Vector::Sparse(_sparse_vector) => (), // TODO(sparse): check sparse vector config
             }
         }
         QueryVector::Recommend(reco_query) => reco_query
