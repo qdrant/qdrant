@@ -402,7 +402,7 @@ impl From<segment::data_types::vectors::Vector> for Vector {
     fn from(vector: segment::data_types::vectors::Vector) -> Self {
         match vector {
             segment::data_types::vectors::Vector::Dense(vector) => Self { data: vector },
-            segment::data_types::vectors::Vector::Sparse(_) => todo!(), // TODO(ivan) grpc convertion
+            segment::data_types::vectors::Vector::Sparse(_) => todo!(), // TODO(ivan) grpc conversion
         }
     }
 }
