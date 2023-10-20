@@ -743,7 +743,7 @@ pub enum ReplicaState {
     // A shard which receives data, but is not used for search
     // Useful for backup shards
     Listener,
-    // TODO
+    // Snapshot shard transfer is in progress, updates aren't sent to the shard
     PartialSnapshot,
 }
 
