@@ -58,36 +58,57 @@ pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Collecti
     Ok(())
 }
 
-/// Guard, that ensures that file will be deleted on drop.
-pub struct FileCleaner {
+/// Guard, ensures that a file or directory is deleted on drop.
+pub struct TempPath {
     path: Option<PathBuf>,
 }
 
-impl FileCleaner {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: Some(path.into()),
+impl TempPath {
+    /// Delete the file or directory now
+    ///
+    /// # Error
+    ///
+    /// Returns an error if the file or directory was already deleted, or if it failed to delete it
+    /// now.
+    ///
+    /// To ignore errors, use `let _ = temp_path.delete();`.
+    pub fn delete(mut self) -> std::io::Result<()> {
+        match self.path.take() {
+            Some(ref path) => Self::delete_path(path),
+            None => Ok(()),
         }
     }
 
-    pub fn delete(&mut self) {
-        if let Some(path) = &self.path {
-            // Ignore errors, because file can be already deleted.
-            if path.is_dir() {
-                let _ = std::fs::remove_dir_all(path);
-            } else {
-                let _ = std::fs::remove_file(path);
-            }
-        }
+    /// Keep the file or directory, do not delete on drop
+    pub fn keep(mut self) {
+        self.path.take();
     }
 
-    pub fn forget(&mut self) {
-        self.path = None;
+    fn delete_path(path: &Path) -> std::io::Result<()> {
+        if path.is_dir() {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
+        }
     }
 }
 
-impl Drop for FileCleaner {
+impl Drop for TempPath {
     fn drop(&mut self) {
-        self.delete();
+        // Ignore errors, may have been deleted already
+        if let Some(ref path) = self.path.take() {
+            let _ = Self::delete_path(path);
+        }
+    }
+}
+
+impl<P> From<P> for TempPath
+where
+    P: Into<PathBuf>,
+{
+    fn from(path: P) -> Self {
+        Self {
+            path: Some(path.into())
+        }
     }
 }
