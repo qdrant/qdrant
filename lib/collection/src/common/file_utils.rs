@@ -108,7 +108,7 @@ where
 {
     fn from(path: P) -> Self {
         Self {
-            path: Some(path.into())
+            path: Some(path.into()),
         }
     }
 }
