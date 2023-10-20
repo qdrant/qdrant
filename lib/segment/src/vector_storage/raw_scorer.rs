@@ -161,7 +161,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<TMetric, _>::new(vector, vector_storage),
+            MetricQueryScorer::<TMetric, _>::new(vector.into(), vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,

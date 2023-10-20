@@ -65,7 +65,8 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
         match query {
             QueryVector::Nearest(vector) => {
-                let query_scorer = QuantizedQueryScorer::new(vector, quantized_storage, *distance);
+                let query_scorer =
+                    QuantizedQueryScorer::new(vector.into(), quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Recommend(reco_query) => {

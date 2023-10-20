@@ -6,7 +6,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{QueryVector, Vector};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::types::Distance;
@@ -262,15 +262,21 @@ impl<'a> AsyncRawScorerBuilder<'a> {
 
         match query {
             QueryVector::Nearest(vector) => {
-                let query_scorer = MetricQueryScorer::<TMetric, _>::new(vector, storage);
-                Box::new(AsyncRawScorerImpl::new(
-                    points_count,
-                    query_scorer,
-                    storage.get_mmap_vectors(),
-                    point_deleted,
-                    vec_deleted,
-                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
-                ))
+                match vector {
+                    Vector::Dense(dense_vector) => {
+                        let query_scorer =
+                            MetricQueryScorer::<TMetric, _>::new(dense_vector, storage);
+                        Box::new(AsyncRawScorerImpl::new(
+                            points_count,
+                            query_scorer,
+                            storage.get_mmap_vectors(),
+                            point_deleted,
+                            vec_deleted,
+                            is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                        ))
+                    }
+                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO(sparse)
+                }
             }
             QueryVector::Recommend(reco_query) => {
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(reco_query, storage);
