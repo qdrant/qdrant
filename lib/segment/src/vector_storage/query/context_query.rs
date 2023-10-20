@@ -9,9 +9,9 @@ impl<T> DiscoveryPair<T> {
     /// for the search. This is done by using a smooth loss function instead of hard ranking
     /// to approach the best zone, once the best zone is reached, score will be same for all
     /// points inside that zone.
-    ///
+    /// e.g.:
     ///                   │
-    ///                   │         
+    ///                   │
     ///                   │    +0
     ///                   │             +0
     ///                   │
