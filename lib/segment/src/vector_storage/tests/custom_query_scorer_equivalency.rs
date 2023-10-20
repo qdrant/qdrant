@@ -102,8 +102,8 @@ fn random_context_query<R: Rng + ?Sized>(
 
     let pairs = (0..num_pairs)
         .map(|_| {
-            let positive = sampler.take(DIMS).collect();
-            let negative = sampler.take(DIMS).collect();
+            let positive = sampler.take(DIMS).collect_vec().into();
+            let negative = sampler.take(DIMS).collect_vec().into();
             DiscoveryPair { positive, negative }
         })
         .collect_vec();

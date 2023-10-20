@@ -4,7 +4,7 @@ use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{VectorElementType, VectorOrSparse};
+use crate::data_types::vectors::{Vector, VectorElementType};
 use crate::index::field_index::FieldIndex;
 use crate::types::PayloadKeyType;
 
@@ -433,7 +433,7 @@ pub fn transpose_map_into_named_vector(
     for (key, values) in map {
         result.resize_with(values.len(), NamedVectors::default);
         for (i, value) in values.into_iter().enumerate() {
-            let vector: VectorOrSparse = value.into();
+            let vector: Vector = value.into();
             result[i].insert(key.clone(), vector);
         }
     }

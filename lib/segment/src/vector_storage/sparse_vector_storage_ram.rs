@@ -17,7 +17,7 @@ use super::VectorStorageEnum;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorOrSparseRef;
+use crate::data_types::vectors::VectorRef;
 use crate::types::Distance;
 
 pub struct SparseVectorStorage {
@@ -131,16 +131,12 @@ impl VectorStorage for SparseVectorStorage {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> VectorOrSparseRef {
+    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
         let result = self.vectors.get(key as usize).unwrap();
         result.into()
     }
 
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorOrSparseRef,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &SparseVector = vector.try_into()?;
         self.vectors.resize_with(
             std::cmp::max(self.vectors.len(), key as usize + 1),

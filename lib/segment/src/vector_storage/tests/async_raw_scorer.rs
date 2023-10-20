@@ -7,7 +7,7 @@ use rand::SeedableRng as _;
 
 use super::utils::{delete_random_vectors, insert_distributed_vectors, sampler, score, Result};
 use crate::common::rocksdb_wrapper;
-use crate::data_types::vectors::{QueryVector, VectorOrSparse};
+use crate::data_types::vectors::{QueryVector, Vector};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::types::Distance;
@@ -92,7 +92,7 @@ fn test_random_score(
     deleted_points: &BitSlice,
 ) -> Result<()> {
     let vec = sampler(&mut rng).take(storage.vector_dim()).collect_vec();
-    let vec: VectorOrSparse = vec.into();
+    let vec: Vector = vec.into();
     let query: QueryVector = vec.into();
 
     let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points).unwrap();

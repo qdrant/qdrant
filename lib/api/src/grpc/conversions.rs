@@ -398,11 +398,11 @@ impl From<segment::data_types::vectors::VectorType> for Vector {
     }
 }
 
-impl From<segment::data_types::vectors::VectorOrSparse> for Vector {
-    fn from(vector: segment::data_types::vectors::VectorOrSparse) -> Self {
+impl From<segment::data_types::vectors::Vector> for Vector {
+    fn from(vector: segment::data_types::vectors::Vector) -> Self {
         match vector {
-            segment::data_types::vectors::VectorOrSparse::Vector(vector) => Self { data: vector },
-            segment::data_types::vectors::VectorOrSparse::Sparse(_) => todo!(), // TODO(ivan) grpc convertion
+            segment::data_types::vectors::Vector::Dense(vector) => Self { data: vector },
+            segment::data_types::vectors::Vector::Sparse(_) => todo!(), // TODO(ivan) grpc convertion
         }
     }
 }
@@ -475,7 +475,7 @@ impl From<NamedVectors> for HashMap<String, Vec<VectorElementType>> {
     }
 }
 
-impl From<NamedVectors> for HashMap<String, segment::data_types::vectors::VectorOrSparse> {
+impl From<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector> {
     fn from(vectors: NamedVectors) -> Self {
         vectors
             .vectors

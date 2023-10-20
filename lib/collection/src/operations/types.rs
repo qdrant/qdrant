@@ -17,7 +17,7 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    Named, NamedRecoQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorOrSparseRef,
+    Named, NamedRecoQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorRef,
     VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
@@ -927,7 +927,7 @@ impl Record {
         }
     }
 
-    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorOrSparseRef> {
+    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
         match &self.vector {
             Some(VectorStruct::Single(vector)) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(vector.into())

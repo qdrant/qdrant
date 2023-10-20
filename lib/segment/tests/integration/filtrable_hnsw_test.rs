@@ -5,9 +5,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::vectors::{
-    only_default_vector, QueryVector, VectorOrSparse, DEFAULT_VECTOR_NAME,
-};
+use segment::data_types::vectors::{only_default_vector, QueryVector, Vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
@@ -143,7 +141,7 @@ fn test_filterable_hnsw() {
     let mut hits = 0;
     let attempts = 100;
     for i in 0..attempts {
-        let query: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query: Vector = random_vector(&mut rnd, dim).into();
         let query: QueryVector = query.into();
 
         let range_size = 40;

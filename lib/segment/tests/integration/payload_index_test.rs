@@ -7,9 +7,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::vectors::{
-    only_default_vector, QueryVector, VectorOrSparse, DEFAULT_VECTOR_NAME,
-};
+use segment::data_types::vectors::{only_default_vector, QueryVector, Vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{
@@ -249,7 +247,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
 fn validate_geo_filter(query_filter: Filter) {
     let mut rnd = rand::thread_rng();
-    let query: VectorOrSparse = random_vector(&mut rnd, DIM).into();
+    let query: Vector = random_vector(&mut rnd, DIM).into();
     let query: QueryVector = query.into();
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
     let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
@@ -526,7 +524,7 @@ fn test_struct_payload_index() {
     let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
 
     for _i in 0..ATTEMPTS {
-        let query_vector: VectorOrSparse = random_vector(&mut rnd, DIM).into();
+        let query_vector: Vector = random_vector(&mut rnd, DIM).into();
         let query_vector: QueryVector = query_vector.into();
         let query_filter = random_filter(&mut rnd, 3);
 
@@ -689,7 +687,7 @@ fn test_struct_payload_index_nested_fields() {
 
     let attempts = 100;
     for _i in 0..attempts {
-        let query_vector: VectorOrSparse = random_vector(&mut rnd, DIM).into();
+        let query_vector: Vector = random_vector(&mut rnd, DIM).into();
         let query_vector: QueryVector = query_vector.into();
         let query_filter = random_nested_filter(&mut rnd);
         let plain_result = plain_segment

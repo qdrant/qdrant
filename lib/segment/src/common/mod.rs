@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorOrSparseRef};
+use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
@@ -52,13 +52,13 @@ fn check_query_vector(
         QueryVector::Nearest(vector) => check_vector_against_config(vector.into(), vector_config)?,
         QueryVector::Recommend(reco_query) => reco_query
             .flat_iter()
-            .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
+            .try_for_each(|vector| check_vector_against_config(vector.into(), vector_config))?,
         QueryVector::Discovery(discovery_query) => discovery_query
             .flat_iter()
-            .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
+            .try_for_each(|vector| check_vector_against_config(vector.into(), vector_config))?,
         QueryVector::Context(discovery_context_query) => discovery_context_query
             .flat_iter()
-            .try_for_each(|vector| check_vector_against_config(vector, vector_config))?,
+            .try_for_each(|vector| check_vector_against_config(vector.into(), vector_config))?,
     }
 
     Ok(())
@@ -126,7 +126,7 @@ fn get_sparse_vector_config_or_error<'a>(
 ///
 /// Returns an error if incompatible.
 fn check_vector_against_config(
-    vector: VectorOrSparseRef,
+    vector: VectorRef,
     vector_config: &VectorDataConfig,
 ) -> OperationResult<()> {
     // Check dimensionality

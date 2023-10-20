@@ -4,8 +4,8 @@ use std::future::Future;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    NamedRecoQuery, NamedVector, SparseNamedVector, VectorElementType, VectorOrSparse,
-    VectorOrSparseRef, VectorType, DEFAULT_VECTOR_NAME,
+    NamedRecoQuery, NamedVector, SparseNamedVector, Vector, VectorElementType, VectorRef,
+    VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -22,12 +22,12 @@ use crate::operations::types::{
     Record, SearchRequest, SearchRequestBatch, UsingVector,
 };
 
-fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorOrSparseRef<'a>>) -> VectorOrSparse {
+fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> Vector {
     let mut count: usize = 0;
     let mut avg_vector: VectorType = Default::default();
     for vector in vectors {
         match vector {
-            VectorOrSparseRef::Vector(vector) => {
+            VectorRef::Dense(vector) => {
                 count += 1;
                 for i in 0..vector.len() {
                     if i >= avg_vector.len() {
@@ -37,7 +37,7 @@ fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorOrSparseRef<'a>>) -> Vect
                     }
                 }
             }
-            VectorOrSparseRef::Sparse(_) => unimplemented!(), // TODO(ivan)
+            VectorRef::Sparse(_) => unimplemented!(), // TODO(ivan)
         }
     }
 
@@ -48,12 +48,9 @@ fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorOrSparseRef<'a>>) -> Vect
     avg_vector.into()
 }
 
-fn merge_positive_and_negative_avg(
-    positive: VectorOrSparse,
-    negative: VectorOrSparse,
-) -> VectorOrSparse {
+fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Vector {
     match (positive, negative) {
-        (VectorOrSparse::Vector(positive), VectorOrSparse::Vector(negative)) => {
+        (Vector::Dense(positive), Vector::Dense(negative)) => {
             let vector: VectorType = positive
                 .iter()
                 .zip(negative.iter())
@@ -400,8 +397,8 @@ fn batch_by_strategy(
 
 fn recommend_by_avg_vector<'a>(
     request: RecommendRequest,
-    positive: impl Iterator<Item = VectorOrSparseRef<'a>>,
-    negative: impl Iterator<Item = VectorOrSparseRef<'a>>,
+    positive: impl Iterator<Item = VectorRef<'a>>,
+    negative: impl Iterator<Item = VectorRef<'a>>,
     vector_name: &str,
     reference_vectors_ids: Vec<ExtendedPointId>,
 ) -> SearchRequest {
@@ -428,12 +425,12 @@ fn recommend_by_avg_vector<'a>(
 
     SearchRequest {
         vector: match search_vector {
-            VectorOrSparse::Vector(vector) => NamedVector {
+            Vector::Dense(vector) => NamedVector {
                 name: vector_name.to_string(),
                 vector,
             }
             .into(),
-            VectorOrSparse::Sparse(vector) => SparseNamedVector {
+            Vector::Sparse(vector) => SparseNamedVector {
                 name: vector_name.to_string(),
                 vector,
             }
@@ -457,8 +454,8 @@ fn recommend_by_avg_vector<'a>(
 
 fn recommend_by_best_score<'a>(
     request: RecommendRequest,
-    positive: impl Iterator<Item = VectorOrSparseRef<'a>>,
-    negative: impl Iterator<Item = VectorOrSparseRef<'a>>,
+    positive: impl Iterator<Item = VectorRef<'a>>,
+    negative: impl Iterator<Item = VectorRef<'a>>,
     reference_vectors_ids: Vec<PointIdType>,
 ) -> CoreSearchRequest {
     let positive = positive.map(|v| v.to_owned()).collect();
@@ -497,7 +494,7 @@ fn convert_to_vectors<'a>(
     all_vectors_records_map: &'a HashMap<(Option<&String>, PointIdType), Record>,
     vector_name: &'a str,
     collection_name: Option<&'a String>,
-) -> impl Iterator<Item = VectorOrSparseRef<'a>> + 'a {
+) -> impl Iterator<Item = VectorRef<'a>> + 'a {
     examples.filter_map(move |example| match example {
         RecommendExample::Vector(vector) => Some(vector.into()),
         RecommendExample::PointId(vid) => {

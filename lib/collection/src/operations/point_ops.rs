@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_mixed_vector, BatchVectorStruct, VectorOrSparse, VectorStruct, VectorType,
+    only_default_mixed_vector, BatchVectorStruct, Vector, VectorStruct, VectorType,
 };
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
@@ -391,7 +391,7 @@ impl SplitByShard for Batch {
                         batch.ids.push(id);
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
-                            let vector: VectorOrSparse = vector.to_owned();
+                            let vector: Vector = vector.to_owned();
                             let vector: VectorType = vector.try_into().unwrap(); // TODO(ivan) propagate error
                             match &mut batch.vectors {
                                 BatchVectorStruct::Multi(batch_vectors) => {
@@ -439,7 +439,7 @@ impl SplitByShard for Batch {
                         batch.ids.push(id);
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
-                            let vector: VectorOrSparse = vector.to_owned();
+                            let vector: Vector = vector.to_owned();
                             let vector: VectorType = vector.try_into().unwrap(); // TODO(ivan) propagate error
                             match &mut batch.vectors {
                                 BatchVectorStruct::Multi(batch_vectors) => {

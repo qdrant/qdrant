@@ -9,6 +9,7 @@ use super::quantized_vectors::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::types::Distance;
+use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
@@ -85,6 +86,8 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Context(discovery_context_query) => {
+                let discovery_context_query: ContextQuery<VectorType> =
+                    discovery_context_query.try_into()?;
                 let query_scorer = QuantizedCustomQueryScorer::new(
                     discovery_context_query,
                     quantized_storage,

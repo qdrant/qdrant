@@ -2,7 +2,8 @@ use common::types::ScoreType;
 
 use super::discovery_query::DiscoveryPair;
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, VectorType};
+use crate::common::operation_error::OperationError;
+use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 
 impl<T> DiscoveryPair<T> {
     /// In the first stage of discovery search, the objective is to get the best entry point
@@ -71,9 +72,21 @@ impl<T> Query<T> for ContextQuery<T> {
     }
 }
 
-impl From<ContextQuery<VectorType>> for QueryVector {
-    fn from(query: ContextQuery<VectorType>) -> Self {
+impl From<ContextQuery<Vector>> for QueryVector {
+    fn from(query: ContextQuery<Vector>) -> Self {
         QueryVector::Context(query)
+    }
+}
+
+impl TryInto<ContextQuery<VectorType>> for ContextQuery<Vector> {
+    type Error = OperationError;
+
+    fn try_into(self) -> Result<ContextQuery<VectorType>, Self::Error> {
+        let mut pairs: Vec<DiscoveryPair<VectorType>> = Default::default();
+        for pair in &self.pairs {
+            pairs.push(pair.clone().try_into()?);
+        }
+        Ok(ContextQuery { pairs })
     }
 }
 

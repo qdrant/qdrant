@@ -10,7 +10,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
-use segment::data_types::vectors::{VectorOrSparse, VectorStruct};
+use segment::data_types::vectors::{Vector, VectorStruct};
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
 };
@@ -135,7 +135,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             assert_eq!(res[0].id, 0.into());
             assert_eq!(res[0].payload.as_ref().unwrap().len(), 1);
             let vec = vec![1.0, 0.0, 1.0, 1.0];
-            let vec: VectorOrSparse = vec.into();
+            let vec: Vector = vec.into();
             match &res[0].vector {
                 Some(VectorStruct::Single(v)) => assert_eq!(v.clone(), vec),
                 _ => panic!("vector is not returned"),

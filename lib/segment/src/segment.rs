@@ -24,7 +24,7 @@ use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::{CowValue, NamedVectors};
-use crate::data_types::vectors::{QueryVector, VectorOrSparse, VectorOrSparseRef};
+use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
@@ -137,7 +137,7 @@ impl Segment {
             match vector {
                 Some(vector) => {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.insert_vector(internal_id, vector.into())?;
+                    vector_storage.insert_vector(internal_id, vector)?;
                 }
                 None => {
                     // No vector provided, so we remove it
@@ -172,13 +172,13 @@ impl Segment {
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             let new_vector = match &new_vector {
-                CowValue::Vector(vec) => VectorOrSparseRef::Vector(vec),
-                CowValue::Sparse(sparse) => VectorOrSparseRef::Sparse(sparse),
+                CowValue::Vector(vec) => VectorRef::Dense(vec),
+                CowValue::Sparse(sparse) => VectorRef::Sparse(sparse),
             };
             vector_data
                 .vector_storage
                 .borrow_mut()
-                .insert_vector(internal_id, new_vector.as_ref().into())?;
+                .insert_vector(internal_id, new_vector)?;
         }
         Ok(())
     }
@@ -208,7 +208,7 @@ impl Segment {
                     vector_storage.delete_vector(new_index)?;
                 }
                 Some(vec) => {
-                    vector_storage.insert_vector(new_index, vec.into())?;
+                    vector_storage.insert_vector(new_index, vec)?;
                 }
             }
         }
@@ -381,7 +381,7 @@ impl Segment {
         &self,
         vector_name: &str,
         point_offset: PointOffsetType,
-    ) -> OperationResult<Option<VectorOrSparse>> {
+    ) -> OperationResult<Option<Vector>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let is_vector_deleted = vector_data
@@ -405,8 +405,7 @@ impl Segment {
                     ),
                 })
             } else {
-                let vector: &[_] = vector_storage.get_vector(point_offset).into();
-                Ok(Some(vector.to_vec()))
+                Ok(Some(vector_storage.get_vector(point_offset).to_owned()))
             }
         } else {
             Ok(None)
@@ -425,8 +424,10 @@ impl Segment {
                 .is_deleted_vector(point_offset);
             if !is_vector_deleted {
                 let vector_storage = vector_data.vector_storage.borrow();
-                let vector: &[_] = vector_storage.get_vector(point_offset).into();
-                vectors.insert(vector_name.clone(), vector.to_vec());
+                vectors.insert(
+                    vector_name.clone(),
+                    vector_storage.get_vector(point_offset).to_owned(),
+                );
             }
         }
         Ok(vectors)
@@ -986,11 +987,7 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn vector(
-        &self,
-        vector_name: &str,
-        point_id: PointIdType,
-    ) -> OperationResult<Option<VectorOrSparse>> {
+    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
@@ -2236,7 +2233,7 @@ mod tests {
         let wrong_names = vec!["aa", "bb", ""];
 
         for (vector_name, vector) in wrong_vectors_single.iter() {
-            let vector: VectorOrSparse = vector.to_owned().into();
+            let vector: Vector = vector.to_owned().into();
             let query_vector = vector.into();
             check_vector(vector_name, &query_vector, &config)
                 .err()

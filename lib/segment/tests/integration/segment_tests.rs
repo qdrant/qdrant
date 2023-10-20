@@ -5,8 +5,7 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_vector, QueryVector, VectorOrSparse, VectorOrSparseRef, VectorStruct,
-    DEFAULT_VECTOR_NAME,
+    only_default_vector, QueryVector, Vector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -259,7 +258,7 @@ fn test_update_named_vector() {
             .unwrap();
     }
 
-    let query_vector: VectorOrSparse = random_vector(&mut rng, dim).into();
+    let query_vector: Vector = random_vector(&mut rng, dim).into();
     let query_vector: QueryVector = query_vector.into();
 
     // do exact search
@@ -292,7 +291,7 @@ fn test_update_named_vector() {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         Some(VectorStruct::Multi(v)) => {
-            let v: VectorOrSparseRef = (&v[DEFAULT_VECTOR_NAME]).into();
+            let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
@@ -329,7 +328,7 @@ fn test_update_named_vector() {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         Some(VectorStruct::Multi(v)) => {
-            let v: VectorOrSparseRef = (&v[DEFAULT_VECTOR_NAME]).into();
+            let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }

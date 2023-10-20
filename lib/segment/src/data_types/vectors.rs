@@ -5,12 +5,16 @@ use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::named_vectors::NamedVectors;
-use crate::common::utils::transpose_map_into_named_vector;
+use crate::common::operation_error::OperationError;
+use crate::common::utils::{
+    transpose_map_into_named_vector, transpose_map_into_sparse_named_vector,
+};
 use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
     Dense(VectorType),
     Sparse(SparseVector),
@@ -27,16 +31,6 @@ impl Vector {
         match self {
             Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
             Vector::Sparse(v) => VectorRef::Sparse(v),
-        }
-    }
-}
-
-// TODO(ivan) temporary conversion while sparse vectors are under development
-impl<'a> From<VectorRef<'a>> for &'a [VectorElementType] {
-    fn from(val: VectorRef<'a>) -> Self {
-        match val {
-            VectorRef::Dense(v) => v,
-            VectorRef::Sparse(_) => unreachable!(),
         }
     }
 }
@@ -88,25 +82,19 @@ pub const DEFAULT_VECTOR_NAME: &str = "";
 /// Type for vector
 pub type VectorType = Vec<VectorElementType>;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum VectorOrSparseRef<'a> {
-    Vector(&'a [VectorElementType]),
-    Sparse(&'a SparseVector),
-}
-
-impl<'a> VectorOrSparseRef<'a> {
-    // Cannot use `ToOwned` trait because of `Borrow` implementation for `VectorOrSparse`
-    pub fn to_owned(self) -> VectorOrSparse {
+impl<'a> VectorRef<'a> {
+    // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
+    pub fn to_owned(self) -> Vector {
         match self {
-            VectorOrSparseRef::Vector(v) => VectorOrSparse::Vector(v.to_vec()),
-            VectorOrSparseRef::Sparse(v) => VectorOrSparse::Sparse(v.clone()),
+            VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
+            VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
-            VectorOrSparseRef::Vector(v) => v.len(),
-            VectorOrSparseRef::Sparse(v) => v.indices.len(),
+            VectorRef::Dense(v) => v.len(),
+            VectorRef::Sparse(v) => v.indices.len(),
         }
     }
 
@@ -115,107 +103,68 @@ impl<'a> VectorOrSparseRef<'a> {
     }
 }
 
-impl<'a> From<&'a VectorType> for VectorOrSparseRef<'a> {
-    fn from(v: &'a VectorType) -> Self {
-        VectorOrSparseRef::Vector(v)
-    }
-}
-
-impl From<VectorType> for VectorOrSparse {
-    fn from(v: VectorType) -> Self {
-        VectorOrSparse::Vector(v)
-    }
-}
-
-impl<'a> From<&'a [VectorElementType]> for VectorOrSparseRef<'a> {
-    fn from(v: &'a [VectorElementType]) -> Self {
-        VectorOrSparseRef::Vector(v)
-    }
-}
-
-impl From<SparseVector> for VectorOrSparse {
-    fn from(v: SparseVector) -> Self {
-        VectorOrSparse::Sparse(v)
-    }
-}
-
-impl<'a> From<&'a SparseVector> for VectorOrSparseRef<'a> {
-    fn from(v: &'a SparseVector) -> Self {
-        VectorOrSparseRef::Sparse(v)
-    }
-}
-
-impl<'a> From<&'a VectorOrSparse> for VectorOrSparseRef<'a> {
-    fn from(val: &'a VectorOrSparse) -> Self {
-        match val {
-            VectorOrSparse::Vector(v) => VectorOrSparseRef::Vector(v),
-            VectorOrSparse::Sparse(v) => VectorOrSparseRef::Sparse(v),
-        }
-    }
-}
-
-impl<'a> TryInto<&'a [VectorElementType]> for &'a VectorOrSparse {
+impl<'a> TryInto<&'a [VectorElementType]> for &'a Vector {
     type Error = OperationError;
 
     fn try_into(self) -> Result<&'a [VectorElementType], Self::Error> {
         match self {
-            VectorOrSparse::Vector(v) => Ok(v),
-            VectorOrSparse::Sparse(_) => Err(OperationError::WrongSparse),
+            Vector::Dense(v) => Ok(v),
+            Vector::Sparse(_) => Err(OperationError::WrongSparse),
         }
     }
 }
 
-impl TryInto<VectorType> for VectorOrSparse {
+impl TryInto<VectorType> for Vector {
     type Error = OperationError;
 
     fn try_into(self) -> Result<VectorType, Self::Error> {
         match self {
-            VectorOrSparse::Vector(v) => Ok(v),
-            VectorOrSparse::Sparse(_) => Err(OperationError::WrongSparse),
+            Vector::Dense(v) => Ok(v),
+            Vector::Sparse(_) => Err(OperationError::WrongSparse),
         }
     }
 }
 
-impl<'a> TryInto<&'a SparseVector> for &'a VectorOrSparse {
+impl<'a> TryInto<&'a SparseVector> for &'a Vector {
     type Error = OperationError;
 
     fn try_into(self) -> Result<&'a SparseVector, Self::Error> {
         match self {
-            VectorOrSparse::Vector(_) => Err(OperationError::WrongSparse),
-            VectorOrSparse::Sparse(v) => Ok(v),
+            Vector::Dense(_) => Err(OperationError::WrongSparse),
+            Vector::Sparse(v) => Ok(v),
         }
     }
 }
 
-impl TryInto<SparseVector> for VectorOrSparse {
+impl TryInto<SparseVector> for Vector {
     type Error = OperationError;
 
     fn try_into(self) -> Result<SparseVector, Self::Error> {
         match self {
-            VectorOrSparse::Vector(_) => Err(OperationError::WrongSparse),
-            VectorOrSparse::Sparse(v) => Ok(v),
+            Vector::Dense(_) => Err(OperationError::WrongSparse),
+            Vector::Sparse(v) => Ok(v),
         }
     }
 }
 
-impl<'a> TryInto<&'a [VectorElementType]> for VectorOrSparseRef<'a> {
+impl<'a> TryInto<&'a [VectorElementType]> for VectorRef<'a> {
     type Error = OperationError;
 
     fn try_into(self) -> Result<&'a [VectorElementType], Self::Error> {
         match self {
-            VectorOrSparseRef::Vector(v) => Ok(v),
-            VectorOrSparseRef::Sparse(_) => Err(OperationError::WrongSparse),
+            VectorRef::Dense(v) => Ok(v),
+            VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
         }
     }
 }
 
-impl<'a> TryInto<&'a SparseVector> for VectorOrSparseRef<'a> {
+impl<'a> TryInto<&'a SparseVector> for VectorRef<'a> {
     type Error = OperationError;
 
     fn try_into(self) -> Result<&'a SparseVector, Self::Error> {
         match self {
-            VectorOrSparseRef::Vector(_) => Err(OperationError::WrongSparse),
-            VectorOrSparseRef::Sparse(v) => Ok(v),
+            VectorRef::Dense(_) => Err(OperationError::WrongSparse),
+            VectorRef::Sparse(v) => Ok(v),
         }
     }
 }
@@ -238,23 +187,16 @@ pub fn only_default_sparse_vector(vec: &SparseVector) -> NamedVectors {
     NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
 }
 
-pub fn only_default_mixed_vector(vec: &VectorOrSparse) -> NamedVectors {
+pub fn only_default_mixed_vector(vec: &Vector) -> NamedVectors {
     NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum VectorOrSparse {
-    Vector(VectorType),
-    Sparse(SparseVector),
 }
 
 /// Full vector data per point separator with single and multiple vector modes
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
-    Single(VectorOrSparse),
-    Multi(HashMap<String, VectorOrSparse>),
+    Single(Vector),
+    Multi(HashMap<String, Vector>),
 }
 
 impl VectorStruct {
@@ -262,12 +204,12 @@ impl VectorStruct {
     pub fn is_empty(&self) -> bool {
         match self {
             VectorStruct::Single(vector) => match vector {
-                VectorOrSparse::Vector(vector) => vector.is_empty(),
-                VectorOrSparse::Sparse(vector) => vector.indices.is_empty(),
+                Vector::Dense(vector) => vector.is_empty(),
+                Vector::Sparse(vector) => vector.indices.is_empty(),
             },
             VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
-                VectorOrSparse::Vector(vector) => vector.is_empty(),
-                VectorOrSparse::Sparse(vector) => vector.indices.is_empty(),
+                Vector::Dense(vector) => vector.is_empty(),
+                Vector::Sparse(vector) => vector.indices.is_empty(),
             }),
         }
     }
@@ -303,7 +245,7 @@ impl<'a> From<NamedVectors<'a>> for VectorStruct {
 }
 
 impl VectorStruct {
-    pub fn get(&self, name: &str) -> Option<VectorOrSparseRef> {
+    pub fn get(&self, name: &str) -> Option<VectorRef> {
         match self {
             VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(v.into()),
             VectorStruct::Multi(v) => v.get(name).map(|v| v.into()),
@@ -313,8 +255,8 @@ impl VectorStruct {
     pub fn into_all_vectors(self) -> NamedVectors<'static> {
         match self {
             VectorStruct::Single(v) => match v {
-                VectorOrSparse::Vector(v) => default_vector(v),
-                VectorOrSparse::Sparse(v) => default_sparse_vector(v),
+                Vector::Dense(v) => default_vector(v),
+                Vector::Sparse(v) => default_sparse_vector(v),
             },
             VectorStruct::Multi(v) => NamedVectors::from_mixed_map(v),
         }
@@ -406,7 +348,7 @@ impl Named for NamedVectorStruct {
 }
 
 impl NamedVectorStruct {
-    pub fn get_vector(&self) -> VectorOrSparseRef {
+    pub fn get_vector(&self) -> VectorRef {
         match self {
             NamedVectorStruct::Default(v) => v.as_slice().into(),
             NamedVectorStruct::Named(v) => v.vector.as_slice().into(),
@@ -415,7 +357,7 @@ impl NamedVectorStruct {
         }
     }
 
-    pub fn to_vector(self) -> VectorOrSparse {
+    pub fn to_vector(self) -> Vector {
         match self {
             NamedVectorStruct::Default(v) => v.into(),
             NamedVectorStruct::Named(v) => v.vector.into(),
@@ -478,7 +420,7 @@ impl BatchVectorStruct {
 
 #[derive(Debug, Clone)]
 pub struct NamedRecoQuery {
-    pub query: RecoQuery<VectorOrSparse>,
+    pub query: RecoQuery<Vector>,
     pub using: Option<String>,
 }
 
@@ -490,34 +432,34 @@ impl Named for NamedRecoQuery {
 
 #[derive(Debug, Clone)]
 pub enum QueryVector {
-    Nearest(VectorType),
-    Recommend(RecoQuery<VectorType>),
-    Discovery(DiscoveryQuery<VectorType>),
-    Context(ContextQuery<VectorType>),
+    Nearest(Vector),
+    Recommend(RecoQuery<Vector>),
+    Discovery(DiscoveryQuery<Vector>),
+    Context(ContextQuery<Vector>),
 }
 
-impl From<VectorOrSparse> for QueryVector {
-    fn from(vec: VectorOrSparse) -> Self {
+impl From<Vector> for QueryVector {
+    fn from(vec: Vector) -> Self {
         Self::Nearest(vec)
     }
 }
 
 impl<'a> From<&'a [VectorElementType]> for QueryVector {
     fn from(vec: &'a [VectorElementType]) -> Self {
-        let v: VectorOrSparseRef = vec.into();
+        let v: VectorRef = vec.into();
         Self::Nearest(v.to_owned())
     }
 }
 
-impl<'a> From<VectorOrSparseRef<'a>> for QueryVector {
-    fn from(vec: VectorOrSparseRef<'a>) -> Self {
+impl<'a> From<VectorRef<'a>> for QueryVector {
+    fn from(vec: VectorRef<'a>) -> Self {
         Self::Nearest(vec.to_owned())
     }
 }
 
 impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
     fn from(vec: [VectorElementType; N]) -> Self {
-        let vec: VectorOrSparseRef = vec.as_slice().into();
+        let vec: VectorRef = vec.as_slice().into();
         Self::Nearest(vec.to_owned())
     }
 }
@@ -573,12 +515,5 @@ mod test {
         let s = serde_json::to_string(&s).unwrap();
         let v: super::VectorStruct = serde_json::from_str(&s).unwrap();
         println!("{:?}", v);
-    }
-}
-
-impl<'a> From<VectorRef<'a>> for QueryVector {
-    fn from(vec: VectorRef<'a>) -> Self {
-        let vec: &[_] = vec.into();
-        Self::Nearest(vec.to_vec())
     }
 }

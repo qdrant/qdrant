@@ -96,6 +96,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         description: "Cannot discovery sparse vectors".to_string(),
                     })
                 }
+                QueryVector::Context(_) => {
+                    return Err(OperationError::ValidationError {
+                        description: "Cannot context query sparse vectors".to_string(),
+                    })
+                }
             };
             let sparse_vector: &SparseVector = vector.try_into()?;
             let mut search_context = SearchContext::new(

@@ -4,6 +4,7 @@ use bitvec::prelude::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use sparse::common::sparse_vector::SparseVector;
 
+use super::query::context_query::ContextQuery;
 use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
@@ -195,12 +196,16 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::Context(discovery_context_query) => raw_scorer_from_query_scorer(
-            CustomQueryScorer::<TMetric, _, _>::new(discovery_context_query, vector_storage),
-            point_deleted,
-            vec_deleted,
-            is_stopped,
-        ),
+        QueryVector::Context(discovery_context_query) => {
+            let discovery_context_query: ContextQuery<VectorType> =
+                discovery_context_query.try_into()?;
+            raw_scorer_from_query_scorer(
+                CustomQueryScorer::<TMetric, _, _>::new(discovery_context_query, vector_storage),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
         QueryVector::Recommend(reco_query) => {
             let reco_query: RecoQuery<VectorType> = reco_query.try_into()?;
             raw_scorer_from_query_scorer(

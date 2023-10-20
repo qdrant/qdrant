@@ -4,9 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
-use segment::data_types::vectors::{
-    only_default_vector, QueryVector, VectorOrSparse, DEFAULT_VECTOR_NAME,
-};
+use segment::data_types::vectors::{only_default_vector, QueryVector, Vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
@@ -143,7 +141,7 @@ fn exact_search_test() {
     let top = 3;
     let attempts = 50;
     for _i in 0..attempts {
-        let query: VectorOrSparse = random_vector(&mut rnd, dim).into();
+        let query: Vector = random_vector(&mut rnd, dim).into();
         let query: QueryVector = query.into();
 
         let index_result = hnsw_index
