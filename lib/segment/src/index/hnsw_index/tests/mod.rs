@@ -1,4 +1,5 @@
 mod test_compact_graph_layer;
+mod test_graph_connectivity;
 
 use std::path::Path;
 

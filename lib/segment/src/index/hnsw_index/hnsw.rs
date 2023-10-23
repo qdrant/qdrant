@@ -45,6 +45,13 @@ use crate::vector_storage::{
 
 const HNSW_USE_HEURISTIC: bool = true;
 
+/// Build first N points in HNSW graph using only a single thread, to avoid
+/// disconnected components in the graph.
+#[cfg(debug_assertions)]
+const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 100;
+#[cfg(not(debug_assertions))]
+const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 512;
+
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
@@ -120,6 +127,12 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 exact_unfiltered: OperationDurationsAggregator::new(),
             },
         })
+    }
+
+
+    #[cfg(test)]
+    pub(super) fn graph(&self) -> Option<&GraphLayers<TGraphLinks>> {
+        self.graph.as_ref()
     }
 
     fn save_config(&self) -> OperationResult<()> {
@@ -592,30 +605,46 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let mut indexed_vectors = 0;
 
         if self.config.m > 0 {
-            let ids: Vec<_> = id_tracker.iter_ids_excluding(deleted_bitslice).collect();
+            let mut ids_iterator = id_tracker.iter_ids_excluding(deleted_bitslice);
 
-            indexed_vectors = ids.len();
+            let first_few_ids: Vec<_> = ids_iterator
+                .by_ref()
+                .take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD)
+                .collect();
+            let ids: Vec<_> = ids_iterator.collect();
 
-            pool.install(|| {
-                ids.into_par_iter().try_for_each(|vector_id| {
-                    check_process_stopped(stopped)?;
-                    let vector = vector_storage.get_vector(vector_id).into();
-                    let raw_scorer = if let Some(quantized_storage) = &quantized_vectors {
-                        quantized_storage.raw_scorer(
-                            vector,
-                            id_tracker.deleted_point_bitslice(),
-                            vector_storage.deleted_vector_bitslice(),
-                            stopped,
-                        )
-                    } else {
-                        new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
-                    };
-                    let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+            indexed_vectors = ids.len() + first_few_ids.len();
 
-                    graph_layers_builder.link_new_point(vector_id, points_scorer);
-                    Ok::<_, OperationError>(())
-                })
-            })?;
+            let insert_point = |vector_id| {
+                check_process_stopped(stopped)?;
+                let vector = vector_storage.get_vector(vector_id).into();
+                let raw_scorer = if let Some(quantized_storage) = &quantized_vectors {
+                    quantized_storage.raw_scorer(
+                        vector,
+                        id_tracker.deleted_point_bitslice(),
+                        vector_storage.deleted_vector_bitslice(),
+                        stopped,
+                    )
+                } else {
+                    new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
+                };
+                let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+
+                graph_layers_builder.link_new_point(vector_id, points_scorer);
+                Ok::<_, OperationError>(())
+            };
+
+            for vector_id in first_few_ids {
+                insert_point(vector_id)?;
+            }
+
+            if ids.len() > SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
+                pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
+            } else {
+                for vector_id in ids {
+                    insert_point(vector_id)?;
+                }
+            }
 
             debug!("finish main graph");
         } else {

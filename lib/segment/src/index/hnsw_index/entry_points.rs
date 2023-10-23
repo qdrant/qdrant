@@ -38,6 +38,10 @@ impl EntryPoints {
         }
     }
 
+    pub fn iterator(&self) -> impl Iterator<Item = &EntryPoint> {
+        self.entry_points.iter()
+    }
+
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
         // Do not merge `extra_entry_points` to prevent duplications

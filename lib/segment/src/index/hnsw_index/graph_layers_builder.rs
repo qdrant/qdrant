@@ -282,6 +282,7 @@ impl GraphLayersBuilder {
         result_list
     }
 
+    #[allow(dead_code)]
     fn search_existing_point_on_level(
         &self,
         level_entry: ScoredPointOffset,
@@ -365,29 +366,46 @@ impl GraphLayersBuilder {
 
                 for curr_level in (0..=linking_level).rev() {
                     let level_m = self.get_m(curr_level);
+                    let mut visited_list = self.get_visited_list_from_pool();
 
-                    let nearest_points = {
-                        self.search_existing_point_on_level(
-                            level_entry,
-                            curr_level,
-                            self.ef_construct,
-                            &mut points_scorer,
-                            point_id,
-                        )
-                    };
+                    visited_list.check_and_update_visited(level_entry.idx);
 
-                    if let Some(the_nearest) = nearest_points.iter().max() {
+                    let mut search_context = SearchContext::new(level_entry, self.ef_construct);
+
+                    self._search_on_level(
+                        &mut search_context,
+                        curr_level,
+                        &mut visited_list,
+                        &mut points_scorer,
+                    );
+
+                    if let Some(the_nearest) = search_context.nearest.iter().max() {
                         level_entry = *the_nearest;
                     }
 
                     let scorer = |a, b| points_scorer.score_internal(a, b);
 
                     if self.use_heuristic {
-                        let selected_nearest =
-                            Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
-                        self.links_layers[point_id as usize][curr_level]
-                            .write()
-                            .clone_from(&selected_nearest);
+                        let selected_nearest = {
+                            let mut existing_links =
+                                self.links_layers[point_id as usize][curr_level].write();
+                            for &existing_link in existing_links.iter() {
+                                if !visited_list.check(existing_link) {
+                                    search_context.process_candidate(ScoredPointOffset {
+                                        idx: existing_link,
+                                        score: points_scorer.score_point(existing_link),
+                                    });
+                                }
+                            }
+
+                            let selected_nearest = Self::select_candidates_with_heuristic(
+                                search_context.nearest,
+                                level_m,
+                                scorer,
+                            );
+                            existing_links.clone_from(&selected_nearest);
+                            selected_nearest
+                        };
 
                         for &other_point in &selected_nearest {
                             let mut other_point_links =
@@ -422,7 +440,7 @@ impl GraphLayersBuilder {
                             }
                         }
                     } else {
-                        for nearest_point in &nearest_points {
+                        for nearest_point in &search_context.nearest {
                             {
                                 let mut links =
                                     self.links_layers[point_id as usize][curr_level].write();
@@ -449,6 +467,7 @@ impl GraphLayersBuilder {
                             }
                         }
                     }
+                    self.return_visited_list_to_pool(visited_list);
                 }
             }
         }
