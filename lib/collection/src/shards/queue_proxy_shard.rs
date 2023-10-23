@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -402,6 +402,7 @@ impl ShardOperation for Inner {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -412,6 +413,7 @@ impl ShardOperation for Inner {
                 with_vector,
                 filter,
                 search_runtime_handle,
+                order_by,
             )
             .await
     }

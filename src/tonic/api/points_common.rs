@@ -1292,6 +1292,7 @@ pub async fn scroll(
         with_vector: with_vectors
             .map(|selector| selector.into())
             .unwrap_or_default(),
+        order_by: None,
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;

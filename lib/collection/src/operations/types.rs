@@ -20,8 +20,9 @@ use segment::data_types::vectors::{
     VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
+    Distance, Filter, OrderBy, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
+    QuantizationConfig, ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface,
+    WithVector,
 };
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -281,6 +282,10 @@ pub struct ScrollRequestInternal {
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
+
+    /// order by
+    #[validate]
+    pub order_by: Option<OrderBy>,
 }
 
 impl Default for ScrollRequestInternal {
@@ -291,6 +296,7 @@ impl Default for ScrollRequestInternal {
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: WithVector::Bool(false),
+            order_by: None,
         }
     }
 }

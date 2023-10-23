@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    ExtendedPointId, Filter, OrderBy, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
     WithVector,
 };
 use tokio::runtime::Handle;
@@ -93,6 +93,7 @@ impl ForwardProxyShard {
                 &true.into(),
                 None,
                 runtime_handle,
+                None,
             )
             .await?;
         let next_page_offset = if batch.len() < limit {
@@ -188,6 +189,7 @@ impl ShardOperation for ForwardProxyShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        _order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -198,6 +200,7 @@ impl ShardOperation for ForwardProxyShard {
                 with_vector,
                 filter,
                 search_runtime_handle,
+                None,
             )
             .await
     }

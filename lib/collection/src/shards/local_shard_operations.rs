@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -154,6 +154,7 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
@@ -164,30 +165,32 @@ impl ShardOperation for LocalShard {
                 .map(|(_, segment)| {
                     let segment = segment.clone();
                     let filter = filter.cloned();
+                    let order_by = order_by.cloned();
                     search_runtime_handle.spawn_blocking(move || {
-                        segment
-                            .get()
-                            .read()
-                            .read_filtered(offset, Some(limit), filter.as_ref())
+                        let binding = segment.get();
+                        let result = binding.read();
+                        match order_by {
+                            Some(order_by) => result.read_ordered(offset, Some(limit), &order_by),
+                            None => result.read_filtered(offset, Some(limit), filter.as_ref()),
+                        }
                     })
                 })
                 .collect()
         };
         let all_points = try_join_all(read_handles).await?;
+        let with_payload = WithPayload::from(with_payload_interface);
 
-        let point_ids = all_points
+        let point_ids = &all_points
             .into_iter()
             .flatten()
             .sorted()
             .dedup()
-            .take(limit)
+            // .take(limit)
             .collect_vec();
 
-        let with_payload = WithPayload::from(with_payload_interface);
         let mut points =
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
         points.sort_by_key(|point| point.id);
-
         Ok(points)
     }
 

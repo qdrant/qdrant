@@ -8,14 +8,16 @@ use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
     SearchRequestInternal, UpdateStatus,
 };
-use collection::operations::CollectionUpdateOperations;
+use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
-    Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
+    Condition, FieldCondition, Filter, HasIdCondition, OrderBy, Payload, PayloadFieldSchema,
+    PayloadSchemaType, PointIdType, WithPayloadInterface,
 };
+use serde_json::Map;
 use tempfile::Builder;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
@@ -368,6 +370,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
 async fn test_read_api() {
     test_read_api_with_shards(1).await;
     test_read_api_with_shards(N_SHARDS).await;
+    test_ordered_scroll_api_with_shards(1).await;
 }
 
 async fn test_read_api_with_shards(shard_number: u32) {
@@ -410,6 +413,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: false.into(),
+                order_by: None,
             },
             None,
             &ShardSelectorInternal::All,
@@ -419,6 +423,116 @@ async fn test_read_api_with_shards(shard_number: u32) {
 
     assert_eq!(result.next_page_offset, Some(2.into()));
     assert_eq!(result.points.len(), 2);
+}
+
+async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+
+    fn get_float_payload(value: f64) -> Option<Payload> {
+        let mut payload_map = Map::new();
+        payload_map.insert("price".to_string(), (value).into());
+        Some(Payload(payload_map))
+    }
+
+    let mut payloads: Vec<Option<Payload>> = vec![];
+    payloads.push(get_float_payload(1.0));
+    payloads.push(get_float_payload(2.0));
+    payloads.push(get_float_payload(3.0));
+    payloads.push(get_float_payload(4.0));
+    payloads.push(get_float_payload(5.0));
+    payloads.push(get_float_payload(5.0));
+    payloads.push(get_float_payload(5.0));
+    payloads.push(get_float_payload(5.0));
+    payloads.push(get_float_payload(6.0));
+    payloads.push(get_float_payload(7.0));
+    payloads.push(get_float_payload(8.0));
+    payloads.push(get_float_payload(9.0));
+    payloads.push(get_float_payload(10.0));
+
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        Batch {
+            ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+                .into_iter()
+                .map(|x| x.into())
+                .collect_vec(),
+            vectors: vec![
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+                vec![0.0, 1.0, 1.0, 1.0],
+            ]
+            .into(),
+            payloads: Some(payloads),
+        }
+        .into(),
+    ));
+
+    collection
+        .update_from_client(insert_points, true, WriteOrdering::default())
+        .await
+        .unwrap();
+
+    collection
+        .update_from_client(
+            CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
+                CreateIndex {
+                    field_name: "price".to_string(),
+                    field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Float)),
+                },
+            )),
+            true,
+            WriteOrdering::default(),
+        )
+        .await
+        .unwrap();
+
+    let result_asc = collection
+        .scroll_by(
+            ScrollRequest {
+                offset: None,
+                limit: Some(5),
+                filter: None,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: false.into(),
+                order_by: Some(OrderBy::new_asc("price".to_string(), 2.0)),
+            },
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result_asc.points.len(), 5);
+    assert_eq!(result_asc.next_page_offset, Some(7.into()));
+
+    let result_desc = collection
+        .scroll_by(
+            ScrollRequest {
+                offset: None,
+                limit: Some(5),
+                filter: None,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: false.into(),
+                order_by: Some(OrderBy::new_desc("price".to_string(), 8.0)),
+            },
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result_desc.points.len(), 5);
+    assert_eq!(result_desc.next_page_offset, Some(4.into()));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -493,6 +607,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: false.into(),
+                order_by: None,
             },
             None,
             &ShardSelectorInternal::All,

@@ -34,9 +34,10 @@ use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    Direction, FieldCondition, Filter, OrderBy, Payload, PayloadFieldSchema, PayloadIndexInfo,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType, Range, ScoredPoint,
+    SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType,
+    VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -649,6 +650,72 @@ impl Segment {
         page
     }
 
+    pub fn ordered_read_by_index(
+        &self,
+        _offset: Option<PointIdType>,
+        limit: Option<usize>,
+        order_by: &OrderBy,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        let index_key = &order_by.key;
+        let direction;
+
+        match order_by.direction {
+            Some(val) => direction = val,
+            None => direction = Direction::Asc,
+        }
+
+        let max;
+        match order_by.max {
+            Some(val) => max = Some(val),
+            None => max = Some(f64::INFINITY),
+        }
+
+        let min;
+        match order_by.min {
+            Some(val) => min = Some(val),
+            None => min = Some(f64::NEG_INFINITY),
+        }
+
+        let condition = FieldCondition::new_range(
+            index_key,
+            Range {
+                lt: None,
+                gt: None,
+                gte: min,
+                lte: max,
+            },
+        );
+
+        let ids_iterator = {
+            match direction {
+                Direction::Asc => payload_index
+                    .query_fields(&condition)
+                    .unwrap()
+                    .into_iter()
+                    .take(match limit {
+                        Some(limit) => limit,
+                        _ => usize::MAX,
+                    }),
+                Direction::Desc => payload_index
+                    .query_fields_reversed(&condition)
+                    .unwrap()
+                    .into_iter()
+                    .take(match limit {
+                        Some(limit) => limit,
+                        _ => usize::MAX,
+                    }),
+            }
+        };
+
+        let page: Vec<_> = ids_iterator
+            .filter_map(|internal_id| id_tracker.external_id(internal_id))
+            .collect();
+        page
+    }
+
     pub fn filtered_read_by_id_stream(
         &self,
         offset: Option<PointIdType>,
@@ -1076,6 +1143,15 @@ impl SegmentEntry for Segment {
                 }
             }
         }
+    }
+
+    fn read_ordered<'a>(
+        &'a self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        order_by: &'a OrderBy,
+    ) -> Vec<PointIdType> {
+        self.ordered_read_by_index(offset, limit, order_by)
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {

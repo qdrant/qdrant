@@ -1957,6 +1957,47 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
+/// Current state of the collection.
+/// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct OrderBy {
+    pub key: String,
+    pub direction: Option<Direction>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+}
+
+impl OrderBy {
+    pub fn new_asc(key: String, min: f64) -> Self {
+        OrderBy {
+            key,
+            direction: Some(Direction::Asc),
+            min: Some(min),
+            max: None,
+        }
+    }
+
+    pub fn new_desc(key: String, max: f64) -> Self {
+        OrderBy {
+            key,
+            direction: Some(Direction::Desc),
+            min: None,
+            max: Some(max),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {

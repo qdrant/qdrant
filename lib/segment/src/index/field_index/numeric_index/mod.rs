@@ -246,6 +246,63 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             .map(|x| x.is_empty())
             .unwrap_or(true)
     }
+
+    pub fn filter_reversed(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        let cond_range = condition
+            .range
+            .as_ref()
+            .ok_or_else(|| OperationError::service_error("failed to get condition range"))?;
+
+        let start_bound = match cond_range {
+            Range { gt: Some(gt), .. } => {
+                let v: T = T::from_f64(*gt);
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
+            }
+            Range { gte: Some(gte), .. } => {
+                let v: T = T::from_f64(*gte);
+                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
+            }
+            _ => Unbounded,
+        };
+
+        let end_bound = match cond_range {
+            Range { lt: Some(lt), .. } => {
+                let v: T = T::from_f64(*lt);
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
+            }
+            Range { lte: Some(lte), .. } => {
+                let v: T = T::from_f64(*lte);
+                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
+            }
+            _ => Unbounded,
+        };
+
+        // map.range
+        // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
+        if !check_boundaries(&start_bound, &end_bound) {
+            return Ok(Box::new(vec![].into_iter()));
+        }
+
+        Ok(match self {
+            NumericIndex::Mutable(index) => {
+                let start_bound = match start_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                let end_bound = match end_bound {
+                    Included(k) => Included(k.encode()),
+                    Excluded(k) => Excluded(k.encode()),
+                    Unbounded => Unbounded,
+                };
+                Box::new(index.values_range_rev(start_bound, end_bound))
+            }
+            NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
+        })
+    }
 }
 
 impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {

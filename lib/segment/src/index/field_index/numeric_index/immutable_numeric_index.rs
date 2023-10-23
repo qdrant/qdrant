@@ -229,7 +229,7 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         &self,
         start_bound: Bound<NumericIndexKey<T>>,
         end_bound: Bound<NumericIndexKey<T>>,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
+    ) -> impl DoubleEndedIterator<Item = PointOffsetType> + '_ {
         self.map
             .values_range(start_bound, end_bound)
             .map(|NumericIndexKey { idx, .. }| idx)

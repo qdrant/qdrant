@@ -236,6 +236,18 @@ impl FieldIndex {
         self.get_payload_field_index().filter(condition)
     }
 
+    pub fn filter_rev<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        match self {
+            FieldIndex::FloatIndex(payload_field_index) => {
+                payload_field_index.filter_reversed(condition)
+            }
+            _ => unimplemented!("Cannot reverse filtering on non numeric indexes."),
+        }
+    }
+
     pub fn estimate_cardinality(
         &self,
         condition: &FieldCondition,

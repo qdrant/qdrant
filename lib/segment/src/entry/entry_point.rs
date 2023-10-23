@@ -8,7 +8,7 @@ use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    Filter, OrderBy, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
     WithVector,
 };
@@ -119,6 +119,14 @@ pub trait SegmentEntry {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
+    ) -> Vec<PointIdType>;
+
+    /// Paginate over points ordered by specific payload
+    fn read_ordered<'a>(
+        &'a self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        order_by: &'a OrderBy,
     ) -> Vec<PointIdType>;
 
     /// Read points in [from; to) range

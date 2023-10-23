@@ -12,9 +12,9 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
-    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
-    WithVector,
+    Condition, Filter, OrderBy, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    WithPayload, WithVector,
 };
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -501,6 +501,37 @@ impl SegmentEntry for ProxySegment {
             .get()
             .read()
             .read_filtered(offset, limit, filter);
+        read_points.append(&mut write_segment_points);
+        read_points.sort_unstable();
+        read_points
+    }
+
+    fn read_ordered<'a>(
+        &'a self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        order_by: &'a OrderBy,
+    ) -> Vec<PointIdType> {
+        let deleted_points = self.deleted_points.read();
+        let mut read_points = if deleted_points.is_empty() {
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_ordered(offset, limit, order_by)
+        } else {
+            // let wrapped_filter =
+            //     self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+            // TODO Figure this out
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_ordered(offset, limit, order_by)
+        };
+        let mut write_segment_points = self
+            .write_segment
+            .get()
+            .read()
+            .read_ordered(offset, limit, order_by);
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points
