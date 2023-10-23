@@ -571,7 +571,6 @@ impl ShardReplicaSet {
                     ReplicaState::PartialSnapshot => {
                         self.set_local(local_shard, Some(ReplicaState::PartialSnapshot))
                             .await?;
-                        self.notify_peer_failure(peer_id); // TODO!? 🤔
                     }
                 }
                 continue;
