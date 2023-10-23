@@ -338,7 +338,14 @@ impl SegmentsSearcher {
             }
             Ok(true)
         })?;
-        Ok(point_records.into_values().collect())
+
+        // Restore the order the ids came in
+        let ordered_records = points
+            .iter()
+            .filter_map(|point| point_records.get(point).cloned())
+            .collect();
+
+        Ok(ordered_records)
     }
 }
 

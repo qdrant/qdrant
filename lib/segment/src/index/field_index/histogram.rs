@@ -144,15 +144,12 @@ impl<T: Numericable> Histogram<T> {
         self.total_count
     }
 
-    /// Infers boundaries for bucket of given size and staring point.
-    /// Returns `to` range of values starting provided `from`value which is expected to contain
+    /// Infers boundaries for bucket of given size and starting point.
+    /// Returns `to` range of values starting provided `from` value which is expected to contain
     /// `range_size` values
     ///
-    /// Returns None if there are no points stored
+    /// Returns `Unbounded` if there are no points stored
     pub fn get_range_by_size(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
-        // bound_map is unstable, but can be used here
-        // let from_ = from.map(|val| Point { val, idx: usize::MIN });
-
         let from_ = match from {
             Included(val) => Included(Point {
                 val,
@@ -243,10 +240,10 @@ impl<T: Numericable> Histogram<T> {
             .chain(right_border)
             .tuple_windows()
             .map(
-                |((a, a_count), (b, _b_count)): ((&Point<T>, &Counts), (&Point<T>, _))| {
+                |((a, a_count), (b, b_count)): ((&Point<T>, &Counts), (&Point<T>, _))| {
                     let val_range = (b.val - a.val).to_f64();
 
-                    if val_range == 0. {
+                    if val_range == 0.0 {
                         // Zero-length range is always covered
                         let estimates = a_count.right + 1;
                         return (estimates, estimates, estimates);
@@ -267,7 +264,13 @@ impl<T: Numericable> Histogram<T> {
                     } else {
                         0
                     };
-                    let max_estimate = a_count.right + 1;
+                    let mut max_estimate = a_count.right + 1;
+
+                    if b_count.right == 0 {
+                        // This is the last border, so we need to include it
+                        max_estimate += 1;
+                    }
+
                     (min_estimate, estimate, max_estimate)
                 },
             )

@@ -55,6 +55,11 @@ pub enum ExtendedPointId {
     Uuid(Uuid),
 }
 
+impl ExtendedPointId {
+    pub const MIN: Self = Self::NumId(u64::MIN);
+    pub const MAX: Self = Self::Uuid(Uuid::max());
+}
+
 impl std::fmt::Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1085,6 +1090,26 @@ pub enum PayloadFieldSchema {
     FieldParams(PayloadSchemaParams),
 }
 
+impl PayloadFieldSchema {
+    pub fn has_range_index(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+                range,
+                ..
+            })) => *range,
+
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
+
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)
+            | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
+        }
+    }
+}
+
 impl From<PayloadSchemaType> for PayloadFieldSchema {
     fn from(payload_schema_type: PayloadSchemaType) -> Self {
         PayloadFieldSchema::FieldType(payload_schema_type)
@@ -1850,7 +1875,7 @@ pub enum WithVector {
 }
 
 impl WithVector {
-    pub fn is_some(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         match self {
             WithVector::Bool(b) => *b,
             WithVector::Selector(_) => true,
@@ -1987,6 +2012,44 @@ impl PayloadSelector {
             .into(),
         }
     }
+
+    fn union_vec<T: Ord>(vec1: Vec<T>, vec2: Vec<T>) -> Vec<T> {
+        vec1.into_iter().chain(vec2).sorted().dedup().collect()
+    }
+
+    fn subtract_vec<T: PartialEq>(vec1: Vec<T>, vec2: &[T]) -> Vec<T> {
+        vec1.into_iter()
+            .filter(|x| !vec2.contains(x))
+            .collect::<Vec<_>>()
+    }
+
+    fn intersection_vec<T: PartialEq>(vec1: Vec<T>, vec2: &[T]) -> Vec<T> {
+        vec1.into_iter()
+            .filter(|x| vec2.contains(x))
+            .collect::<Vec<_>>()
+    }
+
+    /// Combines two payload selectors into one, which will have a preference for including fields
+    pub fn union(&self, other: &PayloadSelector) -> Self {
+        match (self, other) {
+            (PayloadSelector::Include(include1), PayloadSelector::Include(include2)) => {
+                PayloadSelector::Include(PayloadSelectorInclude {
+                    include: Self::union_vec(include1.include.clone(), include2.include.clone()),
+                })
+            }
+            (PayloadSelector::Include(include), PayloadSelector::Exclude(exclude))
+            | (PayloadSelector::Exclude(exclude), PayloadSelector::Include(include)) => {
+                PayloadSelector::Exclude(PayloadSelectorExclude {
+                    exclude: Self::subtract_vec(exclude.exclude.clone(), &include.include),
+                })
+            }
+            (PayloadSelector::Exclude(exclude1), PayloadSelector::Exclude(exclude2)) => {
+                PayloadSelector::Exclude(PayloadSelectorExclude {
+                    exclude: Self::intersection_vec(exclude1.exclude.clone(), &exclude2.exclude),
+                })
+            }
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq)]
@@ -1996,6 +2059,20 @@ pub struct WithPayload {
     pub enable: bool,
     /// Filter include and exclude payloads
     pub payload_selector: Option<PayloadSelector>,
+}
+
+impl WithPayload {
+    pub fn union(&self, other: &WithPayload) -> WithPayload {
+        WithPayload {
+            enable: self.enable || other.enable,
+            payload_selector: match (&self.payload_selector, &other.payload_selector) {
+                (None, None) => None,
+                (Some(selector), None) => (!other.enable).then(|| selector.clone()),
+                (None, Some(selector)) => (!self.enable).then(|| selector.clone()),
+                (Some(selector1), Some(selector2)) => Some(selector1.union(selector2)),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]

@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -9,7 +10,9 @@ use std::thread::{self, JoinHandle};
 use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_json, read_json};
+use itertools::Itertools;
 use memory::mmap_ops;
+use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
@@ -25,9 +28,11 @@ use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::{Direction, OrderBy, OrderedByFieldIterator};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::numeric_index::StreamWithValue;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
@@ -618,6 +623,19 @@ impl Segment {
             .collect()
     }
 
+    fn read_by_id_stream(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+    ) -> Vec<PointIdType> {
+        self.id_tracker
+            .borrow()
+            .iter_from(offset)
+            .map(|x| x.0)
+            .take(limit.unwrap_or(usize::MAX))
+            .collect()
+    }
+
     pub fn filtered_read_by_index(
         &self,
         offset: Option<PointIdType>,
@@ -645,7 +663,9 @@ impl Segment {
             Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
             None => ids_iterator.collect(),
         };
+
         page.sort_unstable();
+
         page
     }
 
@@ -664,6 +684,54 @@ impl Segment {
             .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
+    }
+
+    pub fn filtered_read_by_value_stream(
+        &self,
+        order_by: &OrderBy,
+        id_offset: Option<PointIdType>,
+        limit: Option<usize>,
+        filter: Option<&Filter>,
+    ) -> OperationResult<Vec<(f64, PointIdType)>> {
+        let payload_index = self.payload_index.borrow();
+
+        let numeric_index = payload_index
+            .field_indexes
+            .get(&order_by.key)
+            .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+            .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
+
+        let id_tracker = self.id_tracker.borrow();
+
+        let range_iter = numeric_index.stream_with_value(&order_by.as_range());
+
+        let offset_key = order_by.offset_key(id_offset);
+
+        let ordered_iter =
+            OrderedByFieldIterator::new(range_iter, id_tracker.deref(), order_by.direction())
+                .skip_while(|item| {
+                    let item_key = (item.value, item.external_id);
+                    match order_by.direction() {
+                        Direction::Asc => item_key < offset_key,
+                        Direction::Desc => item_key > offset_key,
+                    }
+                });
+
+        let reads = if let Some(filter) = filter {
+            let filter_context = payload_index.filter_context(filter);
+
+            ordered_iter
+                .filter(move |item| filter_context.check(item.internal_id))
+                .map(|item| (item.value, item.external_id))
+                .take(limit.unwrap_or(usize::MAX))
+                .collect()
+        } else {
+            ordered_iter
+                .map(|item| (item.value, item.external_id))
+                .take(limit.unwrap_or(usize::MAX))
+                .collect()
+        };
+        Ok(reads)
     }
 
     /// Check consistency of the segment's data and repair it if possible.
@@ -1027,13 +1095,7 @@ impl SegmentEntry for Segment {
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
         match filter {
-            None => self
-                .id_tracker
-                .borrow()
-                .iter_from(offset)
-                .map(|x| x.0)
-                .take(limit.unwrap_or(usize::MAX))
-                .collect(),
+            None => self.read_by_id_stream(offset, limit),
             Some(condition) => {
                 let query_cardinality = {
                     let payload_index = self.payload_index.borrow();
@@ -1076,6 +1138,28 @@ impl SegmentEntry for Segment {
                 }
             }
         }
+    }
+
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        id_offset: Option<PointIdType>,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a OrderBy,
+    ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
+        // TODO: make same optimization for high-constraining filters as in `read_filtered`
+        let reads = self
+            .filtered_read_by_value_stream(order_by, id_offset, limit, filter)?
+            .into_iter()
+            .map(|(value, point_id)| (OrderedFloat(value), point_id))
+            .collect_vec();
+
+        debug_assert!(match order_by.direction() {
+            Direction::Asc => reads.windows(2).all(|w| w[0] <= w[1]),
+            Direction::Desc => reads.windows(2).all(|w| w[0] >= w[1]),
+        });
+
+        Ok(reads)
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {

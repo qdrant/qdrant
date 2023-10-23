@@ -15,6 +15,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType,
     VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
@@ -278,23 +279,50 @@ pub struct ScrollRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum OrderByInterface {
+    Key(String),
+    Struct(OrderBy),
+}
+
+impl From<OrderByInterface> for OrderBy {
+    fn from(order_by: OrderByInterface) -> Self {
+        match order_by {
+            OrderByInterface::Key(key) => OrderBy {
+                key,
+                direction: None,
+                value_offset: None,
+            },
+            OrderByInterface::Struct(order_by) => order_by,
+        }
+    }
+}
+
 /// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequestInternal {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
+
     /// Page size. Default: 10
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
+
     /// Look only for points which satisfies this conditions. If not provided - all points.
     #[validate]
     pub filter: Option<Filter>,
+
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
+
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
+
+    /// Order the records by a payload field, then by the point id.
+    pub order_by: Option<OrderByInterface>,
 }
 
 impl Default for ScrollRequestInternal {
@@ -305,6 +333,7 @@ impl Default for ScrollRequestInternal {
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: WithVector::Bool(false),
+            order_by: None,
         }
     }
 }

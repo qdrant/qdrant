@@ -10,7 +10,9 @@ use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::{
-    BinaryQuantization, CompressionRatio, DatetimeRange, GeoLineString, GroupId, SparseIndices,
+    
+    BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString, GroupId, OrderBy, SparseIndices,
+,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1223,6 +1225,34 @@ impl From<segment::types::Match> for Match {
         };
         Self {
             match_value: Some(match_value),
+        }
+    }
+}
+
+impl From<Direction> for segment::data_types::order_by::Direction {
+    fn from(value: Direction) -> Self {
+        match value {
+            Direction::Asc => segment::data_types::order_by::Direction::Asc,
+            Direction::Desc => segment::data_types::order_by::Direction::Desc,
+        }
+    }
+}
+
+impl From<segment::data_types::order_by::Direction> for Direction {
+    fn from(value: segment::data_types::order_by::Direction) -> Self {
+        match value {
+            segment::data_types::order_by::Direction::Asc => Direction::Asc,
+            segment::data_types::order_by::Direction::Desc => Direction::Desc,
+        }
+    }
+}
+
+impl From<segment::data_types::order_by::OrderBy> for OrderBy {
+    fn from(value: segment::data_types::order_by::OrderBy) -> Self {
+        Self {
+            key: value.key,
+            direction: value.direction.map(|d| Direction::from(d) as i32),
+            value_offset: value.value_offset,
         }
     }
 }

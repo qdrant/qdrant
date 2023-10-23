@@ -7267,8 +7267,65 @@
           },
           "with_vector": {
             "$ref": "#/components/schemas/WithVector"
+          },
+          "order_by": {
+            "description": "Order the records by a payload field, then by the point id.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderByInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "OrderByInterface": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/OrderBy"
+          }
+        ]
+      },
+      "OrderBy": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "description": "Payload key to order by",
+            "type": "string"
+          },
+          "direction": {
+            "description": "Direction of ordering: `asc` or `desc`. Default is ascending.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Direction"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "value_offset": {
+            "description": "Which payload value to start scrolling from. If not provided, this offset value is fetched from the offset id in the request",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        }
+      },
+      "Direction": {
+        "type": "string",
+        "enum": [
+          "asc",
+          "desc"
+        ]
       },
       "ScrollResult": {
         "description": "Result of the points read request",

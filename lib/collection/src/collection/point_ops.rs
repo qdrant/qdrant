@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
-use itertools::Itertools as _;
-use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
+use itertools::Itertools;
+use segment::data_types::order_by::{Direction, OrderBy, INTERNAL_KEY_OF_ORDER_BY_VALUE};
+use segment::types::{PayloadContainer, ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
 use super::Collection;
@@ -209,7 +210,7 @@ impl Collection {
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequestInternal::default();
 
-        let offset = request.offset;
+        let id_offset = request.offset;
         let limit = request
             .limit
             .unwrap_or_else(|| default_request.limit.unwrap());
@@ -218,6 +219,43 @@ impl Collection {
             .clone()
             .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
         let with_vector = request.with_vector;
+
+        let mut order_by = request.order_by.map(OrderBy::from);
+
+        // Handle case of order_by
+        if let Some(order_by) = &mut order_by {
+            // Validate we have a range index for the order_by key
+            let has_range_index_for_order_by_field = self
+                .payload_index_schema
+                .read()
+                .schema
+                .get(order_by.key.as_str())
+                .is_some_and(|field| field.has_range_index());
+
+            if !has_range_index_for_order_by_field {
+                return Err(CollectionError::bad_request(format!(
+                    "No range index for `order_by` key: {}. Please create one to use `order_by`. Integer and float payloads can have range indexes, see https://qdrant.tech/documentation/concepts/indexing/#payload-index.",
+                    order_by.key.as_str()
+                )));
+            }
+
+            // Try to get offset value by fetching id offset point
+            if order_by.value_offset.is_none() {
+                order_by.value_offset = match id_offset {
+                    Some(id_offset) => {
+                        self.fetch_offset_value(
+                            order_by,
+                            id_offset,
+                            shard_selection,
+                            &with_vector,
+                            read_consistency,
+                        )
+                        .await?
+                    }
+                    None => None,
+                }
+            }
+        };
 
         if limit == 0 {
             return Err(CollectionError::BadRequest {
@@ -234,13 +272,14 @@ impl Collection {
                 let shard_key = shard_key.cloned();
                 shard
                     .scroll_by(
-                        offset,
+                        id_offset,
                         limit,
                         &with_payload_interface,
                         &with_vector,
                         request.filter.as_ref(),
                         read_consistency,
                         shard_selection.is_shard_id(),
+                        order_by.as_ref(),
                     )
                     .and_then(move |mut records| async move {
                         if shard_key.is_none() {
@@ -255,12 +294,57 @@ impl Collection {
 
             future::try_join_all(scroll_futures).await?
         };
-        let mut points: Vec<_> = retrieved_points
-            .into_iter()
-            .flatten()
-            .sorted_by_key(|point| point.id)
-            .take(limit)
-            .collect();
+
+        let retrieved_iter = retrieved_points.into_iter();
+
+        let mut points = match order_by {
+            None => retrieved_iter
+                .flatten()
+                .sorted_unstable_by_key(|point| point.id)
+                .take(limit)
+                .collect_vec(),
+            Some(order_by) => {
+                let default_value = match order_by.direction() {
+                    Direction::Asc => std::f64::MAX,
+                    Direction::Desc => std::f64::MIN,
+                };
+
+                let remove_order_value_from_payload = |record: &mut Record| {
+                    record
+                        .payload
+                        .as_mut()
+                        .and_then(|payload| {
+                            payload
+                                .0
+                                .remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)
+                                .and_then(|v| v.as_f64())
+                        })
+                        .unwrap_or(default_value)
+                };
+
+                retrieved_iter
+                    // Extract and remove order value from payload
+                    .map(|vec| {
+                        vec.into_iter().map(|mut record| {
+                            let value = remove_order_value_from_payload(&mut record);
+                            (value, record)
+                        })
+                    })
+                    // Get top results
+                    .kmerge_by(|(value_a, record_a), (value_b, record_b)| {
+                        let key_a = (value_a, record_a.id);
+                        let key_b = (value_b, record_b.id);
+
+                        match order_by.direction() {
+                            Direction::Asc => key_a <= key_b,
+                            Direction::Desc => key_a >= key_b,
+                        }
+                    })
+                    .take(limit)
+                    .map(|(_, record)| record)
+                    .collect_vec()
+            }
+        };
 
         let next_page_offset = if points.len() < limit {
             // This was the last page
@@ -345,5 +429,45 @@ impl Collection {
         };
         let points = all_shard_collection_results.into_iter().flatten().collect();
         Ok(points)
+    }
+
+    async fn fetch_offset_value(
+        &self,
+        order_by: &mut OrderBy,
+        id_offset: segment::types::ExtendedPointId,
+        shard_selection: &ShardSelectorInternal,
+        with_vector: &segment::types::WithVector,
+        read_consistency: Option<ReadConsistency>,
+    ) -> Result<Option<f64>, CollectionError> {
+        let with_payload_interface = WithPayloadInterface::Fields(vec![order_by.key.clone()]);
+        let with_payload = WithPayload::from(&with_payload_interface);
+        let retrieve_request = Arc::new(PointRequestInternal {
+            ids: vec![id_offset],
+            with_payload: Some(with_payload_interface),
+            with_vector: false.into(),
+        });
+        let offset_point: Vec<_> = {
+            let shards_holder = self.shards_holder.read().await;
+            let target_shards = shards_holder.select_shards(shard_selection)?;
+            let scroll_futures = target_shards.into_iter().map(|(shard, _shard_key)| {
+                let retrieve_request = retrieve_request.clone();
+                shard.retrieve(
+                    retrieve_request,
+                    &with_payload,
+                    with_vector,
+                    read_consistency,
+                    false,
+                )
+            });
+
+            future::try_join_all(scroll_futures).await?
+        };
+        Ok(offset_point
+            .iter()
+            .flatten()
+            .next()
+            .and_then(|offset_point| offset_point.payload.as_ref())
+            .map(|payload| payload.get_value(&order_by.key))
+            .and_then(|multi_value| multi_value.values().iter().find_map(|v| v.as_f64())))
     }
 }
