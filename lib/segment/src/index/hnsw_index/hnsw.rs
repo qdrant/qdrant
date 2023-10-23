@@ -129,7 +129,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         })
     }
 
-
     #[cfg(test)]
     pub(super) fn graph(&self) -> Option<&GraphLayers<TGraphLinks>> {
         self.graph.as_ref()
