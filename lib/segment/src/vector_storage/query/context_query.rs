@@ -1,7 +1,7 @@
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, Vector, VectorType};
+use crate::data_types::vectors::{QueryVector, Vector};
 
 #[derive(Debug, Clone)]
 pub struct ContextPair<T> {
@@ -109,12 +109,6 @@ impl<T> From<Vec<ContextPair<T>>> for ContextQuery<T> {
 impl From<ContextQuery<Vector>> for QueryVector {
     fn from(query: ContextQuery<Vector>) -> Self {
         QueryVector::Context(query)
-    }
-}
-
-impl From<ContextQuery<Vector>> for ContextQuery<VectorType> {
-    fn from(query: ContextQuery<Vector>) -> Self {
-        query.transform(|v| v.into())
     }
 }
 

@@ -17,13 +17,17 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    Named, NamedRecoQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct,
-    VectorType, DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct, VectorType,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
     ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
+use segment::vector_storage::query::context_query::ContextQuery;
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::query::TransformInto;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
@@ -285,7 +289,9 @@ pub struct SearchRequestBatch {
 #[derive(Debug, Clone)]
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
-    RecommendBestScore(NamedRecoQuery),
+    RecommendBestScore(NamedQuery<RecoQuery<VectorType>>),
+    Discover(NamedQuery<DiscoveryQuery<VectorType>>),
+    Context(NamedQuery<ContextQuery<VectorType>>),
 }
 
 impl QueryEnum {
@@ -293,6 +299,8 @@ impl QueryEnum {
         match self {
             QueryEnum::Nearest(vector) => vector.get_name(),
             QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
+            QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
+            QueryEnum::Context(context_query) => context_query.get_name(),
         }
     }
 }
@@ -300,6 +308,12 @@ impl QueryEnum {
 impl From<Vec<VectorElementType>> for QueryEnum {
     fn from(vector: Vec<VectorElementType>) -> Self {
         QueryEnum::Nearest(NamedVectorStruct::Default(vector))
+    }
+}
+
+impl From<NamedQuery<DiscoveryQuery<VectorType>>> for QueryEnum {
+    fn from(query: NamedQuery<DiscoveryQuery<VectorType>>) -> Self {
+        QueryEnum::Discover(query)
     }
 }
 
@@ -558,6 +572,60 @@ pub struct RecommendGroupsRequest {
 
     #[serde(flatten)]
     pub group_request: BaseGroupRequest,
+}
+
+/// Use context and a target to find the most similar points, constrained by the context.
+///
+// TODO(luis): improve this message  vvvv
+/// When using only the context, a special search is performed where pairs of points are used to generate
+/// a loss function, which is used to find the points that exist in the zone where most of the positive
+/// part of the pairs overlap
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct DiscoverRequest {
+    /// Look for vectors closest to this
+    pub target: Option<RecommendExample>,
+
+    /// Pairs of (positive, negative) examples to provide context to the search
+    pub context_pairs: Option<Vec<(RecommendExample, RecommendExample)>>,
+
+    /// Look only for points which satisfies this conditions
+    #[validate]
+    pub filter: Option<Filter>,
+
+    /// Additional search params
+    #[validate]
+    pub params: Option<SearchParams>,
+
+    /// Max number of result to return
+    #[serde(alias = "top")]
+    #[validate(range(min = 1))]
+    pub limit: usize,
+
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    pub offset: usize,
+
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Whether to return the point vector with the result?
+    pub with_vector: Option<WithVector>,
+
+    /// Define which vector to use for recommendation, if not specified - try to use default vector
+    #[serde(default)]
+    pub using: Option<UsingVector>,
+
+    /// The location used to lookup vectors. If not specified - use current collection.
+    /// Note: the other collection should have the same vector size as the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct DiscoverRequestBatch {
+    #[validate]
+    pub searches: Vec<DiscoverRequest>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
@@ -1341,7 +1409,11 @@ impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
             QueryEnum::Nearest(named) => QueryVector::Nearest(named.into()),
-            QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query.into()),
+            QueryEnum::RecommendBestScore(named) => {
+                QueryVector::Recommend(named.query.transform_into())
+            }
+            QueryEnum::Discover(named) => QueryVector::Discovery(named.query.transform_into()),
+            QueryEnum::Context(named) => QueryVector::Context(named.query.transform_into()),
         }
     }
 }

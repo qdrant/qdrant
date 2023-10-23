@@ -3,7 +3,7 @@ use common::types::ScoreType;
 
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, Vector, VectorType};
+use crate::data_types::vectors::{QueryVector, Vector};
 
 type RankType = i32;
 
@@ -73,12 +73,6 @@ impl<T> Query<T> for DiscoveryQuery<T> {
 impl From<DiscoveryQuery<Vector>> for QueryVector {
     fn from(query: DiscoveryQuery<Vector>) -> Self {
         QueryVector::Discovery(query)
-    }
-}
-
-impl From<DiscoveryQuery<Vector>> for DiscoveryQuery<VectorType> {
-    fn from(query: DiscoveryQuery<Vector>) -> Self {
-        query.transform(|v| v.into())
     }
 }
 
