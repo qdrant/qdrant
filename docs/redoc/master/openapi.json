@@ -9915,8 +9915,7 @@
         "description": "Use context and a target to find the most similar points, constrained by the context.\n\nWhen using only the context, a special search is performed where pairs of points are used to generate a loss function, which is used to find the points that exist in the zone where most of the positive part of the pairs overlap",
         "type": "object",
         "required": [
-          "limit",
-          "offset"
+          "limit"
         ],
         "properties": {
           "target": {
@@ -9978,6 +9977,7 @@
           },
           "offset": {
             "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
+            "default": 0,
             "type": "integer",
             "format": "uint",
             "minimum": 0
