@@ -61,6 +61,10 @@ pub async fn recover_shard_snapshot(
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
+    // The future produced by this function is safe to drop:
+    // - `download_dir` is handled by `tempfile` and would be deleted on drop
+    // - remote snapshot is downloaded into and would be deleted with the `download_dir`
+
     let collection = toc.get_collection(&collection_name).await?;
     collection.assert_shard_exists(shard_id).await?;
 
@@ -105,6 +109,13 @@ pub async fn recover_shard_snapshot_impl(
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
+    // TODO: The future produced by this method is *not* safe to drop!
+    //
+    // - Spawn `Collection::restore_shard_snapshot` and `activate_shard` calls as a single task
+    //   - so that it can't be cancelled after snapshot is recovered, but before consensus is notified
+    // - Propagate cancellation token to `ShardHolder::restore_shard_snapshot`
+    //   - so that the task can be cancelled before current shard is replaced with recovered shard
+
     // TODO: Check snapshot compatibility?
     // TODO: Switch replica into `Partial` state?
 

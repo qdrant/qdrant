@@ -468,6 +468,16 @@ impl ShardHolder {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
+        // The future produced by this method is safe to drop:
+        // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file`
+        //   - are handled by `tempfile` and would be deleted on drop
+        //   - neither of them is a child of the other, so the order of deletion does not matter
+        // - there's no way to cancel `task`
+        //   - it always run in the background until completion or error
+        //   - `temp_file` would be deleted
+        //     - if `create_shard_snapshot` future is dropped and `task` result is dicarded
+        //     - or task `task` fails with an error
+
         let shard = self
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
@@ -495,8 +505,12 @@ impl ShardHolder {
             .create_snapshot(snapshot_temp_dir.path(), snapshot_target_dir.path(), false)
             .await?;
 
+        let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
         if let Err(err) = snapshot_temp_dir.close() {
-            log::error!("Failed to remove temporary directory: {err}");
+            log::error!(
+                "Failed to remove temporary directory {}: {err}",
+                snapshot_temp_dir_path.display(),
+            );
         }
 
         let mut temp_file = tempfile::Builder::new()
@@ -518,8 +532,12 @@ impl ShardHolder {
 
         let task_result = task.await;
 
+        let snapshot_target_dir_path = snapshot_target_dir.path().to_path_buf();
         if let Err(err) = snapshot_target_dir.close() {
-            log::error!("Failed to remove temporary directory: {err}");
+            log::error!(
+                "Failed to remove temporary directory {}: {err}",
+                snapshot_target_dir_path.display(),
+            );
         }
 
         let temp_file = task_result??;
@@ -533,7 +551,21 @@ impl ShardHolder {
             }
         }
 
+        // `tempfile::NamedTempFile::persist` does not work if destination file is on another
+        // file-system, so we have to move the file explicitly.
         move_file(temp_file.path(), &snapshot_path).await?;
+
+        // We already moved the file to the desired destination, but `temp_file` will still try to
+        // delete the file when dropped, so we use `tempfile::NamedTempFile::keep` to consume it safely.
+        //
+        // `tempfile::NamedTempFile::keep` "needs to mark the file as non-temporary" on Windows,
+        // which is a fallible operation. But we already moved the file, so we expect it to fail
+        // and explicitly ignore the result.
+        //
+        // We may mark the wrong file as "non-temporary", if someone creates another file with the
+        // same name in between `move_file` and `tempfile::NamedTempFile::keep` calls, but this is
+        // better than *deleting* it, if we drop `temp_file` as-is.
+        let _ = temp_file.keep();
 
         get_snapshot_description(&snapshot_path).await
     }
@@ -572,6 +604,8 @@ impl ShardHolder {
                 let mut tar = tar::Archive::new(snapshot);
                 tar.unpack(&snapshot_temp_dir)?;
                 drop(tar);
+
+                // TODO: Check cancellation token?
 
                 ShardReplicaSet::restore_snapshot(
                     &snapshot_temp_dir,
