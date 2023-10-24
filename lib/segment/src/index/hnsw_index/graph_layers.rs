@@ -1,6 +1,4 @@
 use std::cmp::max;
-use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
