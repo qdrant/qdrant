@@ -295,7 +295,7 @@ async fn _do_recover_from_snapshot(
 
     // Remove snapshot after recovery if downloaded
     if let Some(path) = snapshot_temp_path {
-        if let Err(err) = path.delete() {
+        if let Err(err) = path.close() {
             log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
         }
     }

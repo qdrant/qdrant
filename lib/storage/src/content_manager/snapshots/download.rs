@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use collection::common::file_utils::TempPath;
 use futures::StreamExt;
 use reqwest;
+use tempfile::TempPath;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use url::Url;
@@ -29,7 +29,7 @@ fn snapshot_name(url: &Url) -> String {
 /// To persist the file, use `download_file(...).keep()`.
 #[must_use = "returns a TempPath, if dropped the downloaded file is deleted"]
 async fn download_file(url: &Url, path: &Path) -> Result<TempPath, StorageError> {
-    let temp_path = TempPath::from(path);
+    let temp_path = TempPath::from_path(path);
     let mut file = File::create(path).await?;
 
     let response = reqwest::get(url.clone()).await?;

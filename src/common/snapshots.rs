@@ -99,7 +99,7 @@ pub async fn recover_shard_snapshot(
 
     // Remove snapshot after recovery if downloaded
     if let Some(path) = snapshot_temp_path {
-        if let Err(err) = path.delete() {
+        if let Err(err) = path.close() {
             log::error!("Failed to remove downloaded shards snapshot after recovery: {err}");
         }
     }
