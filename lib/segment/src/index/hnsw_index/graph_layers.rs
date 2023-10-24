@@ -261,26 +261,6 @@ where
         match try_self {
             Ok(mut slf) => {
                 let links = TGraphLinks::load_from_file(links_path)?;
-
-                eprintln!("links.levels_count() = {:#?}", links.levels_count());
-
-                let num_points = links.num_points();
-
-                eprintln!("links.num_points() = {:#?}", num_points);
-
-                // Dump all links into file
-                let mut file = File::create(links_path.with_extension("txt"))?;
-
-                for idx in 0..num_points {
-                    let links = links.links(idx as PointOffsetType, 0);
-                    let txt = format!("{:?}\n", links);
-                    file.write_all(txt.as_bytes())?;
-                }
-
-                for entry_point in slf.entry_points.iterator() {
-                    eprintln!("entry_point = {:#?}", entry_point);
-                }
-
                 slf.links = links;
                 Ok(slf)
             }
