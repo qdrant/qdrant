@@ -894,7 +894,10 @@ mod tests {
             GraphLayersBuilder::connect_new_point(&mut links, id, 0, level_m, scorer)
         }
         let mut result = Vec::new();
-        graph_layers_builder.links_layers[0][0].read().iter().for_each(|x| result.push(*x));
+        graph_layers_builder.links_layers[0][0]
+            .read()
+            .iter()
+            .for_each(|x| result.push(*x));
         assert_eq!(&result, &vec![1, 2, 3, 4, 5, 6]);
     }
 }
