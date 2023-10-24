@@ -3,6 +3,7 @@ use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
+use bitvec::prelude::BitVec;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -37,6 +38,9 @@ pub struct GraphLayersBuilder {
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
+
+    // List of bool flags, which defines if the point is already indexed or not
+    ready_list: RwLock<BitVec>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -53,8 +57,11 @@ impl GraphLayersBase for GraphLayersBuilder {
         F: FnMut(PointOffsetType),
     {
         let links = self.links_layers[point_id as usize][level].read();
+        let ready_list = self.ready_list.read();
         for link in links.iter() {
-            f(*link);
+            if ready_list[*link as usize] {
+                f(*link);
+            }
         }
     }
 
@@ -117,6 +124,8 @@ impl GraphLayersBuilder {
             links_layers.push(vec![RwLock::new(links)]);
         }
 
+        let ready_list = RwLock::new(BitVec::repeat(false, num_vectors));
+
         Self {
             max_level: AtomicUsize::new(0),
             m,
@@ -127,6 +136,7 @@ impl GraphLayersBuilder {
             links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
             visited_pool: VisitedPool::new(),
+            ready_list,
         }
     }
 
@@ -389,12 +399,17 @@ impl GraphLayersBuilder {
                         let selected_nearest = {
                             let mut existing_links =
                                 self.links_layers[point_id as usize][curr_level].write();
-                            for &existing_link in existing_links.iter() {
-                                if !visited_list.check(existing_link) {
-                                    search_context.process_candidate(ScoredPointOffset {
-                                        idx: existing_link,
-                                        score: points_scorer.score_point(existing_link),
-                                    });
+                            {
+                                let ready_list = self.ready_list.read();
+                                for &existing_link in existing_links.iter() {
+                                    if !visited_list.check(existing_link)
+                                        && ready_list[existing_link as usize]
+                                    {
+                                        search_context.process_candidate(ScoredPointOffset {
+                                            idx: existing_link,
+                                            score: points_scorer.score_point(existing_link),
+                                        });
+                                    }
                                 }
                             }
 
@@ -471,6 +486,7 @@ impl GraphLayersBuilder {
                 }
             }
         }
+        self.ready_list.write().set(point_id as usize, true);
     }
 }
 

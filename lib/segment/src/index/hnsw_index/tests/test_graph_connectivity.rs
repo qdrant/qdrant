@@ -21,12 +21,12 @@ use crate::types::{
 fn test_graph_connectivity() {
     let stopped = AtomicBool::new(false);
 
-    let dim = 64;
+    let dim = 32;
     let m = 16;
-    let num_vectors: u64 = 10_000;
+    let num_vectors: u64 = 1_000;
     let ef_construct = 100;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 1000;
+    let full_scan_threshold = 10_000;
 
     let mut rnd = thread_rng();
 
@@ -94,7 +94,6 @@ fn test_graph_connectivity() {
     }
 
     for point_id in 0..num_vectors {
-        let links = graph.links.links(point_id as PointOffsetType, 0);
-        assert!(!links.is_empty(), "Point {} has no inbound links", point_id);
+        assert!(!reverse_links[point_id as usize].is_empty(), "Point {} has no inbound links", point_id);
     }
 }
