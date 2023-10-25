@@ -8,7 +8,7 @@ use api::grpc::transport_channel_pool::TransportChannelPool;
 use futures::future::try_join_all;
 use futures::Future;
 use tonic::transport::{Channel, Uri};
-use tonic::Status;
+use tonic::{Request, Status};
 use url::Url;
 
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -70,10 +70,17 @@ impl ChannelService {
         // Handle requests with timeout
         tokio::time::timeout(timeout, responses)
             .await
-            .map(|_| ())
+            // Timeout error
             .map_err(|_elapsed| CollectionError::Timeout {
                 description: "Failed to wait for consensus commit on all peers, timed out.".into(),
-            })
+            })?
+            // Await consensus error
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to wait for consensus commit on peer: {err}"
+                ))
+            })?;
+        Ok(())
     }
 
     /// Wait until the given peer reaches the given commit
@@ -95,9 +102,7 @@ impl ChannelService {
                     term: term as i64,
                     timeout: timeout.as_secs() as i64,
                 };
-                client
-                    .wait_on_consensus_commit(tonic::Request::new(request))
-                    .await
+                client.wait_on_consensus_commit(Request::new(request)).await
             })
             .await
             .map_err(|err| {
