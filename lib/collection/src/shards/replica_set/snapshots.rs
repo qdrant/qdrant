@@ -72,6 +72,8 @@ impl ShardReplicaSet {
 
     /// Returns if local shard was recovered from path
     pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
+        // TODO: This future is *not* safe to cancel/drop!
+
         if !LocalShard::check_data(replica_path) {
             return Ok(false);
         }
@@ -82,6 +84,10 @@ impl ShardReplicaSet {
 
         let mut local = self.local.write().await;
 
+        // TODO: Create cancellation guard/token and propagate it into task?
+        // TODO: Spawn *everything* down below as a single task
+
+        // TODO: Check cancellation token?
         // Drop `LocalShard` instance to free resources and clear shard data
         let clear = local.take().is_some();
 

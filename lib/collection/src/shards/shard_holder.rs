@@ -450,6 +450,8 @@ impl ShardHolder {
         snapshots_path: &Path,
         shard_id: ShardId,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
+        // This future is safe to cancel/drop
+
         self.assert_shard_is_local(shard_id).await?;
 
         let snapshots_path = self.snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
@@ -468,7 +470,7 @@ impl ShardHolder {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        // The future produced by this method is safe to drop:
+        // The future is safe to cancel/drop:
         // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file`
         //   - are handled by `tempfile` and would be deleted on drop
         //   - neither of them is a child of the other, so the order of deletion does not matter
@@ -517,12 +519,16 @@ impl ShardHolder {
             .prefix(&format!("{snapshot_file_name}-"))
             .tempfile_in(temp_dir)?;
 
+        // TODO: Create cancellation guard/token and propagate it into `task`?
+
         let task = {
             let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
 
             tokio::task::spawn_blocking(move || -> CollectionResult<_> {
                 let mut tar = TarBuilder::new(temp_file.as_file_mut());
+                // TODO: Check cancellation token?
                 tar.append_dir_all(".", &snapshot_target_dir)?;
+                // TODO: Check cancellation token?
                 tar.finish()?;
                 drop(tar);
 
@@ -551,6 +557,22 @@ impl ShardHolder {
             }
         }
 
+        // NOTE:
+        //
+        // `keep` calls are *sync*, so once `move_file` future resolves, `keep` calls will *always*
+        // execute to completion and won't be "cancelled" even if `create_shard_snapshot` future is
+        // dropped.
+        //
+        // If we switch to *async* `keep` calls at some point:
+        // - we may leave it as-is, but files may get cleaned up or persisted semi-randomly in that case
+        //   - (but do we care, if request was cancelled?)
+        // - or we can spawn `move_file` and `keep` calls as a single task
+        //   - so that `keep` calls will *always* execute to completion if `move_file` resolves
+        //   - and we can do "select" on `move_file` and a cancellation token, to be able to cancel
+        //     `move_file` before it resolves
+
+        // TODO: Use `tempfile::TempFile` for `snapshot_path`?
+
         // `tempfile::NamedTempFile::persist` does not work if destination file is on another
         // file-system, so we have to move the file explicitly.
         move_file(temp_file.path(), &snapshot_path).await?;
@@ -567,6 +589,8 @@ impl ShardHolder {
         // better than *deleting* it, if we drop `temp_file` as-is.
         let _ = temp_file.keep();
 
+        // TODO: Call `tempfile::TempPath::keep` for `snapshot_path`?
+
         get_snapshot_description(&snapshot_path).await
     }
 
@@ -579,6 +603,8 @@ impl ShardHolder {
         is_distributed: bool,
         temp_dir: &Path,
     ) -> CollectionResult<()> {
+        // TODO: This future is *not* safe to cancel/drop!
+
         if !self.contains_shard(&shard_id) {
             return Err(shard_not_found_error(shard_id));
         }
@@ -597,16 +623,18 @@ impl ShardHolder {
             ))
             .tempdir_in(temp_dir)?;
 
+        // TODO: Create cancellation guard/token and propagate it into `task`
+
         let task = {
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
             tokio::task::spawn_blocking(move || -> CollectionResult<_> {
                 let mut tar = tar::Archive::new(snapshot);
+                // TODO: Check cancellation token?
                 tar.unpack(&snapshot_temp_dir)?;
                 drop(tar);
 
-                // TODO: Check cancellation token?
-
+                // TODO: Check cancellation token
                 ShardReplicaSet::restore_snapshot(
                     &snapshot_temp_dir,
                     this_peer_id,
@@ -619,6 +647,7 @@ impl ShardHolder {
 
         task.await??;
 
+        // TODO: `ShardReplicaSet::restore_local_replica_from` is *not* safe to cancel/drop!
         let recovered = self
             .recover_local_shard_from(snapshot_temp_dir.path(), shard_id)
             .await?;
@@ -637,6 +666,8 @@ impl ShardHolder {
         snapshot_shard_path: &Path,
         shard_id: ShardId,
     ) -> CollectionResult<bool> {
+        // TODO: This future is *not* safe to cancel/drop!
+
         let replica_set = self
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
@@ -645,6 +676,7 @@ impl ShardHolder {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
+        // TODO: `ShardReplicaSet::restore_local_replica_from` is *not* safe to cancel/drop!
         replica_set
             .restore_local_replica_from(snapshot_shard_path)
             .await

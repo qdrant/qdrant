@@ -18,6 +18,9 @@ pub async fn create_shard_snapshot(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
+    // This future is safe to cancel/drop
+    // (see `ShardHolder::create_shard_snapshot`)
+
     let collection = toc.get_collection(&collection_name).await?;
 
     let snapshot = collection
@@ -32,6 +35,8 @@ pub async fn list_shard_snapshots(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
+    // This future is safe to cancel/drop
+
     let collection = toc.get_collection(&collection_name).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
@@ -43,13 +48,17 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
+    // This future is safe to cancel/drop
+    //
+    // TODO: Explain why?
+
     let collection = toc.get_collection(&collection_name).await?;
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
         .await?;
 
     check_shard_snapshot_file_exists(&snapshot_path)?;
-    std::fs::remove_file(&snapshot_path)?;
+    tokio::fs::remove_file(&snapshot_path).await?;
 
     Ok(())
 }
@@ -61,7 +70,8 @@ pub async fn recover_shard_snapshot(
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
-    // The future produced by this function is safe to drop:
+    // TODO: This future is *not* safe to cancel/drop!
+    //
     // - `download_dir` is handled by `tempfile` and would be deleted on drop
     // - remote snapshot is downloaded into and would be deleted with the `download_dir`
 
@@ -90,6 +100,7 @@ pub async fn recover_shard_snapshot(
         }
     };
 
+    // TODO: `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
     recover_shard_snapshot_impl(
         &toc,
         &collection,
@@ -109,16 +120,13 @@ pub async fn recover_shard_snapshot_impl(
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
-    // TODO: The future produced by this method is *not* safe to drop!
-    //
-    // - Spawn `Collection::restore_shard_snapshot` and `activate_shard` calls as a single task
-    //   - so that it can't be cancelled after snapshot is recovered, but before consensus is notified
-    // - Propagate cancellation token to `ShardHolder::restore_shard_snapshot`
-    //   - so that the task can be cancelled before current shard is replaced with recovered shard
+    // TODO: This future is *not* safe to cancel/drop!
 
-    // TODO: Check snapshot compatibility?
-    // TODO: Switch replica into `Partial` state?
+    // TODO: Create cancellation guard/token and propagate it into task
+    // TODO: Spawn *everything* down below as a single task
 
+    // TODO: *Select* on `Collection::restore_shard_snapshot` and cancellation token
+    // TODO: `ShardHolder::restore_shard_snapshot` is *not* safe to cancel/drop!
     collection
         .restore_shard_snapshot(
             shard,
