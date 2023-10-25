@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -185,7 +186,7 @@ async fn transfer_snapshot(
     shard_id: ShardId,
     remote_shard: RemoteShard,
     channel_service: ChannelService,
-    _consensus: &dyn ShardTransferConsensus,
+    consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
     collection_name: &str,
     temp_dir: &Path,
@@ -247,8 +248,9 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    // TODO: before transforing queue proxy and sending updates, make sure the remote shard is
-    // partial through consensus on all nodes
+    // TODO: through consensus, set replica state to partial
+
+    // TODO: await other node to have reached partial state
 
     // Transfer all updates to remote shard and transform into forward proxy shard
     // We do this right after the shard has been restored on the remote so that we can catch any
@@ -264,12 +266,50 @@ async fn transfer_snapshot(
         }
     }
 
-    // We must keep partial state for 10 seconds to allow all nodes to catch up
-    // Future improvement: instead of waiting 10 seconds, confirm all nodes reached consensus
-    log::trace!("Shard snapshot transfer is waiting 10 seconds for consensus to catch up");
-    sleep(Duration::from_secs(10)).await;
+    // TODO: wait until consensus has set the shard state to partial on this machine
+
+    // Synchronize, make sure all nodes have reached consensus before continuing and unproxying
+    // All other nodes must consider the shard state to be at least partial so that all nodes send
+    // operations to it.
+    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
     Ok(())
+}
+
+/// Await for consensus to synchronize across all peers
+///
+/// This will take the current consensus state of this node. It then explicitly waits on all other
+/// nodes to reach the same (or later) consensus.
+///
+/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
+/// timeout.
+async fn await_consensus_sync(
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+    this_peer_id: PeerId,
+) {
+    let sync_consensus = async {
+        let await_result = consensus
+            .await_consensus_sync(this_peer_id, channel_service)
+            .await;
+        if let Err(err) = &await_result {
+            log::warn!("All peers failed to synchronize consensus: {err}");
+        }
+        await_result
+    };
+    let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
+
+    log::trace!(
+        "Waiting on all peers to reach consensus before finalizing shard snapshot transfer..."
+    );
+    tokio::select! {
+        Ok(_) = sync_consensus => {
+            log::trace!("All peers reached consensus");
+        }
+        _ = timeout => {
+            log::warn!("All peers failed to synchronize consensus, continuing after timeout...");
+        }
+    }
 }
 
 /// Return local shard back from the forward proxy
