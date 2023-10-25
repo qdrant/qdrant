@@ -34,13 +34,13 @@ use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use tonic::transport::Channel;
 use tonic::Status;
 
+use self::transfer::ShardTransferDispatcher;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::dispatcher::Dispatcher;
 use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
 
@@ -74,7 +74,7 @@ pub struct TableOfContent {
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
     /// Dispatcher for shard transfer to access consensus.
-    shard_transfer_dispatcher: parking_lot::Mutex<Option<Dispatcher>>,
+    shard_transfer_dispatcher: parking_lot::Mutex<Option<ShardTransferDispatcher>>,
 }
 
 impl TableOfContent {
@@ -630,7 +630,7 @@ impl TableOfContent {
     }
 
     /// Insert dispatcher into table of contents for shard transfer.
-    pub fn with_shard_transfer_dispatcher(&self, dispatcher: Dispatcher) {
+    pub fn with_shard_transfer_dispatcher(&self, dispatcher: ShardTransferDispatcher) {
         self.shard_transfer_dispatcher.lock().replace(dispatcher);
     }
 }

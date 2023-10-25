@@ -28,6 +28,7 @@ use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
+use storage::content_manager::toc::transfer::ShardTransferDispatcher;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
@@ -268,7 +269,9 @@ fn main() -> anyhow::Result<()> {
 
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
 
-        toc_arc.with_shard_transfer_dispatcher(dispatcher.clone());
+        let shard_transfer_dispatcher =
+            ShardTransferDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
+        toc_arc.with_shard_transfer_dispatcher(shard_transfer_dispatcher);
 
         let dispatcher_arc = Arc::new(dispatcher);
 
