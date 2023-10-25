@@ -1,22 +1,15 @@
-use crate::content_manager::consensus::operation_sender::OperationSender;
+use collection::operations::types::{CollectionError, CollectionResult};
+use collection::shards::transfer::ShardTransferConsensus;
 
-/// Interface to consensus for shard transfer operations.
-#[derive(Clone)]
-pub struct ShardTransferConsensus {
-    // Will be used later for shard transfer to propose consensus updates
-    _consensus_proposal_sender: Option<OperationSender>,
-}
+use crate::dispatcher::Dispatcher;
 
-impl ShardTransferConsensus {
-    pub fn new(consensus_proposal_sender: Option<OperationSender>) -> Self {
-        Self {
-            _consensus_proposal_sender: consensus_proposal_sender,
-        }
-    }
-}
-
-impl collection::shards::transfer::ShardTransferConsensus for ShardTransferConsensus {
-    fn consensus_state(&self) -> (usize, usize) {
-        todo!()
+impl ShardTransferConsensus for Dispatcher {
+    fn consensus_commit_term(&self) -> CollectionResult<(u64, u64)> {
+        self.consensus_state()
+            .map(|consensus| {
+                let state = consensus.hard_state();
+                (state.commit, state.term)
+            })
+            .ok_or_else(|| CollectionError::service_error("Consensus is not available"))
     }
 }
