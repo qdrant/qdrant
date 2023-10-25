@@ -185,7 +185,7 @@ async fn transfer_snapshot(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    consensus: &dyn ShardTransferConsensus,
+    _consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
     collection_name: &str,
     local_rest_address: Url,
