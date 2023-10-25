@@ -173,7 +173,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        let points_to_index_iter =
+        let mut points_to_index_iter =
             payload_index
                 .query_points(&filter)
                 .into_iter()
@@ -185,6 +185,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 });
 
         let first_points_to_index: Vec<_> = points_to_index_iter
+            .by_ref()
             .take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD)
             .collect();
         let points_to_index: Vec<_> = points_to_index_iter.collect();
@@ -224,7 +225,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
             graph_layers_builder.link_new_point(block_point_id, points_scorer);
-            Ok(())
+            Ok::<_, OperationError>(())
         };
 
         // First index points in single thread so ensure warm start for parallel indexing process
