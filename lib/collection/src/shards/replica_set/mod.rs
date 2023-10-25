@@ -335,6 +335,24 @@ impl ShardReplicaSet {
             .await
     }
 
+    /// Wait for a local shard to be in `Partial` state
+    ///
+    /// Uses a blocking thread internally.
+    ///
+    /// Returns `true` if initialized, `false` if timed out.
+    pub async fn wait_for_local_partial(&self, timeout: Duration) -> CollectionResult<bool> {
+        self.wait_for(
+            |replica_set_state| {
+                matches!(
+                    replica_set_state.get_peer_state(&replica_set_state.this_peer_id),
+                    Some(ReplicaState::Partial)
+                )
+            },
+            timeout,
+        )
+        .await
+    }
+
     /// Wait for a replica set state condition to be true.
     ///
     /// Uses a blocking thread internally.

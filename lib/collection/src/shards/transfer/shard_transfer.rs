@@ -252,21 +252,31 @@ async fn transfer_snapshot(
 
     // TODO: await other node to have reached partial state
 
-    // Transfer all updates to remote shard and transform into forward proxy shard
-    // We do this right after the shard has been restored on the remote so that we can catch any
-    // errors early. The forward proxy shard we end up with will not error again once we unproxify.
     {
         let shard = shard_holder_read.get_shard(&shard_id);
-        if let Some(replica_set) = shard {
-            replica_set.queue_proxy_into_forward_proxy().await?;
-        } else {
+        let Some(replica_set) = shard else {
             return Err(CollectionError::service_error(format!(
                 "Shard {shard_id} cannot be transformed from queue to forward proxy because it does not exist"
             )));
-        }
-    }
+        };
 
-    // TODO: wait until consensus has set the shard state to partial on this machine
+        // Transfer all updates to remote shard and transform into forward proxy shard
+        // We do this right after the shard has been restored on the remote so that we can catch any
+        // errors early. The forward proxy shard we end up with will not error again once we unproxify.
+        log::trace!("Transfer all queue proxy updates and transform into forward proxy");
+        replica_set.queue_proxy_into_forward_proxy().await?;
+
+        // Wait for local shard to reach partial state
+        log::trace!("Wait for local shard to reach Partial state");
+        replica_set
+            .wait_for_local_partial(defaults::CONSENSUS_META_OP_WAIT)
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Shard being transferred did not reach Partial state in time: {err}"
+                ))
+            })?;
+    }
 
     // Synchronize, make sure all nodes have reached consensus before continuing and unproxying
     // All other nodes must consider the shard state to be at least partial so that all nodes send
