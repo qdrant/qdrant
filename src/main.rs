@@ -28,6 +28,7 @@ use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
+use storage::content_manager::toc::transfer::ShardTransferConsensus;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
@@ -196,13 +197,16 @@ fn main() -> anyhow::Result<()> {
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
 
-    let propose_operation_sender = if settings.cluster.enabled {
+    // We don't need sender for the single-node mode
+    let mut propose_operation_sender = None;
+    let mut shard_transfer_consensus = None;
+    if settings.cluster.enabled {
         // High-level channel which could be used to send User-space consensus operations
-        Some(OperationSender::new(propose_sender))
-    } else {
-        // We don't need sender for the single-node mode
-        None
-    };
+        propose_operation_sender.replace(OperationSender::new(propose_sender));
+        shard_transfer_consensus.replace(ShardTransferConsensus::new(
+            propose_operation_sender.clone(),
+        ));
+    }
 
     // Channel service is used to manage connections between peers.
     // It allocates required number of channels and manages proper reconnection handling
@@ -235,6 +239,7 @@ fn main() -> anyhow::Result<()> {
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
+        shard_transfer_consensus,
     );
 
     toc.clear_all_tmp_directories()?;

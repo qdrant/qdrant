@@ -14,6 +14,7 @@ use crate::shards::transfer::shard_transfer::{
     self, ShardTransfer, ShardTransferKey, ShardTransferMethod,
 };
 use crate::shards::transfer::transfer_tasks_pool::TaskResult;
+use crate::shards::transfer::ShardTransferConsensus;
 
 impl Collection {
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
@@ -35,6 +36,7 @@ impl Collection {
     pub async fn start_shard_transfer<T, F>(
         &self,
         mut shard_transfer: ShardTransfer,
+        consensus: Box<dyn ShardTransferConsensus>,
         temp_dir: PathBuf,
         on_finish: T,
         on_error: F,
@@ -97,7 +99,7 @@ impl Collection {
             is_local && is_sender
         };
         if do_transfer {
-            self.send_shard(shard_transfer, temp_dir, on_finish, on_error)
+            self.send_shard(shard_transfer, consensus, temp_dir, on_finish, on_error)
                 .await;
         }
         Ok(do_transfer)
@@ -106,6 +108,7 @@ impl Collection {
     async fn send_shard<OF, OE>(
         &self,
         transfer: ShardTransfer,
+        consensus: Box<dyn ShardTransferConsensus>,
         temp_dir: PathBuf,
         on_finish: OF,
         on_error: OE,
@@ -129,6 +132,7 @@ impl Collection {
         let transfer_task = shard_transfer::spawn_transfer_task(
             shard_holder,
             transfer.clone(),
+            consensus,
             collection_id,
             channel_service,
             self.snapshots_path.clone(),

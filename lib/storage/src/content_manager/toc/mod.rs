@@ -34,6 +34,7 @@ use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use tonic::transport::Channel;
 use tonic::Status;
 
+use self::transfer::ShardTransferConsensus;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
@@ -72,10 +73,12 @@ pub struct TableOfContent {
     /// A lock to prevent concurrent collection creation.
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
+    shard_transfer_consensus: Option<ShardTransferConsensus>,
 }
 
 impl TableOfContent {
     /// PeerId does not change during execution so it is ok to copy it here.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
@@ -84,6 +87,7 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
+        shard_transfer_consensus: Option<ShardTransferConsensus>,
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
@@ -183,6 +187,7 @@ impl TableOfContent {
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
+            shard_transfer_consensus,
         }
     }
 

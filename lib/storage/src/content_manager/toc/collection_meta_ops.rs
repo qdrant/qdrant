@@ -287,9 +287,22 @@ impl TableOfContent {
                     }
                 };
 
+                let Some(shard_transfer_consensus) = self.shard_transfer_consensus.as_ref() else {
+                    return Err(StorageError::service_error(
+                        "Can't handle transfer, this is a single node deployment",
+                    ));
+                };
+                let shard_consensus = Box::new(shard_transfer_consensus.clone());
+
                 let temp_dir = self.optional_temp_or_storage_temp_path()?;
                 collection
-                    .start_shard_transfer(transfer, temp_dir, on_finish, on_failure)
+                    .start_shard_transfer(
+                        transfer,
+                        shard_consensus,
+                        temp_dir,
+                        on_finish,
+                        on_failure,
+                    )
                     .await?;
             }
             ShardTransferOperations::Finish(transfer) => {
