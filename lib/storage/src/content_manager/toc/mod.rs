@@ -5,6 +5,7 @@ mod locks;
 mod point_ops;
 mod snapshots;
 mod temp_directories;
+pub mod transfer;
 
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
