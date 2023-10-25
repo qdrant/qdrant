@@ -173,22 +173,16 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        let mut points_to_index_iter =
-            payload_index
-                .query_points(&filter)
-                .into_iter()
-                .filter(|&point_id| {
-                    !deleted_bitslice
-                        .get(point_id as usize)
-                        .map(|x| *x)
-                        .unwrap_or(false)
-                });
-
-        let first_points_to_index: Vec<_> = points_to_index_iter
-            .by_ref()
-            .take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD)
+        let points_to_index: Vec<_> = payload_index
+            .query_points(&filter)
+            .into_iter()
+            .filter(|&point_id| {
+                !deleted_bitslice
+                    .get(point_id as usize)
+                    .map(|x| *x)
+                    .unwrap_or(false)
+            })
             .collect();
-        let points_to_index: Vec<_> = points_to_index_iter.collect();
 
         for block_point_id in points_to_index.iter().copied() {
             block_filter_list.check_and_update_visited(block_point_id);
@@ -228,15 +222,24 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             Ok::<_, OperationError>(())
         };
 
+        let first_points = points_to_index
+            .len()
+            .min(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
+
         // First index points in single thread so ensure warm start for parallel indexing process
-        for point_id in first_points_to_index {
+        for point_id in points_to_index[..first_points].iter().copied() {
             insert_points(point_id)?;
         }
         // Once initial structure is built, index remaining points in parallel
         // So that each thread will insert points in different parts of the graph,
         // it is less likely that they will compete for the same locks
-        if !points_to_index.is_empty() {
-            pool.install(|| points_to_index.into_par_iter().try_for_each(insert_points))?;
+        if points_to_index.len() > first_points {
+            pool.install(|| {
+                points_to_index
+                    .into_par_iter()
+                    .skip(first_points)
+                    .try_for_each(insert_points)
+            })?;
         }
         Ok(())
     }
