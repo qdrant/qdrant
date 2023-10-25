@@ -7,6 +7,11 @@ use crate::content_manager::consensus_manager::ConsensusStateRef;
 
 #[derive(Clone)]
 pub struct ShardTransferDispatcher {
+    /// Reference to table of contents
+    ///
+    /// This dispatcher is stored inside the table of contents after construction. It therefore
+    /// uses a weak reference to avoid a reference cycle which would prevent dropping the table of
+    /// contents on exit.
     _toc: Weak<TableOfContent>,
     consensus_state: ConsensusStateRef,
 }
