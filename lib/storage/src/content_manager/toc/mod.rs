@@ -5,6 +5,7 @@ mod locks;
 mod point_ops;
 mod snapshots;
 mod temp_directories;
+pub mod transfer;
 
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
@@ -33,6 +34,7 @@ use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use tonic::transport::Channel;
 use tonic::Status;
 
+use self::transfer::ShardTransferDispatcher;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
@@ -71,10 +73,13 @@ pub struct TableOfContent {
     /// A lock to prevent concurrent collection creation.
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
+    /// Dispatcher for shard transfer to access consensus.
+    shard_transfer_dispatcher: parking_lot::Mutex<Option<ShardTransferDispatcher>>,
 }
 
 impl TableOfContent {
     /// PeerId does not change during execution so it is ok to copy it here.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
@@ -182,6 +187,7 @@ impl TableOfContent {
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
+            shard_transfer_dispatcher: Default::default(),
         }
     }
 
@@ -621,5 +627,10 @@ impl TableOfContent {
             })
             .await
             .map_err(Into::into)
+    }
+
+    /// Insert dispatcher into table of contents for shard transfer.
+    pub fn with_shard_transfer_dispatcher(&self, dispatcher: ShardTransferDispatcher) {
+        self.shard_transfer_dispatcher.lock().replace(dispatcher);
     }
 }

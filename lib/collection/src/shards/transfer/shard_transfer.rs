@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use url::Url;
 
+use super::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -77,6 +78,7 @@ pub enum ShardTransferMethod {
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
     shard_holder: Arc<LockedShardHolder>,
+    consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
     collection_name: &str,
     peer_id: PeerId,
@@ -115,6 +117,7 @@ pub async fn transfer_shard(
                 shard_holder.clone(),
                 shard_id,
                 remote_shard,
+                consensus,
                 snapshots_path,
                 collection_name,
                 local_rest_address,
@@ -182,6 +185,7 @@ async fn transfer_snapshot(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
+    _consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
     collection_name: &str,
     local_rest_address: Url,
@@ -586,6 +590,7 @@ pub fn suggest_peer_to_remove_replica(
 pub fn spawn_transfer_task<T, F>(
     shards_holder: Arc<LockedShardHolder>,
     transfer: ShardTransfer,
+    consensus: Box<dyn ShardTransferConsensus>,
     collection_id: CollectionId,
     channel_service: ChannelService,
     snapshots_path: PathBuf,
@@ -605,6 +610,7 @@ where
             let transfer_result = transfer_shard(
                 transfer.clone(),
                 shards_holder.clone(),
+                consensus.as_ref(),
                 collection_id.clone(),
                 &collection_name,
                 transfer.to,
