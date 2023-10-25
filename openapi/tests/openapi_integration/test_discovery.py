@@ -1,6 +1,6 @@
 import math
+import random
 
-import numpy as np
 import pytest
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
@@ -10,7 +10,7 @@ collection_name = "test_discovery"
 
 
 def random_vector(dim=4):
-    return np.random.rand(dim).tolist()
+    return [random.random() for _ in range(dim)]
 
 
 @pytest.fixture(autouse=True, scope="module")
