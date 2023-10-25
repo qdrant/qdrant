@@ -612,8 +612,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 return true;
             }
 
-            // Fail if on a different term
-            let is_fail = state.term != term;
+            // Fail if on a newer term
+            let is_fail = state.term > term;
             if is_fail {
                 return false;
             }
