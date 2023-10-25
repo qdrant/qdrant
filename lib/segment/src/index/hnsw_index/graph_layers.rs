@@ -226,7 +226,6 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
             0,
             &mut points_scorer,
         );
-
         let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
         nearest.into_iter().take(top).collect_vec()
     }
