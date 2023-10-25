@@ -223,10 +223,11 @@ impl Collection {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
+        // TODO: Provide cancellation token to `ShardHolder::recover_local_shard_from`
         self.shards_holder
             .read()
             .await
-            .recover_local_shard_from(snapshot_shard_path, shard_id)
+            .recover_local_shard_from(snapshot_shard_path, shard_id, todo!())
             .await
     }
 
@@ -292,6 +293,10 @@ impl Collection {
         is_distributed: bool,
         temp_dir: &Path,
     ) -> CollectionResult<()> {
+        // TODO: This future is *not* safe to cancel/drop!
+
+        // TODO: Spawn `ShardHolder::restore_shard_snapshot`?
+        // TODO: Provide *or* propagate cancellation token to `ShardHolder::restore_shard_snapshot`
         self.shards_holder
             .read()
             .await
@@ -302,6 +307,7 @@ impl Collection {
                 this_peer_id,
                 is_distributed,
                 temp_dir,
+                todo!(),
             )
             .await
     }

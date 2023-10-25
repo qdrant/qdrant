@@ -1073,6 +1073,7 @@ dependencies = [
  "thiserror",
  "tinyvec",
  "tokio",
+ "tokio-util",
  "tonic",
  "tower",
  "tracing",

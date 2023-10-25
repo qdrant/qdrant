@@ -1,6 +1,8 @@
 use std::ops::Deref as _;
 use std::path::Path;
 
+use tokio_util::sync::CancellationToken;
+
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, REPLICA_STATE_FILE};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
@@ -45,7 +47,7 @@ impl ShardReplicaSet {
 
         if !is_distributed && !is_snapshot_local {
             return Err(CollectionError::service_error(format!(
-                "Can't restore snapshot is local mode with missing data at shard: {}",
+                "Can't restore snapshot in local mode with missing data at shard: {}",
                 snapshot_path.display()
             )));
         }
@@ -71,8 +73,12 @@ impl ShardReplicaSet {
     }
 
     /// Returns if local shard was recovered from path
-    pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
-        // TODO: This future is *not* safe to cancel/drop!
+    pub async fn restore_local_replica_from(
+        &self,
+        replica_path: &Path,
+        cancel: CancellationToken,
+    ) -> CollectionResult<bool> {
+        // This future is *not* safe to cancel/drop!
 
         if !LocalShard::check_data(replica_path) {
             return Ok(false);
@@ -82,12 +88,9 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
+        // TODO: *Select* on `local.write()` and `cancel`
         let mut local = self.local.write().await;
 
-        // TODO: Create cancellation guard/token and propagate it into task?
-        // TODO: Spawn *everything* down below as a single task
-
-        // TODO: Check cancellation token?
         // Drop `LocalShard` instance to free resources and clear shard data
         let clear = local.take().is_some();
 
