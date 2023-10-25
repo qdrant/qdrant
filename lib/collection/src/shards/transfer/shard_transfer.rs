@@ -9,7 +9,6 @@ use std::time::Duration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use url::Url;
 
 use super::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
@@ -81,7 +80,6 @@ pub async fn transfer_shard(
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
     collection_name: &str,
-    peer_id: PeerId,
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
@@ -93,7 +91,7 @@ pub async fn transfer_shard(
     let remote_shard = RemoteShard::new(
         shard_id,
         collection_id.clone(),
-        peer_id,
+        transfer_config.to,
         channel_service.clone(),
     );
 
@@ -112,15 +110,15 @@ pub async fn transfer_shard(
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
-            let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
             transfer_snapshot(
+                transfer_config,
                 shard_holder.clone(),
                 shard_id,
                 remote_shard,
+                channel_service,
                 consensus,
                 snapshots_path,
                 collection_name,
-                local_rest_address,
                 temp_dir,
                 stopped.clone(),
             )
@@ -182,17 +180,20 @@ async fn transfer_batches(
 
 #[allow(clippy::too_many_arguments)]
 async fn transfer_snapshot(
+    transfer_config: ShardTransfer,
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
+    channel_service: ChannelService,
     _consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
     collection_name: &str,
-    local_rest_address: Url,
     temp_dir: &Path,
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     let shard_holder_read = shard_holder.read().await;
+
+    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
     // Queue proxify local shard
     {
@@ -613,7 +614,6 @@ where
                 consensus.as_ref(),
                 collection_id.clone(),
                 &collection_name,
-                transfer.to,
                 channel_service.clone(),
                 &snapshots_path,
                 &temp_dir,
