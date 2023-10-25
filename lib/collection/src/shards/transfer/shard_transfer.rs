@@ -266,10 +266,10 @@ async fn transfer_snapshot(
         log::trace!("Transfer all queue proxy updates and transform into forward proxy");
         replica_set.queue_proxy_into_forward_proxy().await?;
 
-        // Wait for local shard to reach partial state
+        // Wait for remote shard to reach partial state in our replica set
         log::trace!("Wait for local shard to reach Partial state");
         replica_set
-            .wait_for_local_partial(defaults::CONSENSUS_META_OP_WAIT)
+            .wait_for_partial(transfer_config.to, defaults::CONSENSUS_META_OP_WAIT)
             .await
             .map_err(|err| {
                 CollectionError::service_error(format!(

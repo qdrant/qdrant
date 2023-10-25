@@ -328,23 +328,23 @@ impl ShardReplicaSet {
     /// Wait for a local shard to be initialized.
     ///
     /// Uses a blocking thread internally.
-    ///
-    /// Returns `true` if initialized, `false` if timed out.
     pub async fn wait_for_local(&self, timeout: Duration) -> CollectionResult<()> {
         self.wait_for(|replica_set_state| replica_set_state.is_local, timeout)
             .await
     }
 
-    /// Wait for a local shard to be in `Partial` state
+    /// Wait for the replica set to reach the `Partial` state for a peer
     ///
     /// Uses a blocking thread internally.
-    ///
-    /// Returns `true` if initialized, `false` if timed out.
-    pub async fn wait_for_local_partial(&self, timeout: Duration) -> CollectionResult<()> {
+    pub async fn wait_for_partial(
+        &self,
+        peer_id: PeerId,
+        timeout: Duration,
+    ) -> CollectionResult<()> {
         self.wait_for(
-            |replica_set_state| {
+            move |replica_set_state| {
                 matches!(
-                    replica_set_state.get_peer_state(&replica_set_state.this_peer_id),
+                    replica_set_state.get_peer_state(&peer_id),
                     Some(ReplicaState::Partial)
                 )
             },
@@ -356,8 +356,6 @@ impl ShardReplicaSet {
     /// Wait for a replica set state condition to be true.
     ///
     /// Uses a blocking thread internally.
-    ///
-    /// Returns `true` if condition is true, `false` if timed out.
     async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<()>
     where
         F: Fn(&ReplicaSetState) -> bool + Send + 'static,
