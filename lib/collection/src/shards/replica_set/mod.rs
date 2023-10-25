@@ -330,7 +330,7 @@ impl ShardReplicaSet {
     /// Uses a blocking thread internally.
     ///
     /// Returns `true` if initialized, `false` if timed out.
-    pub async fn wait_for_local(&self, timeout: Duration) -> CollectionResult<bool> {
+    pub async fn wait_for_local(&self, timeout: Duration) -> CollectionResult<()> {
         self.wait_for(|replica_set_state| replica_set_state.is_local, timeout)
             .await
     }
@@ -340,7 +340,7 @@ impl ShardReplicaSet {
     /// Uses a blocking thread internally.
     ///
     /// Returns `true` if initialized, `false` if timed out.
-    pub async fn wait_for_local_partial(&self, timeout: Duration) -> CollectionResult<bool> {
+    pub async fn wait_for_local_partial(&self, timeout: Duration) -> CollectionResult<()> {
         self.wait_for(
             |replica_set_state| {
                 matches!(
@@ -358,18 +358,27 @@ impl ShardReplicaSet {
     /// Uses a blocking thread internally.
     ///
     /// Returns `true` if condition is true, `false` if timed out.
-    async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<bool>
+    async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<()>
     where
         F: Fn(&ReplicaSetState) -> bool + Send + 'static,
     {
         let replica_state = self.replica_state.clone();
-        tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
-            .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to wait for replica set state: {err}"
-                ))
-            })
+        let timed_out =
+            !tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
+                .await
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Failed to wait for replica set state: {err}"
+                    ))
+                })?;
+
+        if timed_out {
+            return Err(CollectionError::service_error(
+                "Failed to wait for replica set state, timed out",
+            ));
+        }
+
+        Ok(())
     }
 
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
