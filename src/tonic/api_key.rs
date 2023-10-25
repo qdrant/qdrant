@@ -1,5 +1,6 @@
 use std::task::{Context, Poll};
 
+use actix_web_httpauth::headers::authorization::{Bearer, Scheme};
 use constant_time_eq::constant_time_eq;
 use futures_util::future::BoxFuture;
 use reqwest::header::HeaderValue;
@@ -40,16 +41,27 @@ where
         &mut self,
         request: tonic::codegen::http::Request<tonic::transport::Body>,
     ) -> Self::Future {
-        if let Some(key) = request.headers().get("api-key") {
-            if let Ok(key) = key.to_str() {
-                if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
-                    let future = self.service.call(request);
+        // Grab API key from request
+        let key =
+            // Request header
+            request.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
+            // Fall back to authentication header with bearer token
+            .or_else(|| {
+                request.headers().get("authorization")
+                    .and_then(|auth| {
+                        Bearer::parse(auth).ok().map(|bearer| bearer.token().into())
+                    })
+            });
 
-                    return Box::pin(async move {
-                        let response = future.await?;
-                        Ok(response)
-                    });
-                }
+        // If we have an API key, compare in constant time
+        if let Some(key) = key {
+            if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
+                let future = self.service.call(request);
+
+                return Box::pin(async move {
+                    let response = future.await?;
+                    Ok(response)
+                });
             }
         }
 
