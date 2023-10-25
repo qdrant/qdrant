@@ -288,6 +288,11 @@ async fn await_consensus_sync(
     channel_service: &ChannelService,
     this_peer_id: PeerId,
 ) {
+    let peer_count = channel_service.id_to_address.read().len().saturating_sub(1);
+    if peer_count == 0 {
+        return;
+    }
+
     let sync_consensus = async {
         let await_result = consensus
             .await_consensus_sync(this_peer_id, channel_service)
@@ -300,7 +305,7 @@ async fn await_consensus_sync(
     let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
 
     log::trace!(
-        "Waiting on all peers to reach consensus before finalizing shard snapshot transfer..."
+        "Waiting on {peer_count} peer(s) to reach consensus before finalizing shard snapshot transfer..."
     );
     tokio::select! {
         Ok(_) = sync_consensus => {
