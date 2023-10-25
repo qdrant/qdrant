@@ -20,6 +20,7 @@ use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
+use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
@@ -202,6 +203,7 @@ fn create_segment(
 
     for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+        let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         // Select suitable vector storage type based on configuration
         let vector_storage = match sparse_vector_config.storage_type {
@@ -231,13 +233,13 @@ fn create_segment(
             );
         }
 
-        // TODO(ivan) use sparse vector index instead of plain one
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> =
-            sp(VectorIndexEnum::Plain(PlainIndex::new(
+            sp(VectorIndexEnum::Sparse(SparseVectorIndex::new(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
-            )));
+                vector_index_path,
+            )?));
 
         vector_data.insert(
             vector_name.to_owned(),

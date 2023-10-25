@@ -34,23 +34,9 @@ impl InvertedIndex for InvertedIndexRam {
     ) -> std::io::Result<Self> {
         Ok(builder.build())
     }
-}
-
-impl InvertedIndexRam {
-    /// New empty inverted index
-    pub fn empty() -> InvertedIndexRam {
-        InvertedIndexRam {
-            postings: Vec::new(),
-        }
-    }
-
-    /// Get posting list for dimension id
-    pub fn get(&self, id: &DimId) -> Option<&PostingList> {
-        self.postings.get((*id) as usize)
-    }
 
     /// Upsert a vector into the inverted index.
-    pub fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
+    fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.weights.into_iter()) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
@@ -67,6 +53,20 @@ impl InvertedIndexRam {
                 }
             }
         }
+    }
+}
+
+impl InvertedIndexRam {
+    /// New empty inverted index
+    pub fn empty() -> InvertedIndexRam {
+        InvertedIndexRam {
+            postings: Vec::new(),
+        }
+    }
+
+    /// Get posting list for dimension id
+    pub fn get(&self, id: &DimId) -> Option<&PostingList> {
+        self.postings.get((*id) as usize)
     }
 }
 

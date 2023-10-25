@@ -138,6 +138,8 @@ impl Segment {
                 Some(vector) => {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     vector_storage.insert_vector(internal_id, vector)?;
+                    let mut vector_index = vector_data.vector_index.borrow_mut();
+                    vector_index.update(internal_id)?;
                 }
                 None => {
                     // No vector provided, so we remove it
@@ -179,6 +181,7 @@ impl Segment {
                 .vector_storage
                 .borrow_mut()
                 .insert_vector(internal_id, new_vector)?;
+            vector_data.vector_index.borrow_mut().update(internal_id)?;
         }
         Ok(())
     }
@@ -199,16 +202,19 @@ impl Segment {
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
+            let mut vector_index = vector_data.vector_index.borrow_mut();
             match vector_opt {
                 None => {
                     // TODO(ivan) check if vector_storage is sparse and insert sparse vector
                     let dim = vector_storage.vector_dim();
                     let vector = vec![1.0; dim];
                     vector_storage.insert_vector(new_index, vector.as_slice().into())?;
+                    vector_index.update(new_index)?;
                     vector_storage.delete_vector(new_index)?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec)?;
+                    vector_index.update(new_index)?;
                 }
             }
         }

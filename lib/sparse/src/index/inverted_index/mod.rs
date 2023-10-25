@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use common::types::PointOffsetType;
+
 use self::inverted_index_ram::InvertedIndexBuilder;
+use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimId;
 use crate::index::posting_list::PostingListIterator;
 
@@ -21,4 +24,6 @@ pub trait InvertedIndex: Sized {
         builder: InvertedIndexBuilder,
         path: P,
     ) -> std::io::Result<Self>;
+
+    fn upsert(&mut self, id: PointOffsetType, vector: SparseVector);
 }

@@ -2,6 +2,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
@@ -12,6 +13,7 @@ use memory::mmap_ops::{
 use serde::{Deserialize, Serialize};
 
 use super::inverted_index_ram::InvertedIndexBuilder;
+use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimId;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
@@ -60,6 +62,10 @@ impl InvertedIndex for InvertedIndexMmap {
         path: P,
     ) -> std::io::Result<Self> {
         Self::convert_and_save(&builder.build(), path)
+    }
+
+    fn upsert(&mut self, _id: PointOffsetType, _vector: SparseVector) {
+        unreachable!()
     }
 }
 

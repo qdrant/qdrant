@@ -189,4 +189,11 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     fn indexed_vector_count(&self) -> usize {
         self.vector_storage.borrow().total_vector_count()
     }
+
+    fn update(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        let vector_storage = self.vector_storage.borrow();
+        let vector: &SparseVector = vector_storage.get_vector(idx).try_into()?;
+        self.inverted_index.upsert(idx, vector.clone());
+        Ok(())
+    }
 }

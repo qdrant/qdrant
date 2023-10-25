@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use common::types::ScoredPointOffset;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
@@ -34,6 +34,10 @@ pub trait VectorIndex {
 
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;
+
+    fn update(&mut self, _idx: PointOffsetType) -> OperationResult<()> {
+        Ok(())
+    }
 }
 
 pub enum VectorIndexEnum {
@@ -110,6 +114,15 @@ impl VectorIndex for VectorIndexEnum {
             Self::HnswRam(index) => index.indexed_vector_count(),
             Self::HnswMmap(index) => index.indexed_vector_count(),
             Self::Sparse(index) => index.indexed_vector_count(),
+        }
+    }
+
+    fn update(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        match self {
+            Self::Plain(index) => index.update(idx),
+            Self::HnswRam(index) => index.update(idx),
+            Self::HnswMmap(index) => index.update(idx),
+            Self::Sparse(index) => index.update(idx),
         }
     }
 }
