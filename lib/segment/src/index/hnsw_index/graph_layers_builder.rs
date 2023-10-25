@@ -292,35 +292,6 @@ impl GraphLayersBuilder {
         result_list
     }
 
-    #[allow(dead_code)]
-    fn search_existing_point_on_level(
-        &self,
-        level_entry: ScoredPointOffset,
-        level: usize,
-        ef: usize,
-        points_scorer: &mut FilteredScorer,
-        point_id: PointOffsetType,
-    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
-        let mut visited_list = self.get_visited_list_from_pool();
-        visited_list.check_and_update_visited(level_entry.idx);
-        let mut search_context = SearchContext::new(level_entry, ef);
-
-        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-
-        let existing_links = self.links_layers[point_id as usize][level].read();
-        for &existing_link in existing_links.iter() {
-            if !visited_list.check(existing_link) {
-                search_context.process_candidate(ScoredPointOffset {
-                    idx: existing_link,
-                    score: points_scorer.score_point(existing_link),
-                });
-            }
-        }
-
-        self.return_visited_list_to_pool(visited_list);
-        search_context.nearest
-    }
-
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidates_with_heuristic<F>(
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,

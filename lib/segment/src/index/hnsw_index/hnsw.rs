@@ -48,9 +48,9 @@ const HNSW_USE_HEURISTIC: bool = true;
 /// Build first N points in HNSW graph using only a single thread, to avoid
 /// disconnected components in the graph.
 #[cfg(debug_assertions)]
-const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 100;
+const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
-const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 512;
+const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -173,16 +173,21 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        let points_to_index: Vec<_> = payload_index
-            .query_points(&filter)
-            .into_iter()
-            .filter(|&point_id| {
-                !deleted_bitslice
-                    .get(point_id as usize)
-                    .map(|x| *x)
-                    .unwrap_or(false)
-            })
+        let points_to_index_iter =
+            payload_index
+                .query_points(&filter)
+                .into_iter()
+                .filter(|&point_id| {
+                    !deleted_bitslice
+                        .get(point_id as usize)
+                        .map(|x| *x)
+                        .unwrap_or(false)
+                });
+
+        let first_points_to_index: Vec<_> = points_to_index_iter
+            .take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD)
             .collect();
+        let points_to_index: Vec<_> = points_to_index_iter.collect();
 
         for block_point_id in points_to_index.iter().copied() {
             block_filter_list.check_and_update_visited(block_point_id);
@@ -196,37 +201,43 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             }
         }
 
-        pool.install(|| {
-            points_to_index
-                .into_par_iter()
-                .try_for_each(|block_point_id| {
-                    check_process_stopped(stopped)?;
+        let insert_points = |block_point_id| {
+            check_process_stopped(stopped)?;
 
-                    let vector = vector_storage.get_vector(block_point_id).into();
-                    let raw_scorer = match &quantized_vectors {
-                        Some(quantized_storage) => quantized_storage.raw_scorer(
-                            vector,
-                            id_tracker.deleted_point_bitslice(),
-                            deleted_bitslice,
-                            stopped,
-                        ),
-                        None => new_raw_scorer(
-                            vector,
-                            &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
-                        ),
-                    };
-                    let block_condition_checker = BuildConditionChecker {
-                        filter_list: block_filter_list,
-                        current_point: block_point_id,
-                    };
-                    let points_scorer =
-                        FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
+            let vector = vector_storage.get_vector(block_point_id).into();
+            let raw_scorer = match &quantized_vectors {
+                Some(quantized_storage) => quantized_storage.raw_scorer(
+                    vector,
+                    id_tracker.deleted_point_bitslice(),
+                    deleted_bitslice,
+                    stopped,
+                ),
+                None => {
+                    new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
+                }
+            };
+            let block_condition_checker = BuildConditionChecker {
+                filter_list: block_filter_list,
+                current_point: block_point_id,
+            };
+            let points_scorer =
+                FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
-                    graph_layers_builder.link_new_point(block_point_id, points_scorer);
-                    Ok(())
-                })
-        })
+            graph_layers_builder.link_new_point(block_point_id, points_scorer);
+            Ok(())
+        };
+
+        // First index points in single thread so ensure warm start for parallel indexing process
+        for point_id in first_points_to_index {
+            insert_points(point_id)?;
+        }
+        // Once initial structure is built, index remaining points in parallel
+        // So that each thread will insert points in different parts of the graph,
+        // it is less likely that they will compete for the same locks
+        if !points_to_index.is_empty() {
+            pool.install(|| points_to_index.into_par_iter().try_for_each(insert_points))?;
+        }
+        Ok(())
     }
 
     fn search_with_graph(
@@ -637,12 +648,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 insert_point(vector_id)?;
             }
 
-            if ids.len() > SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
+            if !ids.is_empty() {
                 pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
-            } else {
-                for vector_id in ids {
-                    insert_point(vector_id)?;
-                }
             }
 
             debug!("finish main graph");
