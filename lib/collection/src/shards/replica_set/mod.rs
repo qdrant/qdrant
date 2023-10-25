@@ -568,6 +568,10 @@ impl ShardReplicaSet {
                             .await?;
                         self.notify_peer_failure(peer_id);
                     }
+                    ReplicaState::PartialSnapshot => {
+                        self.set_local(local_shard, Some(ReplicaState::PartialSnapshot))
+                            .await?;
+                    }
                 }
                 continue;
             }
@@ -738,6 +742,8 @@ pub enum ReplicaState {
     // A shard which receives data, but is not used for search
     // Useful for backup shards
     Listener,
+    // Snapshot shard transfer is in progress, updates aren't sent to the shard
+    PartialSnapshot,
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`

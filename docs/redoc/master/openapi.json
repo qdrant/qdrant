@@ -7685,7 +7685,8 @@
           "Dead",
           "Partial",
           "Initializing",
-          "Listener"
+          "Listener",
+          "PartialSnapshot"
         ]
       },
       "RemoteShardInfo": {

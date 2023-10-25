@@ -29,7 +29,7 @@ impl ShardReplicaSet {
                 Some(ReplicaState::Listener) => {
                     Ok(Some(local_shard.get().update(operation, false).await?))
                 }
-                Some(ReplicaState::Dead) | None => Ok(None),
+                Some(ReplicaState::PartialSnapshot | ReplicaState::Dead) | None => Ok(None),
             }
         } else {
             Ok(None)
@@ -258,6 +258,7 @@ impl ShardReplicaSet {
             Some(ReplicaState::Initializing) => true,
             Some(ReplicaState::Dead) => false,
             Some(ReplicaState::Listener) => true,
+            Some(ReplicaState::PartialSnapshot) => false,
             None => false,
         };
         res && !self.is_locally_disabled(peer_id)
