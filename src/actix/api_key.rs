@@ -2,7 +2,9 @@ use std::future::{ready, Ready};
 
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
+use actix_web::http::header::Header;
 use actix_web::{Error, HttpResponse};
+use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
 use constant_time_eq::constant_time_eq;
 use futures_util::future::LocalBoxFuture;
 
@@ -107,11 +109,19 @@ where
             return Box::pin(self.service.call(req));
         }
 
-        if let Some(key) = req.headers().get("api-key") {
-            if let Ok(key) = key.to_str() {
-                if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
-                    return Box::pin(self.service.call(req));
-                }
+        // Grab API key from request
+        let key =
+            // Request header
+            req.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
+            // Fall back to authentication header with bearer token
+            .or_else(|| {
+                Authorization::<Bearer>::parse(&req).ok().map(|auth| auth.as_ref().token().into())
+            });
+
+        // If we have an API key, compare in constant time
+        if let Some(key) = key {
+            if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
+                return Box::pin(self.service.call(req));
             }
         }
 
