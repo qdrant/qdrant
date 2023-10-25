@@ -79,16 +79,16 @@ pub trait GraphLayersBase {
 
             points_ids.clear();
             self.links_map(candidate.idx, level, |link| {
-                if !visited_list.check_and_update_visited(link) {
+                if !visited_list.check(link) {
                     points_ids.push(link);
                 }
             });
 
             let scores = points_scorer.score_points(&mut points_ids, limit);
-            scores
-                .iter()
-                .copied()
-                .for_each(|score_point| searcher.process_candidate(score_point));
+            scores.iter().copied().for_each(|score_point| {
+                searcher.process_candidate(score_point);
+                visited_list.check_and_update_visited(score_point.idx);
+            });
         }
     }
 
