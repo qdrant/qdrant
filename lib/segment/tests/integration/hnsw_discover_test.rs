@@ -43,8 +43,10 @@ fn get_random_keyword_of<R: Rng + ?Sized>(num_options: usize, rnd: &mut R) -> St
     format!("keyword_{}", random_number)
 }
 
+/// Checks discovery search precision when using hnsw index, this is different from the tests in
+/// `filtrable_hnsw_test.rs` because it sets higher `m` and `ef_construct` parameters to get better precision
 #[test]
-fn discovery_search_precision() {
+fn hnsw_discover_precision() {
     let stopped = AtomicBool::new(false);
 
     let max_failures = 5; // out of 100
@@ -144,8 +146,9 @@ fn discovery_search_precision() {
     ); // Not more than X% failures
 }
 
+/// Same test as above but with payload index and filtering
 #[test]
-fn test_filterable_discovery_api() {
+fn filtered_hnsw_discover_precision() {
     let stopped = AtomicBool::new(false);
 
     let max_failures = 5; // out of 100
