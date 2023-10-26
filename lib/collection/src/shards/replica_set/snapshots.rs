@@ -1,5 +1,6 @@
 use std::ops::Deref as _;
 use std::path::Path;
+use std::pin;
 
 use tokio_util::sync::CancellationToken;
 
@@ -79,6 +80,8 @@ impl ShardReplicaSet {
         cancel: CancellationToken,
     ) -> CollectionResult<bool> {
         // This future is *not* safe to cancel/drop!
+        //
+        // `local.take()` call and `restore` task have to be executed as a single transaction
 
         if !LocalShard::check_data(replica_path) {
             return Ok(false);
@@ -88,8 +91,23 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        // TODO: *Select* on `local.write()` and `cancel`
-        let mut local = self.local.write().await;
+        let mut local;
+        let local_write = pin::pin!(self.local.write());
+
+        // TODO: Try to make this less ugly?
+        tokio::select! {
+            biased;
+
+            _ = cancel.cancelled() => {
+                return Err(CollectionError::Cancelled {
+                    description: "task was cancelled".into(), // TODO?
+                });
+            }
+
+            acquired_local = local_write => {
+                local = acquired_local;
+            }
+        }
 
         // TODO: Check `cancel`?
 

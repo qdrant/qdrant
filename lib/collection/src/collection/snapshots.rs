@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
 use tokio::fs;
+use tokio_util::sync::CancellationToken;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
@@ -216,24 +217,38 @@ impl Collection {
 
     pub async fn recover_local_shard_from(
         &self,
-        snapshot_shard_path: &Path,
+        snapshot_shard_path: impl Into<PathBuf>,
         shard_id: ShardId,
     ) -> CollectionResult<bool> {
-        // TODO: This future is *not* safe to cancel/drop!
+        // This future is safe to cancel/drop
 
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        // `ShardReplicaSet::restore_local_replica_from` is *not* safe to cancel/drop!
-        //
-        // TODO: Provide *or* propagate cancellation token to `ShardHolder::restore_shard_snapshot`
-        // TODO: Spawn `ShardHolder::restore_shard_snapshot`?
-        self.shards_holder
-            .read()
-            .await
-            .recover_local_shard_from(snapshot_shard_path, shard_id, todo!())
-            .await
+        let shard_holder = self.shards_holder.clone().read_owned().await;
+
+        let cancel = CancellationToken::new();
+
+        let task = {
+            // `ShardHolder::recover_local_shard_from` is *not* safe to cancel/drop!
+            // (see `ShardReplicaSet::restore_local_replica_from`)
+
+            let snapshot_shard_path = snapshot_shard_path.into();
+            let cancel = cancel.child_token();
+
+            async move {
+                shard_holder
+                    .recover_local_shard_from(&snapshot_shard_path, shard_id, cancel)
+                    .await
+            }
+        };
+
+        let guard = cancel.drop_guard();
+        let recovered = tokio::task::spawn(task).await??;
+        guard.disarm();
+
+        Ok(recovered)
     }
 
     pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
@@ -293,30 +308,46 @@ impl Collection {
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
-        snapshot_path: &Path,
+        snapshot_path: impl Into<PathBuf>,
         this_peer_id: PeerId,
         is_distributed: bool,
-        temp_dir: &Path,
+        temp_dir: impl Into<PathBuf>,
     ) -> CollectionResult<()> {
-        // TODO: This future is *not* safe to cancel/drop!
+        // This future is safe to cancel/drop
 
-        // `ShardReplicaSet::restore_local_replica_from` is *not* safe to cancel/drop!
-        //
-        // TODO: Provide *or* propagate cancellation token to `ShardHolder::restore_shard_snapshot`
-        // TODO: Spawn `ShardHolder::restore_shard_snapshot`?
-        self.shards_holder
-            .read()
-            .await
-            .restore_shard_snapshot(
-                snapshot_path,
-                &self.name(),
-                shard_id,
-                this_peer_id,
-                is_distributed,
-                temp_dir,
-                todo!(),
-            )
-            .await
+        let shard_holder = self.shards_holder.clone().read_owned().await;
+
+        let cancel = CancellationToken::new();
+
+        let task = {
+            // `ShardHolder::restore_shard_snapshot` is *not* safe to cancel/drop!
+            // (see `ShardReplicaSet::restore_local_replica_from`)
+
+            let snapshot_path = snapshot_path.into();
+            let temp_dir = temp_dir.into();
+            let collection_name = self.name();
+            let cancel = cancel.child_token();
+
+            async move {
+                shard_holder
+                    .restore_shard_snapshot(
+                        &snapshot_path,
+                        &collection_name,
+                        shard_id,
+                        this_peer_id,
+                        is_distributed,
+                        &temp_dir,
+                        cancel,
+                    )
+                    .await
+            }
+        };
+
+        let guard = cancel.drop_guard();
+        tokio::task::spawn(task).await??;
+        guard.disarm();
+
+        Ok(())
     }
 
     pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {

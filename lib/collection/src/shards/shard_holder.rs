@@ -595,6 +595,7 @@ impl ShardHolder {
         get_snapshot_description(&snapshot_path).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
         snapshot_path: &Path,
@@ -626,23 +627,25 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         let task = {
-            // TODO: Should we propagate `cancel` or *child* token into `task`?
-            let cancel = cancel.child_token();
-
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
+            let cancel = cancel.child_token();
 
             tokio::task::spawn_blocking(move || -> CollectionResult<_> {
                 let mut tar = tar::Archive::new(snapshot);
 
                 if cancel.is_cancelled() {
-                    return Err(todo!()); // TODO: Return `Err(CollectionError::Cancelled)`
+                    return Err(CollectionError::Cancelled {
+                        description: "task was cancelled".into(), // TODO?
+                    });
                 }
 
                 tar.unpack(&snapshot_temp_dir)?;
                 drop(tar);
 
                 if cancel.is_cancelled() {
-                    return Err(todo!()); // TODO: Return `Err(CollectionError::Cancelled)`
+                    return Err(CollectionError::Cancelled {
+                        description: "task was cancelled".into(), // TODO?
+                    });
                 }
 
                 ShardReplicaSet::restore_snapshot(
@@ -655,10 +658,23 @@ impl ShardHolder {
             })
         };
 
-        // TODO: *Select* on `task` and `cancel`
-        task.await??;
+        // TODO: Try to make this less ugly?
+        tokio::select! {
+            biased;
 
-        // `ShardReplicaSet::restore_local_replica_from` is *not* safe to cancel/drop!
+            _ = cancel.cancelled() => {
+                return Err(CollectionError::Cancelled {
+                    description: "task was cancelled".into(), // TODO?
+                })
+            }
+
+            task_result = task => task_result??,
+        }
+
+        // TODO: Check `cancel`?
+
+        // `ShardHolder::recover_local_shard_from` is *not* safe to cancel/drop!
+        // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
             .recover_local_shard_from(snapshot_temp_dir.path(), shard_id, cancel)
             .await?;

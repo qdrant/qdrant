@@ -11,7 +11,6 @@ use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
-use tokio::sync::RwLockReadGuard;
 
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
@@ -115,18 +114,17 @@ pub async fn recover_shard_snapshot(
 
 pub async fn recover_shard_snapshot_impl(
     toc: &TableOfContent,
-    collection: &RwLockReadGuard<'_, Collection>,
+    collection: &Collection,
     shard: ShardId,
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
     // TODO: This future is *not* safe to cancel/drop!
+    //
+    // `Collection::restore_shard_snapshot` and `activate_shard` calls have to be executed as a
+    // single transaction
 
     // TODO: Spawn *everything* down below as a single task!?
-
-    // TODO: `Collection::restore_shard_snapshot` is *not* safe to cancel/drop!
-    //
-    // TODO: Provide *or* propagate cancellation token to `Collection::restore_shard_snapshot`!?
     // TODO: *Select* on `Collection::restore_shard_snapshot` and cancellation token!?
     collection
         .restore_shard_snapshot(
