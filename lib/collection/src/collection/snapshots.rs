@@ -219,11 +219,16 @@ impl Collection {
         snapshot_shard_path: &Path,
         shard_id: ShardId,
     ) -> CollectionResult<bool> {
+        // TODO: This future is *not* safe to cancel/drop!
+
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        // TODO: Provide cancellation token to `ShardHolder::recover_local_shard_from`
+        // `ShardReplicaSet::restore_local_replica_from` is *not* safe to cancel/drop!
+        //
+        // TODO: Provide *or* propagate cancellation token to `ShardHolder::restore_shard_snapshot`
+        // TODO: Spawn `ShardHolder::restore_shard_snapshot`?
         self.shards_holder
             .read()
             .await
@@ -295,8 +300,10 @@ impl Collection {
     ) -> CollectionResult<()> {
         // TODO: This future is *not* safe to cancel/drop!
 
-        // TODO: Spawn `ShardHolder::restore_shard_snapshot`?
+        // `ShardReplicaSet::restore_local_replica_from` is *not* safe to cancel/drop!
+        //
         // TODO: Provide *or* propagate cancellation token to `ShardHolder::restore_shard_snapshot`
+        // TODO: Spawn `ShardHolder::restore_shard_snapshot`?
         self.shards_holder
             .read()
             .await

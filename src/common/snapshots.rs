@@ -122,12 +122,12 @@ pub async fn recover_shard_snapshot_impl(
 ) -> Result<(), StorageError> {
     // TODO: This future is *not* safe to cancel/drop!
 
-    // TODO: Create cancellation token and propagate it into task
     // TODO: Spawn *everything* down below as a single task!?
 
     // TODO: `Collection::restore_shard_snapshot` is *not* safe to cancel/drop!
-    // TODO: *Select* on `Collection::restore_shard_snapshot` and cancellation token!?
+    //
     // TODO: Provide *or* propagate cancellation token to `Collection::restore_shard_snapshot`!?
+    // TODO: *Select* on `Collection::restore_shard_snapshot` and cancellation token!?
     collection
         .restore_shard_snapshot(
             shard,

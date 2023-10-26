@@ -91,6 +91,8 @@ impl ShardReplicaSet {
         // TODO: *Select* on `local.write()` and `cancel`
         let mut local = self.local.write().await;
 
+        // TODO: Check `cancel`?
+
         // Drop `LocalShard` instance to free resources and clear shard data
         let clear = local.take().is_some();
 

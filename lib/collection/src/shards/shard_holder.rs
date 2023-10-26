@@ -520,7 +520,7 @@ impl ShardHolder {
             .prefix(&format!("{snapshot_file_name}-"))
             .tempfile_in(temp_dir)?;
 
-        // TODO: Create cancellation guard/token and propagate it into `task`?
+        // TODO: Create cancellation token and propagate it into `task`?
 
         let task = {
             let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
@@ -627,7 +627,7 @@ impl ShardHolder {
 
         let task = {
             // TODO: Should we propagate `cancel` or *child* token into `task`?
-            let cancel = cancel.clone();
+            let cancel = cancel.child_token();
 
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
