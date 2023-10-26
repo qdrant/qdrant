@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
+use tempfile::TempPath;
 use tokio::fs;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
-use crate::common::file_utils::FileCleaner;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::operations::snapshot_ops::{self, SnapshotDescription};
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -126,7 +126,7 @@ impl Collection {
         let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
 
         // Ensure that the temporary file is deleted on error
-        let _file_cleaner = FileCleaner::new(&snapshot_path_tmp_move);
+        let _temp_path = TempPath::from_path(&snapshot_path_tmp_move);
         fs::copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
         fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
 
