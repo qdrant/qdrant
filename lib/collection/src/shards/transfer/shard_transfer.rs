@@ -6,10 +6,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use url::Url;
 
 use super::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
@@ -81,7 +81,6 @@ pub async fn transfer_shard(
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
     collection_name: &str,
-    peer_id: PeerId,
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
@@ -93,7 +92,7 @@ pub async fn transfer_shard(
     let remote_shard = RemoteShard::new(
         shard_id,
         collection_id.clone(),
-        peer_id,
+        transfer_config.to,
         channel_service.clone(),
     );
 
@@ -112,15 +111,15 @@ pub async fn transfer_shard(
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
-            let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
             transfer_snapshot(
+                transfer_config,
                 shard_holder.clone(),
                 shard_id,
                 remote_shard,
+                channel_service,
                 consensus,
                 snapshots_path,
                 collection_name,
-                local_rest_address,
                 temp_dir,
                 stopped.clone(),
             )
@@ -182,17 +181,20 @@ async fn transfer_batches(
 
 #[allow(clippy::too_many_arguments)]
 async fn transfer_snapshot(
+    transfer_config: ShardTransfer,
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    _consensus: &dyn ShardTransferConsensus,
+    channel_service: ChannelService,
+    consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
     collection_name: &str,
-    local_rest_address: Url,
     temp_dir: &Path,
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     let shard_holder_read = shard_holder.read().await;
+
+    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
     // Queue proxify local shard
     {
@@ -246,29 +248,83 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    // TODO: before transforing queue proxy and sending updates, make sure the remote shard is
-    // partial through consensus on all nodes
+    // TODO: through consensus, set replica state to partial
 
-    // Transfer all updates to remote shard and transform into forward proxy shard
-    // We do this right after the shard has been restored on the remote so that we can catch any
-    // errors early. The forward proxy shard we end up with will not error again once we unproxify.
+    // TODO: await other node to have reached partial state
+
     {
         let shard = shard_holder_read.get_shard(&shard_id);
-        if let Some(replica_set) = shard {
-            replica_set.queue_proxy_into_forward_proxy().await?;
-        } else {
+        let Some(replica_set) = shard else {
             return Err(CollectionError::service_error(format!(
                 "Shard {shard_id} cannot be transformed from queue to forward proxy because it does not exist"
             )));
-        }
+        };
+
+        // Transfer all updates to remote shard and transform into forward proxy shard
+        // We do this right after the shard has been restored on the remote so that we can catch any
+        // errors early. The forward proxy shard we end up with will not error again once we unproxify.
+        log::trace!("Transfer all queue proxy updates and transform into forward proxy");
+        replica_set.queue_proxy_into_forward_proxy().await?;
+
+        // Wait for remote shard to reach partial state in our replica set
+        log::trace!("Wait for local shard to reach Partial state");
+        replica_set
+            .wait_for_partial(transfer_config.to, defaults::CONSENSUS_META_OP_WAIT)
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Shard being transferred did not reach Partial state in time: {err}"
+                ))
+            })?;
     }
 
-    // We must keep partial state for 10 seconds to allow all nodes to catch up
-    // Future improvement: instead of waiting 10 seconds, confirm all nodes reached consensus
-    log::trace!("Shard snapshot transfer is waiting 10 seconds for consensus to catch up");
-    sleep(Duration::from_secs(10)).await;
+    // Synchronize, make sure all nodes have reached consensus before continuing and unproxying
+    // All other nodes must consider the shard state to be at least partial so that all nodes send
+    // operations to it.
+    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
     Ok(())
+}
+
+/// Await for consensus to synchronize across all peers
+///
+/// This will take the current consensus state of this node. It then explicitly waits on all other
+/// nodes to reach the same (or later) consensus.
+///
+/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
+/// timeout.
+async fn await_consensus_sync(
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+    this_peer_id: PeerId,
+) {
+    let peer_count = channel_service.id_to_address.read().len().saturating_sub(1);
+    if peer_count == 0 {
+        return;
+    }
+
+    let sync_consensus = async {
+        let await_result = consensus
+            .await_consensus_sync(this_peer_id, channel_service)
+            .await;
+        if let Err(err) = &await_result {
+            log::warn!("All peers failed to synchronize consensus: {err}");
+        }
+        await_result
+    };
+    let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
+
+    log::trace!(
+        "Waiting on {peer_count} peer(s) to reach consensus before finalizing shard snapshot transfer..."
+    );
+    tokio::select! {
+        Ok(_) = sync_consensus => {
+            log::trace!("All peers reached consensus");
+        }
+        _ = timeout => {
+            log::warn!("All peers failed to synchronize consensus, continuing after timeout...");
+        }
+    }
 }
 
 /// Return local shard back from the forward proxy
@@ -613,7 +669,6 @@ where
                 consensus.as_ref(),
                 collection_id.clone(),
                 &collection_name,
-                transfer.to,
                 channel_service.clone(),
                 &snapshots_path,
                 &temp_dir,
