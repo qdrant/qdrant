@@ -520,16 +520,29 @@ impl ShardHolder {
             .prefix(&format!("{snapshot_file_name}-"))
             .tempfile_in(temp_dir)?;
 
-        // TODO: Create cancellation token and propagate it into `task`?
+        let cancel = CancellationToken::new();
 
         let task = {
             let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
+            let cancel = cancel.child_token();
 
             tokio::task::spawn_blocking(move || -> CollectionResult<_> {
                 let mut tar = TarBuilder::new(temp_file.as_file_mut());
-                // TODO: Check cancellation token?
+
+                if cancel.is_cancelled() {
+                    return Err(CollectionError::Cancelled {
+                        description: "task was cancelled".into(), // TODO?
+                    });
+                }
+
                 tar.append_dir_all(".", &snapshot_target_dir)?;
-                // TODO: Check cancellation token?
+
+                if cancel.is_cancelled() {
+                    return Err(CollectionError::Cancelled {
+                        description: "task was cancelled".into(), // TODO?
+                    });
+                }
+
                 tar.finish()?;
                 drop(tar);
 
@@ -537,7 +550,9 @@ impl ShardHolder {
             })
         };
 
+        let guard = cancel.drop_guard();
         let task_result = task.await;
+        guard.disarm();
 
         let snapshot_target_dir_path = snapshot_target_dir.path().to_path_buf();
         if let Err(err) = snapshot_target_dir.close() {
