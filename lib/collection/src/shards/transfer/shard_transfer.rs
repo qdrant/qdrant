@@ -248,42 +248,47 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    // Set shard state to partial through consensus
+    let shard = shard_holder_read.get_shard(&shard_id);
+    let Some(replica_set) = shard else {
+        return Err(CollectionError::service_error(format!(
+            "Shard {shard_id} cannot be transformed from queue to forward proxy because it does not exist"
+        )));
+    };
+
+    // Set shard state to partial through consensus and synchronize
+    log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
     consensus
-        .snapshot_recovered_switch_to_partial(&transfer_config, collection_name.into())
+        .snapshot_recovered_switch_to_partial_confirm(
+            &transfer_config,
+            collection_name,
+            replica_set,
+        )
+        .await
         .map_err(|err| {
             CollectionError::service_error(format!(
                 "Can't switch shard {shard_id} to Partial state after snapshot transfer: {err}"
             ))
         })?;
+    // TODO: optimize: we don't have to wait on all nodes to reach consensus, only wait for
+    // receiver node to get into partial state so that it can receive queue proxy operations
+    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
-    // TODO: await other node to have reached partial state
+    // Transfer all updates to remote shard and transform into forward proxy shard
+    // We do this right after the shard has been restored on the remote so that we can catch any
+    // errors early. The forward proxy shard we end up with will not error again once we unproxify.
+    log::trace!("Transfer all queue proxy updates and transform into forward proxy");
+    replica_set.queue_proxy_into_forward_proxy().await?;
 
-    {
-        let shard = shard_holder_read.get_shard(&shard_id);
-        let Some(replica_set) = shard else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be transformed from queue to forward proxy because it does not exist"
-            )));
-        };
-
-        // Transfer all updates to remote shard and transform into forward proxy shard
-        // We do this right after the shard has been restored on the remote so that we can catch any
-        // errors early. The forward proxy shard we end up with will not error again once we unproxify.
-        log::trace!("Transfer all queue proxy updates and transform into forward proxy");
-        replica_set.queue_proxy_into_forward_proxy().await?;
-
-        // Wait for remote shard to reach partial state in our replica set
-        log::trace!("Wait for local shard to reach Partial state");
-        replica_set
-            .wait_for_partial(transfer_config.to, defaults::CONSENSUS_META_OP_WAIT)
-            .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Shard being transferred did not reach Partial state in time: {err}"
-                ))
-            })?;
-    }
+    // Wait for remote shard to reach partial state in our replica set
+    log::trace!("Wait for local shard to reach Partial state");
+    replica_set
+        .wait_for_partial(transfer_config.to, defaults::CONSENSUS_META_OP_WAIT)
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Shard being transferred did not reach Partial state in time: {err}"
+            ))
+        })?;
 
     // Synchronize, make sure all nodes have reached consensus before continuing and unproxying
     // All other nodes must consider the shard state to be at least partial so that all nodes send

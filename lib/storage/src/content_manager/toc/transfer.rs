@@ -43,7 +43,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
     fn snapshot_recovered_switch_to_partial(
         &self,
         transfer_config: &ShardTransfer,
-        collection: CollectionId,
+        collection_name: CollectionId,
     ) -> CollectionResult<()> {
         let Some(toc) = self.toc.upgrade() else {
             return Err(CollectionError::service_error(
@@ -59,7 +59,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         // Propose operation to progress transfer, setting shard state to partial
         let operation =
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
-                collection,
+                collection_name,
                 ShardTransferOperations::SnapshotRecovered(transfer_config.key()),
             )));
         proposal_sender.send(operation).map_err(|err| {
