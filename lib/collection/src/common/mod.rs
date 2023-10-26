@@ -1,3 +1,4 @@
+pub mod fetch_vectors;
 pub mod file_utils;
 pub mod is_ready;
 pub mod stoppable_task;
