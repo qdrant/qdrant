@@ -248,7 +248,14 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    // TODO: through consensus, set replica state to partial
+    // Set shard state to partial through consensus
+    consensus
+        .snapshot_recovered_switch_to_partial(&transfer_config, collection_name.into())
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't switch shard {shard_id} to Partial state after snapshot transfer: {err}"
+            ))
+        })?;
 
     // TODO: await other node to have reached partial state
 
