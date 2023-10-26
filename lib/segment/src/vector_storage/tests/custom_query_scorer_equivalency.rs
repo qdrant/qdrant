@@ -65,11 +65,11 @@ fn random_reco_query<R: Rng + ?Sized>(
     let num_negatives: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
     let positives = (0..num_positives)
-        .map(|_| sampler.take(DIMS).collect())
+        .map(|_| sampler.take(DIMS).collect_vec().into())
         .collect_vec();
 
     let negatives = (0..num_negatives)
-        .map(|_| sampler.take(DIMS).collect())
+        .map(|_| sampler.take(DIMS).collect_vec().into())
         .collect_vec();
 
     RecoQuery::new(positives, negatives).into()
@@ -81,12 +81,12 @@ fn random_discovery_query<R: Rng + ?Sized>(
 ) -> QueryVector {
     let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
-    let target = sampler.take(DIMS).collect();
+    let target = sampler.take(DIMS).collect_vec().into();
 
     let pairs = (0..num_pairs)
         .map(|_| {
-            let positive = sampler.take(DIMS).collect();
-            let negative = sampler.take(DIMS).collect();
+            let positive = sampler.take(DIMS).collect_vec().into();
+            let negative = sampler.take(DIMS).collect_vec().into();
             DiscoveryPair { positive, negative }
         })
         .collect_vec();
@@ -102,8 +102,8 @@ fn random_context_query<R: Rng + ?Sized>(
 
     let pairs = (0..num_pairs)
         .map(|_| {
-            let positive = sampler.take(DIMS).collect();
-            let negative = sampler.take(DIMS).collect();
+            let positive = sampler.take(DIMS).collect_vec().into();
+            let negative = sampler.take(DIMS).collect_vec().into();
             DiscoveryPair { positive, negative }
         })
         .collect_vec();
