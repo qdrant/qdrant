@@ -56,8 +56,6 @@ async fn download_file(url: &Url, path: &Path) -> Result<TempPath, StorageError>
 
 /// Download a snapshot from the given URI.
 ///
-/// Returns `(path, is_downloaded)` on success.
-///
 /// May returen a `TempPath` if a file was downloaded from a remote source. If it is dropped the
 /// downloaded file is deleted automatically. To keep the file `keep()` may be used.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
