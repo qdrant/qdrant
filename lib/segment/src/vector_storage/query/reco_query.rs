@@ -1,7 +1,7 @@
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, VectorType};
+use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 
 #[derive(Debug, Clone)]
 pub struct RecoQuery<T> {
@@ -67,9 +67,21 @@ fn merge_similarities(
     }
 }
 
-impl From<RecoQuery<VectorType>> for QueryVector {
-    fn from(query: RecoQuery<VectorType>) -> Self {
+impl From<RecoQuery<Vector>> for QueryVector {
+    fn from(query: RecoQuery<Vector>) -> Self {
         QueryVector::Recommend(query)
+    }
+}
+
+impl From<RecoQuery<Vector>> for RecoQuery<VectorType> {
+    fn from(query: RecoQuery<Vector>) -> Self {
+        query.transform(|v| v.into())
+    }
+}
+
+impl From<RecoQuery<VectorType>> for RecoQuery<Vector> {
+    fn from(query: RecoQuery<VectorType>) -> Self {
+        query.transform(|v| v.into())
     }
 }
 

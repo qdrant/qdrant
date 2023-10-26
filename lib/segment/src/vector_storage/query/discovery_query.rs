@@ -2,7 +2,7 @@ use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, VectorType};
+use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 
 type RankType = i32;
 
@@ -99,9 +99,15 @@ impl<T> Query<T> for DiscoveryQuery<T> {
     }
 }
 
-impl From<DiscoveryQuery<VectorType>> for QueryVector {
-    fn from(query: DiscoveryQuery<VectorType>) -> Self {
+impl From<DiscoveryQuery<Vector>> for QueryVector {
+    fn from(query: DiscoveryQuery<Vector>) -> Self {
         QueryVector::Discovery(query)
+    }
+}
+
+impl From<DiscoveryQuery<Vector>> for DiscoveryQuery<VectorType> {
+    fn from(query: DiscoveryQuery<Vector>) -> Self {
+        query.transform(|v| v.into())
     }
 }
 
