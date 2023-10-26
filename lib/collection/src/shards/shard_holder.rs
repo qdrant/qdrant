@@ -478,7 +478,7 @@ impl ShardHolder {
         // - there's no way to cancel `task`
         //   - it always run in the background until completion or error
         //   - `temp_file` would be deleted
-        //     - if `create_shard_snapshot` future is dropped and `task` result is dicarded
+        //     - if `create_shard_snapshot` future is dropped and `task` result is discarded
         //     - or task `task` fails with an error
 
         let shard = self
