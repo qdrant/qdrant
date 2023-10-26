@@ -17,7 +17,8 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
     Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::query::discovery_query::{DiscoveryPair, DiscoveryQuery};
+use segment::vector_storage::query::context_query::ContextPair;
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
 use serde_json::json;
 use tempfile::Builder;
@@ -33,13 +34,13 @@ enum QueryVariant {
 fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
     let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES / 2);
 
-    let target = random_vector(rnd, dim);
+    let target = random_vector(rnd, dim).into();
 
     let pairs = (0..num_pairs)
         .map(|_| {
-            let positive = random_vector(rnd, dim);
-            let negative = random_vector(rnd, dim);
-            DiscoveryPair { positive, negative }
+            let positive = random_vector(rnd, dim).into();
+            let negative = random_vector(rnd, dim).into();
+            ContextPair { positive, negative }
         })
         .collect_vec();
 
@@ -50,10 +51,10 @@ fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
     let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLES / 2);
 
     let positive = (0..num_examples)
-        .map(|_| random_vector(rnd, dim))
+        .map(|_| random_vector(rnd, dim).into())
         .collect_vec();
     let negative = (0..num_examples)
-        .map(|_| random_vector(rnd, dim))
+        .map(|_| random_vector(rnd, dim).into())
         .collect_vec();
 
     RecoQuery::new(positive, negative).into()
