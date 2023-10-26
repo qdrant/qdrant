@@ -105,17 +105,14 @@ async fn _do_recover_from_snapshot(
     );
 
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
-    let restoring = tokio::task::spawn_blocking({
-        let snapshot_path = snapshot_path.clone();
-        move || {
-            // Unpack snapshot collection to the target folder
-            Collection::restore_snapshot(
-                &snapshot_path,
-                &tmp_collection_dir_clone,
-                this_peer_id,
-                is_distributed,
-            )
-        }
+    let restoring = tokio::task::spawn_blocking(move || {
+        // Unpack snapshot collection to the target folder
+        Collection::restore_snapshot(
+            &snapshot_path,
+            &tmp_collection_dir_clone,
+            this_peer_id,
+            is_distributed,
+        )
     });
     restoring.await??;
 
