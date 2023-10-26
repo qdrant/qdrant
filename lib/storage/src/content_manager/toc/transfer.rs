@@ -2,12 +2,14 @@ use std::sync::Weak;
 
 use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
-use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::shard_transfer::ShardTransfer;
 use collection::shards::transfer::ShardTransferConsensus;
+use collection::shards::CollectionId;
 
 use super::TableOfContent;
-use crate::content_manager::collection_meta_ops::{CollectionMetaOperations, SetShardReplicaState};
+use crate::content_manager::collection_meta_ops::{
+    CollectionMetaOperations, ShardTransferOperations,
+};
 use crate::content_manager::consensus_manager::ConsensusStateRef;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 
@@ -41,7 +43,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
     fn snapshot_recovered_switch_to_partial(
         &self,
         transfer_config: &ShardTransfer,
-        collection_name: String,
+        collection: CollectionId,
     ) -> CollectionResult<()> {
         let Some(toc) = self.toc.upgrade() else {
             return Err(CollectionError::service_error(
@@ -54,16 +56,12 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             ));
         };
 
-        // Send operation to set shard state to partial
-        let operation = ConsensusOperations::CollectionMeta(Box::new(
-            CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
-                collection_name,
-                shard_id: transfer_config.shard_id,
-                peer_id: transfer_config.to,
-                state: ReplicaState::Partial,
-                from_state: Some(ReplicaState::PartialSnapshot),
-            }),
-        ));
+        // Propose operation to progress transfer, setting shard state to partial
+        let operation =
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection,
+                ShardTransferOperations::SnapshotRecovered(transfer_config.key()),
+            )));
         proposal_sender.send(operation).map_err(|err| {
             CollectionError::service_error(format!("Failed to submit consensus proposal: {err}"))
         })?;

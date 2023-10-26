@@ -4,6 +4,7 @@ use common::defaults;
 use self::shard_transfer::ShardTransfer;
 use super::channel_service::ChannelService;
 use super::shard::PeerId;
+use super::CollectionId;
 use crate::operations::types::CollectionResult;
 
 pub mod shard_transfer;
@@ -17,7 +18,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// Returns `(commit, term)`.
     fn consensus_commit_term(&self) -> (u64, u64);
 
-    /// After snapshot recovery, switch shard to `Partial`
+    /// After snapshot recovery, propose to switch shard to `Partial`
     ///
     /// This is called after shard snapshot recovery has been completed on the remote. It submits a
     /// proposal to consensus to switch the the shard state from `PartialSnapshot` to `Partial`.
@@ -29,7 +30,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     fn snapshot_recovered_switch_to_partial(
         &self,
         transfer_config: &ShardTransfer,
-        collection_name: String,
+        collection: CollectionId,
     ) -> CollectionResult<()>;
 
     /// Wait for all other peers to reach the current consensus
