@@ -191,8 +191,6 @@
     - [Qdrant](#qdrant-Qdrant)
   
 - [qdrant_internal_service.proto](#qdrant_internal_service-proto)
-    - [HttpPortRequest](#qdrant-HttpPortRequest)
-    - [HttpPortResponse](#qdrant-HttpPortResponse)
     - [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest)
     - [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse)
   
@@ -3160,31 +3158,6 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 
 
-<a name="qdrant-HttpPortRequest"></a>
-
-### HttpPortRequest
-
-
-
-
-
-
-
-<a name="qdrant-HttpPortResponse"></a>
-
-### HttpPortResponse
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| port | [int32](#int32) |  |  |
-
-
-
-
-
-
 <a name="qdrant-WaitOnConsensusCommitRequest"></a>
 
 ### WaitOnConsensusCommitRequest
@@ -3230,7 +3203,6 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| GetHttpPort | [HttpPortRequest](#qdrant-HttpPortRequest) | [HttpPortResponse](#qdrant-HttpPortResponse) | Get HTTP port for remote host. |
 | WaitOnConsensusCommit | [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest) | [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse) | Wait until the target node reached the given commit ID. |
 
  

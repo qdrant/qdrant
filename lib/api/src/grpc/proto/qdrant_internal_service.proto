@@ -4,20 +4,9 @@ package qdrant;
 
 service QdrantInternal {
   /*
-  Get HTTP port for remote host.
-   */
-  rpc GetHttpPort (HttpPortRequest) returns (HttpPortResponse) {}
-
-  /*
   Wait until the target node reached the given commit ID.
    */
   rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
-}
-
-message HttpPortRequest {}
-
-message HttpPortResponse {
-  int32 port = 1;
 }
 
 message WaitOnConsensusCommitRequest {
