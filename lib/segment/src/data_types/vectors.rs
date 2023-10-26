@@ -334,9 +334,9 @@ impl Named for NamedRecoQuery {
 #[derive(Debug, Clone)]
 pub enum QueryVector {
     Nearest(Vector),
-    Recommend(RecoQuery<VectorType>),
-    Discovery(DiscoveryQuery<VectorType>),
-    Context(ContextQuery<VectorType>),
+    Recommend(RecoQuery<Vector>),
+    Discovery(DiscoveryQuery<Vector>),
+    Context(ContextQuery<Vector>),
 }
 
 impl From<VectorType> for QueryVector {
