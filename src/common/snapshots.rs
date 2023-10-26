@@ -11,6 +11,7 @@ use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
+use tokio_util::sync::CancellationToken;
 
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
@@ -69,45 +70,61 @@ pub async fn recover_shard_snapshot(
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
-    // TODO: This future is *not* safe to cancel/drop!
+    // This future is cancel-safe
     //
     // - `download_dir` is handled by `tempfile` and would be deleted on drop
     // - remote snapshot is downloaded into and would be deleted with the `download_dir`
 
-    let collection = toc.get_collection(&collection_name).await?;
-    collection.assert_shard_exists(shard_id).await?;
+    // TODO: Create cancellation token and propagate it into `task`
 
-    let download_dir = toc.snapshots_download_tempdir()?;
+    let task = async move {
+        let task = async {
+            let collection = toc.get_collection(&collection_name).await?;
+            collection.assert_shard_exists(shard_id).await?;
 
-    let snapshot_path = match snapshot_location {
-        ShardSnapshotLocation::Url(url) => {
-            if !matches!(url.scheme(), "http" | "https") {
-                let description = format!(
-                    "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
-                    url.scheme(),
-                );
+            let download_dir = toc.snapshots_download_tempdir()?;
 
-                return Err(StorageError::bad_input(description));
-            }
-            snapshots::download::download_snapshot(url, download_dir.path()).await?
-        }
+            let snapshot_path = match snapshot_location {
+                ShardSnapshotLocation::Url(url) => {
+                    if !matches!(url.scheme(), "http" | "https") {
+                        let description = format!(
+                            "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
+                            url.scheme(),
+                        );
 
-        ShardSnapshotLocation::Path(path) => {
-            let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
-            check_shard_snapshot_file_exists(&snapshot_path)?;
-            snapshot_path
-        }
+                        return Err(StorageError::bad_input(description));
+                    }
+                    snapshots::download::download_snapshot(url, download_dir.path()).await?
+                }
+
+                ShardSnapshotLocation::Path(path) => {
+                    let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
+                    check_shard_snapshot_file_exists(&snapshot_path)?;
+                    snapshot_path
+                }
+            };
+
+            Result::<_, StorageError>::Ok((collection, download_dir, snapshot_path))
+        };
+
+        // TODO: *Select* on `task` and cancellation token
+        let (collection, _download_dir, snapshot_path) = task.await?;
+
+        // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
+        //
+        // TODO: Propagate cancellation token to `recover_shard_snapshot_impl`
+        recover_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard_id,
+            &snapshot_path,
+            snapshot_priority,
+            todo!(),
+        )
+        .await
     };
 
-    // TODO: `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
-    recover_shard_snapshot_impl(
-        &toc,
-        &collection,
-        shard_id,
-        &snapshot_path,
-        snapshot_priority,
-    )
-    .await?;
+    tokio::task::spawn(task).await??;
 
     Ok(())
 }
@@ -118,13 +135,15 @@ pub async fn recover_shard_snapshot_impl(
     shard: ShardId,
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
+    cancel: CancellationToken,
 ) -> Result<(), StorageError> {
-    // TODO: This future is *not* safe to cancel/drop!
+    // This future is *not* cancel-safe
     //
     // `Collection::restore_shard_snapshot` and `activate_shard` calls have to be executed as a
     // single transaction
+    //
+    // It is *possible* to make this function to be cancel-safe, but it is *extremely tedious* to do so
 
-    // TODO: Spawn *everything* down below as a single task!?
     // TODO: *Select* on `Collection::restore_shard_snapshot` and cancellation token!?
     collection
         .restore_shard_snapshot(

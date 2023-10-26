@@ -337,15 +337,24 @@ async fn upload_shard_snapshot(
 
     let future = async move {
         let (collection, shard) = path.into_inner();
+
+        // TODO: Spawn *everything* down below as a separate task
+        // TODO: Propagate cancellation token into the task
+
+        // TODO: *Select* on cancel-safe calls and cancellation token
         let collection = toc.get_collection(&collection).await?;
         collection.assert_shard_exists(shard).await?;
 
+        // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
+        //
+        // TODO: Propagate cancellation token to `recover_shard_snapshot_impl`
         common::snapshots::recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard,
             form.snapshot.file.path(),
             priority.unwrap_or_default(),
+            todo!(),
         )
         .await?;
 
