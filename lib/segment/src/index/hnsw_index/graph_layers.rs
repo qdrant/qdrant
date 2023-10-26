@@ -16,7 +16,7 @@ use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
-use crate::index::visited_pool::{VisitedList, VisitedPool};
+use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LinkContainerRef<'a> = &'a [PointOffsetType];
@@ -50,7 +50,7 @@ pub struct GraphLayers<TGraphLinks: GraphLinks> {
 }
 
 pub trait GraphLayersBase {
-    fn get_visited_list_from_pool(&self) -> VisitedList;
+    fn get_visited_list_from_pool(&self) -> VisitedListHandle;
 
     fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
@@ -64,7 +64,7 @@ pub trait GraphLayersBase {
         &self,
         searcher: &mut SearchContext,
         level: usize,
-        visited_list: &mut VisitedList,
+        visited_list: &mut VisitedListHandle,
         points_scorer: &mut FilteredScorer,
     ) {
         let limit = self.get_m(level);
@@ -146,7 +146,7 @@ pub trait GraphLayersBase {
 }
 
 impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
-    fn get_visited_list_from_pool(&self) -> VisitedList {
+    fn get_visited_list_from_pool(&self) -> VisitedListHandle {
         self.visited_pool.get(self.links.num_points())
     }
 

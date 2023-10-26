@@ -9,58 +9,63 @@ use parking_lot::RwLock;
 /// Implemented in order to limit memory leak
 const POOL_KEEP_LIMIT: usize = 16;
 
+/// Visited list handle is an owner of the `VisitedList`, which is returned by `VisitedPool` and returned back to it
+#[derive(Debug)]
+pub struct VisitedListHandle<'a> {
+    pool: &'a VisitedPool,
+    visited_list: VisitedList,
+}
+
 /// Visited list reuses same memory to keep track of visited points ids among multiple consequent queries
 ///
 /// It stores the sequence number of last processed operation next to the point ID, which allows to avoid memory allocation
 /// and reuse same counter for multiple queries.
 #[derive(Debug)]
-pub struct VisitedList<'a> {
-    pool: &'a VisitedPool,
-    data: VisitedListData,
-}
-
-#[derive(Debug)]
-struct VisitedListData {
+struct VisitedList {
     current_iter: usize,
     visit_counters: Vec<usize>,
 }
 
-impl Default for VisitedListData {
+impl Default for VisitedList {
     fn default() -> Self {
-        VisitedListData {
+        VisitedList {
             current_iter: 1,
             visit_counters: vec![],
         }
     }
 }
 
-impl VisitedListData {
+impl VisitedList {
     fn new(num_points: usize) -> Self {
-        VisitedListData {
+        VisitedList {
             current_iter: 1,
             visit_counters: vec![0; num_points],
         }
     }
 }
 
-impl<'a> Drop for VisitedList<'a> {
+impl<'a> Drop for VisitedListHandle<'a> {
     fn drop(&mut self) {
-        self.pool.return_back(std::mem::take(&mut self.data));
+        self.pool
+            .return_back(std::mem::take(&mut self.visited_list));
     }
 }
 
-impl<'a> VisitedList<'a> {
-    fn new(pool: &'a VisitedPool, data: VisitedListData) -> Self {
-        VisitedList { pool, data }
+impl<'a> VisitedListHandle<'a> {
+    fn new(pool: &'a VisitedPool, data: VisitedList) -> Self {
+        VisitedListHandle {
+            pool,
+            visited_list: data,
+        }
     }
 
     pub fn get_current_iteration_id(&self) -> usize {
-        self.data.current_iter
+        self.visited_list.current_iter
     }
 
     // Count how many points were visited since the given iteration
     pub fn count_visits_since(&self, iteration_id: usize) -> usize {
-        self.data
+        self.visited_list
             .visit_counters
             .iter()
             .filter(|x| **x >= iteration_id)
@@ -69,26 +74,26 @@ impl<'a> VisitedList<'a> {
 
     /// Return `true` if visited
     pub fn check(&self, point_id: PointOffsetType) -> bool {
-        self.data
+        self.visited_list
             .visit_counters
             .get(point_id as usize)
-            .map_or(false, |x| *x >= self.data.current_iter)
+            .map_or(false, |x| *x >= self.visited_list.current_iter)
     }
 
     /// Updates visited list
     /// return `true` if point was visited before
     pub fn check_and_update_visited(&mut self, point_id: PointOffsetType) -> bool {
         let idx = point_id as usize;
-        if idx >= self.data.visit_counters.len() {
-            self.data.visit_counters.resize(idx + 1, 0);
+        if idx >= self.visited_list.visit_counters.len() {
+            self.visited_list.visit_counters.resize(idx + 1, 0);
         }
-        let prev_value = self.data.visit_counters[idx];
-        self.data.visit_counters[idx] = self.data.current_iter;
-        prev_value >= self.data.current_iter
+        let prev_value = self.visited_list.visit_counters[idx];
+        self.visited_list.visit_counters[idx] = self.visited_list.current_iter;
+        prev_value >= self.visited_list.current_iter
     }
 
     pub fn next_iteration(&mut self) {
-        self.data.current_iter += 1;
+        self.visited_list.current_iter += 1;
     }
 }
 
@@ -97,7 +102,7 @@ impl<'a> VisitedList<'a> {
 /// If there are more requests than lists - creates a new list, but only keeps max defined amount.
 #[derive(Debug)]
 pub struct VisitedPool {
-    pool: RwLock<Vec<VisitedListData>>,
+    pool: RwLock<Vec<VisitedList>>,
 }
 
 impl VisitedPool {
@@ -107,19 +112,19 @@ impl VisitedPool {
         }
     }
 
-    pub fn get(&self, num_points: usize) -> VisitedList {
+    pub fn get(&self, num_points: usize) -> VisitedListHandle {
         match self.pool.write().pop() {
-            None => VisitedList::new(self, VisitedListData::new(num_points)),
+            None => VisitedListHandle::new(self, VisitedList::new(num_points)),
             Some(mut data) => {
                 data.visit_counters.resize(num_points, 0);
-                let mut visited_list = VisitedList::new(self, data);
+                let mut visited_list = VisitedListHandle::new(self, data);
                 visited_list.next_iteration();
                 visited_list
             }
         }
     }
 
-    fn return_back(&self, data: VisitedListData) {
+    fn return_back(&self, data: VisitedList) {
         let mut pool = self.pool.write();
         if pool.len() < POOL_KEEP_LIMIT {
             pool.push(data);

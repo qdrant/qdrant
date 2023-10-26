@@ -30,7 +30,7 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::visited_pool::{VisitedList, VisitedPool};
+use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
@@ -160,7 +160,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         stopped: &AtomicBool,
         graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
-        block_filter_list: &mut VisitedList,
+        block_filter_list: &mut VisitedListHandle,
     ) -> OperationResult<()> {
         block_filter_list.next_iteration();
 
