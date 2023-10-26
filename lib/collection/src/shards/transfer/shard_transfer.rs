@@ -631,6 +631,14 @@ where
                         transfer.shard_id,
                         transfer.to,
                     );
+
+                    // Revert queue proxy if we still have any to prepare for the next attempt
+                    if let Some(replica_set) =
+                        shards_holder.read().await.get_shard(&transfer.shard_id)
+                    {
+                        replica_set.revert_queue_proxy_local().await;
+                    }
+
                     false
                 }
             };
@@ -640,7 +648,7 @@ where
             if !finished {
                 tries -= 1;
                 log::warn!(
-                    "Retrying transfer shard {} -> {} (retry {})",
+                    "Retrying shard transfer {} -> {} (retry {})",
                     transfer.shard_id,
                     transfer.to,
                     MAX_RETRY_COUNT - tries
