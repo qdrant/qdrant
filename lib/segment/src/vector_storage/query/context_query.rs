@@ -1,10 +1,29 @@
 use common::types::ScoreType;
 
-use super::discovery_query::DiscoveryPair;
 use super::{Query, TransformInto};
 use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 
-impl<T> DiscoveryPair<T> {
+#[derive(Debug, Clone)]
+pub struct ContextPair<T> {
+    pub positive: T,
+    pub negative: T,
+}
+
+impl<T> ContextPair<T> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
+    }
+
+    pub fn transform<F, U>(self, mut f: F) -> ContextPair<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        ContextPair {
+            positive: f(self.positive),
+            negative: f(self.negative),
+        }
+    }
+
     /// In the first stage of discovery search, the objective is to get the best entry point
     /// for the search. This is done by using a smooth loss function instead of hard ranking
     /// to approach the best zone, once the best zone is reached, score will be same for all
@@ -33,13 +52,23 @@ impl<T> DiscoveryPair<T> {
     }
 }
 
+#[cfg(test)]
+impl<T> From<(T, T)> for ContextPair<T> {
+    fn from(pair: (T, T)) -> Self {
+        Self {
+            positive: pair.0,
+            negative: pair.1,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ContextQuery<T> {
-    pub pairs: Vec<DiscoveryPair<T>>,
+    pub pairs: Vec<ContextPair<T>>,
 }
 
 impl<T> ContextQuery<T> {
-    pub fn new(pairs: Vec<DiscoveryPair<T>>) -> Self {
+    pub fn new(pairs: Vec<ContextPair<T>>) -> Self {
         Self { pairs }
     }
 
@@ -68,6 +97,12 @@ impl<T> Query<T> for ContextQuery<T> {
             .iter()
             .map(|pair| pair.loss_by(&similarity))
             .sum()
+    }
+}
+
+impl<T> From<Vec<ContextPair<T>>> for ContextQuery<T> {
+    fn from(pairs: Vec<ContextPair<T>>) -> Self {
+        ContextQuery::new(pairs)
     }
 }
 
@@ -108,7 +143,7 @@ mod test {
     #[case::only_positives(vec![(2,-1),(-1,-3),(4,0)], 0.0)]
     #[case::only_negatives(vec![(-5,-4),(-1,3),(0,2)], -7.0)]
     fn scoring(#[case] pairs: Vec<(i32, i32)>, #[case] expected: f32) {
-        let pairs = pairs.into_iter().map(DiscoveryPair::from).collect();
+        let pairs = pairs.into_iter().map(ContextPair::from).collect();
 
         let query = ContextQuery::new(pairs);
 

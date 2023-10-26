@@ -459,6 +459,29 @@ impl GraphLayersBuilder {
         }
         self.ready_list.write().set(point_id as usize, true);
     }
+
+    /// This function returns average number of links per node in HNSW graph
+    /// on specified level.
+    ///
+    /// Useful for:
+    /// - estimating memory consumption
+    /// - percolation threshold estimation
+    /// - debugging
+    pub fn get_average_connectivity_on_level(&self, level: usize) -> f32 {
+        let mut sum = 0;
+        let mut count = 0;
+        for links in self.links_layers.iter() {
+            if links.len() > level {
+                sum += links[level].read().len();
+                count += 1;
+            }
+        }
+        if count == 0 {
+            0.0
+        } else {
+            sum as f32 / count as f32
+        }
+    }
 }
 
 #[cfg(test)]

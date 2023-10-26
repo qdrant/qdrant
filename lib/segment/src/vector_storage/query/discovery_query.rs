@@ -1,34 +1,15 @@
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
+use super::context_query::ContextPair;
 use super::{Query, TransformInto};
 use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 
 type RankType = i32;
 
-#[derive(Debug, Clone)]
-pub struct DiscoveryPair<T> {
-    pub positive: T,
-    pub negative: T,
-}
-
-impl<T> DiscoveryPair<T> {
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
-    }
-
-    pub fn transform<F, U>(self, mut f: F) -> DiscoveryPair<U>
-    where
-        F: FnMut(T) -> U,
-    {
-        DiscoveryPair {
-            positive: f(self.positive),
-            negative: f(self.negative),
-        }
-    }
-
+impl<T> ContextPair<T> {
     /// Calculates on which side of the space the point is, with respect to this pair
-    pub fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
+    fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
         let positive_similarity = similarity(&self.positive);
         let negative_similarity = similarity(&self.negative);
 
@@ -37,24 +18,14 @@ impl<T> DiscoveryPair<T> {
     }
 }
 
-#[cfg(test)]
-impl<T> From<(T, T)> for DiscoveryPair<T> {
-    fn from(pair: (T, T)) -> Self {
-        Self {
-            positive: pair.0,
-            negative: pair.1,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct DiscoveryQuery<T> {
     pub target: T,
-    pub pairs: Vec<DiscoveryPair<T>>,
+    pub pairs: Vec<ContextPair<T>>,
 }
 
 impl<T> DiscoveryQuery<T> {
-    pub fn new(target: T, pairs: Vec<DiscoveryPair<T>>) -> Self {
+    pub fn new(target: T, pairs: Vec<ContextPair<T>>) -> Self {
         Self { target, pairs }
     }
 
@@ -136,7 +107,7 @@ mod test {
     #[case::worst_zone(vec![(4, 10), (2, 4)], -2)]
     #[case::many_pairs(vec![(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (0, 4)], 4)]
     fn context_ranking(#[case] pairs: Vec<(isize, isize)>, #[case] expected: RankType) {
-        let pairs = pairs.into_iter().map(DiscoveryPair::from).collect();
+        let pairs = pairs.into_iter().map(ContextPair::from).collect();
 
         let _target = 42;
 
@@ -165,7 +136,7 @@ mod test {
     ) {
         let fixed_score: f32 = 2.5;
 
-        let pairs = pairs.into_iter().map(DiscoveryPair::from).collect();
+        let pairs = pairs.into_iter().map(ContextPair::from).collect();
 
         let query = DiscoveryQuery::new(target, pairs);
 
