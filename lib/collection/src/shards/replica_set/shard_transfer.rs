@@ -117,7 +117,7 @@ impl ShardReplicaSet {
             Some(Shard::ForwardProxy(_) | Shard::QueueProxy(_)) => {}
             Some(Shard::Local(_)) => return Ok(()),
             // Unexpected states, error
-            Some(shard) => {
+            Some(shard @ (Shard::Proxy(_) | Shard::Dummy(_))) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot un-proxify local shard {} because it has unexpected type - {}",
                     self.shard_id,
