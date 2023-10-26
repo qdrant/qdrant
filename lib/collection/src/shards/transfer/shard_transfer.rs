@@ -196,19 +196,16 @@ async fn transfer_snapshot(
 
     let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
-    // Queue proxify local shard
-    {
-        let transferring_shard = shard_holder_read.get_shard(&shard_id);
-        let Some(replica_set) = transferring_shard else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be queue proxied because it does not exist"
-            )));
-        };
+    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+    let Some(replica_set) = transferring_shard else {
+        return Err(CollectionError::service_error(format!(
+            "Skard {shard_id} cannot be queue proxied because it does not exist"
+        )));
+    };
 
-        replica_set
-            .queue_proxify_local(remote_shard.clone())
-            .await?;
-    }
+    replica_set
+        .queue_proxify_local(remote_shard.clone())
+        .await?;
 
     // Ensure we have configured a queue proxy
     let is_queue_proxy = match shard_holder_read.get_shard(&shard_id) {
@@ -247,13 +244,6 @@ async fn transfer_snapshot(
                 "Failed to recover shard snapshot on remote: {err}"
             ))
         })?;
-
-    let shard = shard_holder_read.get_shard(&shard_id);
-    let Some(replica_set) = shard else {
-        return Err(CollectionError::service_error(format!(
-            "Shard {shard_id} cannot be transformed from queue to forward proxy because it does not exist"
-        )));
-    };
 
     // Set shard state to partial through consensus and synchronize
     log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
