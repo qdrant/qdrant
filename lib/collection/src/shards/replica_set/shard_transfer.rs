@@ -14,16 +14,18 @@ impl ShardReplicaSet {
         match &*local_write {
             // Expected state, continue
             Some(Shard::Local(_)) => {}
+            // If a forward proxy to same remote, return early
+            Some(Shard::ForwardProxy(proxy))
+                if proxy.remote_shard.peer_id == remote_shard.peer_id =>
+            {
+                return Ok(())
+            }
             // Unexpected states, error
             Some(Shard::ForwardProxy(proxy)) => {
-                return if proxy.remote_shard.peer_id == remote_shard.peer_id {
-                    Ok(())
-                } else {
-                    Err(CollectionError::service_error(format!(
-                        "Cannot proxify local shard {} to peer {} because it is already proxified to peer {}",
-                        self.shard_id, remote_shard.peer_id, proxy.remote_shard.peer_id
-                    )))
-                };
+                return Err(CollectionError::service_error(format!(
+                    "Cannot proxify local shard {} to peer {} because it is already proxified to peer {}",
+                    self.shard_id, remote_shard.peer_id, proxy.remote_shard.peer_id
+                )));
             }
             Some(Shard::QueueProxy(_)) => {
                 return Err(CollectionError::service_error(format!(
