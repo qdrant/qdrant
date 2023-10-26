@@ -68,6 +68,9 @@ impl ShardReplicaSet {
         match &*local_write {
             // Expected state, continue
             Some(Shard::Local(_)) => {}
+            // If a forward proxy to same remote, continue and change into queue proxy
+            Some(Shard::ForwardProxy(proxy))
+                if proxy.remote_shard.peer_id == remote_shard.peer_id => {}
             // Unexpected states, error
             Some(Shard::QueueProxy(_)) => {
                 return Err(CollectionError::service_error(format!(
@@ -102,9 +105,16 @@ impl ShardReplicaSet {
             }
         };
 
-        if let Some(Shard::Local(local)) = local_write.take() {
-            let proxy_shard = QueueProxyShard::new(local, remote_shard).await;
-            let _ = local_write.insert(Shard::QueueProxy(proxy_shard));
+        match local_write.take() {
+            Some(Shard::Local(local)) => {
+                let proxy_shard = QueueProxyShard::new(local, remote_shard).await;
+                let _ = local_write.insert(Shard::QueueProxy(proxy_shard));
+            }
+            Some(Shard::ForwardProxy(proxy)) => {
+                let proxy_shard = QueueProxyShard::new(proxy.wrapped_shard, remote_shard).await;
+                let _ = local_write.insert(Shard::QueueProxy(proxy_shard));
+            }
+            _ => unreachable!(),
         }
 
         Ok(())
