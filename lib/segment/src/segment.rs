@@ -138,6 +138,8 @@ impl Segment {
                 Some(vector) => {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     vector_storage.insert_vector(internal_id, vector.into())?;
+                    let mut vector_index = vector_data.vector_index.borrow_mut();
+                    vector_index.update_vector(internal_id)?;
                 }
                 None => {
                     // No vector provided, so we remove it
@@ -175,6 +177,10 @@ impl Segment {
                 .vector_storage
                 .borrow_mut()
                 .insert_vector(internal_id, new_vector.as_ref().into())?;
+            vector_data
+                .vector_index
+                .borrow_mut()
+                .update_vector(internal_id)?;
         }
         Ok(())
     }
@@ -195,15 +201,18 @@ impl Segment {
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
+            let mut vector_index = vector_data.vector_index.borrow_mut();
             match vector_opt {
                 None => {
                     let dim = vector_storage.vector_dim();
                     let vector = vec![1.0; dim];
                     vector_storage.insert_vector(new_index, vector.as_slice().into())?;
                     vector_storage.delete_vector(new_index)?;
+                    vector_index.update_vector(new_index)?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec.into())?;
+                    vector_index.update_vector(new_index)?;
                 }
             }
         }

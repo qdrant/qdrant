@@ -293,6 +293,10 @@ impl VectorIndex for PlainIndex {
     fn indexed_vector_count(&self) -> usize {
         0
     }
+
+    fn update_vector(&mut self, _id: PointOffsetType) -> OperationResult<()> {
+        Ok(())
+    }
 }
 
 pub struct PlainFilterContext<'a> {
