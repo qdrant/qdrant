@@ -23,7 +23,7 @@ use segment::vector_storage::query::reco_query::RecoQuery;
 use serde_json::json;
 use tempfile::Builder;
 
-const MAX_EXAMPLES: usize = 10;
+const MAX_EXAMPLE_PAIRS: usize = 4;
 
 enum QueryVariant {
     Nearest,
@@ -32,7 +32,7 @@ enum QueryVariant {
 }
 
 fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES / 2);
+    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
 
     let target = random_vector(rnd, dim).into();
 
@@ -48,7 +48,7 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVect
 }
 
 fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLES / 2);
+    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
 
     let positive = (0..num_examples)
         .map(|_| random_vector(rnd, dim).into())
@@ -75,6 +75,13 @@ fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rnd: &mut R, dim: usize
 fn test_filterable_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] max_failures: usize, // out of 100
+) {
+    _test_filterable_hnsw(query_variant, max_failures);
+}
+
+fn _test_filterable_hnsw(
+    query_variant: QueryVariant,
+    max_failures: usize, // out of 100
 ) {
     let stopped = AtomicBool::new(false);
 

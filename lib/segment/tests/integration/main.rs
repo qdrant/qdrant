@@ -5,6 +5,7 @@ pub mod disbalanced_vectors_test;
 pub mod exact_search_test;
 pub mod fail_recovery_test;
 pub mod filtering_context_check;
+pub mod filtrable_discovery_api_test;
 pub mod filtrable_hnsw_test;
 pub mod fixtures;
 pub mod hnsw_quantized_search_test;

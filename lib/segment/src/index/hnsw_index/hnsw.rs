@@ -717,6 +717,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
         if payload_m > 0 {
+            // Calculate true average number of links per vertex in the HNSW graph
+            // to better estimate percolation threshold
+            let average_links_per_0_level =
+                graph_layers_builder.get_average_connectivity_on_level(0);
+            let average_links_per_0_level_int = (average_links_per_0_level as usize).max(1);
+
             for (field, _) in payload_index.indexed_fields() {
                 debug!("building additional index for field {}", &field);
 
@@ -724,9 +730,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // $1/m$ points left.
                 // So blocks larger than $1/m$ are not needed.
                 // We add multiplier for the extra safety.
-                let percolation_multiplier = 2;
+                let percolation_multiplier = 4;
                 let max_block_size = if self.config.m > 0 {
-                    total_vector_count / self.config.m * percolation_multiplier
+                    total_vector_count / average_links_per_0_level_int * percolation_multiplier
                 } else {
                     usize::MAX
                 };
