@@ -76,7 +76,7 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             // Confirm local shard reached partial state
             let confirm = replica_set
-                .wait_for_partial(transfer_config.to, CONSENSUS_CONFIRM_TIMEOUT)
+                .wait_for_local_state(ReplicaState::Partial, CONSENSUS_CONFIRM_TIMEOUT)
                 .await;
             match confirm {
                 Ok(()) => return Ok(()),

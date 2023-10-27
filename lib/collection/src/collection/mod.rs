@@ -254,6 +254,24 @@ impl Collection {
         self.shards_holder.read().await.contains_shard(&shard_id)
     }
 
+    pub async fn wait_local_shard_replica_state(
+        &self,
+        shard_id: ShardId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<()> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(&shard_id);
+        let Some(replica_set) = shard else {
+            return Err(CollectionError::NotFound {
+                what: "Shard {shard_id}".into(),
+            });
+        };
+
+        replica_set.wait_for_local_state(state, timeout).await
+    }
+
     pub async fn set_shard_replica_state(
         &self,
         shard_id: ShardId,

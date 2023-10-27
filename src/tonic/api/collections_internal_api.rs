@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{
@@ -73,6 +73,43 @@ impl CollectionsInternal for CollectionsInternalService {
         &self,
         request: Request<WaitForShardStateRequest>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
-        todo!();
+        let request = request.into_inner();
+        validate_and_log(&request);
+
+        let timing = Instant::now();
+        let WaitForShardStateRequest {
+            collection_name,
+            shard_id,
+            state,
+            timeout,
+        } = request;
+        let state = state.try_into()?;
+        let timeout = Duration::from_secs(timeout);
+
+        let collection_read = self
+            .toc
+            .get_collection(&collection_name)
+            .await
+            .map_err(|err| {
+                Status::not_found(format!(
+                    "Collection {collection_name} could not be found: {err}"
+                ))
+            })?;
+
+        // Wait for replica state
+        collection_read
+            .wait_local_shard_replica_state(shard_id, state, timeout)
+            .await
+            .map_err(|err| {
+                Status::aborted(format!(
+                    "Failed to wait for shard {shard_id} to get into {state:?} state: {err}"
+                ))
+            })?;
+
+        let response = CollectionOperationResponse {
+            result: true,
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
     }
 }
