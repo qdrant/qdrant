@@ -470,7 +470,7 @@ impl ShardHolder {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        // The future is cancel-safe
+        // This future is cancel-safe
         //
         // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file`
         //   - are handled by `tempfile` and would be deleted on drop
