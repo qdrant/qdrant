@@ -835,7 +835,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cancel-safe"
+name = "cancel"
 version = "0.0.0"
 dependencies = [
  "thiserror",
@@ -1052,7 +1052,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "atomicwrites",
- "cancel-safe",
+ "cancel",
  "chrono",
  "common",
  "criterion",
@@ -3728,7 +3728,7 @@ dependencies = [
  "actix-web-validator",
  "anyhow",
  "api",
- "cancel-safe",
+ "cancel",
  "chrono",
  "clap",
  "collection",
@@ -4809,7 +4809,7 @@ dependencies = [
  "api",
  "async-trait",
  "atomicwrites",
- "cancel-safe",
+ "cancel",
  "chrono",
  "collection",
  "common",

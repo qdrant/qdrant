@@ -274,14 +274,8 @@ impl From<PersistError> for StorageError {
     }
 }
 
-impl From<cancel_safe::Cancelled> for StorageError {
-    fn from(err: cancel_safe::Cancelled) -> Self {
-        CollectionError::from(err).into()
-    }
-}
-
-impl From<cancel_safe::Error> for StorageError {
-    fn from(err: cancel_safe::Error) -> Self {
+impl From<cancel::Error> for StorageError {
+    fn from(err: cancel::Error) -> Self {
         CollectionError::from(err).into()
     }
 }

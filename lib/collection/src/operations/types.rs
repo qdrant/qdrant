@@ -912,19 +912,13 @@ impl From<validator::ValidationErrors> for CollectionError {
     }
 }
 
-impl From<cancel_safe::Cancelled> for CollectionError {
-    fn from(err: cancel_safe::Cancelled) -> Self {
-        Self::Cancelled {
-            description: err.to_string(),
-        }
-    }
-}
-
-impl From<cancel_safe::Error> for CollectionError {
-    fn from(err: cancel_safe::Error) -> Self {
+impl From<cancel::Error> for CollectionError {
+    fn from(err: cancel::Error) -> Self {
         match err {
-            cancel_safe::Error::Join(err) => err.into(),
-            cancel_safe::Error::Cancelled => cancel_safe::Cancelled.into(),
+            cancel::Error::Join(err) => err.into(),
+            cancel::Error::Cancelled => Self::Cancelled {
+                description: err.to_string(),
+            },
         }
     }
 }

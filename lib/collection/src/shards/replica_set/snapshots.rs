@@ -74,7 +74,7 @@ impl ShardReplicaSet {
     pub async fn restore_local_replica_from(
         &self,
         replica_path: &Path,
-        cancel: cancel_safe::CancellationToken,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
         // This future is *not* cancel-safe!
         //
@@ -88,7 +88,7 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        let mut local = cancel_safe::resolve(cancel, self.local.write()).await?;
+        let mut local = cancel::future::on_token(cancel, self.local.write()).await?;
 
         // TODO: Check `cancel`?
 

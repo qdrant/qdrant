@@ -336,15 +336,15 @@ async fn upload_shard_snapshot(
     let (collection, shard) = path.into_inner();
     let SnapshotUploadingParam { wait, priority } = query.into_inner();
 
-    let future = cancel_safe::spawn(move |cancel| async move {
-        let task = async {
+    let future = cancel::future::on_drop(move |cancel| async move {
+        let future = async {
             let collection = toc.get_collection(&collection).await?;
             collection.assert_shard_exists(shard).await?;
 
             Result::<_, helpers::HttpError>::Ok(collection)
         };
 
-        let collection = cancel_safe::resolve(cancel.clone(), task).await??;
+        let collection = cancel::future::on_token(cancel.clone(), future).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel-safe!
         common::snapshots::recover_shard_snapshot_impl(

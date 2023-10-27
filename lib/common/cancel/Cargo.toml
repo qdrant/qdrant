@@ -1,5 +1,5 @@
 [package]
-name = "cancel-safe"
+name = "cancel"
 version = "0.0.0"
 authors = [
     "Andrey Vasnetsov <vasnetsov93@gmail.com>",

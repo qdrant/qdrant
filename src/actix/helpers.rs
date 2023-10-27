@@ -208,14 +208,8 @@ impl From<tokio::task::JoinError> for HttpError {
     }
 }
 
-impl From<cancel_safe::Cancelled> for HttpError {
-    fn from(err: cancel_safe::Cancelled) -> Self {
-        StorageError::from(err).into()
-    }
-}
-
-impl From<cancel_safe::Error> for HttpError {
-    fn from(err: cancel_safe::Error) -> Self {
+impl From<cancel::Error> for HttpError {
+    fn from(err: cancel::Error) -> Self {
         StorageError::from(err).into()
     }
 }

@@ -523,17 +523,17 @@ impl ShardHolder {
         let task = {
             let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
 
-            cancel_safe::spawn_blocking(move |cancel| -> CollectionResult<_> {
+            cancel::blocking::on_drop(move |cancel| -> CollectionResult<_> {
                 let mut tar = TarBuilder::new(temp_file.as_file_mut());
 
                 if cancel.is_cancelled() {
-                    return Err(cancel_safe::Cancelled.into());
+                    return Err(cancel::Error::Cancelled.into());
                 }
 
                 tar.append_dir_all(".", &snapshot_target_dir)?;
 
                 if cancel.is_cancelled() {
-                    return Err(cancel_safe::Cancelled.into());
+                    return Err(cancel::Error::Cancelled.into());
                 }
 
                 tar.finish()?;
@@ -610,7 +610,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
-        cancel: cancel_safe::CancellationToken,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
         // This future is *not* cancel-safe!
 
@@ -635,31 +635,28 @@ impl ShardHolder {
         let task = {
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
-            cancel_safe::resolve_blocking(
-                cancel.child_token(),
-                move |cancel| -> CollectionResult<_> {
-                    let mut tar = tar::Archive::new(snapshot);
+            cancel::blocking::on_token(cancel.child_token(), move |cancel| -> CollectionResult<_> {
+                let mut tar = tar::Archive::new(snapshot);
 
-                    if cancel.is_cancelled() {
-                        return Err(cancel_safe::Cancelled.into());
-                    }
+                if cancel.is_cancelled() {
+                    return Err(cancel::Error::Cancelled.into());
+                }
 
-                    tar.unpack(&snapshot_temp_dir)?;
-                    drop(tar);
+                tar.unpack(&snapshot_temp_dir)?;
+                drop(tar);
 
-                    if cancel.is_cancelled() {
-                        return Err(cancel_safe::Cancelled.into());
-                    }
+                if cancel.is_cancelled() {
+                    return Err(cancel::Error::Cancelled.into());
+                }
 
-                    ShardReplicaSet::restore_snapshot(
-                        &snapshot_temp_dir,
-                        this_peer_id,
-                        is_distributed,
-                    )?;
+                ShardReplicaSet::restore_snapshot(
+                    &snapshot_temp_dir,
+                    this_peer_id,
+                    is_distributed,
+                )?;
 
-                    Ok(())
-                },
-            )
+                Ok(())
+            })
         };
 
         task.await??;
@@ -685,7 +682,7 @@ impl ShardHolder {
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
-        cancel: cancel_safe::CancellationToken,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
         // This future is *not* cancel-safe!
 

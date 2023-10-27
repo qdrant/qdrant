@@ -218,7 +218,7 @@ impl Collection {
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
-        cancel: cancel_safe::CancellationToken,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
         // This future is *not* cancel-safe!
 
@@ -228,14 +228,11 @@ impl Collection {
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel-safe!
         // (see `ShardReplicaSet::restore_local_replica_from`)
-        let recovered = self
-            .shards_holder
+        self.shards_holder
             .read()
             .await
             .recover_local_shard_from(snapshot_shard_path, shard_id, cancel)
-            .await?;
-
-        Ok(recovered)
+            .await
     }
 
     pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
@@ -299,7 +296,7 @@ impl Collection {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
-        cancel: cancel_safe::CancellationToken,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
         // This future is *not* cancel-safe!
 
@@ -321,9 +318,7 @@ impl Collection {
                 temp_dir,
                 cancel,
             )
-            .await?;
-
-        Ok(())
+            .await
     }
 
     pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
