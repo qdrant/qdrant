@@ -308,7 +308,7 @@ async fn transfer_snapshot(
         })?;
 
     // Synchronize all nodes
-    // TODO: only the receiver must be parital here, can synchronize all nodes later
+    // TODO: only the receiver must be partial here, can synchronize all nodes later
     await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
     // Transfer queued updates to remote, transform into forward proxy
