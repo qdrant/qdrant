@@ -13,6 +13,8 @@ use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
 use tokio_util::sync::CancellationToken;
 
+use crate::common::helpers;
+
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -75,7 +77,8 @@ pub async fn recover_shard_snapshot(
     // - `download_dir` is handled by `tempfile` and would be deleted on drop
     // - remote snapshot is downloaded into and would be deleted with the `download_dir`
 
-    // TODO: Create cancellation token and propagate it into `task`
+    let token = CancellationToken::new();
+    let cancel = token.child_token();
 
     let task = async move {
         let task = async {
@@ -107,24 +110,24 @@ pub async fn recover_shard_snapshot(
             Result::<_, StorageError>::Ok((collection, download_dir, snapshot_path))
         };
 
-        // TODO: *Select* on `task` and cancellation token
-        let (collection, _download_dir, snapshot_path) = task.await?;
+        let (collection, _download_dir, snapshot_path) =
+            helpers::with_cancellation(task, cancel.clone()).await??;
 
         // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
-        //
-        // TODO: Propagate cancellation token to `recover_shard_snapshot_impl`
         recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard_id,
             &snapshot_path,
             snapshot_priority,
-            todo!(),
+            cancel,
         )
         .await
     };
 
+    let guard = token.drop_guard();
     tokio::task::spawn(task).await??;
+    guard.disarm();
 
     Ok(())
 }
@@ -137,14 +140,15 @@ pub async fn recover_shard_snapshot_impl(
     priority: SnapshotPriority,
     cancel: CancellationToken,
 ) -> Result<(), StorageError> {
-    // This future is *not* cancel-safe
+    // This future is *not* cancel-safe!
     //
     // `Collection::restore_shard_snapshot` and `activate_shard` calls have to be executed as a
     // single transaction
     //
     // It is *possible* to make this function to be cancel-safe, but it is *extremely tedious* to do so
 
-    // TODO: *Select* on `Collection::restore_shard_snapshot` and cancellation token!?
+    // `Collection::restore_shard_snapshot` is *not* cancel-safe!
+    // (see `ShardReplicaSet::restore_local_replica_from`)
     collection
         .restore_shard_snapshot(
             shard,
@@ -152,6 +156,7 @@ pub async fn recover_shard_snapshot_impl(
             toc.this_peer_id,
             toc.is_distributed(),
             &toc.optional_temp_or_snapshot_temp_path()?,
+            cancel,
         )
         .await?;
 

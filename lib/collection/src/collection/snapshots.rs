@@ -308,44 +308,29 @@ impl Collection {
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
-        snapshot_path: impl Into<PathBuf>,
+        snapshot_path: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
-        temp_dir: impl Into<PathBuf>,
+        temp_dir: &Path,
+        cancel: CancellationToken,
     ) -> CollectionResult<()> {
-        // This future is safe to cancel/drop
+        // This future is *not* cancel-safe!
 
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let cancel = CancellationToken::new();
-
-        let task = {
-            // `ShardHolder::restore_shard_snapshot` is *not* safe to cancel/drop!
-            // (see `ShardReplicaSet::restore_local_replica_from`)
-
-            let snapshot_path = snapshot_path.into();
-            let temp_dir = temp_dir.into();
-            let collection_name = self.name();
-            let cancel = cancel.child_token();
-
-            async move {
-                shard_holder
-                    .restore_shard_snapshot(
-                        &snapshot_path,
-                        &collection_name,
-                        shard_id,
-                        this_peer_id,
-                        is_distributed,
-                        &temp_dir,
-                        cancel,
-                    )
-                    .await
-            }
-        };
-
-        let guard = cancel.drop_guard();
-        tokio::task::spawn(task).await??;
-        guard.disarm();
+        // `ShardHolder::restore_shard_snapshot` is *not* cancel-safe!
+        // (see `ShardReplicaSet::restore_local_replica_from`)
+        shard_holder
+            .restore_shard_snapshot(
+                snapshot_path,
+                &self.name(),
+                shard_id,
+                this_peer_id,
+                is_distributed,
+                temp_dir,
+                cancel,
+            )
+            .await?;
 
         Ok(())
     }

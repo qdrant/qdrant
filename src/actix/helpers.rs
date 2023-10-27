@@ -1,13 +1,15 @@
 use std::fmt::Debug;
+use std::future::Future;
 use std::io;
 
 use actix_web::rt::time::Instant;
 use actix_web::{error, http, Error, HttpResponse};
 use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
-use futures::Future;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
+
+use crate::common;
 
 pub fn collection_into_actix_error(err: CollectionError) -> Error {
     let storage_error: StorageError = err.into();
@@ -87,11 +89,10 @@ where
     T: serde::Serialize + Send + 'static,
 {
     let future = async move {
-        let handle = tokio::task::spawn(future);
-
         if wait {
-            handle.await?.map(Some)
+            future.await.map(Some)
         } else {
+            drop(tokio::task::spawn(future)); // drop `JoinFuture` explicitly to make clippy happy
             Ok(None)
         }
     };
@@ -200,6 +201,12 @@ impl From<CollectionError> for HttpError {
 impl From<io::Error> for HttpError {
     fn from(err: io::Error) -> Self {
         StorageError::from(err).into() // TODO: Is this good enough?.. 🤔
+    }
+}
+
+impl From<common::helpers::Cancelled> for HttpError {
+    fn from(err: common::helpers::Cancelled) -> Self {
+        StorageError::from(err).into()
     }
 }
 

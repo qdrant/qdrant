@@ -1,10 +1,10 @@
 use std::ops::Deref as _;
 use std::path::Path;
-use std::pin;
 
 use tokio_util::sync::CancellationToken;
 
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, REPLICA_STATE_FILE};
+use crate::common::with_cancellation::with_cancellation;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::dummy_shard::DummyShard;
@@ -91,23 +91,7 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        let mut local;
-        let local_write = pin::pin!(self.local.write());
-
-        // TODO: Try to make this less ugly?
-        tokio::select! {
-            biased;
-
-            _ = cancel.cancelled() => {
-                return Err(CollectionError::Cancelled {
-                    description: "task was cancelled".into(), // TODO?
-                });
-            }
-
-            acquired_local = local_write => {
-                local = acquired_local;
-            }
-        }
+        let mut local = with_cancellation(self.local.write(), cancel).await?;
 
         // TODO: Check `cancel`?
 

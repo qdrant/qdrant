@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::common::file_utils::move_file;
+use crate::common::with_cancellation::with_cancellation;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -621,7 +622,7 @@ impl ShardHolder {
         temp_dir: &Path,
         cancel: CancellationToken,
     ) -> CollectionResult<()> {
-        // This future is *not* safe to cancel/drop!
+        // This future is *not* cancel-safe!
 
         if !self.contains_shard(&shard_id) {
             return Err(shard_not_found_error(shard_id));
@@ -673,18 +674,8 @@ impl ShardHolder {
             })
         };
 
-        // TODO: Try to make this less ugly?
-        tokio::select! {
-            biased;
-
-            _ = cancel.cancelled() => {
-                return Err(CollectionError::Cancelled {
-                    description: "task was cancelled".into(), // TODO?
-                })
-            }
-
-            task_result = task => task_result??,
-        }
+        // TODO: Should we use `with_cancellation` on `task`?
+        with_cancellation(task, cancel.clone()).await???;
 
         // TODO: Check `cancel`?
 

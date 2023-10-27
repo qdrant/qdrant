@@ -21,6 +21,7 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -338,25 +339,35 @@ async fn upload_shard_snapshot(
     let future = async move {
         let (collection, shard) = path.into_inner();
 
-        // TODO: Spawn *everything* down below as a separate task
-        // TODO: Propagate cancellation token into the task
+        let token = CancellationToken::new();
+        let cancel = token.child_token();
 
-        // TODO: *Select* on cancel-safe calls and cancellation token
-        let collection = toc.get_collection(&collection).await?;
-        collection.assert_shard_exists(shard).await?;
+        let task = async move {
+            let task = async {
+                let collection = toc.get_collection(&collection).await?;
+                collection.assert_shard_exists(shard).await?;
+                Result::<_, helpers::HttpError>::Ok(collection)
+            };
 
-        // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
-        //
-        // TODO: Propagate cancellation token to `recover_shard_snapshot_impl`
-        common::snapshots::recover_shard_snapshot_impl(
-            &toc,
-            &collection,
-            shard,
-            form.snapshot.file.path(),
-            priority.unwrap_or_default(),
-            todo!(),
-        )
-        .await?;
+            let collection = common::helpers::with_cancellation(task, cancel.clone()).await??;
+
+            // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
+            common::snapshots::recover_shard_snapshot_impl(
+                &toc,
+                &collection,
+                shard,
+                form.snapshot.file.path(),
+                priority.unwrap_or_default(),
+                cancel,
+            )
+            .await?;
+
+            Result::<_, helpers::HttpError>::Ok(())
+        };
+
+        let guard = token.drop_guard();
+        tokio::task::spawn(task).await??;
+        guard.disarm();
 
         Ok(())
     };
