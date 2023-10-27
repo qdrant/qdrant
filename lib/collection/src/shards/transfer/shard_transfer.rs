@@ -307,7 +307,7 @@ async fn transfer_snapshot(
 
     if let Some(path) = snapshot_temp_path {
         if let Err(err) = path.close() {
-            log::error!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
+            log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
         }
     }
 
