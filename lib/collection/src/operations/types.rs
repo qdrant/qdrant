@@ -576,10 +576,18 @@ pub struct RecommendGroupsRequest {
 
 /// Use context and a target to find the most similar points, constrained by the context.
 ///
-// TODO(luis): improve this message  vvvv
-/// When using only the context, a special search is performed where pairs of points are used to generate
-/// a loss function, which is used to find the points that exist in the zone where most of the positive
-/// part of the pairs overlap
+/// When using only the context, a special search is performed where pairs of points are
+/// used to generate a loss that guides the search towards the zone where most positive
+/// examples overlap. This means that the score minimizes the scenario of finding a point
+/// closer to a negative than to a positive part of a pair.
+/// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
+/// and it becomes normal that many points can have 0.0 as score.
+///
+/// Using only a target is equivalent to regular search, so the score is the distance to the target.
+///
+/// When using both context and target, the score behaves a little different: The
+/// integer part of the score represents the "rank" with respect to the context, while the
+/// decimal part of the score relates to the distance to the target.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct DiscoverRequest {
     /// Look for vectors closest to this
@@ -604,6 +612,7 @@ pub struct DiscoverRequest {
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
+    #[serde(default)]
     pub offset: usize,
 
     /// Select which payload to return with the response. Default: None
