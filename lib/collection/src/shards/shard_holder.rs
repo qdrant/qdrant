@@ -450,7 +450,7 @@ impl ShardHolder {
         snapshots_path: &Path,
         shard_id: ShardId,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
-        // This future is safe to cancel/drop
+        // This future is cancel-safe
 
         self.assert_shard_is_local(shard_id).await?;
 
@@ -470,7 +470,8 @@ impl ShardHolder {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        // The future is safe to cancel/drop:
+        // The future is cancel-safe
+        //
         // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file`
         //   - are handled by `tempfile` and would be deleted on drop
         //   - neither of them is a child of the other, so the order of deletion does not matter
@@ -526,17 +527,13 @@ impl ShardHolder {
                 let mut tar = TarBuilder::new(temp_file.as_file_mut());
 
                 if cancel.is_cancelled() {
-                    return Err(CollectionError::Cancelled {
-                        description: "task was cancelled".into(), // TODO?
-                    });
+                    return Err(cancel_safe::Cancelled.into());
                 }
 
                 tar.append_dir_all(".", &snapshot_target_dir)?;
 
                 if cancel.is_cancelled() {
-                    return Err(CollectionError::Cancelled {
-                        description: "task was cancelled".into(), // TODO?
-                    });
+                    return Err(cancel_safe::Cancelled.into());
                 }
 
                 tar.finish()?;
@@ -644,18 +641,14 @@ impl ShardHolder {
                     let mut tar = tar::Archive::new(snapshot);
 
                     if cancel.is_cancelled() {
-                        return Err(CollectionError::Cancelled {
-                            description: "task was cancelled".into(), // TODO?
-                        });
+                        return Err(cancel_safe::Cancelled.into());
                     }
 
                     tar.unpack(&snapshot_temp_dir)?;
                     drop(tar);
 
                     if cancel.is_cancelled() {
-                        return Err(CollectionError::Cancelled {
-                            description: "task was cancelled".into(), // TODO?
-                        });
+                        return Err(cancel_safe::Cancelled.into());
                     }
 
                     ShardReplicaSet::restore_snapshot(
@@ -673,7 +666,7 @@ impl ShardHolder {
 
         // TODO: Check `cancel`?
 
-        // `ShardHolder::recover_local_shard_from` is *not* safe to cancel/drop!
+        // `ShardHolder::recover_local_shard_from` is *not* cancel-safe!
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
             .recover_local_shard_from(snapshot_temp_dir.path(), shard_id, cancel)

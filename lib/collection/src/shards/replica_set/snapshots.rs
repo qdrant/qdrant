@@ -76,7 +76,7 @@ impl ShardReplicaSet {
         replica_path: &Path,
         cancel: cancel_safe::CancellationToken,
     ) -> CollectionResult<bool> {
-        // This future is *not* safe to cancel-safe!
+        // This future is *not* cancel-safe!
         //
         // `local.take()` call and `restore` task have to be executed as a single transaction
 

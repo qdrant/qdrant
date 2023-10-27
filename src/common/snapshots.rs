@@ -11,14 +11,13 @@ use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
-use tokio_util::sync::CancellationToken;
 
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
-    // This future is safe to cancel/drop
+    // This future is cancel-safe
     // (see `ShardHolder::create_shard_snapshot`)
 
     let collection = toc.get_collection(&collection_name).await?;
@@ -35,7 +34,7 @@ pub async fn list_shard_snapshots(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    // This future is safe to cancel/drop
+    // This future is cancel-safe
 
     let collection = toc.get_collection(&collection_name).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
@@ -48,7 +47,7 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    // This future is safe to cancel/drop
+    // This future is cancel-safe
     //
     // TODO: Explain why?
 
@@ -108,7 +107,7 @@ pub async fn recover_shard_snapshot(
         let (collection, _download_dir, snapshot_path) =
             cancel_safe::resolve(cancel.clone(), task).await??;
 
-        // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
+        // `recover_shard_snapshot_impl` is *not* cancel-safe!
         recover_shard_snapshot_impl(
             &toc,
             &collection,
@@ -130,7 +129,7 @@ pub async fn recover_shard_snapshot_impl(
     shard: ShardId,
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
-    cancel: CancellationToken,
+    cancel: cancel_safe::CancellationToken,
 ) -> Result<(), StorageError> {
     // This future is *not* cancel-safe!
     //

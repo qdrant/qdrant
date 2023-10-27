@@ -226,11 +226,12 @@ impl Collection {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        let shard_holder = self.shards_holder.clone().read_owned().await;
-
         // `ShardHolder::recover_local_shard_from` is *not* cancel-safe!
         // (see `ShardReplicaSet::restore_local_replica_from`)
-        let recovered = shard_holder
+        let recovered = self
+            .shards_holder
+            .read()
+            .await
             .recover_local_shard_from(snapshot_shard_path, shard_id, cancel)
             .await?;
 
@@ -302,11 +303,15 @@ impl Collection {
     ) -> CollectionResult<()> {
         // This future is *not* cancel-safe!
 
-        let shard_holder = self.shards_holder.clone().read_owned().await;
+        // TODO:
+        //   Check that shard snapshot is compatible with the collection
+        //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
         // `ShardHolder::restore_shard_snapshot` is *not* cancel-safe!
         // (see `ShardReplicaSet::restore_local_replica_from`)
-        shard_holder
+        self.shards_holder
+            .read()
+            .await
             .restore_shard_snapshot(
                 snapshot_path,
                 &self.name(),

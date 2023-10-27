@@ -340,12 +340,13 @@ async fn upload_shard_snapshot(
         let task = async {
             let collection = toc.get_collection(&collection).await?;
             collection.assert_shard_exists(shard).await?;
+
             Result::<_, helpers::HttpError>::Ok(collection)
         };
 
         let collection = cancel_safe::resolve(cancel.clone(), task).await??;
 
-        // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
+        // `recover_shard_snapshot_impl` is *not* cancel-safe!
         common::snapshots::recover_shard_snapshot_impl(
             &toc,
             &collection,
