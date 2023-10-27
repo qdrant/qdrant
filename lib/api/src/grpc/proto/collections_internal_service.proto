@@ -6,8 +6,8 @@ package qdrant;
 
 service CollectionsInternal {
   /*
- Get collection info
- */
+  Get collection info
+  */
   rpc Get (GetCollectionInfoRequestInternal) returns (GetCollectionInfoResponse) {}
   /*
   Initiate shard transfer
