@@ -65,7 +65,6 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "a32f6a38acf7ffd761df83
 config = "~0.13.3"
 
 tokio = { version = "~1.32", features = ["full"] }
-tokio-util = "0.7"
 
 actix-web = { version = "4.3.1", optional = true, features = ["rustls-0_21", "actix-tls"] }
 actix-cors = "0.6.4"

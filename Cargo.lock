@@ -3770,7 +3770,6 @@ dependencies = [
  "thiserror",
  "tikv-jemallocator",
  "tokio",
- "tokio-util",
  "tonic",
  "tonic-reflection",
  "tower",
