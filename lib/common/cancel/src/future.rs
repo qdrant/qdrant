@@ -13,10 +13,10 @@ where
     let future = task(cancel.child_token());
 
     let guard = cancel.drop_guard();
-    let result = tokio::task::spawn(future).await?;
+    let output = tokio::task::spawn(future).await?;
     guard.disarm();
 
-    Ok(result)
+    Ok(output)
 }
 
 /// # Safety
