@@ -9,6 +9,7 @@ use std::time::Duration;
 use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tempfile::TempPath;
 use tokio::time::sleep;
 
 use super::ShardTransferConsensus;
@@ -268,12 +269,24 @@ async fn transfer_snapshot(
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
 
+    let snapshot_temp_path = shard_holder_read
+        .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
+        .await
+        .map(TempPath::from_path)
+        .map_err(|err| {
+            log::error!(
+                "Failed to determine snapshot path, will not delete file after recovery: {err}"
+            );
+        })
+        .ok();
+
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
     shard_download_url.set_path(&format!(
         "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
         &snapshot_description.name,
     ));
+
     log::debug!(
         "Transferring and recovering shard {shard_id} snapshot on peer {}...",
         transfer_config.to
@@ -291,6 +304,12 @@ async fn transfer_snapshot(
                 "Failed to recover shard snapshot on remote: {err}"
             ))
         })?;
+
+    if let Some(path) = snapshot_temp_path {
+        if let Err(err) = path.close() {
+            log::error!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
+        }
+    }
 
     // Set shard state to Partial
     log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
