@@ -219,6 +219,14 @@ async fn transfer_batches(
 ///   We transfer the queue and transform into a forward proxy right now so that we can catch any
 ///   errors as early as possible. The forward proxy shard we end up with will not error again once
 ///   we un-proxify.
+/// - Wait for Partial state in our replica set
+///   Wait for the remote shard to be set to `Partial` in our local replica set. That way we
+///   confirm consensus has also propagated on this node.
+/// - Synchronize all nodes
+///   After confirming consensus propagation on this node, synchronize all nodes to reach the same
+///   consensus state before finalizing the transfer. That way, we ensure we have a consistent
+///   replica set state across all nodes. All nodes will have the `Partial` state, which makes the
+///   shard participate on all nodes.
 ///
 /// After this function, the following will happen:
 ///
@@ -302,13 +310,28 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    // Synchronize all nodes
-    // TODO: only the receiver must be partial here, can synchronize all nodes later
-    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
-
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
     replica_set.queue_proxy_into_forward_proxy().await?;
+
+    // Wait for Partial state in our replica set
+    let partial_state = ReplicaState::Partial;
+    log::trace!("Wait for local shard to reach {partial_state:?} state");
+    replica_set
+        .wait_for_state(
+            transfer_config.to,
+            partial_state,
+            defaults::CONSENSUS_META_OP_WAIT,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Shard being transferred did not reach {partial_state:?} state in time: {err}",
+            ))
+        })?;
+
+    // Synchronize all nodes
+    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
     Ok(())
 }

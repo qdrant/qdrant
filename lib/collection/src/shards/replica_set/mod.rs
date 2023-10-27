@@ -350,6 +350,22 @@ impl ShardReplicaSet {
         .await
     }
 
+    /// Wait for a peer shard to get into `state`
+    ///
+    /// Uses a blocking thread internally.
+    pub async fn wait_for_state(
+        &self,
+        peer_id: PeerId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<()> {
+        self.wait_for(
+            move |replica_set_state| replica_set_state.get_peer_state(&peer_id) == Some(&state),
+            timeout,
+        )
+        .await
+    }
+
     /// Wait for a replica set state condition to be true.
     ///
     /// Uses a blocking thread internally.
