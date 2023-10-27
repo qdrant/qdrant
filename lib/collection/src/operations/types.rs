@@ -912,6 +912,23 @@ impl From<validator::ValidationErrors> for CollectionError {
     }
 }
 
+impl From<cancel_safe::Cancelled> for CollectionError {
+    fn from(err: cancel_safe::Cancelled) -> Self {
+        Self::Cancelled {
+            description: err.to_string(),
+        }
+    }
+}
+
+impl From<cancel_safe::Error> for CollectionError {
+    fn from(err: cancel_safe::Error) -> Self {
+        match err {
+            cancel_safe::Error::Join(err) => err.into(),
+            cancel_safe::Error::Cancelled => cancel_safe::Cancelled.into(),
+        }
+    }
+}
+
 pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl Record {

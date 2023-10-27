@@ -9,8 +9,6 @@ use collection::operations::types::CollectionError;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
 
-use crate::common;
-
 pub fn collection_into_actix_error(err: CollectionError) -> Error {
     let storage_error: StorageError = err.into();
     storage_into_actix_error(storage_error)
@@ -204,14 +202,20 @@ impl From<io::Error> for HttpError {
     }
 }
 
-impl From<common::helpers::Cancelled> for HttpError {
-    fn from(err: common::helpers::Cancelled) -> Self {
+impl From<tokio::task::JoinError> for HttpError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        StorageError::service_error(err.to_string()).into()
+    }
+}
+
+impl From<cancel_safe::Cancelled> for HttpError {
+    fn from(err: cancel_safe::Cancelled) -> Self {
         StorageError::from(err).into()
     }
 }
 
-impl From<tokio::task::JoinError> for HttpError {
-    fn from(err: tokio::task::JoinError) -> Self {
-        StorageError::service_error(err.to_string()).into()
+impl From<cancel_safe::Error> for HttpError {
+    fn from(err: cancel_safe::Error) -> Self {
+        StorageError::from(err).into()
     }
 }

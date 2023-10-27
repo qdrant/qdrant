@@ -21,7 +21,6 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -334,43 +333,33 @@ async fn upload_shard_snapshot(
     query: web::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
+    let (collection, shard) = path.into_inner();
     let SnapshotUploadingParam { wait, priority } = query.into_inner();
 
-    let future = async move {
-        let (collection, shard) = path.into_inner();
-
-        let token = CancellationToken::new();
-        let cancel = token.child_token();
-
-        let task = async move {
-            let task = async {
-                let collection = toc.get_collection(&collection).await?;
-                collection.assert_shard_exists(shard).await?;
-                Result::<_, helpers::HttpError>::Ok(collection)
-            };
-
-            let collection = common::helpers::with_cancellation(task, cancel.clone()).await??;
-
-            // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
-            common::snapshots::recover_shard_snapshot_impl(
-                &toc,
-                &collection,
-                shard,
-                form.snapshot.file.path(),
-                priority.unwrap_or_default(),
-                cancel,
-            )
-            .await?;
-
-            Result::<_, helpers::HttpError>::Ok(())
+    let future = cancel_safe::spawn(move |cancel| async move {
+        let task = async {
+            let collection = toc.get_collection(&collection).await?;
+            collection.assert_shard_exists(shard).await?;
+            Result::<_, helpers::HttpError>::Ok(collection)
         };
 
-        let guard = token.drop_guard();
-        tokio::task::spawn(task).await??;
-        guard.disarm();
+        let collection = cancel_safe::resolve(cancel.clone(), task).await??;
 
-        Ok(())
-    };
+        // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
+        common::snapshots::recover_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard,
+            form.snapshot.file.path(),
+            priority.unwrap_or_default(),
+            cancel,
+        )
+        .await?;
+
+        Result::<_, helpers::HttpError>::Ok(())
+    })
+    .map_ok(|_| true)
+    .map_err(Into::into);
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }

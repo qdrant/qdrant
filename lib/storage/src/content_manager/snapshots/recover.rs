@@ -199,7 +199,11 @@ async fn _do_recover_from_snapshot(
             );
 
             let recovered = collection
-                .recover_local_shard_from(&snapshot_shard_path, *shard_id)
+                .recover_local_shard_from(
+                    &snapshot_shard_path,
+                    *shard_id,
+                    cancel_safe::CancellationToken::new(), // TODO!
+                )
                 .await?;
 
             if !recovered {

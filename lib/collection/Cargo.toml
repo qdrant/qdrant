@@ -49,6 +49,7 @@ validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
 
 common = { path = "../common/common" }
+cancel-safe = { path = "../common/cancel-safe" }
 io = { path = "../common/io" }
 segment = {path = "../segment"}
 api = {path = "../api"}
@@ -62,7 +63,6 @@ tar = "0.4.40"
 fs_extra = "1.3.0"
 semver = "1.0.18"
 tempfile = "3.8.0"
-tokio-util = "0.7"
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }
 

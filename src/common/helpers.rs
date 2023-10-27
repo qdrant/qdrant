@@ -1,15 +1,12 @@
 use std::cmp::max;
-use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{fs, io};
 
 use schemars::JsonSchema;
 use segment::common::cpu::get_num_cpus;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::errors::StorageError;
 use tokio::runtime;
 use tokio::runtime::Runtime;
-use tokio_util::sync::CancellationToken;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
 use validator::Validate;
 
@@ -123,34 +120,6 @@ fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
 
 pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
-}
-
-pub async fn with_cancellation<F>(
-    future: F,
-    cancel: CancellationToken,
-) -> Result<F::Output, Cancelled>
-where
-    F: Future,
-{
-    tokio::select! {
-        biased;
-        _ = cancel.cancelled() => Err(Cancelled),
-        output = future => Ok(output),
-    }
-}
-
-#[derive(Copy, Clone, Debug, thiserror::Error)]
-#[error("task was cancelled")]
-pub struct Cancelled;
-
-impl From<Cancelled> for StorageError {
-    fn from(err: Cancelled) -> Self {
-        // TODO: Add `StorageError::Cancelled` variant?
-        Self::ServiceError {
-            description: err.to_string(),
-            backtrace: None,
-        }
-    }
 }
 
 #[cfg(test)]

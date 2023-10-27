@@ -13,8 +13,6 @@ use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
 use tokio_util::sync::CancellationToken;
 
-use crate::common::helpers;
-
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -77,10 +75,7 @@ pub async fn recover_shard_snapshot(
     // - `download_dir` is handled by `tempfile` and would be deleted on drop
     // - remote snapshot is downloaded into and would be deleted with the `download_dir`
 
-    let token = CancellationToken::new();
-    let cancel = token.child_token();
-
-    let task = async move {
+    cancel_safe::spawn(move |cancel| async move {
         let task = async {
             let collection = toc.get_collection(&collection_name).await?;
             collection.assert_shard_exists(shard_id).await?;
@@ -111,7 +106,7 @@ pub async fn recover_shard_snapshot(
         };
 
         let (collection, _download_dir, snapshot_path) =
-            helpers::with_cancellation(task, cancel.clone()).await??;
+            cancel_safe::resolve(cancel.clone(), task).await??;
 
         // `recover_shard_snapshot_impl` is *not* safe to cancel/drop!
         recover_shard_snapshot_impl(
@@ -123,11 +118,8 @@ pub async fn recover_shard_snapshot(
             cancel,
         )
         .await
-    };
-
-    let guard = token.drop_guard();
-    tokio::task::spawn(task).await??;
-    guard.disarm();
+    })
+    .await??;
 
     Ok(())
 }

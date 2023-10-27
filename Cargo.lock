@@ -835,6 +835,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cancel-safe"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1043,6 +1052,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "atomicwrites",
+ "cancel-safe",
  "chrono",
  "common",
  "criterion",
@@ -1073,7 +1083,6 @@ dependencies = [
  "thiserror",
  "tinyvec",
  "tokio",
- "tokio-util",
  "tonic",
  "tower",
  "tracing",
@@ -3719,6 +3728,7 @@ dependencies = [
  "actix-web-validator",
  "anyhow",
  "api",
+ "cancel-safe",
  "chrono",
  "clap",
  "collection",
@@ -4799,6 +4809,7 @@ dependencies = [
  "api",
  "async-trait",
  "atomicwrites",
+ "cancel-safe",
  "chrono",
  "collection",
  "common",

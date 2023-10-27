@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
 use tokio::fs;
-use tokio_util::sync::CancellationToken;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
@@ -217,10 +216,11 @@ impl Collection {
 
     pub async fn recover_local_shard_from(
         &self,
-        snapshot_shard_path: impl Into<PathBuf>,
+        snapshot_shard_path: &Path,
         shard_id: ShardId,
+        cancel: cancel_safe::CancellationToken,
     ) -> CollectionResult<bool> {
-        // This future is safe to cancel/drop
+        // This future is *not* cancel-safe!
 
         // TODO:
         //   Check that shard snapshot is compatible with the collection
@@ -228,25 +228,11 @@ impl Collection {
 
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let cancel = CancellationToken::new();
-
-        let task = {
-            // `ShardHolder::recover_local_shard_from` is *not* safe to cancel/drop!
-            // (see `ShardReplicaSet::restore_local_replica_from`)
-
-            let snapshot_shard_path = snapshot_shard_path.into();
-            let cancel = cancel.child_token();
-
-            async move {
-                shard_holder
-                    .recover_local_shard_from(&snapshot_shard_path, shard_id, cancel)
-                    .await
-            }
-        };
-
-        let guard = cancel.drop_guard();
-        let recovered = tokio::task::spawn(task).await??;
-        guard.disarm();
+        // `ShardHolder::recover_local_shard_from` is *not* cancel-safe!
+        // (see `ShardReplicaSet::restore_local_replica_from`)
+        let recovered = shard_holder
+            .recover_local_shard_from(snapshot_shard_path, shard_id, cancel)
+            .await?;
 
         Ok(recovered)
     }
@@ -312,7 +298,7 @@ impl Collection {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
-        cancel: CancellationToken,
+        cancel: cancel_safe::CancellationToken,
     ) -> CollectionResult<()> {
         // This future is *not* cancel-safe!
 

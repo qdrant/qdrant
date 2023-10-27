@@ -1,10 +1,7 @@
 use std::ops::Deref as _;
 use std::path::Path;
 
-use tokio_util::sync::CancellationToken;
-
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, REPLICA_STATE_FILE};
-use crate::common::with_cancellation::with_cancellation;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::dummy_shard::DummyShard;
@@ -77,9 +74,9 @@ impl ShardReplicaSet {
     pub async fn restore_local_replica_from(
         &self,
         replica_path: &Path,
-        cancel: CancellationToken,
+        cancel: cancel_safe::CancellationToken,
     ) -> CollectionResult<bool> {
-        // This future is *not* safe to cancel/drop!
+        // This future is *not* safe to cancel-safe!
         //
         // `local.take()` call and `restore` task have to be executed as a single transaction
 
@@ -91,7 +88,7 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        let mut local = with_cancellation(self.local.write(), cancel).await?;
+        let mut local = cancel_safe::resolve(cancel, self.local.write()).await?;
 
         // TODO: Check `cancel`?
 
