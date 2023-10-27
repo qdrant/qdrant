@@ -1004,8 +1004,6 @@ pub async fn discover(
     toc: &TableOfContent,
     discover_points: DiscoverPoints,
 ) -> Result<Response<DiscoverResponse>, Status> {
-    // TODO(luis): check if we can make this into a From impl
-
     let (request, collection_name, read_consistency) =
         try_discover_request_from_grpc(discover_points)?;
 
