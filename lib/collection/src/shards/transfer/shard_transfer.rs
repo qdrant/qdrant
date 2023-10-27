@@ -206,16 +206,11 @@ async fn transfer_batches(
 /// - Recover shard snapshot on remote
 ///   Instruct the remote to download the snapshot from this node over HTTP, then recover it.
 /// - Set shard state to `Partial`
-///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We
-///   propose an operation to consensus for this. Our logic explicitly confirms that consensus has
-///   accepted our proposal and will retry three times on failure.
-///   Setting the node from `PartialSnapshot` to `Partial` is critical. The remote will only
-///   receive and accept operations in this state.
-/// - Synchronize all nodes
-///   After confirming consensus approval, we must synchronize all nodes. We explicitly need to wait
-///   on all nodes for the consensus operation to be propagated. That way, we ensure we have a
-///   consistent replica set state across all nodes. Then, all nodes will have the `Partial` state,
-///   which makes the shard participate on all nodes.
+///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We propose an
+///   operation to consensus for this. Our logic explicitly confirms that the remote reaches the
+///   `Partial` state. That is critical for the remote to accept incoming operations, that also
+///   confirms consensus has accepted accepted our proposal. If this fails it will be retried up to
+///   three times.
 /// - Transfer queued updates to remote, transform into forward proxy
 ///   Once the remote is in `Partial` state we can transfer all accumulated updates in the queue
 ///   proxy to the remote. This ensures all operations reach the recovered shard on the remote to
@@ -295,10 +290,10 @@ async fn transfer_snapshot(
     // Set shard state to Partial
     log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
     consensus
-        .snapshot_recovered_switch_to_partial_confirm(
+        .snapshot_recovered_switch_to_partial_confirm_remote(
             &transfer_config,
             collection_name,
-            replica_set,
+            &remote_shard,
         )
         .await
         .map_err(|err| {

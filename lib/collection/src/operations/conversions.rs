@@ -1022,6 +1022,19 @@ impl From<api::grpc::qdrant::ReplicaState> for ReplicaState {
     }
 }
 
+impl From<ReplicaState> for api::grpc::qdrant::ReplicaState {
+    fn from(value: ReplicaState) -> Self {
+        match value {
+            ReplicaState::Active => Self::Active,
+            ReplicaState::Dead => Self::Dead,
+            ReplicaState::Partial => Self::Partial,
+            ReplicaState::Initializing => Self::Initializing,
+            ReplicaState::Listener => Self::Listener,
+            ReplicaState::PartialSnapshot => Self::PartialSnapshot,
+        }
+    }
+}
+
 impl TryFrom<i32> for RecommendStrategy {
     type Error = Status;
 

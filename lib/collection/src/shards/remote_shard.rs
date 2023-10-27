@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
@@ -11,6 +12,7 @@ use api::grpc::qdrant::{
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
     InitiateShardTransferRequest, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
     ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, ShardSnapshotLocation,
+    WaitForShardStateRequest,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -28,6 +30,7 @@ use url::Url;
 use super::conversions::{
     internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
 };
+use super::replica_set::ReplicaState;
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
@@ -444,6 +447,30 @@ impl RemoteShard {
                         snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
                             snapshot_priority,
                         ) as i32,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+        Ok(res)
+    }
+
+    /// Wait for a local shard on the remote to get into a certain state
+    pub async fn wait_for_shard_state(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<CollectionOperationResponse> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .wait_for_shard_state(WaitForShardStateRequest {
+                        collection_name: collection_name.into(),
+                        shard_id,
+                        state: api::grpc::qdrant::ReplicaState::from(state) as i32,
+                        timeout: timeout.as_secs_f32().ceil() as u64,
                     })
                     .await
             })
