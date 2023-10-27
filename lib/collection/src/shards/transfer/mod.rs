@@ -56,13 +56,13 @@ pub trait ShardTransferConsensus: Send + Sync {
         collection_name: &str,
         replica_set: &ShardReplicaSet,
     ) -> CollectionResult<()> {
-        for attempts in (0..CONSENSUS_CONFIRM_RETRIES).rev() {
+        for remaining_attempts in (0..CONSENSUS_CONFIRM_RETRIES).rev() {
             // Propose consensus operation
             let proposal = self
                 .snapshot_recovered_switch_to_partial(transfer_config, collection_name.to_string());
             match proposal {
                 Ok(()) => {}
-                Err(err) if attempts > 0 => {
+                Err(err) if remaining_attempts > 0 => {
                     log::error!("Failed to propose snapshot recovered operation to consensus, retrying: {err}");
                     continue;
                 }
@@ -75,7 +75,7 @@ pub trait ShardTransferConsensus: Send + Sync {
                 .await;
             match confirm {
                 Ok(()) => return Ok(()),
-                Err(err) if attempts > 0 => log::error!("Failed to confirm snapshot recovered operation on consensus, retrying: {err}"),
+                Err(err) if remaining_attempts > 0 => log::error!("Failed to confirm snapshot recovered operation on consensus, retrying: {err}"),
                 Err(err) => return Err(CollectionError::service_error(format!(
                     "Failed to confirm snapshot recovered operation on consensus after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
                 ))),
