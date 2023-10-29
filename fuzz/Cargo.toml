@@ -1,0 +1,30 @@
+[package]
+name = "qdrant-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1.3.1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+serde = "1.0.190"
+serde_json = "1.0.107"
+tempfile = "3.8.1"
+segment = {path = "../lib/segment", features = ["arbitrary"]}
+common = {path = "../lib/common/common"}
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fuzz_text_index"
+path = "fuzz_targets/fuzz_text_index.rs"
+test = false
+doc = false
