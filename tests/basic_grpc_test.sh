@@ -58,6 +58,19 @@ $docker_grpcurl -d '{
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
+  "recommend_points": [
+    {
+      "positive": [{ "num": 1 }]
+    },
+    {
+      "positive": [{ "num": 1 }]
+    }
+  ]
+}' $QDRANT_HOST qdrant.Points/RecommendBatch
+
 $docker_grpcurl -d '{
   "collection_name": "test_collection",
   "filter": {
