@@ -578,8 +578,6 @@ impl ShardHolder {
         //   - and we can do "select" on `move_file` and a cancellation token, to be able to cancel
         //     `move_file` before it resolves
 
-        // TODO: Use `tempfile::TempFile` for `snapshot_path`?
-
         // `tempfile::NamedTempFile::persist` does not work if destination file is on another
         // file-system, so we have to move the file explicitly.
         move_file(temp_file.path(), &snapshot_path).await?;
@@ -593,10 +591,8 @@ impl ShardHolder {
         //
         // We may mark the wrong file as "non-temporary", if someone creates another file with the
         // same name in between `move_file` and `tempfile::NamedTempFile::keep` calls, but this is
-        // better than *deleting* it, if we drop `temp_file` as-is.
+        // better than *deleting* it, if we drop `temp_file` as-is
         let _ = temp_file.keep();
-
-        // TODO: Call `tempfile::TempPath::keep` for `snapshot_path`?
 
         get_snapshot_description(&snapshot_path).await
     }
@@ -660,8 +656,6 @@ impl ShardHolder {
         };
 
         task.await??;
-
-        // TODO: Check `cancel`?
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel-safe!
         // (see `ShardReplicaSet::restore_local_replica_from`)

@@ -88,9 +88,12 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        let mut local = cancel::future::cancel_on_token(cancel, self.local.write()).await?;
+        let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
 
-        // TODO: Check `cancel`?
+        // Check `cancel` token one last time before starting non-cancellable section
+        if cancel.is_cancelled() {
+            return Err(cancel::Error::Cancelled.into());
+        }
 
         // Drop `LocalShard` instance to free resources and clear shard data
         let clear = local.take().is_some();
