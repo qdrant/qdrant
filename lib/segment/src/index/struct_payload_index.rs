@@ -436,9 +436,6 @@ impl PayloadIndex for StructPayloadIndex {
                 .filter(|&id| !visited_list.check_and_update_visited(id))
                 .filter(move |&i| struct_filtered_context.check(i))
                 .collect();
-
-            self.visited_pool.return_back(visited_list);
-
             preselected
         }
     }

@@ -1,10 +1,10 @@
 use common::types::PointOffsetType;
 
-use crate::index::visited_pool::VisitedList;
+use crate::index::visited_pool::VisitedListHandle;
 use crate::payload_storage::FilterContext;
 
 pub struct BuildConditionChecker<'a> {
-    pub filter_list: &'a VisitedList,
+    pub filter_list: &'a VisitedListHandle<'a>,
     pub current_point: PointOffsetType,
 }
 
