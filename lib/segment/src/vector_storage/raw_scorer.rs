@@ -114,6 +114,7 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::AppendableMemmap(vs) => {
             raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
+        VectorStorageEnum::SparseSimple(_vs) => panic!("sparse vector raw scorer"), // TODO(sparse)
     }
 }
 
