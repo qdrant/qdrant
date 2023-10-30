@@ -65,6 +65,7 @@
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
     - [ReplicaState](#qdrant-ReplicaState)
+    - [ShardTransferMethod](#qdrant-ShardTransferMethod)
     - [ShardingMethod](#qdrant-ShardingMethod)
     - [TokenizerType](#qdrant-TokenizerType)
   
@@ -191,8 +192,6 @@
     - [Qdrant](#qdrant-Qdrant)
   
 - [qdrant_internal_service.proto](#qdrant_internal_service-proto)
-    - [HttpPortRequest](#qdrant-HttpPortRequest)
-    - [HttpPortResponse](#qdrant-HttpPortResponse)
     - [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest)
     - [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse)
   
@@ -679,6 +678,7 @@
 | shard_id | [uint32](#uint32) |  | Local shard id |
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
+| method | [ShardTransferMethod](#qdrant-ShardTransferMethod) | optional |  |
 
 
 
@@ -1231,6 +1231,19 @@ Note: 1kB = 1 vector of size 256. |
 | Partial | 2 | The shard is partially loaded and is currently receiving data from other shards |
 | Initializing | 3 | Collection is being created |
 | Listener | 4 | A shard which receives data, but is not used for search; Useful for backup shards |
+| PartialSnapshot | 5 | Snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard |
+
+
+
+<a name="qdrant-ShardTransferMethod"></a>
+
+### ShardTransferMethod
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| StreamRecords | 0 |  |
+| Snapshot | 1 |  |
 
 
 
@@ -3159,31 +3172,6 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 
 
-<a name="qdrant-HttpPortRequest"></a>
-
-### HttpPortRequest
-
-
-
-
-
-
-
-<a name="qdrant-HttpPortResponse"></a>
-
-### HttpPortResponse
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| port | [int32](#int32) |  |  |
-
-
-
-
-
-
 <a name="qdrant-WaitOnConsensusCommitRequest"></a>
 
 ### WaitOnConsensusCommitRequest
@@ -3229,7 +3217,6 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| GetHttpPort | [HttpPortRequest](#qdrant-HttpPortRequest) | [HttpPortResponse](#qdrant-HttpPortResponse) | Get HTTP port for remote host. |
 | WaitOnConsensusCommit | [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest) | [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse) | Wait until the target node reached the given commit ID. |
 
  

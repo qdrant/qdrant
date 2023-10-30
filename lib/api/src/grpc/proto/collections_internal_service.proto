@@ -6,13 +6,17 @@ package qdrant;
 
 service CollectionsInternal {
   /*
- Get collection info
- */
+  Get collection info
+  */
   rpc Get (GetCollectionInfoRequestInternal) returns (GetCollectionInfoResponse) {}
   /*
   Initiate shard transfer
   */
   rpc Initiate (InitiateShardTransferRequest) returns (CollectionOperationResponse) {}
+  /**
+  Wait for a shard to get into the given state
+  */
+  rpc WaitForShardState (WaitForShardStateRequest) returns (CollectionOperationResponse) {}
 }
 
 message GetCollectionInfoRequestInternal {
@@ -23,4 +27,11 @@ message GetCollectionInfoRequestInternal {
 message InitiateShardTransferRequest {
   string collection_name = 1; // Name of the collection
   uint32 shard_id = 2; // Id of the temporary shard
+}
+
+message WaitForShardStateRequest {
+  string collection_name = 1; // Name of the collection
+  uint32 shard_id = 2; // Id of the shard
+  ReplicaState state = 3;  // Shard state to wait for
+  uint64 timeout = 4; // Timeout in seconds
 }

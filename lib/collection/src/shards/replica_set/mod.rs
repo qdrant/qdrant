@@ -297,6 +297,11 @@ impl ShardReplicaSet {
         matches!(*local_read, Some(Shard::Local(_) | Shard::Dummy(_)))
     }
 
+    pub async fn is_queue_proxy(&self) -> bool {
+        let local_read = self.local.read().await;
+        matches!(*local_read, Some(Shard::QueueProxy(_)))
+    }
+
     pub async fn is_dummy(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::Dummy(_)))
@@ -323,30 +328,68 @@ impl ShardReplicaSet {
     /// Wait for a local shard to be initialized.
     ///
     /// Uses a blocking thread internally.
-    ///
-    /// Returns `true` if initialized, `false` if timed out.
-    pub async fn wait_for_local(&self, timeout: Duration) -> CollectionResult<bool> {
+    pub async fn wait_for_local(&self, timeout: Duration) -> CollectionResult<()> {
         self.wait_for(|replica_set_state| replica_set_state.is_local, timeout)
             .await
+    }
+
+    /// Wait for a local shard to get into `state`
+    ///
+    /// Uses a blocking thread internally.
+    pub async fn wait_for_local_state(
+        &self,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<()> {
+        self.wait_for(
+            move |replica_set_state| {
+                replica_set_state.get_peer_state(&replica_set_state.this_peer_id) == Some(&state)
+            },
+            timeout,
+        )
+        .await
+    }
+
+    /// Wait for a peer shard to get into `state`
+    ///
+    /// Uses a blocking thread internally.
+    pub async fn wait_for_state(
+        &self,
+        peer_id: PeerId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<()> {
+        self.wait_for(
+            move |replica_set_state| replica_set_state.get_peer_state(&peer_id) == Some(&state),
+            timeout,
+        )
+        .await
     }
 
     /// Wait for a replica set state condition to be true.
     ///
     /// Uses a blocking thread internally.
-    ///
-    /// Returns `true` if condition is true, `false` if timed out.
-    async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<bool>
+    async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<()>
     where
         F: Fn(&ReplicaSetState) -> bool + Send + 'static,
     {
         let replica_state = self.replica_state.clone();
-        tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
-            .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to wait for replica set state: {err}"
-                ))
-            })
+        let timed_out =
+            !tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
+                .await
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Failed to wait for replica set state: {err}"
+                    ))
+                })?;
+
+        if timed_out {
+            return Err(CollectionError::service_error(
+                "Failed to wait for replica set state, timed out",
+            ));
+        }
+
+        Ok(())
     }
 
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
@@ -568,6 +611,10 @@ impl ShardReplicaSet {
                             .await?;
                         self.notify_peer_failure(peer_id);
                     }
+                    ReplicaState::PartialSnapshot => {
+                        self.set_local(local_shard, Some(ReplicaState::PartialSnapshot))
+                            .await?;
+                    }
                 }
                 continue;
             }
@@ -738,6 +785,8 @@ pub enum ReplicaState {
     // A shard which receives data, but is not used for search
     // Useful for backup shards
     Listener,
+    // Snapshot shard transfer is in progress, updates aren't sent to the shard
+    PartialSnapshot,
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`

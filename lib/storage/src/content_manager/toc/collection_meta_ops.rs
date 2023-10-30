@@ -4,6 +4,7 @@ use std::path::Path;
 use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::shard_transfer;
 use collection::shards::CollectionId;
 use uuid::Uuid;
@@ -257,34 +258,54 @@ impl TableOfContent {
 
                 shard_transfer::validate_transfer(&transfer, &all_peers, shard_state, &transfers)?;
 
-                let collection_id_clone = collection_id.clone();
-                let transfer_clone = transfer.clone();
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let transfer = transfer.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation =
+                            ConsensusOperations::finish_transfer(collection_id, transfer);
 
-                let on_finish_sender = proposal_sender.clone();
-                let on_finish = async move {
-                    let operation =
-                        ConsensusOperations::finish_transfer(collection_id_clone, transfer_clone);
-
-                    if let Err(error) = on_finish_sender.send(operation) {
-                        log::error!("Can't report transfer progress to consensus: {}", error)
-                    };
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {}", error)
+                        };
+                    }
                 };
 
-                let collection_id_clone = collection_id.clone();
-                let transfer_clone = transfer.clone();
-
-                let on_failure = async move {
-                    if let Err(error) = proposal_sender.send(ConsensusOperations::abort_transfer(
-                        collection_id_clone,
-                        transfer_clone,
-                        "transmission failed",
-                    )) {
-                        log::error!("Can't report transfer progress to consensus: {}", error)
-                    };
+                let on_failure = {
+                    let collection_id = collection_id.clone();
+                    let transfer = transfer.clone();
+                    async move {
+                        if let Err(error) =
+                            proposal_sender.send(ConsensusOperations::abort_transfer(
+                                collection_id,
+                                transfer,
+                                "transmission failed",
+                            ))
+                        {
+                            log::error!("Can't report transfer progress to consensus: {}", error)
+                        };
+                    }
                 };
 
+                let shard_consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+                    Some(consensus) => Box::new(consensus.clone()),
+                    None => {
+                        return Err(StorageError::service_error(
+                            "Can't handle transfer, this is a single node deployment",
+                        ))
+                    }
+                };
+
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
                 collection
-                    .start_shard_transfer(transfer, on_finish, on_failure)
+                    .start_shard_transfer(
+                        transfer,
+                        shard_consensus,
+                        temp_dir,
+                        on_finish,
+                        on_failure,
+                    )
                     .await?;
             }
             ShardTransferOperations::Finish(transfer) => {
@@ -294,6 +315,28 @@ impl TableOfContent {
                     &collection.state().await.transfers,
                 )?;
                 collection.finish_shard_transfer(transfer).await?;
+            }
+            ShardTransferOperations::SnapshotRecovered(transfer) => {
+                // Validate transfer exists to prevent double handling
+                shard_transfer::validate_transfer_exists(
+                    &transfer,
+                    &collection.state().await.transfers,
+                )?;
+
+                // Set shard state from `PartialSnapshot` to `Partial`
+                let operation = SetShardReplicaState {
+                    collection_name: collection_id,
+                    shard_id: transfer.shard_id,
+                    peer_id: transfer.to,
+                    state: ReplicaState::Partial,
+                    from_state: Some(ReplicaState::PartialSnapshot),
+                };
+                log::debug!(
+                    "Set shard replica state from {:?} to {:?} after snapshot recovery",
+                    ReplicaState::PartialSnapshot,
+                    ReplicaState::Partial,
+                );
+                self.set_shard_replica_state(operation).await?;
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling

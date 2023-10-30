@@ -42,7 +42,9 @@ use crate::operations::types::{
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
+use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardKey;
+use crate::shards::transfer::shard_transfer::ShardTransferMethod;
 
 pub fn sharding_method_to_proto(sharding_method: ShardingMethod) -> i32 {
     match sharding_method {
@@ -997,6 +999,42 @@ impl From<api::grpc::qdrant::RecommendStrategy> for RecommendStrategy {
     }
 }
 
+impl TryFrom<i32> for ReplicaState {
+    type Error = Status;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        let replica_state = api::grpc::qdrant::ReplicaState::from_i32(value)
+            .ok_or_else(|| Status::invalid_argument(format!("Unknown replica state: {}", value)))?;
+        Ok(replica_state.into())
+    }
+}
+
+impl From<api::grpc::qdrant::ReplicaState> for ReplicaState {
+    fn from(value: api::grpc::qdrant::ReplicaState) -> Self {
+        match value {
+            api::grpc::qdrant::ReplicaState::Active => Self::Active,
+            api::grpc::qdrant::ReplicaState::Dead => Self::Dead,
+            api::grpc::qdrant::ReplicaState::Partial => Self::Partial,
+            api::grpc::qdrant::ReplicaState::Initializing => Self::Initializing,
+            api::grpc::qdrant::ReplicaState::Listener => Self::Listener,
+            api::grpc::qdrant::ReplicaState::PartialSnapshot => Self::PartialSnapshot,
+        }
+    }
+}
+
+impl From<ReplicaState> for api::grpc::qdrant::ReplicaState {
+    fn from(value: ReplicaState) -> Self {
+        match value {
+            ReplicaState::Active => Self::Active,
+            ReplicaState::Dead => Self::Dead,
+            ReplicaState::Partial => Self::Partial,
+            ReplicaState::Initializing => Self::Initializing,
+            ReplicaState::Listener => Self::Listener,
+            ReplicaState::PartialSnapshot => Self::PartialSnapshot,
+        }
+    }
+}
+
 impl TryFrom<i32> for RecommendStrategy {
     type Error = Status;
 
@@ -1229,32 +1267,61 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
     }
 }
 
-impl From<api::grpc::qdrant::MoveShard> for MoveShard {
-    fn from(value: api::grpc::qdrant::MoveShard) -> Self {
-        Self {
+impl TryFrom<api::grpc::qdrant::MoveShard> for MoveShard {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::MoveShard) -> Result<Self, Self::Error> {
+        let method = value.method.map(TryInto::try_into).transpose()?;
+        Ok(Self {
             shard_id: value.shard_id,
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
+            method,
+        })
+    }
+}
+
+impl TryFrom<i32> for ShardTransferMethod {
+    type Error = Status;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        api::grpc::qdrant::ShardTransferMethod::from_i32(value)
+            .map(Into::into)
+            .ok_or_else(|| {
+                Status::invalid_argument(format!("Unknown shard transfer method: {value}"))
+            })
+    }
+}
+
+impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
+    fn from(value: api::grpc::qdrant::ShardTransferMethod) -> Self {
+        match value {
+            api::grpc::qdrant::ShardTransferMethod::StreamRecords => {
+                ShardTransferMethod::StreamRecords
+            }
+            api::grpc::qdrant::ShardTransferMethod::Snapshot => ShardTransferMethod::Snapshot,
         }
     }
 }
 
-impl From<ClusterOperationsPb> for ClusterOperations {
-    fn from(value: ClusterOperationsPb) -> Self {
-        match value {
+impl TryFrom<ClusterOperationsPb> for ClusterOperations {
+    type Error = Status;
+
+    fn try_from(value: ClusterOperationsPb) -> Result<Self, Self::Error> {
+        Ok(match value {
             ClusterOperationsPb::MoveShard(op) => {
                 ClusterOperations::MoveShard(MoveShardOperation {
-                    move_shard: op.into(),
+                    move_shard: op.try_into()?,
                 })
             }
             ClusterOperationsPb::ReplicateShard(op) => {
                 ClusterOperations::ReplicateShard(ReplicateShardOperation {
-                    replicate_shard: op.into(),
+                    replicate_shard: op.try_into()?,
                 })
             }
             ClusterOperationsPb::AbortTransfer(op) => {
                 ClusterOperations::AbortTransfer(AbortTransferOperation {
-                    abort_transfer: op.into(),
+                    abort_transfer: op.try_into()?,
                 })
             }
             ClusterOperationsPb::DropReplica(op) => {
@@ -1265,6 +1332,6 @@ impl From<ClusterOperationsPb> for ClusterOperations {
                     },
                 })
             }
-        }
+        })
     }
 }

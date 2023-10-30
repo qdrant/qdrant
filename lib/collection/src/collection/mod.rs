@@ -254,6 +254,24 @@ impl Collection {
         self.shards_holder.read().await.contains_shard(&shard_id)
     }
 
+    pub async fn wait_local_shard_replica_state(
+        &self,
+        shard_id: ShardId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<()> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(&shard_id);
+        let Some(replica_set) = shard else {
+            return Err(CollectionError::NotFound {
+                what: "Shard {shard_id}".into(),
+            });
+        };
+
+        replica_set.wait_for_local_state(state, timeout).await
+    }
+
     pub async fn set_shard_replica_state(
         &self,
         shard_id: ShardId,
@@ -350,6 +368,7 @@ impl Collection {
                     from: transfer_from,
                     to: self.this_peer_id,
                     sync: true,
+                    method: None,
                 })
             } else {
                 log::warn!("No alive replicas to recover shard {shard_id}");
@@ -483,6 +502,7 @@ impl Collection {
                     to: *this_peer_id,
                     shard_id,
                     sync: true,
+                    method: None,
                 };
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
                     continue; // this transfer won't work

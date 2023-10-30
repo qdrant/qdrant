@@ -24,8 +24,8 @@ use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::shard_snapshots_server::ShardSnapshotsServer;
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{
-    HealthCheckReply, HealthCheckRequest, HttpPortRequest, HttpPortResponse,
-    WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
+    HealthCheckReply, HealthCheckRequest, WaitOnConsensusCommitRequest,
+    WaitOnConsensusCommitResponse,
 };
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
@@ -78,7 +78,7 @@ impl Health for HealthService {
 }
 
 pub struct QdrantInternalService {
-    /// HTTP port accessible from inside the cluster
+    /// Qdrant settings
     settings: Settings,
     /// Consensus state
     consensus_state: ConsensusStateRef,
@@ -95,15 +95,6 @@ impl QdrantInternalService {
 
 #[tonic::async_trait]
 impl QdrantInternal for QdrantInternalService {
-    async fn get_http_port(
-        &self,
-        _request: Request<HttpPortRequest>,
-    ) -> Result<Response<HttpPortResponse>, Status> {
-        Ok(Response::new(HttpPortResponse {
-            port: self.settings.service.http_port as i32,
-        }))
-    }
-
     async fn wait_on_consensus_commit(
         &self,
         request: Request<WaitOnConsensusCommitRequest>,
@@ -116,7 +107,8 @@ impl QdrantInternal for QdrantInternalService {
         let ok = self
             .consensus_state
             .wait_for_consensus_commit(commit, term, consensus_tick, timeout)
-            .await;
+            .await
+            .is_ok();
         Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
     }
 }

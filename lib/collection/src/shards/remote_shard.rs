@@ -1,13 +1,18 @@
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
+use api::grpc::qdrant::shard_snapshot_location::Location;
+use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    InitiateShardTransferRequest, ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal,
+    InitiateShardTransferRequest, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
+    ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, ShardSnapshotLocation,
+    WaitForShardStateRequest,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -20,13 +25,16 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
+use url::Url;
 
 use super::conversions::{
     internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
 };
+use super::replica_set::ReplicaState;
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
+use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     CountRequest, CountResult, PointRequest, Record, SearchRequest, SearchRequestBatch,
@@ -49,6 +57,7 @@ use crate::shards::CollectionId;
 /// RemoteShard
 ///
 /// Remote Shard is a representation of a shard that is located on a remote peer.
+#[derive(Clone)]
 pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,
@@ -117,6 +126,22 @@ impl RemoteShard {
             .channel_pool
             .with_channel(&current_address, |channel| {
                 let client = CollectionsInternalClient::new(channel);
+                let client = client.max_decoding_message_size(usize::MAX);
+                f(client)
+            })
+            .await
+            .map_err(|err| err.into())
+    }
+
+    async fn with_shard_snapshots_client<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        f: impl Fn(ShardSnapshotsClient<Channel>) -> O,
+    ) -> CollectionResult<T> {
+        let current_address = self.current_address()?;
+        self.channel_service
+            .channel_pool
+            .with_channel(&current_address, |channel| {
+                let client = ShardSnapshotsClient::new(channel);
                 let client = client.max_decoding_message_size(usize::MAX);
                 f(client)
             })
@@ -400,6 +425,58 @@ impl RemoteShard {
             )),
             Some(update_result) => update_result.try_into().map_err(|e: Status| e.into()),
         }
+    }
+
+    /// Recover a shard at the remote from the given public `url`.
+    pub async fn recover_shard_snapshot_from_url(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+        url: &Url,
+        snapshot_priority: SnapshotPriority,
+    ) -> CollectionResult<RecoverSnapshotResponse> {
+        let res = self
+            .with_shard_snapshots_client(|mut client| async move {
+                client
+                    .recover_shard(RecoverShardSnapshotRequest {
+                        collection_name: collection_name.into(),
+                        shard_id,
+                        snapshot_location: Some(ShardSnapshotLocation {
+                            location: Some(Location::Url(url.to_string())),
+                        }),
+                        snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
+                            snapshot_priority,
+                        ) as i32,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+        Ok(res)
+    }
+
+    /// Wait for a local shard on the remote to get into a certain state
+    pub async fn wait_for_shard_state(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<CollectionOperationResponse> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .wait_for_shard_state(WaitForShardStateRequest {
+                        collection_name: collection_name.into(),
+                        shard_id,
+                        state: api::grpc::qdrant::ReplicaState::from(state) as i32,
+                        timeout: timeout.as_secs_f32().ceil() as u64,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+        Ok(res)
     }
 }
 

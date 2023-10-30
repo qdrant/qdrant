@@ -589,17 +589,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     /// Wait and block until consensus reaches a `commit` and `term`
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// Returns `true` if successful.
-    /// Returns `false` on failure, if we have diverged commit/term for example.
+    /// Returns an error if we have diverged commit/term for example.
     pub async fn wait_for_consensus_commit(
         &self,
         commit: u64,
         term: u64,
         consensus_tick: Duration,
         timeout: Duration,
-    ) -> bool {
+    ) -> Result<(), ()> {
         let start = Instant::now();
 
         // TODO: naive approach with spinlock for waiting on commit/term, find better way
@@ -609,20 +608,20 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             // Okay if on the same term and have at least the specified commit
             let is_ok = state.term == term && state.commit >= commit;
             if is_ok {
-                return true;
+                return Ok(());
             }
 
-            // Fail if on a different term
-            let is_fail = state.term != term;
+            // Fail if on a newer term
+            let is_fail = state.term > term;
             if is_fail {
-                return false;
+                return Err(());
             }
 
             tokio::time::sleep(consensus_tick).await
         }
 
         // Fail on timeout
-        false
+        Err(())
     }
 
     /// Send operation to the consensus thread and listen for the result.

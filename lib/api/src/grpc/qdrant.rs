@@ -832,6 +832,8 @@ pub struct MoveShard {
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
+    pub method: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1140,6 +1142,8 @@ pub enum ReplicaState {
     Initializing = 3,
     /// A shard which receives data, but is not used for search; Useful for backup shards
     Listener = 4,
+    /// Snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard
+    PartialSnapshot = 5,
 }
 impl ReplicaState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1153,6 +1157,7 @@ impl ReplicaState {
             ReplicaState::Partial => "Partial",
             ReplicaState::Initializing => "Initializing",
             ReplicaState::Listener => "Listener",
+            ReplicaState::PartialSnapshot => "PartialSnapshot",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1163,6 +1168,34 @@ impl ReplicaState {
             "Partial" => Some(Self::Partial),
             "Initializing" => Some(Self::Initializing),
             "Listener" => Some(Self::Listener),
+            "PartialSnapshot" => Some(Self::PartialSnapshot),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardTransferMethod {
+    StreamRecords = 0,
+    Snapshot = 1,
+}
+impl ShardTransferMethod {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardTransferMethod::StreamRecords => "StreamRecords",
+            ShardTransferMethod::Snapshot => "Snapshot",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "StreamRecords" => Some(Self::StreamRecords),
+            "Snapshot" => Some(Self::Snapshot),
             _ => None,
         }
     }
@@ -2227,6 +2260,26 @@ pub struct InitiateShardTransferRequest {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WaitForShardStateRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Shard state to wait for
+    #[prost(enumeration = "ReplicaState", tag = "3")]
+    pub state: i32,
+    /// Timeout in seconds
+    #[prost(uint64, tag = "4")]
+    #[validate(range(min = 1))]
+    pub timeout: u64,
+}
 /// Generated client implementations.
 pub mod collections_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -2366,6 +2419,35 @@ pub mod collections_internal_client {
                 .insert(GrpcMethod::new("qdrant.CollectionsInternal", "Initiate"));
             self.inner.unary(req, path, codec).await
         }
+        /// *
+        /// Wait for a shard to get into the given state
+        pub async fn wait_for_shard_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::WaitForShardStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.CollectionsInternal/WaitForShardState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.CollectionsInternal", "WaitForShardState"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2389,6 +2471,15 @@ pub mod collections_internal_server {
         async fn initiate(
             &self,
             request: tonic::Request<super::InitiateShardTransferRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
+        /// *
+        /// Wait for a shard to get into the given state
+        async fn wait_for_shard_state(
+            &self,
+            request: tonic::Request<super::WaitForShardStateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
@@ -2553,6 +2644,56 @@ pub mod collections_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InitiateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.CollectionsInternal/WaitForShardState" => {
+                    #[allow(non_camel_case_types)]
+                    struct WaitForShardStateSvc<T: CollectionsInternal>(pub Arc<T>);
+                    impl<
+                        T: CollectionsInternal,
+                    > tonic::server::UnaryService<super::WaitForShardStateRequest>
+                    for WaitForShardStateSvc<T> {
+                        type Response = super::CollectionOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::WaitForShardStateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CollectionsInternal>::wait_for_shard_state(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = WaitForShardStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -7890,17 +8031,6 @@ pub mod points_internal_server {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HttpPortRequest {}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HttpPortResponse {
-    #[prost(int32, tag = "1")]
-    pub port: i32,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitOnConsensusCommitRequest {
     /// Raft commit as u64
     #[prost(int64, tag = "1")]
@@ -8006,33 +8136,6 @@ pub mod qdrant_internal_client {
             self
         }
         ///
-        /// Get HTTP port for remote host.
-        pub async fn get_http_port(
-            &mut self,
-            request: impl tonic::IntoRequest<super::HttpPortRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::HttpPortResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.QdrantInternal/GetHttpPort",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetHttpPort"));
-            self.inner.unary(req, path, codec).await
-        }
-        ///
         /// Wait until the target node reached the given commit ID.
         pub async fn wait_on_consensus_commit(
             &mut self,
@@ -8070,15 +8173,6 @@ pub mod qdrant_internal_server {
     /// Generated trait containing gRPC methods that should be implemented for use with QdrantInternalServer.
     #[async_trait]
     pub trait QdrantInternal: Send + Sync + 'static {
-        ///
-        /// Get HTTP port for remote host.
-        async fn get_http_port(
-            &self,
-            request: tonic::Request<super::HttpPortRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::HttpPortResponse>,
-            tonic::Status,
-        >;
         ///
         /// Wait until the target node reached the given commit ID.
         async fn wait_on_consensus_commit(
@@ -8168,52 +8262,6 @@ pub mod qdrant_internal_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/qdrant.QdrantInternal/GetHttpPort" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetHttpPortSvc<T: QdrantInternal>(pub Arc<T>);
-                    impl<
-                        T: QdrantInternal,
-                    > tonic::server::UnaryService<super::HttpPortRequest>
-                    for GetHttpPortSvc<T> {
-                        type Response = super::HttpPortResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::HttpPortRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as QdrantInternal>::get_http_port(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = GetHttpPortSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/qdrant.QdrantInternal/WaitOnConsensusCommit" => {
                     #[allow(non_camel_case_types)]
                     struct WaitOnConsensusCommitSvc<T: QdrantInternal>(pub Arc<T>);

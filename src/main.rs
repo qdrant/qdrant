@@ -28,6 +28,7 @@ use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
+use storage::content_manager::toc::transfer::ShardTransferDispatcher;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
@@ -206,7 +207,7 @@ fn main() -> anyhow::Result<()> {
 
     // Channel service is used to manage connections between peers.
     // It allocates required number of channels and manages proper reconnection handling
-    let mut channel_service = ChannelService::default();
+    let mut channel_service = ChannelService::new(settings.service.http_port);
 
     if is_distributed_deployment {
         // We only need channel_service in case if cluster is enabled.
@@ -267,6 +268,10 @@ fn main() -> anyhow::Result<()> {
         let is_new_deployment = consensus_state.is_new_deployment();
 
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
+
+        let shard_transfer_dispatcher =
+            ShardTransferDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
+        toc_arc.with_shard_transfer_dispatcher(shard_transfer_dispatcher);
 
         let dispatcher_arc = Arc::new(dispatcher);
 

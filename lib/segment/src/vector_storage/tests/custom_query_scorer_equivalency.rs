@@ -23,8 +23,8 @@ use crate::types::{
 #[cfg(target_os = "linux")]
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::query::context_query::ContextQuery;
-use crate::vector_storage::query::discovery_query::{DiscoveryPair, DiscoveryQuery};
+use crate::vector_storage::query::context_query::{ContextPair, ContextQuery};
+use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
@@ -65,11 +65,11 @@ fn random_reco_query<R: Rng + ?Sized>(
     let num_negatives: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
     let positives = (0..num_positives)
-        .map(|_| sampler.take(DIMS).collect())
+        .map(|_| sampler.take(DIMS).collect_vec().into())
         .collect_vec();
 
     let negatives = (0..num_negatives)
-        .map(|_| sampler.take(DIMS).collect())
+        .map(|_| sampler.take(DIMS).collect_vec().into())
         .collect_vec();
 
     RecoQuery::new(positives, negatives).into()
@@ -81,13 +81,13 @@ fn random_discovery_query<R: Rng + ?Sized>(
 ) -> QueryVector {
     let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
-    let target = sampler.take(DIMS).collect();
+    let target = sampler.take(DIMS).collect_vec().into();
 
     let pairs = (0..num_pairs)
         .map(|_| {
-            let positive = sampler.take(DIMS).collect();
-            let negative = sampler.take(DIMS).collect();
-            DiscoveryPair { positive, negative }
+            let positive = sampler.take(DIMS).collect_vec().into();
+            let negative = sampler.take(DIMS).collect_vec().into();
+            ContextPair { positive, negative }
         })
         .collect_vec();
 
@@ -102,9 +102,9 @@ fn random_context_query<R: Rng + ?Sized>(
 
     let pairs = (0..num_pairs)
         .map(|_| {
-            let positive = sampler.take(DIMS).collect();
-            let negative = sampler.take(DIMS).collect();
-            DiscoveryPair { positive, negative }
+            let positive = sampler.take(DIMS).collect_vec().into();
+            let negative = sampler.take(DIMS).collect_vec().into();
+            ContextPair { positive, negative }
         })
         .collect_vec();
 

@@ -143,10 +143,8 @@ pub async fn do_update_collection_cluster(
                 });
             };
 
-            // validate target peer exists
+            // validate target and source peer exists
             validate_peer_exists(move_shard.to_peer_id)?;
-
-            // validate source peer exists
             validate_peer_exists(move_shard.from_peer_id)?;
 
             // submit operation to consensus
@@ -159,6 +157,7 @@ pub async fn do_update_collection_cluster(
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
+                            method: move_shard.method,
                         }),
                     ),
                     wait_timeout,
@@ -192,6 +191,7 @@ pub async fn do_update_collection_cluster(
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
+                            method: replicate_shard.method,
                         }),
                     ),
                     wait_timeout,
