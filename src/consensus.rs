@@ -1160,7 +1160,7 @@ mod tests {
             search_runtime,
             update_runtime,
             general_runtime,
-            ChannelService::default(),
+            ChannelService::new(settings.service.http_port),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
         );
@@ -1183,7 +1183,7 @@ mod tests {
             6335,
             ConsensusConfig::default(),
             None,
-            ChannelService::default(),
+            ChannelService::new(settings.service.http_port),
             handle.clone(),
         )
         .unwrap();

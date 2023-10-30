@@ -20,6 +20,8 @@ use segment::types::Distance;
 #[allow(dead_code)]
 pub const N_SHARDS: u32 = 3;
 
+pub const REST_PORT: u16 = 6333;
+
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
@@ -97,7 +99,7 @@ pub async fn new_local_collection(
         config,
         Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         None,
@@ -129,7 +131,7 @@ pub async fn load_local_collection(
         path,
         snapshots_path,
         Default::default(),
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         None,

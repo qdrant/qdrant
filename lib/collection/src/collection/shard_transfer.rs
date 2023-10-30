@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use common::defaults;
@@ -9,8 +10,11 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
-use crate::shards::transfer::shard_transfer::{self, ShardTransfer, ShardTransferKey};
+use crate::shards::transfer::shard_transfer::{
+    self, ShardTransfer, ShardTransferKey, ShardTransferMethod,
+};
 use crate::shards::transfer::transfer_tasks_pool::TaskResult;
+use crate::shards::transfer::ShardTransferConsensus;
 
 impl Collection {
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
@@ -31,7 +35,9 @@ impl Collection {
 
     pub async fn start_shard_transfer<T, F>(
         &self,
-        shard_transfer: ShardTransfer,
+        mut shard_transfer: ShardTransfer,
+        consensus: Box<dyn ShardTransferConsensus>,
+        temp_dir: PathBuf,
         on_finish: T,
         on_error: F,
     ) -> CollectionResult<bool>
@@ -39,6 +45,13 @@ impl Collection {
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
+        // Select transfer method
+        if shard_transfer.method.is_none() {
+            let method = ShardTransferMethod::default();
+            log::warn!("No shard transfer method selected, defaulting to {method:?}");
+            shard_transfer.method.replace(method);
+        }
+
         let shard_id = shard_transfer.shard_id;
         let do_transfer = {
             let shards_holder = self.shards_holder.read().await;
@@ -61,6 +74,11 @@ impl Collection {
             let is_receiver = replica_set.this_peer_id() == shard_transfer.to;
             let is_sender = replica_set.this_peer_id() == shard_transfer.from;
 
+            let initial_state = match shard_transfer.method.unwrap_or_default() {
+                ShardTransferMethod::StreamRecords => ReplicaState::Partial,
+                ShardTransferMethod::Snapshot => ReplicaState::PartialSnapshot,
+            };
+
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
             // (on all peers, regardless if shard is local or remote on that peer).
             //
@@ -76,23 +94,28 @@ impl Collection {
                 )
                 .await?;
 
-                replica_set
-                    .set_local(shard, Some(ReplicaState::Partial))
-                    .await?;
+                replica_set.set_local(shard, Some(initial_state)).await?;
             } else {
-                replica_set.set_replica_state(&shard_transfer.to, ReplicaState::Partial)?;
+                replica_set.set_replica_state(&shard_transfer.to, initial_state)?;
             }
 
             is_local && is_sender
         };
         if do_transfer {
-            self.send_shard(shard_transfer, on_finish, on_error).await;
+            self.send_shard(shard_transfer, consensus, temp_dir, on_finish, on_error)
+                .await;
         }
         Ok(do_transfer)
     }
 
-    async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
-    where
+    async fn send_shard<OF, OE>(
+        &self,
+        transfer: ShardTransfer,
+        consensus: Box<dyn ShardTransferConsensus>,
+        temp_dir: PathBuf,
+        on_finish: OF,
+        on_error: OE,
+    ) where
         OF: Future<Output = ()> + Send + 'static,
         OE: Future<Output = ()> + Send + 'static,
     {
@@ -100,6 +123,10 @@ impl Collection {
         let task_result = active_transfer_tasks.stop_if_exists(&transfer.key()).await;
 
         debug_assert_eq!(task_result, TaskResult::NotFound);
+        debug_assert!(
+            transfer.method.is_some(),
+            "When sending shard, a transfer method must have been selected",
+        );
 
         let shard_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
@@ -108,8 +135,12 @@ impl Collection {
         let transfer_task = shard_transfer::spawn_transfer_task(
             shard_holder,
             transfer.clone(),
+            consensus,
             collection_id,
             channel_service,
+            self.snapshots_path.clone(),
+            self.name(),
+            temp_dir,
             on_finish,
             on_error,
         );

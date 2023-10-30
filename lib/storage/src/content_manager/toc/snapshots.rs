@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::shard_transfer::ShardTransfer;
+use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferMethod};
 
 use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -110,6 +110,7 @@ impl TableOfContent {
         from_peer: PeerId,
         to_peer: PeerId,
         sync: bool,
+        method: Option<ShardTransferMethod>,
     ) -> Result<(), StorageError> {
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             let transfer_request = ShardTransfer {
@@ -117,6 +118,7 @@ impl TableOfContent {
                 from: from_peer,
                 to: to_peer,
                 sync,
+                method,
             };
             let operation = ConsensusOperations::start_transfer(collection_name, transfer_request);
             proposal_sender.send(operation)?;

@@ -276,6 +276,7 @@ async fn _do_recover_from_snapshot(
                             *replica_peer_id,
                             this_peer_id,
                             true,
+                            None,
                         )?;
                     }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use collection::operations::types::VectorParams;
 use collection::optimizers_builder::OptimizersConfig;
+use collection::shards::channel_service::ChannelService;
 use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
@@ -74,7 +75,7 @@ fn test_alias_operation() {
         search_runtime,
         update_runtime,
         general_runtime,
-        Default::default(),
+        ChannelService::new(6333),
         0,
         Some(propose_operation_sender),
     ));

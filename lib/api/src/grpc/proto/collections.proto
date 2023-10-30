@@ -440,6 +440,12 @@ message MoveShard {
   uint32 shard_id = 1; // Local shard id
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
+  optional ShardTransferMethod method = 4;
+}
+
+enum ShardTransferMethod {
+  StreamRecords = 0;
+  Snapshot = 1;
 }
 
 message Replica {

@@ -200,7 +200,7 @@ impl Collections for CollectionsService {
             collection_name,
             operation
                 .ok_or(Status::new(tonic::Code::InvalidArgument, "empty operation"))?
-                .into(),
+                .try_into()?,
             self.dispatcher.as_ref(),
             timeout.map(std::time::Duration::from_secs),
         )

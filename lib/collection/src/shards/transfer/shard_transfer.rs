@@ -1,15 +1,19 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
+use super::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
+use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
@@ -19,8 +23,8 @@ use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::CollectionId;
 
 const TRANSFER_BATCH_SIZE: usize = 100;
-const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
-const MAX_RETRY_COUNT: usize = 3;
+const RETRY_DELAY: Duration = Duration::from_secs(1);
+pub(crate) const MAX_RETRY_COUNT: usize = 3;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransfer {
@@ -30,9 +34,12 @@ pub struct ShardTransfer {
     /// If this flag is true, this is a replication related transfer of shard from 1 peer to another
     /// Shard on original peer will not be deleted in this case
     pub sync: bool,
+    /// Method to transfer shard with. `None` to choose automatically.
+    #[serde(default)]
+    pub method: Option<ShardTransferMethod>,
 }
 
-/// Unique identifier of a transfer
+/// Unique identifier of a transfer, agnostic of transfer method
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferKey {
     pub shard_id: ShardId,
@@ -56,24 +63,90 @@ impl ShardTransfer {
     }
 }
 
+/// Methods for transferring a shard from one node to another.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardTransferMethod {
+    /// Stream all shard records in batches until the whole shard is transferred.
+    #[default]
+    StreamRecords,
+    /// Snapshot the shard, transfer and restore it on the receiver.
+    Snapshot,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn transfer_shard(
+    transfer_config: ShardTransfer,
+    shard_holder: Arc<LockedShardHolder>,
+    consensus: &dyn ShardTransferConsensus,
+    collection_id: CollectionId,
+    collection_name: &str,
+    channel_service: ChannelService,
+    snapshots_path: &Path,
+    temp_dir: &Path,
+    stopped: Arc<AtomicBool>,
+) -> CollectionResult<()> {
+    let shard_id = transfer_config.shard_id;
+
+    // Initiate shard on a remote peer
+    let remote_shard = RemoteShard::new(
+        shard_id,
+        collection_id.clone(),
+        transfer_config.to,
+        channel_service.clone(),
+    );
+
+    remote_shard.initiate_transfer().await?;
+
+    match transfer_config.method.unwrap_or_default() {
+        // Transfer shard record in batches
+        ShardTransferMethod::StreamRecords => {
+            transfer_batches(
+                shard_holder.clone(),
+                shard_id,
+                remote_shard,
+                stopped.clone(),
+            )
+            .await
+        }
+        // Transfer shard as snapshot
+        ShardTransferMethod::Snapshot => {
+            transfer_snapshot(
+                transfer_config,
+                shard_holder.clone(),
+                shard_id,
+                remote_shard,
+                channel_service,
+                consensus,
+                snapshots_path,
+                collection_name,
+                temp_dir,
+                stopped.clone(),
+            )
+            .await
+        }
+    }
+}
+
 async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
+    remote_shard: RemoteShard,
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
-    // Create payload indexes on the remote shard.
+    // Proxify local shard and create payload indexes on remote shard
     {
         let shard_holder_guard = shard_holder.read().await;
         let transferring_shard_opt = shard_holder_guard.get_shard(&shard_id);
-        if let Some(replica_set) = transferring_shard_opt {
-            replica_set.transfer_indexes().await?;
-        } else {
-            // Forward proxy gone?!
-            // That would be a programming error.
+        let Some(replica_set) = transferring_shard_opt else {
             return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} is not a forward proxy shard"
+                "Shard {shard_id} cannot be proxied because it does not exist"
             )));
-        }
+        };
+
+        replica_set.proxify_local(remote_shard).await?;
+
+        replica_set.transfer_indexes().await?;
     }
 
     // Transfer contents batch by batch
@@ -106,6 +179,186 @@ async fn transfer_batches(
     Ok(())
 }
 
+/// Orchestrate shard snapshot transfer
+///
+/// This is called on the sender and will arrange all that is needed for the shard snapshot
+/// transfer process to a receiver.
+///
+/// The order of operations here is critical for correctness. Explicit synchronization across nodes
+/// is used to ensure data consistency.
+///
+/// Before this function, this has happened:
+///
+/// - An empty shard is initialized on the remote
+/// - Set the remote shard state to `PartialSnapshot`
+///   In `PartialSnapshot` state, the remote shard will ignore all operations and other nodes will
+///   prevent sending operations to it. This is critical not to modify the shard while it is being
+///   recovered from the snapshot.
+///
+/// During this function, this happens in order:
+///
+/// - Queue proxy local shard
+///   We queue all new operations to the shard for the remote. Once the remote is ready, we can
+///   transfer all these operations to it.
+/// - Create shard snapshot
+///   Snapshot the shard after the queue proxy is initialized. This snapshot will be used to get
+///   the shard into the same state on the remote.
+/// - Recover shard snapshot on remote
+///   Instruct the remote to download the snapshot from this node over HTTP, then recover it.
+/// - Set shard state to `Partial`
+///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We
+///   propose an operation to consensus for this. Our logic explicitly confirms that consensus has
+///   accepted our proposal and will retry three times on failure.
+///   Setting the node from `PartialSnapshot` to `Partial` is critical. The remote will only
+///   receive and accept operations in this state.
+/// - Synchronize all nodes
+///   After confirming consensus approval, we must synchronize all nodes. We explicitly need to wait
+///   on all nodes for the consensus operation to be propagated. That way, we ensure we have a
+///   consistent replica set state across all nodes. Then, all nodes will have the `Partial` state,
+///   which makes the shard participate on all nodes.
+/// - Transfer queued updates to remote, transform into forward proxy
+///   Once the remote is in `Partial` state we can transfer all accumulated updates in the queue
+///   proxy to the remote. This ensures all operations reach the recovered shard on the remote to
+///   make it consistent again. When all updates are transferred, we transform the queue proxy into
+///   a forward proxy to start forwarding new updates to the remote right away.
+///   We transfer the queue and transform into a forward proxy right now so that we can catch any
+///   errors as early as possible. The forward proxy shard we end up with will not error again once
+///   we un-proxify.
+///
+/// After this function, the following will happen:
+///
+/// - The local shard is un-proxified
+/// - The shard transfer is finished
+/// - The remote shard state is set to `Active` through consensus
+#[allow(clippy::too_many_arguments)]
+async fn transfer_snapshot(
+    transfer_config: ShardTransfer,
+    shard_holder: Arc<LockedShardHolder>,
+    shard_id: ShardId,
+    remote_shard: RemoteShard,
+    channel_service: ChannelService,
+    consensus: &dyn ShardTransferConsensus,
+    snapshots_path: &Path,
+    collection_name: &str,
+    temp_dir: &Path,
+    _stopped: Arc<AtomicBool>,
+) -> CollectionResult<()> {
+    let shard_holder_read = shard_holder.read().await;
+    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
+
+    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+    let Some(replica_set) = transferring_shard else {
+        return Err(CollectionError::service_error(format!(
+            "Shard {shard_id} cannot be queue proxied because it does not exist"
+        )));
+    };
+
+    // Queue proxy local shard
+    replica_set
+        .queue_proxify_local(remote_shard.clone())
+        .await?;
+    debug_assert!(
+        replica_set.is_queue_proxy().await,
+        "Local shard must be a queue proxy"
+    );
+
+    // Create shard snapshot
+    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer...");
+    let snapshot_description = shard_holder_read
+        .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
+        .await?;
+
+    // Recover shard snapshot on remote
+    let mut shard_download_url = local_rest_address;
+    shard_download_url.set_path(&format!(
+        "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
+        &snapshot_description.name,
+    ));
+    log::debug!(
+        "Transferring and recovering shard {shard_id} snapshot on peer {}...",
+        transfer_config.to
+    );
+    remote_shard
+        .recover_shard_snapshot_from_url(
+            collection_name,
+            shard_id,
+            &shard_download_url,
+            SnapshotPriority::ShardTransfer,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to recover shard snapshot on remote: {err}"
+            ))
+        })?;
+
+    // Set shard state to Partial
+    log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
+    consensus
+        .snapshot_recovered_switch_to_partial_confirm(
+            &transfer_config,
+            collection_name,
+            replica_set,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't switch shard {shard_id} to Partial state after snapshot transfer: {err}"
+            ))
+        })?;
+
+    // Synchronize all nodes
+    // TODO: only the receiver must be partial here, can synchronize all nodes later
+    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
+
+    // Transfer queued updates to remote, transform into forward proxy
+    log::trace!("Transfer all queue proxy updates and transform into forward proxy");
+    replica_set.queue_proxy_into_forward_proxy().await?;
+
+    Ok(())
+}
+
+/// Await for consensus to synchronize across all peers
+///
+/// This will take the current consensus state of this node. It then explicitly waits on all other
+/// nodes to reach the same (or later) consensus.
+///
+/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
+/// timeout.
+async fn await_consensus_sync(
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+    this_peer_id: PeerId,
+) {
+    let peer_count = channel_service.id_to_address.read().len().saturating_sub(1);
+    if peer_count == 0 {
+        return;
+    }
+
+    let sync_consensus = async {
+        let await_result = consensus
+            .await_consensus_sync(this_peer_id, channel_service)
+            .await;
+        if let Err(err) = &await_result {
+            log::warn!("All peers failed to synchronize consensus: {err}");
+        }
+        await_result
+    };
+    let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
+
+    log::trace!(
+        "Waiting on {peer_count} peer(s) to reach consensus before finalizing shard snapshot transfer..."
+    );
+    tokio::select! {
+        Ok(_) = sync_consensus => {
+            log::trace!("All peers reached consensus");
+        }
+        _ = timeout => {
+            log::warn!("All peers failed to synchronize consensus, continuing after timeout...");
+        }
+    }
+}
+
 /// Return local shard back from the forward proxy
 pub async fn revert_proxy_shard_to_local(
     shard_holder: &ShardHolder,
@@ -115,7 +368,13 @@ pub async fn revert_proxy_shard_to_local(
         None => return Ok(false),
         Some(replica_set) => replica_set,
     };
+
+    // Revert queue proxy if we still have any and forget all collected updates
+    replica_set.revert_queue_proxy_local().await;
+
+    // Un-proxify local shard
     replica_set.un_proxify_local().await?;
+
     Ok(true)
 }
 
@@ -189,39 +448,6 @@ pub async fn handle_transferred_shard_proxy(
     }
 
     Ok(true)
-}
-
-pub async fn transfer_shard(
-    shard_holder: Arc<LockedShardHolder>,
-    shard_id: ShardId,
-    collection_id: CollectionId,
-    peer_id: PeerId,
-    channel_service: ChannelService,
-    stopped: Arc<AtomicBool>,
-) -> CollectionResult<()> {
-    // Initiate shard on a remote peer
-    let remote_shard = RemoteShard::new(shard_id, collection_id.clone(), peer_id, channel_service);
-
-    // ToDo: Initial fast file-based transfer (optional)
-    // * Create shard snapshot - save the latest version of point updates in the snapshot
-    // * Initiate shard, use snapshot link for initialization
-    // * Transfer difference between snapshot and current shard state
-
-    remote_shard.initiate_transfer().await?;
-    {
-        let shard_holder_guard = shard_holder.read().await;
-        let transferring_shard = shard_holder_guard.get_shard(&shard_id);
-        if let Some(replica_set) = transferring_shard {
-            replica_set.proxify_local(remote_shard).await?;
-        } else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be proxied because it does not exist"
-            )));
-        }
-    }
-
-    // Transfer contents batch by batch
-    transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
 }
 
 pub fn validate_transfer_exists(
@@ -448,11 +674,16 @@ pub fn suggest_peer_to_remove_replica(
     candidates.first().map(|(peer_id, _, _)| *peer_id)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_transfer_task<T, F>(
     shards_holder: Arc<LockedShardHolder>,
     transfer: ShardTransfer,
+    consensus: Box<dyn ShardTransferConsensus>,
     collection_id: CollectionId,
     channel_service: ChannelService,
+    snapshots_path: PathBuf,
+    collection_name: String,
+    temp_dir: PathBuf,
     on_finish: T,
     on_error: F,
 ) -> StoppableAsyncTaskHandle<bool>
@@ -465,11 +696,14 @@ where
         let mut finished = false;
         while !finished && tries > 0 {
             let transfer_result = transfer_shard(
+                transfer.clone(),
                 shards_holder.clone(),
-                transfer.shard_id,
+                consensus.as_ref(),
                 collection_id.clone(),
-                transfer.to,
+                &collection_name,
                 channel_service.clone(),
+                &snapshots_path,
+                &temp_dir,
                 stopped.clone(),
             )
             .await;
@@ -480,11 +714,18 @@ where
                         return false;
                     }
                     log::error!(
-                        "Failed to transfer shard {} -> {}: {}",
+                        "Failed to transfer shard {} -> {}: {error}",
                         transfer.shard_id,
                         transfer.to,
-                        error
                     );
+
+                    // Revert queue proxy if we still have any to prepare for the next attempt
+                    if let Some(replica_set) =
+                        shards_holder.read().await.get_shard(&transfer.shard_id)
+                    {
+                        replica_set.revert_queue_proxy_local().await;
+                    }
+
                     false
                 }
             };
@@ -494,12 +735,12 @@ where
             if !finished {
                 tries -= 1;
                 log::warn!(
-                    "Retrying transfer shard {} -> {} (retry {})",
+                    "Retrying shard transfer {} -> {} (retry {})",
                     transfer.shard_id,
                     transfer.to,
                     MAX_RETRY_COUNT - tries
                 );
-                let exp_timeout = RETRY_TIMEOUT * (MAX_RETRY_COUNT - tries) as u32;
+                let exp_timeout = RETRY_DELAY * (MAX_RETRY_COUNT - tries) as u32;
                 sleep(exp_timeout).await;
             }
         }

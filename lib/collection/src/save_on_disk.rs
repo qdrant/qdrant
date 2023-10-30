@@ -53,6 +53,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     /// Wait for a condition on data to be true.
     ///
     /// Returns `true` if condition is true, `false` if timed out.
+    #[must_use]
     pub fn wait_for<F>(&self, check: F, timeout: Duration) -> bool
     where
         F: Fn(&T) -> bool,

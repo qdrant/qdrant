@@ -832,6 +832,8 @@ pub struct MoveShard {
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
+    pub method: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1167,6 +1169,33 @@ impl ReplicaState {
             "Initializing" => Some(Self::Initializing),
             "Listener" => Some(Self::Listener),
             "PartialSnapshot" => Some(Self::PartialSnapshot),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardTransferMethod {
+    StreamRecords = 0,
+    Snapshot = 1,
+}
+impl ShardTransferMethod {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardTransferMethod::StreamRecords => "StreamRecords",
+            ShardTransferMethod::Snapshot => "Snapshot",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "StreamRecords" => Some(Self::StreamRecords),
+            "Snapshot" => Some(Self::Snapshot),
             _ => None,
         }
     }
