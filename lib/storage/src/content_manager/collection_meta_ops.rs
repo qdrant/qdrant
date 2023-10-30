@@ -283,6 +283,11 @@ pub struct DeleteCollectionOperation(pub String);
 pub enum ShardTransferOperations {
     Start(ShardTransfer),
     Finish(ShardTransfer),
+    /// Used in `ShardTransferMethod::Snapshot`
+    ///
+    /// Called when the snapshot has successfully been recovered on the remote, brings the transfer
+    /// to the next stage.
+    SnapshotRecovered(ShardTransferKey),
     Abort {
         transfer: ShardTransferKey,
         reason: String,

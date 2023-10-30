@@ -74,6 +74,11 @@ impl Collection {
             let is_receiver = replica_set.this_peer_id() == shard_transfer.to;
             let is_sender = replica_set.this_peer_id() == shard_transfer.from;
 
+            let initial_state = match shard_transfer.method.unwrap_or_default() {
+                ShardTransferMethod::StreamRecords => ReplicaState::Partial,
+                ShardTransferMethod::Snapshot => ReplicaState::PartialSnapshot,
+            };
+
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
             // (on all peers, regardless if shard is local or remote on that peer).
             //
@@ -89,11 +94,9 @@ impl Collection {
                 )
                 .await?;
 
-                replica_set
-                    .set_local(shard, Some(ReplicaState::Partial))
-                    .await?;
+                replica_set.set_local(shard, Some(initial_state)).await?;
             } else {
-                replica_set.set_replica_state(&shard_transfer.to, ReplicaState::Partial)?;
+                replica_set.set_replica_state(&shard_transfer.to, initial_state)?;
             }
 
             is_local && is_sender

@@ -23,8 +23,8 @@ use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::CollectionId;
 
 const TRANSFER_BATCH_SIZE: usize = 100;
-const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
-pub const MAX_RETRY_COUNT: usize = 3;
+const RETRY_DELAY: Duration = Duration::from_secs(1);
+pub(crate) const MAX_RETRY_COUNT: usize = 3;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransfer {
@@ -179,6 +179,57 @@ async fn transfer_batches(
     Ok(())
 }
 
+/// Orchestrate shard snapshot transfer
+///
+/// This is called on the sender and will arrange all that is needed for the shard snapshot
+/// transfer process to a receiver.
+///
+/// The order of operations here is critical for correctness. Explicit synchronization across nodes
+/// is used to ensure data consistency.
+///
+/// Before this function, this has happened:
+///
+/// - An empty shard is initialized on the remote
+/// - Set the remote shard state to `PartialSnapshot`
+///   In `PartialSnapshot` state, the remote shard will ignore all operations and other nodes will
+///   prevent sending operations to it. This is critical not to modify the shard while it is being
+///   recovered from the snapshot.
+///
+/// During this function, this happens in order:
+///
+/// - Queue proxy local shard
+///   We queue all new operations to the shard for the remote. Once the remote is ready, we can
+///   transfer all these operations to it.
+/// - Create shard snapshot
+///   Snapshot the shard after the queue proxy is initialized. This snapshot will be used to get
+///   the shard into the same state on the remote.
+/// - Recover shard snapshot on remote
+///   Instruct the remote to download the snapshot from this node over HTTP, then recover it.
+/// - Set shard state to `Partial`
+///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We
+///   propose an operation to consensus for this. Our logic explicitly confirms that consensus has
+///   accepted our proposal and will retry three times on failure.
+///   Setting the node from `PartialSnapshot` to `Partial` is critical. The remote will only
+///   receive and accept operations in this state.
+/// - Synchronize all nodes
+///   After confirming consensus approval, we must synchronize all nodes. We explicitly need to wait
+///   on all nodes for the consensus operation to be propagated. That way, we ensure we have a
+///   consistent replica set state across all nodes. Then, all nodes will have the `Partial` state,
+///   which makes the shard participate on all nodes.
+/// - Transfer queued updates to remote, transform into forward proxy
+///   Once the remote is in `Partial` state we can transfer all accumulated updates in the queue
+///   proxy to the remote. This ensures all operations reach the recovered shard on the remote to
+///   make it consistent again. When all updates are transferred, we transform the queue proxy into
+///   a forward proxy to start forwarding new updates to the remote right away.
+///   We transfer the queue and transform into a forward proxy right now so that we can catch any
+///   errors as early as possible. The forward proxy shard we end up with will not error again once
+///   we un-proxify.
+///
+/// After this function, the following will happen:
+///
+/// - The local shard is un-proxified
+/// - The shard transfer is finished
+/// - The remote shard state is set to `Active` through consensus
 #[allow(clippy::too_many_arguments)]
 async fn transfer_snapshot(
     transfer_config: ShardTransfer,
@@ -193,47 +244,40 @@ async fn transfer_snapshot(
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     let shard_holder_read = shard_holder.read().await;
-
     let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
-    // Queue proxify local shard
-    {
-        let transferring_shard = shard_holder_read.get_shard(&shard_id);
-        let Some(replica_set) = transferring_shard else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be queue proxied because it does not exist"
-            )));
-        };
-
-        replica_set
-            .queue_proxify_local(remote_shard.clone())
-            .await?;
-    }
-
-    // Ensure we have configured a queue proxy
-    let is_queue_proxy = match shard_holder_read.get_shard(&shard_id) {
-        Some(shard_replica_set) => shard_replica_set.is_queue_proxy().await,
-        None => false,
-    };
-    if !is_queue_proxy {
+    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+    let Some(replica_set) = transferring_shard else {
         return Err(CollectionError::service_error(format!(
-            "Shard {shard_id} is not a queue proxy shard, cannot do shard snapshot transfer",
+            "Shard {shard_id} cannot be queue proxied because it does not exist"
         )));
-    }
+    };
+
+    // Queue proxy local shard
+    replica_set
+        .queue_proxify_local(remote_shard.clone())
+        .await?;
+    debug_assert!(
+        replica_set.is_queue_proxy().await,
+        "Local shard must be a queue proxy"
+    );
 
     // Create shard snapshot
+    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer...");
     let snapshot_description = shard_holder_read
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
 
-    // Select local shard snapshot download URL
+    // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
     shard_download_url.set_path(&format!(
         "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
         &snapshot_description.name,
     ));
-
-    // Instruct remote to download and recover shard snapshot
+    log::debug!(
+        "Transferring and recovering shard {shard_id} snapshot on peer {}...",
+        transfer_config.to
+    );
     remote_shard
         .recover_shard_snapshot_from_url(
             collection_name,
@@ -248,40 +292,28 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    // TODO: through consensus, set replica state to partial
+    // Set shard state to Partial
+    log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
+    consensus
+        .snapshot_recovered_switch_to_partial_confirm(
+            &transfer_config,
+            collection_name,
+            replica_set,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't switch shard {shard_id} to Partial state after snapshot transfer: {err}"
+            ))
+        })?;
 
-    // TODO: await other node to have reached partial state
-
-    {
-        let shard = shard_holder_read.get_shard(&shard_id);
-        let Some(replica_set) = shard else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be transformed from queue to forward proxy because it does not exist"
-            )));
-        };
-
-        // Transfer all updates to remote shard and transform into forward proxy shard
-        // We do this right after the shard has been restored on the remote so that we can catch any
-        // errors early. The forward proxy shard we end up with will not error again once we unproxify.
-        log::trace!("Transfer all queue proxy updates and transform into forward proxy");
-        replica_set.queue_proxy_into_forward_proxy().await?;
-
-        // Wait for remote shard to reach partial state in our replica set
-        log::trace!("Wait for local shard to reach Partial state");
-        replica_set
-            .wait_for_partial(transfer_config.to, defaults::CONSENSUS_META_OP_WAIT)
-            .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Shard being transferred did not reach Partial state in time: {err}"
-                ))
-            })?;
-    }
-
-    // Synchronize, make sure all nodes have reached consensus before continuing and unproxying
-    // All other nodes must consider the shard state to be at least partial so that all nodes send
-    // operations to it.
+    // Synchronize all nodes
+    // TODO: only the receiver must be partial here, can synchronize all nodes later
     await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
+
+    // Transfer queued updates to remote, transform into forward proxy
+    log::trace!("Transfer all queue proxy updates and transform into forward proxy");
+    replica_set.queue_proxy_into_forward_proxy().await?;
 
     Ok(())
 }
@@ -708,7 +740,7 @@ where
                     transfer.to,
                     MAX_RETRY_COUNT - tries
                 );
-                let exp_timeout = RETRY_TIMEOUT * (MAX_RETRY_COUNT - tries) as u32;
+                let exp_timeout = RETRY_DELAY * (MAX_RETRY_COUNT - tries) as u32;
                 sleep(exp_timeout).await;
             }
         }

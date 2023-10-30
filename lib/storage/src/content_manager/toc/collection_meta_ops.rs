@@ -4,6 +4,7 @@ use std::path::Path;
 use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::shard_transfer;
 use collection::shards::CollectionId;
 use uuid::Uuid;
@@ -314,6 +315,28 @@ impl TableOfContent {
                     &collection.state().await.transfers,
                 )?;
                 collection.finish_shard_transfer(transfer).await?;
+            }
+            ShardTransferOperations::SnapshotRecovered(transfer) => {
+                // Validate transfer exists to prevent double handling
+                shard_transfer::validate_transfer_exists(
+                    &transfer,
+                    &collection.state().await.transfers,
+                )?;
+
+                // Set shard state from `PartialSnapshot` to `Partial`
+                let operation = SetShardReplicaState {
+                    collection_name: collection_id,
+                    shard_id: transfer.shard_id,
+                    peer_id: transfer.to,
+                    state: ReplicaState::Partial,
+                    from_state: Some(ReplicaState::PartialSnapshot),
+                };
+                log::debug!(
+                    "Set shard replica state from {:?} to {:?} after snapshot recovery",
+                    ReplicaState::PartialSnapshot,
+                    ReplicaState::Partial,
+                );
+                self.set_shard_replica_state(operation).await?;
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
