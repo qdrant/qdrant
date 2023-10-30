@@ -333,21 +333,34 @@ impl ShardReplicaSet {
             .await
     }
 
-    /// Wait for the replica set to reach the `Partial` state for a peer
+    /// Wait for a local shard to get into `state`
     ///
     /// Uses a blocking thread internally.
-    pub async fn wait_for_partial(
+    pub async fn wait_for_local_state(
         &self,
-        peer_id: PeerId,
+        state: ReplicaState,
         timeout: Duration,
     ) -> CollectionResult<()> {
         self.wait_for(
             move |replica_set_state| {
-                matches!(
-                    replica_set_state.get_peer_state(&peer_id),
-                    Some(ReplicaState::Partial)
-                )
+                replica_set_state.get_peer_state(&replica_set_state.this_peer_id) == Some(&state)
             },
+            timeout,
+        )
+        .await
+    }
+
+    /// Wait for a peer shard to get into `state`
+    ///
+    /// Uses a blocking thread internally.
+    pub async fn wait_for_state(
+        &self,
+        peer_id: PeerId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<()> {
+        self.wait_for(
+            move |replica_set_state| replica_set_state.get_peer_state(&peer_id) == Some(&state),
             timeout,
         )
         .await

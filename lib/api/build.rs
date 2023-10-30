@@ -143,6 +143,8 @@ fn configure_validation(builder: Builder) -> Builder {
         .validates(&[
             ("GetCollectionInfoRequestInternal.get_collection_info_request", ""),
             ("InitiateShardTransferRequest.collection_name", "length(min = 1, max = 255)"),
+            ("WaitForShardStateRequest.collection_name", "length(min = 1, max = 255)"),
+            ("WaitForShardStateRequest.timeout", "range(min = 1)"),
         ], &[])
         // Service: points.proto
         .validates(&[
