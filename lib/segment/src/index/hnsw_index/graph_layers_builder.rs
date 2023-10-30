@@ -17,7 +17,7 @@ use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkC
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
-use crate::index::visited_pool::{VisitedList, VisitedPool};
+use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
@@ -44,12 +44,8 @@ pub struct GraphLayersBuilder {
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
-    fn get_visited_list_from_pool(&self) -> VisitedList {
+    fn get_visited_list_from_pool(&self) -> VisitedListHandle {
         self.visited_pool.get(self.num_points())
-    }
-
-    fn return_visited_list_to_pool(&self, visited_list: VisitedList) {
-        self.visited_pool.return_back(visited_list);
     }
 
     fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
@@ -193,7 +189,6 @@ impl GraphLayersBuilder {
         self.entry_points
             .lock()
             .merge_from_other(other.entry_points.into_inner());
-        self.visited_pool.return_back(visited_list);
     }
 
     fn num_points(&self) -> usize {
@@ -453,7 +448,6 @@ impl GraphLayersBuilder {
                             }
                         }
                     }
-                    self.return_visited_list_to_pool(visited_list);
                 }
             }
         }
