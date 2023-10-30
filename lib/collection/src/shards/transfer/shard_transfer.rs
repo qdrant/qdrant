@@ -206,16 +206,11 @@ async fn transfer_batches(
 /// - Recover shard snapshot on remote
 ///   Instruct the remote to download the snapshot from this node over HTTP, then recover it.
 /// - Set shard state to `Partial`
-///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We
-///   propose an operation to consensus for this. Our logic explicitly confirms that consensus has
-///   accepted our proposal and will retry three times on failure.
-///   Setting the node from `PartialSnapshot` to `Partial` is critical. The remote will only
-///   receive and accept operations in this state.
-/// - Synchronize all nodes
-///   After confirming consensus approval, we must synchronize all nodes. We explicitly need to wait
-///   on all nodes for the consensus operation to be propagated. That way, we ensure we have a
-///   consistent replica set state across all nodes. Then, all nodes will have the `Partial` state,
-///   which makes the shard participate on all nodes.
+///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We propose an
+///   operation to consensus for this. Our logic explicitly confirms that the remote reaches the
+///   `Partial` state. That is critical for the remote to accept incoming operations, that also
+///   confirms consensus has accepted accepted our proposal. If this fails it will be retried up to
+///   three times.
 /// - Transfer queued updates to remote, transform into forward proxy
 ///   Once the remote is in `Partial` state we can transfer all accumulated updates in the queue
 ///   proxy to the remote. This ensures all operations reach the recovered shard on the remote to
@@ -224,6 +219,14 @@ async fn transfer_batches(
 ///   We transfer the queue and transform into a forward proxy right now so that we can catch any
 ///   errors as early as possible. The forward proxy shard we end up with will not error again once
 ///   we un-proxify.
+/// - Wait for Partial state in our replica set
+///   Wait for the remote shard to be set to `Partial` in our local replica set. That way we
+///   confirm consensus has also propagated on this node.
+/// - Synchronize all nodes
+///   After confirming consensus propagation on this node, synchronize all nodes to reach the same
+///   consensus state before finalizing the transfer. That way, we ensure we have a consistent
+///   replica set state across all nodes. All nodes will have the `Partial` state, which makes the
+///   shard participate on all nodes.
 ///
 /// After this function, the following will happen:
 ///
@@ -295,10 +298,10 @@ async fn transfer_snapshot(
     // Set shard state to Partial
     log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
     consensus
-        .snapshot_recovered_switch_to_partial_confirm(
+        .snapshot_recovered_switch_to_partial_confirm_remote(
             &transfer_config,
             collection_name,
-            replica_set,
+            &remote_shard,
         )
         .await
         .map_err(|err| {
@@ -307,13 +310,28 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    // Synchronize all nodes
-    // TODO: only the receiver must be partial here, can synchronize all nodes later
-    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
-
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
     replica_set.queue_proxy_into_forward_proxy().await?;
+
+    // Wait for Partial state in our replica set
+    let partial_state = ReplicaState::Partial;
+    log::trace!("Wait for local shard to reach {partial_state:?} state");
+    replica_set
+        .wait_for_state(
+            transfer_config.to,
+            partial_state,
+            defaults::CONSENSUS_META_OP_WAIT,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Shard being transferred did not reach {partial_state:?} state in time: {err}",
+            ))
+        })?;
+
+    // Synchronize all nodes
+    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
     Ok(())
 }

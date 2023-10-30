@@ -6,7 +6,8 @@ use tokio::time::sleep;
 
 use self::shard_transfer::ShardTransfer;
 use super::channel_service::ChannelService;
-use super::replica_set::ShardReplicaSet;
+use super::remote_shard::RemoteShard;
+use super::replica_set::ReplicaState;
 use super::shard::PeerId;
 use super::CollectionId;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -46,19 +47,21 @@ pub trait ShardTransferConsensus: Send + Sync {
         collection_name: CollectionId,
     ) -> CollectionResult<()>;
 
-    /// After snapshot recovery, propose to switch shard to `Partial` and confirm locally
+    /// After snapshot recovery, propose to switch shard to `Partial` and confirm on remote shard
     ///
     /// This is called after shard snapshot recovery has been completed on the remote. It submits a
-    /// proposal to consensus to switch the the shard state from `PartialSnapshot` to `Partial`.
+    /// proposal to consensus to switch the shard state from `PartialSnapshot` to `Partial`.
     ///
     /// This method also confirms consensus applied the operation before returning by asserting the
-    /// change is propagated locally. If it fails, it will be retried for up to
+    /// change is propagated on a remote shard. For the next stage only the remote needs to be in
+    /// `Partial` to accept updates, we therefore assert the state on the remote explicitly rather
+    /// than asserting locally. If it fails, it will be retried for up to
     /// `CONSENSUS_CONFIRM_RETRIES` times.
-    async fn snapshot_recovered_switch_to_partial_confirm(
+    async fn snapshot_recovered_switch_to_partial_confirm_remote(
         &self,
         transfer_config: &ShardTransfer,
         collection_name: &str,
-        replica_set: &ShardReplicaSet,
+        remote_shard: &RemoteShard,
     ) -> CollectionResult<()> {
         for remaining_attempts in (0..CONSENSUS_CONFIRM_RETRIES).rev() {
             // Propose consensus operation
@@ -74,12 +77,19 @@ pub trait ShardTransferConsensus: Send + Sync {
                 Err(err) => return Err(err),
             }
 
-            // Confirm local shard reached partial state
-            let confirm = replica_set
-                .wait_for_partial(transfer_config.to, CONSENSUS_CONFIRM_TIMEOUT)
+            // Confirm remote has reached Partial state
+            let partial_state = ReplicaState::Partial;
+            log::trace!("Wait for remote shard to reach {partial_state:?} state");
+            let confirm = remote_shard
+                .wait_for_shard_state(
+                    collection_name,
+                    transfer_config.shard_id,
+                    partial_state,
+                    CONSENSUS_CONFIRM_TIMEOUT,
+                )
                 .await;
             match confirm {
-                Ok(()) => return Ok(()),
+                Ok(_) => return Ok(()),
                 Err(err) if remaining_attempts > 0 => {
                     log::error!("Failed to confirm snapshot recovered operation on consensus, retrying: {err}");
                     sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;

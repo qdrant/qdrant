@@ -2260,6 +2260,26 @@ pub struct InitiateShardTransferRequest {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WaitForShardStateRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Shard state to wait for
+    #[prost(enumeration = "ReplicaState", tag = "3")]
+    pub state: i32,
+    /// Timeout in seconds
+    #[prost(uint64, tag = "4")]
+    #[validate(range(min = 1))]
+    pub timeout: u64,
+}
 /// Generated client implementations.
 pub mod collections_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -2399,6 +2419,35 @@ pub mod collections_internal_client {
                 .insert(GrpcMethod::new("qdrant.CollectionsInternal", "Initiate"));
             self.inner.unary(req, path, codec).await
         }
+        /// *
+        /// Wait for a shard to get into the given state
+        pub async fn wait_for_shard_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::WaitForShardStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.CollectionsInternal/WaitForShardState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.CollectionsInternal", "WaitForShardState"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2422,6 +2471,15 @@ pub mod collections_internal_server {
         async fn initiate(
             &self,
             request: tonic::Request<super::InitiateShardTransferRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
+        /// *
+        /// Wait for a shard to get into the given state
+        async fn wait_for_shard_state(
+            &self,
+            request: tonic::Request<super::WaitForShardStateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
@@ -2586,6 +2644,56 @@ pub mod collections_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InitiateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.CollectionsInternal/WaitForShardState" => {
+                    #[allow(non_camel_case_types)]
+                    struct WaitForShardStateSvc<T: CollectionsInternal>(pub Arc<T>);
+                    impl<
+                        T: CollectionsInternal,
+                    > tonic::server::UnaryService<super::WaitForShardStateRequest>
+                    for WaitForShardStateSvc<T> {
+                        type Response = super::CollectionOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::WaitForShardStateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CollectionsInternal>::wait_for_shard_state(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = WaitForShardStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
