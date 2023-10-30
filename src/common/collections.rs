@@ -191,7 +191,7 @@ pub async fn do_update_collection_cluster(
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
-                            method: None,
+                            method: replicate_shard.method,
                         }),
                     ),
                     wait_timeout,
