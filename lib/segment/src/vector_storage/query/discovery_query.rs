@@ -1,3 +1,5 @@
+use std::iter;
+
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
@@ -32,7 +34,7 @@ impl<T> DiscoveryQuery<T> {
     pub fn flat_iter(&self) -> impl Iterator<Item = &T> {
         let pairs_iter = self.pairs.iter().flat_map(|pair| pair.iter());
 
-        std::iter::once(&self.target).chain(pairs_iter)
+        iter::once(&self.target).chain(pairs_iter)
     }
 
     fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {

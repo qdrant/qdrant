@@ -1,3 +1,5 @@
+use std::iter;
+
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
@@ -11,7 +13,7 @@ pub struct ContextPair<T> {
 
 impl<T> ContextPair<T> {
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
+        iter::once(&self.positive).chain(iter::once(&self.negative))
     }
 
     pub fn transform<F, U>(self, mut f: F) -> ContextPair<U>

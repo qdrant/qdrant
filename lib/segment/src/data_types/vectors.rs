@@ -320,8 +320,8 @@ impl BatchVectorStruct {
 }
 
 #[derive(Debug, Clone)]
-pub struct NamedQuery<T> {
-    pub query: T,
+pub struct NamedQuery<TQuery> {
+    pub query: TQuery,
     pub using: Option<String>,
 }
 
