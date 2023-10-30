@@ -275,7 +275,7 @@ async fn transfer_snapshot(
         .map(TempPath::from_path)
         .map_err(|err| {
             CollectionError::service_error(format!(
-                "Failed to determine snapshot path, will not delete file after recovery: {err}"
+                "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
             ))
         })?;
 
