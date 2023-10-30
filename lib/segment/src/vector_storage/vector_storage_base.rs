@@ -12,6 +12,7 @@ use crate::common::Flusher;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
+use crate::vector_storage::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 
 /// Trait for vector storage
 /// El - type of vector element, expected numerical type
@@ -40,7 +41,7 @@ pub trait VectorStorage {
             .saturating_sub(self.deleted_vector_count())
     }
 
-    /// Number of all stored vectors including deleted
+    /// Get the vector by the given key
     fn get_vector(&self, key: PointOffsetType) -> VectorRef;
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
@@ -95,6 +96,7 @@ pub enum VectorStorageEnum {
     Simple(SimpleVectorStorage),
     Memmap(Box<MemmapVectorStorage>),
     AppendableMemmap(Box<AppendableMmapVectorStorage>),
+    SparseSimple(SimpleSparseVectorStorage),
 }
 
 impl VectorStorage for VectorStorageEnum {
@@ -103,6 +105,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.vector_dim(),
             VectorStorageEnum::Memmap(v) => v.vector_dim(),
             VectorStorageEnum::AppendableMemmap(v) => v.vector_dim(),
+            VectorStorageEnum::SparseSimple(v) => v.vector_dim(),
         }
     }
 
@@ -111,6 +114,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.distance(),
             VectorStorageEnum::Memmap(v) => v.distance(),
             VectorStorageEnum::AppendableMemmap(v) => v.distance(),
+            VectorStorageEnum::SparseSimple(v) => v.distance(),
         }
     }
 
@@ -119,6 +123,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.is_on_disk(),
             VectorStorageEnum::Memmap(v) => v.is_on_disk(),
             VectorStorageEnum::AppendableMemmap(v) => v.is_on_disk(),
+            VectorStorageEnum::SparseSimple(v) => v.is_on_disk(),
         }
     }
 
@@ -127,6 +132,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.total_vector_count(),
             VectorStorageEnum::Memmap(v) => v.total_vector_count(),
             VectorStorageEnum::AppendableMemmap(v) => v.total_vector_count(),
+            VectorStorageEnum::SparseSimple(v) => v.total_vector_count(),
         }
     }
 
@@ -135,6 +141,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.get_vector(key),
             VectorStorageEnum::Memmap(v) => v.get_vector(key),
             VectorStorageEnum::AppendableMemmap(v) => v.get_vector(key),
+            VectorStorageEnum::SparseSimple(v) => v.get_vector(key),
         }
     }
 
@@ -143,6 +150,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.insert_vector(key, vector),
             VectorStorageEnum::Memmap(v) => v.insert_vector(key, vector),
             VectorStorageEnum::AppendableMemmap(v) => v.insert_vector(key, vector),
+            VectorStorageEnum::SparseSimple(v) => v.insert_vector(key, vector),
         }
     }
 
@@ -156,6 +164,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.update_from(other, other_ids, stopped),
             VectorStorageEnum::Memmap(v) => v.update_from(other, other_ids, stopped),
             VectorStorageEnum::AppendableMemmap(v) => v.update_from(other, other_ids, stopped),
+            VectorStorageEnum::SparseSimple(v) => v.update_from(other, other_ids, stopped),
         }
     }
 
@@ -164,6 +173,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.flusher(),
             VectorStorageEnum::Memmap(v) => v.flusher(),
             VectorStorageEnum::AppendableMemmap(v) => v.flusher(),
+            VectorStorageEnum::SparseSimple(v) => v.flusher(),
         }
     }
 
@@ -172,6 +182,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.files(),
             VectorStorageEnum::Memmap(v) => v.files(),
             VectorStorageEnum::AppendableMemmap(v) => v.files(),
+            VectorStorageEnum::SparseSimple(v) => v.files(),
         }
     }
 
@@ -180,6 +191,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.delete_vector(key),
             VectorStorageEnum::Memmap(v) => v.delete_vector(key),
             VectorStorageEnum::AppendableMemmap(v) => v.delete_vector(key),
+            VectorStorageEnum::SparseSimple(v) => v.delete_vector(key),
         }
     }
 
@@ -188,6 +200,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.is_deleted_vector(key),
             VectorStorageEnum::Memmap(v) => v.is_deleted_vector(key),
             VectorStorageEnum::AppendableMemmap(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::SparseSimple(v) => v.is_deleted_vector(key),
         }
     }
 
@@ -196,6 +209,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.deleted_vector_count(),
             VectorStorageEnum::Memmap(v) => v.deleted_vector_count(),
             VectorStorageEnum::AppendableMemmap(v) => v.deleted_vector_count(),
+            VectorStorageEnum::SparseSimple(v) => v.deleted_vector_count(),
         }
     }
 
@@ -204,6 +218,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Simple(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::Memmap(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::AppendableMemmap(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::SparseSimple(v) => v.deleted_vector_bitslice(),
         }
     }
 }

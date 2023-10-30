@@ -1,4 +1,3 @@
-use std::mem::size_of;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -6,26 +5,23 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
-use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
+use sparse::common::sparse_vector::SparseVector;
 
-use super::chunked_vectors::ChunkedVectors;
-use super::vector_storage_base::VectorStorage;
-use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::VectorRef;
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 /// In-memory vector storage with on-update persistence using `store`
-pub struct SimpleVectorStorage {
-    dim: usize,
+pub struct SimpleSparseVectorStorage {
     distance: Distance,
-    vectors: ChunkedVectors<VectorElementType>,
+    vectors: Vec<SparseVector>,
     db_wrapper: DatabaseColumnWrapper,
     update_buffer: StoredRecord,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
@@ -37,20 +33,20 @@ pub struct SimpleVectorStorage {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct StoredRecord {
     pub deleted: bool,
-    pub vector: Vec<VectorElementType>,
+    pub vector: SparseVector,
 }
 
-pub fn open_simple_vector_storage(
+#[allow(unused)]
+pub fn open_simple_sparse_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
-    dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let mut vectors = ChunkedVectors::new(dim);
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
-
+    let mut vectors = Vec::new();
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
 
+    db_wrapper.lock_db().iter()?;
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
@@ -62,32 +58,31 @@ pub fn open_simple_vector_storage(
             bitvec_set_deleted(&mut deleted, point_id, true);
             deleted_count += 1;
         }
-        vectors.insert(point_id, &stored_record.vector)?;
+
+        // Resize storage if needed
+        vectors.resize_with(
+            std::cmp::max(vectors.len(), point_id as usize + 1),
+            Default::default,
+        );
+        vectors[point_id as usize] = stored_record.vector;
     }
 
-    debug!("Segment vectors: {}", vectors.len());
-    debug!(
-        "Estimated segment size {} MB",
-        vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
-    );
-
-    Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Simple(
-        SimpleVectorStorage {
-            dim,
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::SparseSimple(SimpleSparseVectorStorage {
             distance,
             vectors,
             db_wrapper,
             update_buffer: StoredRecord {
                 deleted: false,
-                vector: vec![0.; dim],
+                vector: SparseVector::default(),
             },
             deleted,
             deleted_count,
-        },
-    ))))
+        }),
+    )))
 }
 
-impl SimpleVectorStorage {
+impl SimpleSparseVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
@@ -109,13 +104,13 @@ impl SimpleVectorStorage {
         &mut self,
         key: PointOffsetType,
         deleted: bool,
-        vector: Option<&[VectorElementType]>,
+        vector: Option<&SparseVector>,
     ) -> OperationResult<()> {
         // Write vector state to buffer record
         let record = &mut self.update_buffer;
         record.deleted = deleted;
         if let Some(vector) = vector {
-            record.vector.copy_from_slice(vector);
+            record.vector = vector.clone();
         }
 
         // Store updated record
@@ -128,15 +123,9 @@ impl SimpleVectorStorage {
     }
 }
 
-impl DenseVectorStorage for SimpleVectorStorage {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.vectors.get(key)
-    }
-}
-
-impl VectorStorage for SimpleVectorStorage {
+impl VectorStorage for SimpleSparseVectorStorage {
     fn vector_dim(&self) -> usize {
-        self.dim
+        0 // not applicable
     }
 
     fn distance(&self) -> Distance {
@@ -144,7 +133,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn is_on_disk(&self) -> bool {
-        false
+        true
     }
 
     fn total_vector_count(&self) -> usize {
@@ -152,12 +141,15 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> VectorRef {
-        self.get_dense(key).into()
+        self.vectors
+            .get(key as usize)
+            .expect("Invalid point id")
+            .into()
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        let vector = vector.into();
-        self.vectors.insert(key, vector)?;
+        let vector: &SparseVector = vector.try_into()?;
+        self.vectors.insert(key as usize, vector.clone());
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
         Ok(())
@@ -173,11 +165,21 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other.get_vector(point_id).into();
+            let other_vector: &SparseVector = other.get_vector(point_id).try_into()?;
             let other_deleted = other.is_deleted_vector(point_id);
-            let new_id = self.vectors.push(other_vector)?;
-            self.set_deleted(new_id, other_deleted);
-            self.update_stored(new_id, other_deleted, Some(other_vector))?;
+            match self.vectors.get(point_id as usize) {
+                Some(_stored_vector) => {
+                    self.set_deleted(point_id, other_deleted);
+                    self.update_stored(point_id, other_deleted, Some(other_vector))?;
+                }
+                None => {
+                    self.vectors
+                        .resize_with(point_id as usize + 1, Default::default);
+                    self.vectors[point_id as usize] = other_vector.clone();
+                }
+            }
+            self.set_deleted(point_id, other_deleted);
+            self.update_stored(point_id, other_deleted, Some(other_vector))?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)

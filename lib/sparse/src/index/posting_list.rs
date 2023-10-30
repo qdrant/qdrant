@@ -124,6 +124,12 @@ pub struct PostingBuilder {
     elements: Vec<PostingElement>,
 }
 
+impl Default for PostingBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PostingBuilder {
     pub fn new() -> PostingBuilder {
         PostingBuilder {
