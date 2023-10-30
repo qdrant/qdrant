@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::defaults;
+use tokio::time::sleep;
 
 use self::shard_transfer::ShardTransfer;
 use super::channel_service::ChannelService;
@@ -15,6 +16,9 @@ pub mod transfer_tasks_pool;
 
 /// Number of retries for confirming a consensus operation.
 const CONSENSUS_CONFIRM_RETRIES: usize = 3;
+
+/// Time between consensus confirmation retries.
+const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Time after which confirming a consensus operation times out.
 const CONSENSUS_CONFIRM_TIMEOUT: Duration = defaults::CONSENSUS_META_OP_WAIT;
@@ -64,6 +68,7 @@ pub trait ShardTransferConsensus: Send + Sync {
                 Ok(()) => {}
                 Err(err) if remaining_attempts > 0 => {
                     log::error!("Failed to propose snapshot recovered operation to consensus, retrying: {err}");
+                    sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
                     continue;
                 }
                 Err(err) => return Err(err),
@@ -75,7 +80,11 @@ pub trait ShardTransferConsensus: Send + Sync {
                 .await;
             match confirm {
                 Ok(()) => return Ok(()),
-                Err(err) if remaining_attempts > 0 => log::error!("Failed to confirm snapshot recovered operation on consensus, retrying: {err}"),
+                Err(err) if remaining_attempts > 0 => {
+                    log::error!("Failed to confirm snapshot recovered operation on consensus, retrying: {err}");
+                    sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+                    continue;
+                }
                 Err(err) => return Err(CollectionError::service_error(format!(
                     "Failed to confirm snapshot recovered operation on consensus after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
                 ))),
