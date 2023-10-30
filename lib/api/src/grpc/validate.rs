@@ -42,16 +42,11 @@ where
     V: Validate,
 {
     #[inline]
-    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let errors = self
-            .iter()
-            .filter_map(|v| v.validate().err())
-            .fold(Err(ValidationErrors::new()), |bag, err| {
-                ValidationErrors::merge(bag, "?", Err(err))
-            })
-            .unwrap_err();
-        errors.errors().is_empty().then_some(()).ok_or(errors)
+        match self.iter().find_map(|v| v.validate().err()) {
+            Some(err) => ValidationErrors::merge(Err(Default::default()), "[]", Err(err)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -60,16 +55,11 @@ where
     V: Validate,
 {
     #[inline]
-    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let errors = self
-            .values()
-            .filter_map(|v| v.validate().err())
-            .fold(Err(ValidationErrors::new()), |bag, err| {
-                ValidationErrors::merge(bag, "?", Err(err))
-            })
-            .unwrap_err();
-        errors.errors().is_empty().then_some(()).ok_or(errors)
+        match self.values().find_map(|v| v.validate().err()) {
+            Some(err) => ValidationErrors::merge(Err(Default::default()), "[]", Err(err)),
+            None => Ok(()),
+        }
     }
 }
 
