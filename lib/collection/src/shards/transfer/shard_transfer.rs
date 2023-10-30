@@ -23,8 +23,8 @@ use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::CollectionId;
 
 const TRANSFER_BATCH_SIZE: usize = 100;
-const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
-pub const MAX_RETRY_COUNT: usize = 3;
+const RETRY_DELAY: Duration = Duration::from_secs(1);
+pub(crate) const MAX_RETRY_COUNT: usize = 3;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransfer {
@@ -740,7 +740,7 @@ where
                     transfer.to,
                     MAX_RETRY_COUNT - tries
                 );
-                let exp_timeout = RETRY_TIMEOUT * (MAX_RETRY_COUNT - tries) as u32;
+                let exp_timeout = RETRY_DELAY * (MAX_RETRY_COUNT - tries) as u32;
                 sleep(exp_timeout).await;
             }
         }
