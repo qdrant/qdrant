@@ -88,7 +88,7 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        let mut local = cancel::future::on_token(cancel, self.local.write()).await?;
+        let mut local = cancel::future::cancel_on_token(cancel, self.local.write()).await?;
 
         // TODO: Check `cancel`?
 

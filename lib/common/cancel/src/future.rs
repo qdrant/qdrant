@@ -2,7 +2,7 @@ use std::future::Future;
 
 use super::*;
 
-pub async fn on_drop<Task, Fut>(task: Task) -> Result<Fut::Output, Error>
+pub async fn spawn_cancel_on_drop<Task, Fut>(task: Task) -> Result<Fut::Output, Error>
 where
     Task: FnOnce(CancellationToken) -> Fut,
     Fut: Future + Send + 'static,
@@ -22,7 +22,7 @@ where
 /// # Safety
 ///
 /// Future has to be cancel-safe!
-pub async fn on_token<Fut>(cancel: CancellationToken, future: Fut) -> Result<Fut::Output, Error>
+pub async fn cancel_on_token<Fut>(cancel: CancellationToken, future: Fut) -> Result<Fut::Output, Error>
 where
     Fut: Future,
 {

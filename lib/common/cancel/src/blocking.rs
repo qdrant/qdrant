@@ -1,6 +1,6 @@
 use super::*;
 
-pub async fn on_drop<Out, Task>(task: Task) -> Result<Out, Error>
+pub async fn spawn_cancel_on_drop<Out, Task>(task: Task) -> Result<Out, Error>
 where
     Task: FnOnce(CancellationToken) -> Out + Send + 'static,
     Out: Send + 'static,
@@ -19,7 +19,7 @@ where
     Ok(output)
 }
 
-pub async fn on_token<Out, Task>(cancel: CancellationToken, task: Task) -> Result<Out, Error>
+pub async fn span_cancel_on_token<Out, Task>(cancel: CancellationToken, task: Task) -> Result<Out, Error>
 where
     Task: FnOnce(CancellationToken) -> Out + Send + 'static,
     Out: Send + 'static,
@@ -29,7 +29,7 @@ where
         move || task(cancel)
     };
 
-    let output = future::on_token(cancel, tokio::task::spawn_blocking(task)).await??;
+    let output = future::cancel_on_token(cancel, tokio::task::spawn_blocking(task)).await??;
 
     Ok(output)
 }

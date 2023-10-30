@@ -74,7 +74,7 @@ pub async fn recover_shard_snapshot(
     // - `download_dir` is handled by `tempfile` and would be deleted on drop
     // - remote snapshot is downloaded into and would be deleted with the `download_dir`
 
-    cancel::future::on_drop(move |cancel| async move {
+    cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         let future = async {
             let collection = toc.get_collection(&collection_name).await?;
             collection.assert_shard_exists(shard_id).await?;
@@ -105,7 +105,7 @@ pub async fn recover_shard_snapshot(
         };
 
         let (collection, _download_dir, snapshot_path) =
-            cancel::future::on_token(cancel.clone(), future).await??;
+            cancel::future::cancel_on_token(cancel.clone(), future).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel-safe!
         recover_shard_snapshot_impl(
