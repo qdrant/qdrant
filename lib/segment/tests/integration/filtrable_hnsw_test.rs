@@ -69,18 +69,20 @@ fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rnd: &mut R, dim: usize
 }
 
 #[rstest]
-#[case::nearest(QueryVariant::Nearest, 5)]
-#[case::discovery(QueryVariant::Discovery, 25)] // tests that check better precision are in `hnsw_discover_test.rs`
-#[case::recommend(QueryVariant::RecommendBestScore, 30)]
+#[case::nearest(QueryVariant::Nearest, 32, 5)]
+#[case::discovery(QueryVariant::Discovery, 128, 10)] // tests that check better precision are in `hnsw_discover_test.rs`
+#[case::recommend(QueryVariant::RecommendBestScore, 64, 10)]
 fn test_filterable_hnsw(
     #[case] query_variant: QueryVariant,
+    #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    _test_filterable_hnsw(query_variant, max_failures);
+    _test_filterable_hnsw(query_variant, ef, max_failures);
 }
 
 fn _test_filterable_hnsw(
     query_variant: QueryVariant,
+    ef: usize,
     max_failures: usize, // out of 100
 ) {
     let stopped = AtomicBool::new(false);
@@ -88,7 +90,6 @@ fn _test_filterable_hnsw(
     let dim = 8;
     let m = 8;
     let num_vectors: u64 = 5_000;
-    let ef = 32;
     let ef_construct = 16;
     let distance = Distance::Cosine;
     let full_scan_threshold = 16; // KB

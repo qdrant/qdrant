@@ -155,7 +155,7 @@ fn filtered_hnsw_discover_precision() {
     let dim = 8;
     let m = 16;
     let num_vectors: u64 = 5_000;
-    let ef = 32;
+    let ef = 64;
     let ef_construct = 64;
     let distance = Distance::Cosine;
     let full_scan_threshold = 16; // KB
