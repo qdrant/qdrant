@@ -22,7 +22,10 @@ where
 /// # Safety
 ///
 /// Future has to be cancel-safe!
-pub async fn cancel_on_token<Fut>(cancel: CancellationToken, future: Fut) -> Result<Fut::Output, Error>
+pub async fn cancel_on_token<Fut>(
+    cancel: CancellationToken,
+    future: Fut,
+) -> Result<Fut::Output, Error>
 where
     Fut: Future,
 {

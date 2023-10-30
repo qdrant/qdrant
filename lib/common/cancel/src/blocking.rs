@@ -19,7 +19,10 @@ where
     Ok(output)
 }
 
-pub async fn span_cancel_on_token<Out, Task>(cancel: CancellationToken, task: Task) -> Result<Out, Error>
+pub async fn span_cancel_on_token<Out, Task>(
+    cancel: CancellationToken,
+    task: Task,
+) -> Result<Out, Error>
 where
     Task: FnOnce(CancellationToken) -> Out + Send + 'static,
     Out: Send + 'static,

@@ -631,28 +631,31 @@ impl ShardHolder {
         let task = {
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
-            cancel::blocking::span_cancel_on_token(cancel.child_token(), move |cancel| -> CollectionResult<_> {
-                let mut tar = tar::Archive::new(snapshot);
+            cancel::blocking::span_cancel_on_token(
+                cancel.child_token(),
+                move |cancel| -> CollectionResult<_> {
+                    let mut tar = tar::Archive::new(snapshot);
 
-                if cancel.is_cancelled() {
-                    return Err(cancel::Error::Cancelled.into());
-                }
+                    if cancel.is_cancelled() {
+                        return Err(cancel::Error::Cancelled.into());
+                    }
 
-                tar.unpack(&snapshot_temp_dir)?;
-                drop(tar);
+                    tar.unpack(&snapshot_temp_dir)?;
+                    drop(tar);
 
-                if cancel.is_cancelled() {
-                    return Err(cancel::Error::Cancelled.into());
-                }
+                    if cancel.is_cancelled() {
+                        return Err(cancel::Error::Cancelled.into());
+                    }
 
-                ShardReplicaSet::restore_snapshot(
-                    &snapshot_temp_dir,
-                    this_peer_id,
-                    is_distributed,
-                )?;
+                    ShardReplicaSet::restore_snapshot(
+                        &snapshot_temp_dir,
+                        this_peer_id,
+                        is_distributed,
+                    )?;
 
-                Ok(())
-            })
+                    Ok(())
+                },
+            )
         };
 
         task.await??;
