@@ -165,6 +165,27 @@ $docker_grpcurl -d '{
   "ids": [{ "num": 1 }]
 }' $QDRANT_HOST qdrant.Points/Get
 
+# The following must return a validation error
+set +e
+response=$(
+    $docker_grpcurl -d '{
+        "collection_name": "test_collection",
+        "recommend_points": [
+            {
+                "positive": [{ "num": 1 }]
+            },
+            {
+                "positive": [{ "num": 1 }]
+            }
+        ]
+    }' $QDRANT_HOST qdrant.Points/RecommendBatch 2>&1
+)
+if [[ $response != *"Validation error in body"* ]]; then
+    echo Unexpected response, expected validation error: $response
+    exit 1
+fi
+set -e
+
 # use the reflection service to inspect the full API
 $docker_grpcurl $QDRANT_HOST describe
 
