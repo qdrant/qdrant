@@ -84,19 +84,17 @@ where
     time_impl(async { future.await.map(Some) }).await
 }
 
-/// # Safety
-///
-/// Future has to be cancel-safe!
 pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> impl actix_web::Responder
 where
     Fut: Future<Output = HttpResult<T>> + Send + 'static,
     T: serde::Serialize + Send + 'static,
 {
     let future = async move {
+        let handle = tokio::task::spawn(future);
+
         if wait {
-            future.await.map(Some)
+            handle.await?.map(Some)
         } else {
-            drop(tokio::task::spawn(future)); // drop `JoinFuture` explicitly to make clippy happy
             Ok(None)
         }
     };
