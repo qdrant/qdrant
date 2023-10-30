@@ -631,7 +631,7 @@ impl ShardHolder {
         let task = {
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
-            cancel::blocking::span_cancel_on_token(
+            cancel::blocking::spawn_cancel_on_token(
                 cancel.child_token(),
                 move |cancel| -> CollectionResult<_> {
                     let mut tar = tar::Archive::new(snapshot);
