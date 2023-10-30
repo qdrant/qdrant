@@ -277,8 +277,7 @@ async fn transfer_snapshot(
             log::error!(
                 "Failed to determine snapshot path, will not delete file after recovery: {err}"
             );
-        })
-        .ok();
+        })?;
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
@@ -305,10 +304,8 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    if let Some(path) = snapshot_temp_path {
-        if let Err(err) = path.close() {
-            log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
-        }
+    if let Err(err) = path.close() {
+        log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
     }
 
     // Set shard state to Partial
