@@ -7752,8 +7752,37 @@
           "sync": {
             "description": "If `true` transfer is a synchronization of a replicas If `false` transfer is a moving of a shard from one peer to another",
             "type": "boolean"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardTransferMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "ShardTransferMethod": {
+        "description": "Methods for transferring a shard from one node to another.",
+        "oneOf": [
+          {
+            "description": "Stream all shard records in batches until the whole shard is transferred.",
+            "type": "string",
+            "enum": [
+              "stream_records"
+            ]
+          },
+          {
+            "description": "Snapshot the shard, transfer and restore it on the receiver.",
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        ]
       },
       "TelemetryData": {
         "type": "object",
@@ -8788,6 +8817,17 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "method": {
+            "description": "Method for transferring the shard from one node to another",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardTransferMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

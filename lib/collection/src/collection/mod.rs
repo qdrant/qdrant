@@ -350,6 +350,7 @@ impl Collection {
                     from: transfer_from,
                     to: self.this_peer_id,
                     sync: true,
+                    method: None,
                 })
             } else {
                 log::warn!("No alive replicas to recover shard {shard_id}");
@@ -483,6 +484,7 @@ impl Collection {
                     to: *this_peer_id,
                     shard_id,
                     sync: true,
+                    method: None,
                 };
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
                     continue; // this transfer won't work

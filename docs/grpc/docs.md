@@ -65,6 +65,7 @@
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
     - [ReplicaState](#qdrant-ReplicaState)
+    - [ShardTransferMethod](#qdrant-ShardTransferMethod)
     - [ShardingMethod](#qdrant-ShardingMethod)
     - [TokenizerType](#qdrant-TokenizerType)
   
@@ -677,6 +678,7 @@
 | shard_id | [uint32](#uint32) |  | Local shard id |
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
+| method | [ShardTransferMethod](#qdrant-ShardTransferMethod) | optional |  |
 
 
 
@@ -1230,6 +1232,18 @@ Note: 1kB = 1 vector of size 256. |
 | Initializing | 3 | Collection is being created |
 | Listener | 4 | A shard which receives data, but is not used for search; Useful for backup shards |
 | PartialSnapshot | 5 | Snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard |
+
+
+
+<a name="qdrant-ShardTransferMethod"></a>
+
+### ShardTransferMethod
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| StreamRecords | 0 |  |
+| Snapshot | 1 |  |
 
 
 

@@ -11,6 +11,7 @@ use crate::{
     TableOfContent,
 };
 
+#[derive(Clone)]
 pub struct Dispatcher {
     toc: Arc<TableOfContent>,
     consensus_state: Option<ConsensusStateRef>,
@@ -145,14 +146,5 @@ impl Deref for Dispatcher {
 
     fn deref(&self) -> &Self::Target {
         self.toc.deref()
-    }
-}
-
-impl Clone for Dispatcher {
-    fn clone(&self) -> Self {
-        Self {
-            toc: self.toc.clone(),
-            consensus_state: self.consensus_state.clone(),
-        }
     }
 }

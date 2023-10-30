@@ -16,7 +16,7 @@ use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
 use crate::common::{
-    dummy_on_replica_failure, dummy_request_shard_transfer, TEST_OPTIMIZERS_CONFIG,
+    dummy_on_replica_failure, dummy_request_shard_transfer, REST_PORT, TEST_OPTIMIZERS_CONFIG,
 };
 
 async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
@@ -72,7 +72,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         &config,
         Arc::new(storage_config),
         shard_distribution,
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         None,
@@ -128,7 +128,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         recover_dir.path(),
         snapshots_path.path(),
         Default::default(),
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         None,

@@ -5,6 +5,7 @@ mod locks;
 mod point_ops;
 mod snapshots;
 mod temp_directories;
+pub mod transfer;
 
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
@@ -13,10 +14,7 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::Duration;
 
-use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
-use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{default_replication_factor, CollectionConfig};
 use collection::operations::types::*;
@@ -25,21 +23,18 @@ use collection::shards::replica_set;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
-use futures::future::try_join_all;
-use futures::Future;
 use segment::common::cpu::get_num_cpus;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
-use tonic::transport::Channel;
-use tonic::Status;
 
+use self::transfer::ShardTransferDispatcher;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::types::{PeerAddressById, StorageConfig};
+use crate::types::StorageConfig;
 use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
@@ -71,10 +66,13 @@ pub struct TableOfContent {
     /// A lock to prevent concurrent collection creation.
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
+    /// Dispatcher for shard transfer to access consensus.
+    shard_transfer_dispatcher: parking_lot::Mutex<Option<ShardTransferDispatcher>>,
 }
 
 impl TableOfContent {
     /// PeerId does not change during execution so it is ok to copy it here.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
@@ -182,6 +180,7 @@ impl TableOfContent {
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
+            shard_transfer_dispatcher: Default::default(),
         }
     }
 
@@ -522,104 +521,8 @@ impl TableOfContent {
             .join(collection_name)
     }
 
-    /// Wait until all other known peers reach the given commit
-    ///
-    /// # Errors
-    ///
-    /// This errors if:
-    /// - any of the peers is not on the same term
-    /// - waiting takes longer than the specified timeout
-    /// - any of the peers cannot be reached
-    pub async fn await_commit_on_all_peers(
-        &self,
-        commit: u64,
-        term: u64,
-        timeout: Duration,
-    ) -> Result<(), StorageError> {
-        let requests = self
-            .peer_address_by_id()
-            .keys()
-            .filter(|id| **id != self.this_peer_id)
-            // The collective timeout at the bottom of this function handles actually timing out.
-            // Since an explicit timeout must be given here as well, it is multiplied by two to
-            // give the collective timeout some space.
-            .map(|peer_id| self.await_commit_on_peer(*peer_id, commit, term, timeout * 2))
-            .collect::<Vec<_>>();
-        let responses = try_join_all(requests);
-
-        // Handle requests with timeout
-        tokio::time::timeout(timeout, responses)
-            .await
-            .map(|_| ())
-            .map_err(|_elapsed| StorageError::Timeout {
-                description: "Failed to wait for consensus commit on all peers, timed out.".into(),
-            })
-    }
-
-    fn peer_address_by_id(&self) -> PeerAddressById {
-        self.channel_service.id_to_address.read().clone()
-    }
-
-    /// Wait until the given peer reaches the given commit
-    ///
-    /// # Errors
-    ///
-    /// This errors if the given peer is on a different term. Also errors if the peer cannot be reached.
-    async fn await_commit_on_peer(
-        &self,
-        peer_id: PeerId,
-        commit: u64,
-        term: u64,
-        timeout: Duration,
-    ) -> Result<(), StorageError> {
-        let response = self
-            .with_qdrant_client(peer_id, |mut client| async move {
-                let request = WaitOnConsensusCommitRequest {
-                    commit: commit as i64,
-                    term: term as i64,
-                    timeout: timeout.as_secs() as i64,
-                };
-                client
-                    .wait_on_consensus_commit(tonic::Request::new(request))
-                    .await
-            })
-            .await
-            .map_err(|err| {
-                StorageError::service_error(format!(
-                    "Failed to wait for consensus commit on peer {peer_id}: {err}"
-                ))
-            })?
-            .into_inner();
-
-        // Create error if wait request failed
-        if !response.ok {
-            return Err(StorageError::service_error(format!(
-                "Failed to wait for consensus commit on peer {peer_id}, has diverged commit/term or timed out."
-            )));
-        }
-        Ok(())
-    }
-
-    async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
-        &self,
-        peer_id: PeerId,
-        f: impl Fn(QdrantInternalClient<Channel>) -> O,
-    ) -> Result<T, CollectionError> {
-        let address = self
-            .channel_service
-            .id_to_address
-            .read()
-            .get(&peer_id)
-            .ok_or_else(|| CollectionError::service_error("Address for peer ID is not found."))?
-            .clone();
-        self.channel_service
-            .channel_pool
-            .with_channel(&address, |channel| {
-                let client = QdrantInternalClient::new(channel);
-                let client = client.max_decoding_message_size(usize::MAX);
-                f(client)
-            })
-            .await
-            .map_err(Into::into)
+    /// Insert dispatcher into table of contents for shard transfer.
+    pub fn with_shard_transfer_dispatcher(&self, dispatcher: ShardTransferDispatcher) {
+        self.shard_transfer_dispatcher.lock().replace(dispatcher);
     }
 }
