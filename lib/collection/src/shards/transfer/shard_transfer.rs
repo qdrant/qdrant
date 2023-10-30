@@ -274,9 +274,9 @@ async fn transfer_snapshot(
         .await
         .map(TempPath::from_path)
         .map_err(|err| {
-            log::error!(
+            CollectionError::service_error(format!(
                 "Failed to determine snapshot path, will not delete file after recovery: {err}"
-            );
+            ))
         })?;
 
     // Recover shard snapshot on remote
@@ -304,7 +304,7 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    if let Err(err) = path.close() {
+    if let Err(err) = snapshot_temp_path.close() {
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
     }
 
