@@ -71,6 +71,7 @@ pub async fn recover_shard_snapshot(
     shard_id: ShardId,
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
+    client: reqwest::Client,
 ) -> Result<(), StorageError> {
     // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled
     //   - remote snapshot is downloaded into `download_dir` and would be deleted with it
@@ -95,7 +96,7 @@ pub async fn recover_shard_snapshot(
                         return Err(StorageError::bad_input(description));
                     }
                     let (snapshot_path, snapshot_temp_path) =
-                        snapshots::download::download_snapshot(url, download_dir.path()).await?;
+                        snapshots::download::download_snapshot(client, url, download_dir.path()).await?;
                     (snapshot_path, snapshot_temp_path)
                 }
 

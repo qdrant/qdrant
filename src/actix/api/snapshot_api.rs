@@ -170,6 +170,7 @@ async fn upload_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
+        todo!(),
     )
     .await;
     match response {
@@ -195,6 +196,7 @@ async fn recover_from_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
+        todo!(),
     )
     .await;
     match response {
@@ -319,6 +321,7 @@ async fn recover_shard_snapshot(
         shard,
         request.location,
         request.priority.unwrap_or_default(),
+        todo!(),
     )
     .map_err(Into::into);
 

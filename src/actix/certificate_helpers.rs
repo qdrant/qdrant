@@ -167,6 +167,22 @@ fn with_buf_read<T>(path: &str, f: impl FnOnce(&mut dyn BufRead) -> io::Result<T
     f(dyn_reader).map_err(|err| Error::ReadFile(err, path.into()))
 }
 
+pub fn reqwest_client(settings: &Settings) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder();
+
+    if settings.service.enable_tls {
+        builder = builder.add_root_certificate(reqwest::Certificate::from_pem(todo!())?);
+
+        if settings.service.verify_https_client_certificate {
+            builder = builder.identity(reqwest::Identity::from_pem(todo!())?);
+        }
+    }
+
+    let client = builder.build()?;
+
+    Ok(client)
+}
+
 /// Actix TLS errors.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
