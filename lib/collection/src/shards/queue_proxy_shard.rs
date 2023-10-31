@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+#[cfg(debug_assertions)]
 use std::thread;
 
 use async_trait::async_trait;
@@ -106,6 +107,7 @@ impl QueueProxyShard {
     }
 
     /// Check if the queue proxy shard is already finalized
+    #[cfg(debug_assertions)]
     fn is_finalized(&self) -> bool {
         self.inner.is_none()
     }
