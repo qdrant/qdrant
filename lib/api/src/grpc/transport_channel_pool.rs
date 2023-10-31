@@ -5,13 +5,21 @@ use std::time::Duration;
 
 use rand::{thread_rng, Rng};
 use tokio::select;
+use tonic::codegen::InterceptedService;
+use tonic::service::Interceptor;
 use tonic::transport::{Channel, ClientTlsConfig, Error as TonicError, Uri};
-use tonic::{Code, Status};
+use tonic::{Code, Request, Status};
 
 use crate::grpc::dynamic_channel_pool::DynamicChannelPool;
 use crate::grpc::dynamic_pool::CountedItem;
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
 use crate::grpc::qdrant::HealthCheckRequest;
+
+/// Maximum lifetime of a gRPC channel.
+///
+/// Using 1 day (24 hours) because the request with the longest timeout currently uses the same
+/// timeout value. Namely the shard recovery call used in shard snapshot transfer.
+pub const MAX_GRPC_CHANNEL_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -64,6 +72,26 @@ enum RequestFailure {
     RequestConnection(TonicError),
 }
 
+/// Intercepts gRPC requests and adds a default timeout if it wasn't already set.
+pub struct AddTimeout {
+    default_timeout: Duration,
+}
+
+impl AddTimeout {
+    pub fn new(default_timeout: Duration) -> Self {
+        Self { default_timeout }
+    }
+}
+
+impl Interceptor for AddTimeout {
+    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
+        if request.metadata().get("grpc-timeout").is_none() {
+            request.set_timeout(self.default_timeout);
+        }
+        Ok(request)
+    }
+}
+
 /// Holds a pool of channels established for a set of URIs.
 /// Channel are shared by cloning them.
 /// Make the `pool_size` larger to increase throughput.
@@ -106,7 +134,7 @@ impl TransportChannelPool {
     async fn _init_pool_for_uri(&self, uri: Uri) -> Result<DynamicChannelPool, TonicError> {
         DynamicChannelPool::new(
             uri,
-            self.grpc_timeout,
+            MAX_GRPC_CHANNEL_TIMEOUT,
             self.connection_timeout,
             self.tls_config.clone(),
             MAX_CONNECTIONS_PER_CHANNEL,
@@ -206,10 +234,10 @@ impl TransportChannelPool {
         }
     }
 
-    async fn _make_request<T, O: Future<Output = Result<T, Status>>>(
+    async fn make_request<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: &impl Fn(Channel) -> O,
+        f: &impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
         timeout: Duration,
     ) -> Result<T, RequestFailure> {
         let channel = match self.get_or_create_pooled_channel(uri).await {
@@ -219,8 +247,11 @@ impl TransportChannelPool {
             }
         };
 
+        let intercepted_channel =
+            InterceptedService::new(channel.item().clone(), AddTimeout::new(timeout));
+
         let result: RequestFailure = select! {
-            res = f(channel.item().clone()) => {
+            res = f(intercepted_channel) => {
                 match res {
                     Ok(body) => {
                         channel.report_success();
@@ -231,9 +262,6 @@ impl TransportChannelPool {
             }
             res = self.check_connectability(uri) => {
                RequestFailure::HealthCheck(res)
-            }
-            _res = tokio::time::sleep(timeout) => {
-                RequestFailure::RequestError(Status::deadline_exceeded(format!("Timeout {}ms reached for uri: {}", timeout.as_millis(), uri)))
             }
         };
 
@@ -255,7 +283,7 @@ impl TransportChannelPool {
     pub async fn with_channel_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: impl Fn(Channel) -> O,
+        f: impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
         timeout: Option<Duration>,
         retries: usize,
     ) -> Result<T, RequestError<Status>> {
@@ -264,7 +292,7 @@ impl TransportChannelPool {
         let max_timeout = timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
 
         loop {
-            let request_result: Result<T, _> = self._make_request(uri, &f, max_timeout).await;
+            let request_result: Result<T, _> = self.make_request(uri, &f, max_timeout).await;
 
             let error_result = match request_result {
                 Ok(body) => return Ok(body),
@@ -370,7 +398,7 @@ impl TransportChannelPool {
     pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
-        f: impl Fn(Channel) -> O,
+        f: impl Fn(InterceptedService<Channel, AddTimeout>) -> O,
     ) -> Result<T, RequestError<Status>> {
         self.with_channel_timeout(uri, f, None, DEFAULT_RETRIES)
             .await

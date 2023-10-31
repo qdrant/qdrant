@@ -4,9 +4,10 @@ use std::time::Duration;
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::WaitOnConsensusCommitRequest;
-use api::grpc::transport_channel_pool::TransportChannelPool;
+use api::grpc::transport_channel_pool::{AddTimeout, TransportChannelPool};
 use futures::future::try_join_all;
 use futures::Future;
+use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
 use tonic::{Request, Status};
 use url::Url;
@@ -124,7 +125,7 @@ impl ChannelService {
     async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
         peer_id: PeerId,
-        f: impl Fn(QdrantInternalClient<Channel>) -> O,
+        f: impl Fn(QdrantInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
     ) -> Result<T, CollectionError> {
         let address = self
             .id_to_address
