@@ -473,13 +473,14 @@ impl ShardHolder {
             .await
     }
 
+    /// # Safety
+    ///
+    /// This function is cancel-safe
     pub async fn list_shard_snapshots(
         &self,
         snapshots_path: &Path,
         shard_id: ShardId,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
-        // This future is cancel-safe
-
         self.assert_shard_is_local(shard_id).await?;
 
         let snapshots_path = self.snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
@@ -491,6 +492,9 @@ impl ShardHolder {
         list_snapshots_in_directory(&snapshots_path).await
     }
 
+    /// # Safety
+    ///
+    /// This function is cancel-safe
     pub async fn create_shard_snapshot(
         &self,
         snapshots_path: &Path,
@@ -498,16 +502,8 @@ impl ShardHolder {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        // This future is cancel-safe
-        //
-        // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file`
-        //   - are handled by `tempfile` and would be deleted on drop
-        //   - neither of them is a child of the other, so the order of deletion does not matter
-        // - there's no way to cancel `task`
-        //   - it always run in the background until completion or error
-        //   - `temp_file` would be deleted
-        //     - if `create_shard_snapshot` future is dropped and `task` result is discarded
-        //     - or task `task` fails with an error
+        // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file` are handled by `tempfile`
+        //   and would be deleted, if future is cancelled
 
         let shard = self
             .get_shard(&shard_id)
@@ -592,39 +588,26 @@ impl ShardHolder {
             }
         }
 
-        // NOTE:
-        //
-        // `keep` calls are *sync*, so once `move_file` future resolves, `keep` calls will *always*
-        // execute to completion and won't be "cancelled" even if `create_shard_snapshot` future is
-        // dropped.
-        //
-        // If we switch to *async* `keep` calls at some point:
-        // - we may leave it as-is, but files may get cleaned up or persisted semi-randomly in that case
-        //   - (but do we care, if request was cancelled?)
-        // - or we can spawn `move_file` and `keep` calls as a single task
-        //   - so that `keep` calls will *always* execute to completion if `move_file` resolves
-        //   - and we can do "select" on `move_file` and a cancellation token, to be able to cancel
-        //     `move_file` before it resolves
+        // Remove partially moved `snapshot_path`, if `move_file` fails
+        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
 
         // `tempfile::NamedTempFile::persist` does not work if destination file is on another
-        // file-system, so we have to move the file explicitly.
+        // file-system, so we have to move the file explicitly
         move_file(temp_file.path(), &snapshot_path).await?;
 
-        // We already moved the file to the desired destination, but `temp_file` will still try to
-        // delete the file when dropped, so we use `tempfile::NamedTempFile::keep` to consume it safely.
-        //
-        // `tempfile::NamedTempFile::keep` "needs to mark the file as non-temporary" on Windows,
-        // which is a fallible operation. But we already moved the file, so we expect it to fail
-        // and explicitly ignore the result.
-        //
-        // We may mark the wrong file as "non-temporary", if someone creates another file with the
-        // same name in between `move_file` and `tempfile::NamedTempFile::keep` calls, but this is
-        // better than *deleting* it, if we drop `temp_file` as-is
+        // We successfully moved `snapshot_path`, so we `keep` it
+        snapshot_file.keep()?;
+
+        // We successfully moved `temp_file`, but `tempfile` will still try to delete the file on drop,
+        // so we `keep` it and ignore the error
         let _ = temp_file.keep();
 
         get_snapshot_description(&snapshot_path).await
     }
 
+    /// # Safety
+    ///
+    /// This function is *not* cancel-safe!
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
@@ -636,8 +619,6 @@ impl ShardHolder {
         temp_dir: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
-        // This future is *not* cancel-safe!
-
         if !self.contains_shard(&shard_id) {
             return Err(shard_not_found_error(shard_id));
         }
@@ -703,14 +684,15 @@ impl ShardHolder {
         Ok(())
     }
 
+    /// # Safety
+    ///
+    /// This function is *not* cancel-safe
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
-        // This future is *not* cancel-safe!
-
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)

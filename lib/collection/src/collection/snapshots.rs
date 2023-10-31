@@ -214,14 +214,15 @@ impl Collection {
         Ok(())
     }
 
+    /// # Safety
+    ///
+    /// This function is *not* cancel-safe!
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
-        // This future is *not* cancel-safe!
-
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
@@ -289,6 +290,9 @@ impl Collection {
             .await
     }
 
+    /// # Safety
+    ///
+    /// This function is *not* cancel-safe!
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
@@ -298,8 +302,6 @@ impl Collection {
         temp_dir: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
-        // This future is *not* cancel-safe!
-
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)

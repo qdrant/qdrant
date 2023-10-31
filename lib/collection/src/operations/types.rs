@@ -926,6 +926,16 @@ impl From<cancel::Error> for CollectionError {
     }
 }
 
+impl From<tempfile::PathPersistError> for CollectionError {
+    fn from(err: tempfile::PathPersistError) -> Self {
+        Self::service_error(format!(
+            "failed to persist temporary file path {}: {}",
+            err.path.display(),
+            err.error,
+        ))
+    }
+}
+
 pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl Record {

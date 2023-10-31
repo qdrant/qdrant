@@ -70,14 +70,14 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    /// Returns if local shard was recovered from path
+    /// # Safety
+    ///
+    /// This function is *not* cancel-safe!
     pub async fn restore_local_replica_from(
         &self,
         replica_path: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
-        // This future is *not* cancel-safe!
-        //
         // `local.take()` call and `restore` task have to be executed as a single transaction
 
         if !LocalShard::check_data(replica_path) {

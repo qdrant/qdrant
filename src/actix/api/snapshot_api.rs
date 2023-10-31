@@ -336,6 +336,9 @@ async fn upload_shard_snapshot(
     let (collection, shard) = path.into_inner();
     let SnapshotUploadingParam { wait, priority } = query.into_inner();
 
+    // - `recover_shard_snapshot_impl` is *not* cancel-safe
+    //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
+
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         let future = async {
             let collection = toc.get_collection(&collection).await?;

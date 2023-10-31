@@ -12,14 +12,14 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
 
+/// # Safety
+///
+/// This function is cancel-safe
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
-    // This future is cancel-safe
-    // (see `ShardHolder::create_shard_snapshot`)
-
     let collection = toc.get_collection(&collection_name).await?;
 
     let snapshot = collection
@@ -29,28 +29,28 @@ pub async fn create_shard_snapshot(
     Ok(snapshot)
 }
 
+/// # Safety
+///
+/// This function is cancel-safe
 pub async fn list_shard_snapshots(
     toc: Arc<TableOfContent>,
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    // This future is cancel-safe
-
     let collection = toc.get_collection(&collection_name).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
 }
 
+/// # Safety
+///
+/// This function is cancel-safe
 pub async fn delete_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    // This future is cancel-safe
-    //
-    // TODO: Explain why?
-
     let collection = toc.get_collection(&collection_name).await?;
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
@@ -62,6 +62,9 @@ pub async fn delete_shard_snapshot(
     Ok(())
 }
 
+/// # Safety
+///
+/// This function is cancel-safe
 pub async fn recover_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -69,10 +72,10 @@ pub async fn recover_shard_snapshot(
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
-    // This future is cancel-safe
-    //
-    // - `download_dir` is handled by `tempfile` and would be deleted on drop
-    // - remote snapshot is downloaded into and would be deleted with the `download_dir`
+    // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled
+    //   - remote snapshot is downloaded into `download_dir` and would be deleted with it
+    // - `recover_shard_snapshot_impl` is *not* cancel-safe
+    //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         let future = async {
@@ -139,6 +142,9 @@ pub async fn recover_shard_snapshot(
     Ok(())
 }
 
+/// # Safety
+///
+/// This function is *not* cancel-safe!
 pub async fn recover_shard_snapshot_impl(
     toc: &TableOfContent,
     collection: &Collection,
@@ -147,9 +153,7 @@ pub async fn recover_shard_snapshot_impl(
     priority: SnapshotPriority,
     cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
-    // This future is *not* cancel-safe!
-    //
-    // `Collection::restore_shard_snapshot` and `activate_shard` calls have to be executed as a
+    // `Collection::restore_shard_snapshot` and `activate_shard` calls *have to* be executed as a
     // single transaction
     //
     // It is *possible* to make this function to be cancel-safe, but it is *extremely tedious* to do so
