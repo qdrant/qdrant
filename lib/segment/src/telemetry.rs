@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
+use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
 use crate::types::{
     PayloadIndexInfo, SegmentConfig, SegmentInfo, VectorDataConfig, VectorDataInfo,
 };
@@ -50,6 +51,9 @@ pub struct VectorIndexSearchesTelemetry {
     pub unfiltered_hnsw: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub unfiltered_sparse: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_plain: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
@@ -63,6 +67,22 @@ pub struct VectorIndexSearchesTelemetry {
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub unfiltered_exact: OperationDurationStatistics,
+}
+
+impl From<&SparseSearchesTelemetry> for VectorIndexSearchesTelemetry {
+    fn from(value: &SparseSearchesTelemetry) -> Self {
+        VectorIndexSearchesTelemetry {
+            index_name: None,
+            unfiltered_plain: value.unfiltered_plain.lock().get_statistics(),
+            filtered_plain: Default::default(),
+            unfiltered_hnsw: Default::default(),
+            filtered_small_cardinality: value.small_cardinality.lock().get_statistics(),
+            filtered_large_cardinality: value.large_cardinality.lock().get_statistics(),
+            filtered_exact: Default::default(),
+            unfiltered_exact: Default::default(),
+            unfiltered_sparse: value.unfiltered_sparse.lock().get_statistics(),
+        }
+    }
 }
 
 impl Anonymize for SegmentTelemetry {
@@ -140,6 +160,7 @@ impl Anonymize for VectorIndexSearchesTelemetry {
             index_name: None,
             unfiltered_plain: self.unfiltered_plain.anonymize(),
             unfiltered_hnsw: self.unfiltered_hnsw.anonymize(),
+            unfiltered_sparse: self.unfiltered_sparse.anonymize(),
             filtered_plain: self.filtered_plain.anonymize(),
             filtered_small_cardinality: self.filtered_small_cardinality.anonymize(),
             filtered_large_cardinality: self.filtered_large_cardinality.anonymize(),

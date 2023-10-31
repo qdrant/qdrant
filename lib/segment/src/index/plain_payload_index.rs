@@ -285,6 +285,7 @@ impl VectorIndex for PlainIndex {
             filtered_large_cardinality: OperationDurationStatistics::default(),
             filtered_exact: OperationDurationStatistics::default(),
             unfiltered_exact: OperationDurationStatistics::default(),
+            unfiltered_sparse: OperationDurationStatistics::default(),
         }
     }
 

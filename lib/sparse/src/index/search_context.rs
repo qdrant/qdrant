@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::types::ScoredPointOffset;
+use common::types::{PointOffsetType, ScoredPointOffset};
 
 use crate::common::sparse_vector::SparseVector;
 use crate::index::inverted_index::InvertedIndex;
@@ -49,6 +49,8 @@ impl<'a> SearchContext<'a> {
         }
     }
 
+    /// Advance posting lists iterators and return the next candidate by increasing ids.
+    ///
     /// Example
     ///
     /// postings_iterators:
@@ -104,6 +106,9 @@ impl<'a> SearchContext<'a> {
         })
     }
 
+    /// Returns the next min record id from all posting list iterators
+    ///
+    /// returns None if all posting list iterators are exhausted
     fn next_min(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
         let mut min_record_id = None;
 
@@ -129,7 +134,11 @@ impl<'a> SearchContext<'a> {
         });
     }
 
-    pub fn search(&mut self) -> Vec<ScoredPointOffset> {
+    /// Search for the top k results that satisfy the filter condition
+    pub fn search<F: Fn(PointOffsetType) -> bool>(
+        &mut self,
+        filter_condition: &F,
+    ) -> Vec<ScoredPointOffset> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
@@ -137,6 +146,10 @@ impl<'a> SearchContext<'a> {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
                 break;
+            }
+            // check filter condition
+            if !filter_condition(candidate.idx) {
+                continue;
             }
             // push candidate to result queue
             self.result_queue.push(candidate);
@@ -208,6 +221,11 @@ mod tests {
     };
     use crate::index::posting_list::PostingList;
 
+    /// Match all filter condition for testing
+    fn match_all(_p: PointOffsetType) -> bool {
+        true
+    }
+
     fn _advance_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
@@ -277,7 +295,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -336,7 +354,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -372,7 +390,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 120.0,
@@ -407,7 +425,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -435,7 +453,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,

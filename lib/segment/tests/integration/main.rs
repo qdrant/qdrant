@@ -14,4 +14,5 @@ pub mod payload_index_test;
 pub mod scroll_filtering_test;
 pub mod segment_builder_test;
 pub mod segment_tests;
+mod sparse_vector_index_search_tests;
 pub mod utils;

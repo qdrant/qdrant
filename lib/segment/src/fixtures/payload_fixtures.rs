@@ -4,6 +4,7 @@ use itertools::Itertools;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
+use sparse::common::sparse_vector::SparseVector;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::types::{
@@ -115,6 +116,43 @@ pub fn random_bool_payload<R: Rng + ?Sized>(
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen()).collect()
+}
+
+/// Generates a non empty sparse vector
+pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_size: usize) -> SparseVector {
+    let size = rnd_gen.gen_range(1..max_size);
+    let mut tuples: Vec<(i32, f64)> = vec![];
+
+    for i in 1..=size {
+        let no_skip = rnd_gen.gen_bool(0.5);
+        if no_skip {
+            tuples.push((i as i32, rnd_gen.gen_range(0.0..100.0)));
+        }
+    }
+
+    // make sure we have at least one vector
+    if tuples.is_empty() {
+        tuples.push((
+            rnd_gen.gen_range(1..max_size) as i32,
+            rnd_gen.gen_range(0.0..100.0),
+        ));
+    }
+
+    SparseVector::from(tuples)
+}
+
+/// Generates a sparse vector with all dimensions filled
+pub fn random_full_sparse_vector<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    max_size: usize,
+) -> SparseVector {
+    let mut tuples: Vec<(i32, f64)> = vec![];
+
+    for i in 1..=max_size {
+        tuples.push((i as i32, rnd_gen.gen_range(0.0..100.0)));
+    }
+
+    SparseVector::from(tuples)
 }
 
 pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
