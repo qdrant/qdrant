@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -167,146 +167,6 @@ fn with_buf_read<T>(path: &str, f: impl FnOnce(&mut dyn BufRead) -> io::Result<T
     f(dyn_reader).map_err(|err| Error::ReadFile(err, path.into()))
 }
 
-#[derive(Debug)]
-pub struct HttpClient {
-    https_client: Option<HttpsClient>,
-}
-
-impl HttpClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self> {
-        let https_client = HttpsClient::from_settings(settings)?;
-        Ok(Self { https_client })
-    }
-
-    pub fn get(&self) -> Result<reqwest::Client> {
-        match &self.https_client {
-            Some(https_client) => https_client.get_or_refresh(),
-            None => Ok(reqwest::Client::new()),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct HttpsClient {
-    client: RwLock<HttpsClientWithAge>,
-    tls_config: TlsConfig,
-    verify_https_client_certificate: bool,
-}
-
-impl HttpsClient {
-    pub fn from_settings(settings: &Settings) -> Result<Option<Self>> {
-        if !settings.service.enable_tls {
-            return Ok(None);
-        }
-
-        let Some(tls_config) = settings.tls.clone() else {
-            return Err(Error::TlsConfigUndefined);
-        };
-
-        let verify_https_client_certificate = settings.service.verify_https_client_certificate;
-
-        let client = HttpsClientWithAge::from_config(&tls_config, verify_https_client_certificate)?;
-
-        let client = Self {
-            client: client.into(),
-            tls_config,
-            verify_https_client_certificate,
-        };
-
-        Ok(Some(client))
-    }
-
-    pub fn get_or_refresh(&self) -> Result<reqwest::Client> {
-        {
-            let client = self.client.read();
-
-            if client.age() <= self.ttl() {
-                return Ok(client.client.clone());
-            }
-        }
-
-        let client = HttpsClientWithAge::from_config(
-            &self.tls_config,
-            self.verify_https_client_certificate,
-        )?;
-
-        *self.client.write() = client.clone();
-
-        Ok(client.client)
-    }
-
-    pub fn ttl(&self) -> Duration {
-        match self.tls_config.cert_ttl {
-            None | Some(0) => Duration::MAX,
-            Some(secs) => Duration::from_secs(secs),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct HttpsClientWithAge {
-    client: reqwest::Client,
-    last_update: Instant,
-}
-
-impl HttpsClientWithAge {
-    pub fn from_config(
-        tls_config: &TlsConfig,
-        verify_https_client_certificate: bool,
-    ) -> Result<Self> {
-        let client = Self {
-            client: https_client_from_config(tls_config, verify_https_client_certificate)?,
-            last_update: Instant::now(),
-        };
-
-        Ok(client)
-    }
-
-    pub fn age(&self) -> Duration {
-        self.last_update.elapsed()
-    }
-}
-
-fn https_client_from_config(
-    tls_config: &TlsConfig,
-    verify_https_client_certificate: bool,
-) -> Result<reqwest::Client> {
-    let mut builder =
-        reqwest::Client::builder().add_root_certificate(load_https_client_ca_cert(tls_config)?);
-
-    if verify_https_client_certificate {
-        builder = builder.identity(load_https_client_identity(tls_config)?);
-    }
-
-    let client = builder.build()?;
-
-    Ok(client)
-}
-
-fn load_https_client_ca_cert(tls_config: &TlsConfig) -> Result<reqwest::Certificate> {
-    let ca_cert_pem = fs::read(&tls_config.ca_cert)
-        .map_err(|err| Error::ReadFile(err, tls_config.ca_cert.clone()))?;
-
-    let ca_cert = reqwest::Certificate::from_pem(&ca_cert_pem)?;
-
-    Ok(ca_cert)
-}
-
-fn load_https_client_identity(tls_config: &TlsConfig) -> Result<reqwest::Identity> {
-    let mut identity_pem =
-        fs::read(&tls_config.cert).map_err(|err| Error::ReadFile(err, tls_config.cert.clone()))?;
-
-    let mut key_file = fs::File::open(&tls_config.key)
-        .map_err(|err| Error::OpenFile(err, tls_config.key.clone()))?;
-
-    io::copy(&mut key_file, &mut identity_pem)
-        .map_err(|err| Error::ReadFile(err, tls_config.key.clone()))?;
-
-    let identity = reqwest::Identity::from_pem(&identity_pem)?;
-
-    Ok(identity)
-}
-
 /// Actix TLS errors.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -324,14 +184,4 @@ pub enum Error {
     InvalidPrivateKey,
     #[error("TLS signing error")]
     Sign(#[source] rustls::sign::SignError),
-    #[error("TLS config is not defined in the Qdrant config file")]
-    TlsConfigUndefined,
-    #[error("failed to setup HTTPS client: {0}")]
-    Reqwest(#[from] reqwest::Error),
-}
-
-impl From<Error> for io::Error {
-    fn from(err: Error) -> Self {
-        io::Error::new(io::ErrorKind::Other, err)
-    }
 }
