@@ -133,14 +133,6 @@ pub mod consensus_ops {
             )
         }
 
-        pub fn deactivate_replica(
-            collection_name: CollectionId,
-            shard_id: u32,
-            peer_id: PeerId,
-        ) -> Self {
-            Self::set_replica_state(collection_name, shard_id, peer_id, ReplicaState::Dead, None)
-        }
-
         pub fn start_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,
