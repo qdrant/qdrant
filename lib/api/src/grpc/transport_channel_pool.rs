@@ -15,8 +15,11 @@ use crate::grpc::dynamic_pool::CountedItem;
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
 use crate::grpc::qdrant::HealthCheckRequest;
 
-// 1 hour should be enough for channel timeout
-pub const MAX_GRPC_CHANNEL_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+/// Maximum lifetime of a gRPC channel.
+///
+/// Using 1 day (24 hours) because the request with the longest timeout currently uses the same
+/// timeout value. Namely the shard recovery call used in shard snapshot transfer.
+pub const MAX_GRPC_CHANNEL_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
