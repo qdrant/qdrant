@@ -44,7 +44,7 @@ impl InvertedIndexRam {
 
     /// Upsert a vector into the inverted index.
     pub fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
-        for (dim_id, weight) in vector.indices.into_iter().zip(vector.weights.into_iter()) {
+        for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
                 Some(posting) => {

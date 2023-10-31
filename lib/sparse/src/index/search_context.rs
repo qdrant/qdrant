@@ -93,7 +93,7 @@ impl<'a> SearchContext<'a> {
                 if record_id == min_record_id {
                     let element = posting_iterator.posting_list_iterator.next().unwrap();
                     score +=
-                        element.weight * self.query.weights[posting_iterator.query_weight_offset];
+                        element.weight * self.query.values[posting_iterator.query_weight_offset];
                 }
             }
         }
@@ -175,7 +175,7 @@ impl<'a> SearchContext<'a> {
         if let Some(element) = posting_iterator.posting_list_iterator.peek() {
             let max_weight_from_list = element.weight.max(element.max_next_weight);
             let max_score_contribution =
-                max_weight_from_list * self.query.weights[posting_query_offset];
+                max_weight_from_list * self.query.values[posting_query_offset];
             if max_score_contribution < min_score {
                 return match skip_to {
                     None => {
@@ -206,7 +206,7 @@ mod tests {
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![1.0, 1.0, 1.0],
+                values: vec![1.0, 1.0, 1.0],
             },
             10,
             inverted_index,
@@ -262,7 +262,7 @@ mod tests {
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![1.0, 1.0, 1.0],
+                values: vec![1.0, 1.0, 1.0],
             },
             10,
             inverted_index,
@@ -321,7 +321,7 @@ mod tests {
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![1.0, 1.0, 1.0],
+                values: vec![1.0, 1.0, 1.0],
             },
             10,
             &inverted_index_ram,
@@ -351,13 +351,13 @@ mod tests {
             4,
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![40.0, 40.0, 40.0],
+                values: vec![40.0, 40.0, 40.0],
             },
         );
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![1.0, 1.0, 1.0],
+                values: vec![1.0, 1.0, 1.0],
             },
             10,
             &inverted_index_ram,
@@ -392,7 +392,7 @@ mod tests {
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![1.0, 1.0, 1.0],
+                values: vec![1.0, 1.0, 1.0],
             },
             3,
             inverted_index,
@@ -420,7 +420,7 @@ mod tests {
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![1.0, 1.0, 1.0],
+                values: vec![1.0, 1.0, 1.0],
             },
             4,
             inverted_index,
@@ -486,7 +486,7 @@ mod tests {
         let mut search_context = SearchContext::new(
             SparseVector {
                 indices: vec![1, 2, 3],
-                weights: vec![1.0, 1.0, 1.0],
+                values: vec![1.0, 1.0, 1.0],
             },
             3,
             inverted_index,
