@@ -31,6 +31,7 @@ use crate::actix::helpers::{
 };
 use crate::common;
 use crate::common::collections::*;
+use crate::common::http_client::HttpClient;
 
 #[derive(Deserialize, Validate)]
 struct SnapshotPath {
@@ -146,6 +147,7 @@ async fn create_snapshot(
 #[post("/collections/{name}/snapshots/upload")]
 async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
+    http_client: web::Data<HttpClient>,
     collection: valid::Path<CollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
     params: valid::Query<SnapshotUploadingParam>,
@@ -170,7 +172,7 @@ async fn upload_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
-        todo!(),
+        http_client.get(),
     )
     .await;
     match response {
@@ -183,6 +185,7 @@ async fn upload_snapshot(
 #[put("/collections/{name}/snapshots/recover")]
 async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
+    http_client: web::Data<HttpClient>,
     collection: valid::Path<CollectionPath>,
     request: valid::Json<SnapshotRecover>,
     params: valid::Query<SnapshottingParam>,
@@ -196,7 +199,7 @@ async fn recover_from_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
-        todo!(),
+        http_client.get(),
     )
     .await;
     match response {
@@ -310,6 +313,7 @@ async fn create_shard_snapshot(
 #[put("/collections/{collection}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
     toc: web::Data<TableOfContent>,
+    http_client: web::Data<HttpClient>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
@@ -321,7 +325,7 @@ async fn recover_shard_snapshot(
         shard,
         request.location,
         request.priority.unwrap_or_default(),
-        todo!(),
+        http_client.get(),
     )
     .map_err(Into::into);
 
