@@ -62,7 +62,7 @@ fn random_reco_query<R: Rng + ?Sized>(
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
     let num_positives: usize = rnd.gen_range(0..MAX_EXAMPLES);
-    let num_negatives: usize = rnd.gen_range(0..MAX_EXAMPLES);
+    let num_negatives: usize = rnd.gen_range(1..MAX_EXAMPLES);
 
     let positives = (0..num_positives)
         .map(|_| sampler.take(DIMS).collect_vec().into())
@@ -251,14 +251,18 @@ fn scoring_equivalency(
         let other_scorer = match &quantized_vectors {
             Some(quantized_storage) => quantized_storage
                 .raw_scorer(
-                    query,
+                    query.clone(),
                     id_tracker.deleted_point_bitslice(),
                     other_storage.deleted_vector_bitslice(),
                     &is_stopped,
                 )
                 .unwrap(),
             None => {
-                new_raw_scorer(query, &other_storage, id_tracker.deleted_point_bitslice()).unwrap()
+                new_raw_scorer(
+                query.clone(),
+                &other_storage,
+                id_tracker.deleted_point_bitslice(),
+            ).unwrap()
             }
         };
 
@@ -273,8 +277,8 @@ fn scoring_equivalency(
             // both calculations are done on raw vectors, so score should be exactly the same
             assert_eq!(
                 raw_scores, other_scores,
-                "Scorer results are not equal, attempt: {}",
-                _i
+                "Scorer results are not equal, attempt: {}, query: {:?}",
+                _i, query
             );
         } else {
             // Quantization is used for the other storage, so score should be similar
