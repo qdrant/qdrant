@@ -311,7 +311,8 @@ mod tests {
             points[2].as_slice().into(),
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
-        );
+        )
+        .unwrap();
         let res = raw_scorer.peek_top_all(2);
 
         assert_eq!(res.len(), 2);
@@ -388,6 +389,7 @@ mod tests {
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
         )
+        .unwrap()
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
@@ -415,6 +417,7 @@ mod tests {
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
         )
+        .unwrap()
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
         assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
         assert_eq!(closest[0].idx, 4);
@@ -440,6 +443,7 @@ mod tests {
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
         )
+        .unwrap()
         .peek_top_all(5);
         assert!(closest.is_empty(), "must have no results, all deleted");
     }
@@ -501,6 +505,7 @@ mod tests {
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
         )
+        .unwrap()
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
@@ -569,7 +574,8 @@ mod tests {
             query,
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
-        );
+        )
+        .unwrap();
 
         let mut res = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
         let res_count = scorer.score_points(&query_points, &mut res);
@@ -654,17 +660,20 @@ mod tests {
 
         {
             let borrowed_quantized_vectors = quantized_vectors.borrow();
-            let scorer_quant = borrowed_quantized_vectors.raw_scorer(
-                query.clone(),
-                borrowed_id_tracker.deleted_point_bitslice(),
-                borrowed_storage.deleted_vector_bitslice(),
-                &stopped,
-            );
+            let scorer_quant = borrowed_quantized_vectors
+                .raw_scorer(
+                    query.clone(),
+                    borrowed_id_tracker.deleted_point_bitslice(),
+                    borrowed_storage.deleted_vector_bitslice(),
+                    &stopped,
+                )
+                .unwrap();
             let scorer_orig = new_raw_scorer(
                 query.clone(),
                 &borrowed_storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
-            );
+            )
+            .unwrap();
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
                 let orig = scorer_orig.score_point(i);
@@ -684,17 +693,20 @@ mod tests {
         assert_eq!(quantization_files, quantized_vectors.borrow().files());
 
         let borrowed_quantized_vectors = quantized_vectors.borrow();
-        let scorer_quant = borrowed_quantized_vectors.raw_scorer(
-            query.clone(),
-            borrowed_id_tracker.deleted_point_bitslice(),
-            borrowed_storage.deleted_vector_bitslice(),
-            &stopped,
-        );
+        let scorer_quant = borrowed_quantized_vectors
+            .raw_scorer(
+                query.clone(),
+                borrowed_id_tracker.deleted_point_bitslice(),
+                borrowed_storage.deleted_vector_bitslice(),
+                &stopped,
+            )
+            .unwrap();
         let scorer_orig = new_raw_scorer(
             query,
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
-        );
+        )
+        .unwrap();
 
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);

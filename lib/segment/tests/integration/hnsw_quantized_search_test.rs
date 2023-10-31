@@ -184,22 +184,25 @@ fn check_matches(
                 .vector_index
                 .borrow()
                 .search(&[&query], filter, top, None, &false.into())
+                .unwrap()
         })
         .collect::<Vec<_>>();
 
     let mut sames: usize = 0;
     let attempts = query_vectors.len();
     for (query, plain_result) in query_vectors.iter().zip(exact_search_results.iter()) {
-        let index_result = hnsw_index.search(
-            &[query],
-            filter,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[query],
+                filter,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
         sames += sames_count(&index_result, plain_result);
     }
     let acc = 100.0 * sames as f64 / (attempts * top) as f64;
@@ -217,38 +220,42 @@ fn check_oversampling(
     for query in query_vectors {
         let ef_oversampling = ef / 8;
 
-        let oversampling_1_result = hnsw_index.search(
-            &[query],
-            filter,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef_oversampling),
-                quantization: Some(QuantizationSearchParams {
-                    rescore: Some(true),
+        let oversampling_1_result = hnsw_index
+            .search(
+                &[query],
+                filter,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef_oversampling),
+                    quantization: Some(QuantizationSearchParams {
+                        rescore: Some(true),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+                &false.into(),
+            )
+            .unwrap();
         let best_1 = oversampling_1_result[0][0];
         let worst_1 = oversampling_1_result[0].last().unwrap();
 
-        let oversampling_2_result = hnsw_index.search(
-            &[&query],
-            None,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef_oversampling),
-                quantization: Some(QuantizationSearchParams {
-                    oversampling: Some(4.0),
-                    rescore: Some(true),
+        let oversampling_2_result = hnsw_index
+            .search(
+                &[&query],
+                None,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef_oversampling),
+                    quantization: Some(QuantizationSearchParams {
+                        oversampling: Some(4.0),
+                        rescore: Some(true),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+                &false.into(),
+            )
+            .unwrap();
         let best_2 = oversampling_2_result[0][0];
         let worst_2 = oversampling_2_result[0].last().unwrap();
 
@@ -270,20 +277,22 @@ fn check_rescoring(
     top: usize,
 ) {
     for query in query_vectors.iter() {
-        let index_result = hnsw_index.search(
-            &[query],
-            filter,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                quantization: Some(QuantizationSearchParams {
-                    rescore: Some(true),
+        let index_result = hnsw_index
+            .search(
+                &[query],
+                filter,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    quantization: Some(QuantizationSearchParams {
+                        rescore: Some(true),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+                &false.into(),
+            )
+            .unwrap();
         for result in &index_result[0] {
             assert!(result.score < ScoreType::EPSILON);
         }

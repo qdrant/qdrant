@@ -164,19 +164,23 @@ fn test_batch_and_single_request_equivalency() {
             payload_value.into(),
         )));
 
-        let search_res_1 =
-            hnsw_index.search(&[&query_vector_1], Some(&filter), 10, None, &false.into());
+        let search_res_1 = hnsw_index
+            .search(&[&query_vector_1], Some(&filter), 10, None, &false.into())
+            .unwrap();
 
-        let search_res_2 =
-            hnsw_index.search(&[&query_vector_2], Some(&filter), 10, None, &false.into());
+        let search_res_2 = hnsw_index
+            .search(&[&query_vector_2], Some(&filter), 10, None, &false.into())
+            .unwrap();
 
-        let batch_res = hnsw_index.search(
-            &[&query_vector_1, &query_vector_2],
-            Some(&filter),
-            10,
-            None,
-            &false.into(),
-        );
+        let batch_res = hnsw_index
+            .search(
+                &[&query_vector_1, &query_vector_2],
+                Some(&filter),
+                10,
+                None,
+                &false.into(),
+            )
+            .unwrap();
 
         assert_eq!(search_res_1[0], batch_res[0]);
         assert_eq!(search_res_2[0], batch_res[1]);
