@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::grpc::transport_channel_pool::MAX_GRPC_CHANNEL_TIMEOUT;
 use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -27,9 +26,6 @@ use crate::shards::CollectionId;
 const TRANSFER_BATCH_SIZE: usize = 100;
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 pub(crate) const MAX_RETRY_COUNT: usize = 3;
-
-/// Timeout for transferring and recovering a shard snapshot on a remote peer.
-const SNAPSHOT_TRANSFER_RECOVER_TIMEOUT: Duration = MAX_GRPC_CHANNEL_TIMEOUT;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransfer {
@@ -320,8 +316,6 @@ async fn transfer_snapshot(
             shard_id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
-            Some(SNAPSHOT_TRANSFER_RECOVER_TIMEOUT),
-            api::grpc::transport_channel_pool::DEFAULT_RETRIES,
         )
         .await
         .map_err(|err| {

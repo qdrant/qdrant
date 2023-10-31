@@ -14,7 +14,7 @@ use api::grpc::qdrant::{
     ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, ShardSnapshotLocation,
     WaitForShardStateRequest,
 };
-use api::grpc::transport_channel_pool::AddTimeout;
+use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
@@ -55,6 +55,9 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;
 use crate::shards::CollectionId;
+
+/// Timeout for transferring and recovering a shard snapshot on a remote peer.
+const SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT: Duration = MAX_GRPC_CHANNEL_TIMEOUT;
 
 /// RemoteShard
 ///
@@ -437,14 +440,16 @@ impl RemoteShard {
     }
 
     /// Recover a shard at the remote from the given public `url`.
+    ///
+    /// # Warning
+    ///
+    /// This method specifies a timeout of 24 hours.
     pub async fn recover_shard_snapshot_from_url(
         &self,
         collection_name: &str,
         shard_id: ShardId,
         url: &Url,
         snapshot_priority: SnapshotPriority,
-        request_timeout: Option<Duration>,
-        request_retries: usize,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
             .with_shard_snapshots_client_timeout(
@@ -462,8 +467,8 @@ impl RemoteShard {
                         })
                         .await
                 },
-                request_timeout,
-                request_retries,
+                Some(SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT),
+                api::grpc::transport_channel_pool::DEFAULT_RETRIES,
             )
             .await?
             .into_inner();
