@@ -10,22 +10,9 @@ N_REPLICA = 1
 COLLECTION_NAME = "test_collection"
 
 
-def update_points_in_loop(peer_url, collection_name, offset=0):
-    limit = 3
-    while True:
-        upsert_random_points(peer_url, limit, collection_name, offset=offset)
-        offset += limit
-
-
-def run_update_points_in_background(peer_url, collection_name, init_offset=0):
-    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, init_offset))
-    p.start()
-    return p
-
-
 # Transfer shards from one node to another while applying updates in parallel
 # Test that data on the both sides is consistent
-def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
+def test_shard_snapshot_transfer_cancel(tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
@@ -39,11 +26,6 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
 
     # Insert some initial number of points
     upsert_random_points(peer_api_uris[0], 100)
-
-    # Start pushing points to the cluster
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100)
-    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=10000)
-    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=20000)
 
     transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
@@ -67,12 +49,30 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
+    # Cancel shard transfer
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "abort_transfer": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+            }
+        })
+    assert_http_ok(r)
+
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "snapshot"
+            }
+        })
+    assert_http_ok(r)
+
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
-
-    upload_process_1.kill()
-    upload_process_2.kill()
-    upload_process_3.kill()
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
 
@@ -92,4 +92,4 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
 
-    assert counts[0] == counts[1] == counts[2]
+    assert counts[0] == counts[1] == counts[2] == 100
