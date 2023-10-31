@@ -97,12 +97,13 @@ pub async fn transfer_shard(
         channel_service.clone(),
     );
 
+    // Prepare the remote for receiving the shard, waits for the correct state on the remote
     remote_shard.initiate_transfer().await?;
 
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_batches(
+            transfer_stream_records(
                 shard_holder.clone(),
                 shard_id,
                 remote_shard,
@@ -129,12 +130,22 @@ pub async fn transfer_shard(
     }
 }
 
-async fn transfer_batches(
+/// Orchestrate shard transfer by streaming records
+///
+/// This is called on the sender and will arrange all that is needed for the shard transfer
+/// process.
+///
+/// This first transfers configured indices. Then it transfers all point records in batches.
+/// Updates to the local shard are forwarded to the remote concurrently.
+async fn transfer_stream_records(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
+    let remote_peer_id = remote_shard.peer_id;
+    log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
+
     // Proxify local shard and create payload indexes on remote shard
     {
         let shard_holder_guard = shard_holder.read().await;
@@ -151,6 +162,7 @@ async fn transfer_batches(
     }
 
     // Transfer contents batch by batch
+    log::trace!("Transferring points to shard {shard_id} by streaming records");
     let mut offset = None;
     loop {
         if stopped.load(std::sync::atomic::Ordering::Relaxed) {
@@ -177,6 +189,9 @@ async fn transfer_batches(
             )));
         }
     }
+
+    log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
+
     Ok(())
 }
 
@@ -247,6 +262,11 @@ async fn transfer_snapshot(
     temp_dir: &Path,
     _stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
+    let remote_peer_id = remote_shard.peer_id;
+    log::debug!(
+        "Starting shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
+    );
+
     let shard_holder_read = shard_holder.read().await;
     let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
@@ -267,7 +287,7 @@ async fn transfer_snapshot(
     );
 
     // Create shard snapshot
-    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer...");
+    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
     let snapshot_description = shard_holder_read
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
@@ -289,10 +309,7 @@ async fn transfer_snapshot(
         &snapshot_description.name,
     ));
 
-    log::debug!(
-        "Transferring and recovering shard {shard_id} snapshot on peer {}...",
-        transfer_config.to
-    );
+    log::trace!("Transferring and recovering shard {shard_id} snapshot on peer {remote_peer_id}");
     remote_shard
         .recover_shard_snapshot_from_url(
             collection_name,
@@ -312,7 +329,7 @@ async fn transfer_snapshot(
     }
 
     // Set shard state to Partial
-    log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
+    log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
     consensus
         .snapshot_recovered_switch_to_partial_confirm_remote(
             &transfer_config,
@@ -349,6 +366,10 @@ async fn transfer_snapshot(
     // Synchronize all nodes
     await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
+    log::debug!(
+        "Ending shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
+    );
+
     Ok(())
 }
 
@@ -364,11 +385,6 @@ async fn await_consensus_sync(
     channel_service: &ChannelService,
     this_peer_id: PeerId,
 ) {
-    let peer_count = channel_service.id_to_address.read().len().saturating_sub(1);
-    if peer_count == 0 {
-        return;
-    }
-
     let sync_consensus = async {
         let await_result = consensus
             .await_consensus_sync(this_peer_id, channel_service)
@@ -380,15 +396,13 @@ async fn await_consensus_sync(
     };
     let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
 
-    log::trace!(
-        "Waiting on {peer_count} peer(s) to reach consensus before finalizing shard snapshot transfer..."
-    );
     tokio::select! {
+        biased;
         Ok(_) = sync_consensus => {
             log::trace!("All peers reached consensus");
         }
         _ = timeout => {
-            log::warn!("All peers failed to synchronize consensus, continuing after timeout...");
+            log::warn!("All peers failed to synchronize consensus, continuing after timeout");
         }
     }
 }

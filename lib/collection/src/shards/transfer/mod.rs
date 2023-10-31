@@ -120,7 +120,16 @@ pub trait ShardTransferConsensus: Send + Sync {
         this_peer_id: PeerId,
         channel_service: &ChannelService,
     ) -> CollectionResult<()> {
+        let other_peer_count = channel_service.id_to_address.read().len().saturating_sub(1);
+        if other_peer_count == 0 {
+            log::warn!("There are no other peers, skipped synchronizing consensus");
+            return Ok(());
+        }
+
         let (commit, term) = self.consensus_commit_term();
+        log::trace!(
+            "Waiting on {other_peer_count} peer(s) to reach consensus (commit: {commit}, term: {term}) before finalizing shard snapshot transfer"
+        );
         channel_service
             .await_commit_on_all_peers(this_peer_id, commit, term, defaults::CONSENSUS_META_OP_WAIT)
             .await
