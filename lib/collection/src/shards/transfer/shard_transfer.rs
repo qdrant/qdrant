@@ -97,12 +97,13 @@ pub async fn transfer_shard(
         channel_service.clone(),
     );
 
+    // Prepare the remote for receiving the shard, waits for the correct state on the remote
     remote_shard.initiate_transfer().await?;
 
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_batches(
+            transfer_stream_records(
                 shard_holder.clone(),
                 shard_id,
                 remote_shard,
@@ -129,7 +130,14 @@ pub async fn transfer_shard(
     }
 }
 
-async fn transfer_batches(
+/// Orchestrate shard transfer by streaming records
+///
+/// This is called on the sender and will arrange all that is needed for the shard transfer
+/// process.
+///
+/// This first transfers configured indices. Then it transfers all point records in batches.
+/// Updates to the local shard are forwarded to the remote concurrently.
+async fn transfer_stream_records(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
