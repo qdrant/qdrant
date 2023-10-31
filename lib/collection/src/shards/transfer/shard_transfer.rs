@@ -392,6 +392,7 @@ async fn await_consensus_sync(
         "Waiting on {peer_count} peer(s) to reach consensus before finalizing shard snapshot transfer"
     );
     tokio::select! {
+        biased;
         Ok(_) = sync_consensus => {
             log::trace!("All peers reached consensus");
         }
