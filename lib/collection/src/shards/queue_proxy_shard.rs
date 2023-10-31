@@ -115,6 +115,9 @@ impl QueueProxyShard {
     /// This method helps with safely destructing the queue proxy shard, ensuring that remaining
     /// queue updates are transferred to the remote shard, and only unwrapping the local shard
     /// on success. It also releases the max acknowledged WAL version.
+    ///
+    /// Because we have ownership (`self`) we have exclusive access to the internals. It guarantees
+    /// that we will not process new operations on the shard while finalization is happening.
     pub async fn finalize(self) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
         // Transfer all updates, do not unwrap on failure but return error with self
         match self.transfer_all_missed_updates().await {

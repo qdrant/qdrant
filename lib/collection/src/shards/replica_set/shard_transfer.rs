@@ -233,11 +233,15 @@ impl ShardReplicaSet {
     pub async fn transfer_indexes(&self) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(Shard::ForwardProxy(proxy)) = &*read_local {
+            log::trace!(
+                "Transferring indexes to shard {}",
+                proxy.remote_shard.peer_id,
+            );
             proxy.transfer_indexes().await
         } else {
             Err(CollectionError::service_error(format!(
                 "Cannot transfer indexes from shard {} because it is not proxified",
-                self.shard_id
+                self.shard_id,
             )))
         }
     }
@@ -284,6 +288,9 @@ impl ShardReplicaSet {
         match queue_proxy.finalize().await {
             // When finalization is successful, transform into forward proxy
             Ok((local_shard, remote_shard)) => {
+                log::trace!(
+                    "Transferred all queue proxy operations, transforming into forward proxy now"
+                );
                 let forward_proxy = ForwardProxyShard::new(local_shard, remote_shard);
                 let _ = local_write.insert(Shard::ForwardProxy(forward_proxy));
                 Ok(())
