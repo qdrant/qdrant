@@ -9,7 +9,7 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
 use collection::shards::shard::ShardId;
-use futures::TryFutureExt as _;
+use futures::{FutureExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -362,8 +362,8 @@ async fn upload_shard_snapshot(
 
         Result::<_, helpers::HttpError>::Ok(())
     })
-    .map_ok(|_| true)
-    .map_err(Into::into);
+    .map_err(Into::into)
+    .map(|res| res.and_then(|res| res));
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
