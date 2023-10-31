@@ -14,6 +14,7 @@ use api::grpc::qdrant::{
     ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, ShardSnapshotLocation,
     WaitForShardStateRequest,
 };
+use api::grpc::transport_channel_pool::AddTimeout;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
@@ -23,6 +24,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
+use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 use url::Url;
@@ -103,7 +105,7 @@ impl RemoteShard {
 
     async fn with_points_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(PointsInternalClient<Channel>) -> O,
+        f: impl Fn(PointsInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -119,7 +121,7 @@ impl RemoteShard {
 
     async fn with_collections_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(CollectionsInternalClient<Channel>) -> O,
+        f: impl Fn(CollectionsInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -135,7 +137,7 @@ impl RemoteShard {
 
     async fn with_shard_snapshots_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(ShardSnapshotsClient<Channel>) -> O,
+        f: impl Fn(ShardSnapshotsClient<InterceptedService<Channel, AddTimeout>>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service

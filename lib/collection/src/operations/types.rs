@@ -860,8 +860,11 @@ impl From<tonic::Status> for CollectionError {
             tonic::Code::DeadlineExceeded => CollectionError::Timeout {
                 description: format!("Deadline Exceeded: {err}"),
             },
-            other => CollectionError::ServiceError {
-                error: format!("Tonic status error: {other}"),
+            tonic::Code::Cancelled => CollectionError::Cancelled {
+                description: format!("{err}"),
+            },
+            _other => CollectionError::ServiceError {
+                error: format!("Tonic status error: {err}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
             },
         }
