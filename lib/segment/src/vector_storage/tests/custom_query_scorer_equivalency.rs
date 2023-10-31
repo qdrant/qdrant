@@ -243,18 +243,23 @@ fn scoring_equivalency(
             query.clone(),
             &raw_storage,
             id_tracker.deleted_point_bitslice(),
-        );
+        )
+        .unwrap();
 
         let is_stopped = AtomicBool::new(false);
 
         let other_scorer = match &quantized_vectors {
-            Some(quantized_storage) => quantized_storage.raw_scorer(
-                query,
-                id_tracker.deleted_point_bitslice(),
-                other_storage.deleted_vector_bitslice(),
-                &is_stopped,
-            ),
-            None => new_raw_scorer(query, &other_storage, id_tracker.deleted_point_bitslice()),
+            Some(quantized_storage) => quantized_storage
+                .raw_scorer(
+                    query,
+                    id_tracker.deleted_point_bitslice(),
+                    other_storage.deleted_vector_bitslice(),
+                    &is_stopped,
+                )
+                .unwrap(),
+            None => {
+                new_raw_scorer(query, &other_storage, id_tracker.deleted_point_bitslice()).unwrap()
+            }
         };
 
         let points =

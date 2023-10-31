@@ -64,7 +64,7 @@ impl QuantizedVectors {
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
-    ) -> Box<dyn RawScorer + 'a> {
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         QuantizedScorerBuilder::new(
             &self.storage_impl,
             query,

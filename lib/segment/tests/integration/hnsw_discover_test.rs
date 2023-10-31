@@ -119,21 +119,24 @@ fn hnsw_discover_precision() {
     for _i in 0..attempts {
         let query: QueryVector = random_discovery_query(&mut rnd, dim);
 
-        let index_discovery_result = hnsw_index.search(
-            &[&query],
-            None,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_discovery_result = hnsw_index
+            .search(
+                &[&query],
+                None,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
 
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &false.into());
+            .search(&[&query], None, top, None, &false.into())
+            .unwrap();
 
         if plain_discovery_result == index_discovery_result {
             discovery_hits += 1;
@@ -241,21 +244,24 @@ fn filtered_hnsw_discover_precision() {
 
         let query: QueryVector = random_discovery_query(&mut rnd, dim);
 
-        let index_discovery_result = hnsw_index.search(
-            &[&query],
-            filter_query,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_discovery_result = hnsw_index
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
 
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &false.into());
+            .search(&[&query], filter_query, top, None, &false.into())
+            .unwrap();
 
         if plain_discovery_result == index_discovery_result {
             discovery_hits += 1;

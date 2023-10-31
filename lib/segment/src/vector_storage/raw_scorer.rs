@@ -8,6 +8,7 @@ use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::{DenseVectorStorage, VectorStorageEnum};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -88,7 +89,7 @@ pub fn new_stoppable_raw_scorer<'a>(
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
         VectorStorageEnum::Simple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
 
@@ -99,7 +100,7 @@ pub fn new_stoppable_raw_scorer<'a>(
                     let scorer_result =
                         super::async_raw_scorer::new(query.clone(), vs, point_deleted, is_stopped);
                     match scorer_result {
-                        Ok(raw_scorer) => return raw_scorer,
+                        Ok(raw_scorer) => return Ok(raw_scorer),
                         Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
                     };
                 }
@@ -124,7 +125,7 @@ pub fn new_raw_scorer<'a>(
     vector: QueryVector,
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
-) -> Box<dyn RawScorer + 'a> {
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
     new_stoppable_raw_scorer(vector, vector_storage, point_deleted, &DEFAULT_STOPPED)
 }
 
@@ -133,7 +134,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage>(
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_scorer_with_metric::<CosineMetric, _>(
             query,
@@ -161,7 +162,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
@@ -205,13 +206,13 @@ pub fn raw_scorer_from_query_scorer<'a, TQueryScorer: QueryScorer + 'a>(
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
-    Box::new(RawScorerImpl::<TQueryScorer> {
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    Ok(Box::new(RawScorerImpl::<TQueryScorer> {
         query_scorer,
         point_deleted,
         vec_deleted,
         is_stopped,
-    })
+    }))
 }
 
 impl<'a, TQueryScorer> RawScorer for RawScorerImpl<'a, TQueryScorer>

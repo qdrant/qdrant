@@ -68,6 +68,7 @@ fn benchmark_naive(c: &mut Criterion) {
                 &borrowed_storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
             )
+            .unwrap()
             .peek_top_all(10)
         })
     });
@@ -90,7 +91,8 @@ fn random_access_benchmark(c: &mut Criterion) {
         vector,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    );
+    )
+    .unwrap();
 
     let mut total_score = 0.;
     group.bench_function("storage vector search", |b| {

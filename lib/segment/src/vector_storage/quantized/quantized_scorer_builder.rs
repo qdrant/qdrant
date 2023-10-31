@@ -6,6 +6,7 @@ use quantization::EncodedVectors;
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
 use super::quantized_query_scorer::QuantizedQueryScorer;
 use super::quantized_vectors::QuantizedVectorStorage;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::types::Distance;
 use crate::vector_storage::query::context_query::ContextQuery;
@@ -41,7 +42,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         }
     }
 
-    pub fn build(self) -> Box<dyn RawScorer + 'a> {
+    pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.quantized_storage {
             QuantizedVectorStorage::ScalarRam(storage) => self.new_quantized_scorer(storage),
             QuantizedVectorStorage::ScalarMmap(storage) => self.new_quantized_scorer(storage),
@@ -56,7 +57,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
     fn new_quantized_scorer<TEncodedQuery: 'a>(
         self,
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
-    ) -> Box<dyn RawScorer + 'a> {
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let Self {
             quantized_storage: _same_as_quantized_storage_in_args,
             query,
