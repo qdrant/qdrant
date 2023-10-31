@@ -228,7 +228,7 @@ impl VectorIndex for PlainIndex {
         top: usize,
         _params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-    ) -> Vec<Vec<ScoredPointOffset>> {
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
@@ -245,7 +245,9 @@ impl VectorIndex for PlainIndex {
                             id_tracker.deleted_point_bitslice(),
                             is_stopped,
                         )
-                        .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
+                        .map(|scorer| {
+                            scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
+                        })
                     })
                     .collect()
             }
@@ -262,7 +264,7 @@ impl VectorIndex for PlainIndex {
                             id_tracker.deleted_point_bitslice(),
                             is_stopped,
                         )
-                        .peek_top_all(top)
+                        .map(|scorer| scorer.peek_top_all(top))
                     })
                     .collect()
             }

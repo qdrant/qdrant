@@ -752,11 +752,13 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<Vec<ScoredPoint>> {
         check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let internal_result =
-            &vector_data
-                .vector_index
-                .borrow()
-                .search(&[vector], filter, top, params, is_stopped)[0];
+        let internal_result = &vector_data.vector_index.borrow().search(
+            &[vector],
+            filter,
+            top,
+            params,
+            is_stopped,
+        )?[0];
 
         check_stopped(is_stopped)?;
         self.process_search_result(internal_result, with_payload, with_vector)
@@ -781,7 +783,7 @@ impl SegmentEntry for Segment {
             top,
             params,
             is_stopped,
-        );
+        )?;
 
         check_stopped(is_stopped)?;
 

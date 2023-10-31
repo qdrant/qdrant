@@ -142,21 +142,24 @@ fn exact_search_test() {
     for _i in 0..attempts {
         let query = random_vector(&mut rnd, dim).into();
 
-        let index_result = hnsw_index.search(
-            &[&query],
-            None,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                exact: true,
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                None,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: true,
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &false.into());
+            .search(&[&query], None, top, None, &false.into())
+            .unwrap();
 
         assert_eq!(
             index_result, plain_result,
@@ -178,21 +181,24 @@ fn exact_search_test() {
         )));
 
         let filter_query = Some(&filter);
-        let index_result = hnsw_index.search(
-            &[&query],
-            filter_query,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                exact: true,
-                ..Default::default()
-            }),
-            &false.into(),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: true,
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &false.into());
+            .search(&[&query], filter_query, top, None, &false.into())
+            .unwrap();
 
         assert_eq!(
             index_result, plain_result,

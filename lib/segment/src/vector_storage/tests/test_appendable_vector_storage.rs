@@ -59,6 +59,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -85,6 +86,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
@@ -110,6 +112,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_all(5);
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
@@ -168,6 +171,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -217,6 +221,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
     let top_idx = match closest.get(0) {
@@ -235,7 +240,8 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    );
+    )
+    .unwrap();
     let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
     let query_points = vec![0, 1, 2, 3, 4];
@@ -304,17 +310,20 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     {
         let borrowed_quantized_vectors = quantized_vectors.borrow();
-        let scorer_quant = borrowed_quantized_vectors.raw_scorer(
-            query.clone(),
-            borrowed_id_tracker.deleted_point_bitslice(),
-            borrowed_storage.deleted_vector_bitslice(),
-            &stopped,
-        );
+        let scorer_quant = borrowed_quantized_vectors
+            .raw_scorer(
+                query.clone(),
+                borrowed_id_tracker.deleted_point_bitslice(),
+                borrowed_storage.deleted_vector_bitslice(),
+                &stopped,
+            )
+            .unwrap();
         let scorer_orig = new_raw_scorer(
             query.clone(),
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
-        );
+        )
+        .unwrap();
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
             let orig = scorer_orig.score_point(i);
@@ -334,17 +343,20 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     assert_eq!(quantization_files, quantized_vectors.borrow().files());
 
     let borrowed_quantized_vectors = quantized_vectors.borrow();
-    let scorer_quant = borrowed_quantized_vectors.raw_scorer(
-        query.clone(),
-        borrowed_id_tracker.deleted_point_bitslice(),
-        borrowed_storage.deleted_vector_bitslice(),
-        &stopped,
-    );
+    let scorer_quant = borrowed_quantized_vectors
+        .raw_scorer(
+            query.clone(),
+            borrowed_id_tracker.deleted_point_bitslice(),
+            borrowed_storage.deleted_vector_bitslice(),
+            &stopped,
+        )
+        .unwrap();
     let scorer_orig = new_raw_scorer(
         query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    );
+    )
+    .unwrap();
     for i in 0..5 {
         let quant = scorer_quant.score_point(i);
         let orig = scorer_orig.score_point(i);
