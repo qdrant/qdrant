@@ -267,7 +267,7 @@ async fn transfer_snapshot(
     );
 
     // Create shard snapshot
-    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer...");
+    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
     let snapshot_description = shard_holder_read
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
@@ -290,7 +290,7 @@ async fn transfer_snapshot(
     ));
 
     log::debug!(
-        "Transferring and recovering shard {shard_id} snapshot on peer {}...",
+        "Transferring and recovering shard {shard_id} snapshot on peer {}",
         transfer_config.to
     );
     remote_shard
@@ -312,7 +312,7 @@ async fn transfer_snapshot(
     }
 
     // Set shard state to Partial
-    log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus...", transfer_config.to);
+    log::debug!("Shard {shard_id} snapshot recovered on {} for snapshot transfer, switching into next stage through consensus", transfer_config.to);
     consensus
         .snapshot_recovered_switch_to_partial_confirm_remote(
             &transfer_config,
@@ -381,14 +381,14 @@ async fn await_consensus_sync(
     let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
 
     log::trace!(
-        "Waiting on {peer_count} peer(s) to reach consensus before finalizing shard snapshot transfer..."
+        "Waiting on {peer_count} peer(s) to reach consensus before finalizing shard snapshot transfer"
     );
     tokio::select! {
         Ok(_) = sync_consensus => {
             log::trace!("All peers reached consensus");
         }
         _ = timeout => {
-            log::warn!("All peers failed to synchronize consensus, continuing after timeout...");
+            log::warn!("All peers failed to synchronize consensus, continuing after timeout");
         }
     }
 }
