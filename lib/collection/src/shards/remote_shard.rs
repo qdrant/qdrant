@@ -135,18 +135,25 @@ impl RemoteShard {
             .map_err(|err| err.into())
     }
 
-    async fn with_shard_snapshots_client<T, O: Future<Output = Result<T, Status>>>(
+    async fn with_shard_snapshots_client_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
         f: impl Fn(ShardSnapshotsClient<InterceptedService<Channel, AddTimeout>>) -> O,
+        timeout: Option<Duration>,
+        retries: usize,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
             .channel_pool
-            .with_channel(&current_address, |channel| {
-                let client = ShardSnapshotsClient::new(channel);
-                let client = client.max_decoding_message_size(usize::MAX);
-                f(client)
-            })
+            .with_channel_timeout(
+                &current_address,
+                |channel| {
+                    let client = ShardSnapshotsClient::new(channel);
+                    let client = client.max_decoding_message_size(usize::MAX);
+                    f(client)
+                },
+                timeout,
+                retries,
+            )
             .await
             .map_err(|err| err.into())
     }
@@ -436,22 +443,28 @@ impl RemoteShard {
         shard_id: ShardId,
         url: &Url,
         snapshot_priority: SnapshotPriority,
+        request_timeout: Option<Duration>,
+        request_retries: usize,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
-            .with_shard_snapshots_client(|mut client| async move {
-                client
-                    .recover_shard(RecoverShardSnapshotRequest {
-                        collection_name: collection_name.into(),
-                        shard_id,
-                        snapshot_location: Some(ShardSnapshotLocation {
-                            location: Some(Location::Url(url.to_string())),
-                        }),
-                        snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
-                            snapshot_priority,
-                        ) as i32,
-                    })
-                    .await
-            })
+            .with_shard_snapshots_client_timeout(
+                |mut client| async move {
+                    client
+                        .recover_shard(RecoverShardSnapshotRequest {
+                            collection_name: collection_name.into(),
+                            shard_id,
+                            snapshot_location: Some(ShardSnapshotLocation {
+                                location: Some(Location::Url(url.to_string())),
+                            }),
+                            snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
+                                snapshot_priority,
+                            ) as i32,
+                        })
+                        .await
+                },
+                request_timeout,
+                request_retries,
+            )
             .await?
             .into_inner();
         Ok(res)
