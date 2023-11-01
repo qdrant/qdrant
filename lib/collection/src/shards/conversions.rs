@@ -1,4 +1,4 @@
-use api::grpc::conversions::payload_to_proto;
+use api::grpc::conversions::{convert_shard_key_from_grpc_opt, payload_to_proto};
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
@@ -390,5 +390,6 @@ pub fn try_scored_point_from_grpc(
         score: point.score,
         payload,
         vector,
+        shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
     })
 }

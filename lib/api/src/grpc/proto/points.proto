@@ -459,6 +459,7 @@ message ScoredPoint {
   reserved 4; // deprecated "vector" field
   uint64 version = 5; // Last update operation applied to this point
   optional Vectors vectors = 6; // Vectors to search
+  optional ShardKey shard_key = 7; // Shard key
 }
 
 message GroupId {
@@ -521,6 +522,7 @@ message RetrievedPoint {
   map<string, Value> payload = 2;
   reserved 3; // deprecated "vector" field
   optional Vectors vectors = 4;
+  optional ShardKey shard_key = 5; // Shard key
 }
 
 message GetResponse {

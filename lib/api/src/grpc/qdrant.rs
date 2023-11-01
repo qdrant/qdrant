@@ -3857,6 +3857,9 @@ pub struct ScoredPoint {
     /// Vectors to search
     #[prost(message, optional, tag = "6")]
     pub vectors: ::core::option::Option<Vectors>,
+    /// Shard key
+    #[prost(message, optional, tag = "7")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3981,6 +3984,9 @@ pub struct RetrievedPoint {
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(message, optional, tag = "4")]
     pub vectors: ::core::option::Option<Vectors>,
+    /// Shard key
+    #[prost(message, optional, tag = "5")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

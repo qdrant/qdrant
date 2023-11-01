@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::Deref;
@@ -186,6 +186,10 @@ pub struct ScoredPoint {
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,
+    /// Shard Key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub shard_key: Option<ShardKey>,
 }
 
 impl Eq for ScoredPoint {}
@@ -3007,3 +3011,19 @@ mod tests {
 }
 
 pub type TheMap<K, V> = BTreeMap<K, V>;
+
+#[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum ShardKey {
+    Keyword(String),
+    Number(u64),
+}
+
+impl Display for ShardKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
+            ShardKey::Number(number) => write!(f, "{}", number),
+        }
+    }
+}

@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use itertools::Itertools;
+// TODO rename ReplicaShard to ReplicaSetShard
+use segment::types::ShardKey;
 use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -20,7 +22,7 @@ use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet}; // TODO rename ReplicaShard to ReplicaSetShard
-use crate::shards::shard::{PeerId, ShardId, ShardKey};
+use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};

@@ -55,6 +55,7 @@ impl TryFrom<Record> for PointStruct {
             id,
             payload,
             vector,
+            shard_key: _,
         } = record;
 
         if vector.is_none() {
