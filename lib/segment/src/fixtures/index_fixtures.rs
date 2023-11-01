@@ -66,7 +66,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        self.vectors.insert(key, vector.into())?;
+        self.vectors.insert(key, vector.try_into()?)?;
         Ok(())
     }
 

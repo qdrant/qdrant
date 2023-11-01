@@ -32,12 +32,33 @@ impl Vector {
     }
 }
 
-// TODO(ivan) temporary conversion while sparse vectors are under development
-impl<'a> From<VectorRef<'a>> for &'a [VectorElementType] {
-    fn from(val: VectorRef<'a>) -> Self {
-        match val {
-            VectorRef::Dense(v) => v,
-            VectorRef::Sparse(_) => unreachable!(),
+impl<'a> VectorRef<'a> {
+    pub fn to_vec(self) -> Vector {
+        match self {
+            VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
+            VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
+        }
+    }
+}
+
+impl<'a> TryFrom<VectorRef<'a>> for &'a [VectorElementType] {
+    type Error = OperationError;
+
+    fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
+        match value {
+            VectorRef::Dense(v) => Ok(v),
+            VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
+        }
+    }
+}
+
+impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
+    type Error = OperationError;
+
+    fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
+        match value {
+            VectorRef::Dense(_) => Err(OperationError::WrongSparse),
+            VectorRef::Sparse(v) => Ok(v),
         }
     }
 }
@@ -56,17 +77,6 @@ impl From<Vector> for VectorType {
         match value {
             Vector::Dense(v) => v,
             Vector::Sparse(_) => panic!("Can't convert sparse vector to dense"), // TODO(sparse)
-        }
-    }
-}
-
-impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
-    type Error = OperationError;
-
-    fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
-        match value {
-            VectorRef::Dense(_) => Err(OperationError::WrongSparse),
-            VectorRef::Sparse(v) => Ok(v),
         }
     }
 }
@@ -359,7 +369,6 @@ impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
 
 impl<'a> From<VectorRef<'a>> for QueryVector {
     fn from(vec: VectorRef<'a>) -> Self {
-        let vec: &[_] = vec.into();
-        Self::Nearest(Vector::Dense(vec.to_vec()))
+        Self::Nearest(vec.to_vec())
     }
 }
