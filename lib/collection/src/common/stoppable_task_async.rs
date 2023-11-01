@@ -39,29 +39,28 @@ where
     T: Future + Send + 'static,
     T::Output: Clone + Send + 'static,
 {
-    let finished = Arc::new(AtomicBool::new(false));
-    let finished_c = finished.clone();
-
     let stopped = CancellationToken::new();
-    let stopped_clusure = stopped.clone();
-
+    let finished = Arc::new(AtomicBool::new(false));
     let result_holder = Arc::new(Mutex::new(None));
-    let result_holder_c = result_holder.clone();
 
     StoppableAsyncTaskHandle {
-        join_handle: tokio::task::spawn(async move {
-            let res = f(stopped_clusure).await;
-            let mut result_holder_w = result_holder_c.lock();
-            result_holder_w.replace(res.clone());
+        join_handle: tokio::task::spawn({
+            let (stopped, finished, result_holder) =
+                (stopped.clone(), finished.clone(), result_holder.clone());
+            async move {
+                let res = f(stopped).await;
+                let mut result_holder_w = result_holder.lock();
+                result_holder_w.replace(res.clone());
 
-            // We use `Release` ordering to ensure that `f` won't be moved after the `store`
-            // by the compiler
-            finished.store(true, Ordering::Release);
-            res
+                // We use `Release` ordering to ensure that `f` won't be moved after the `store`
+                // by the compiler
+                finished.store(true, Ordering::Release);
+                res
+            }
         }),
         result_holder,
         stopped,
-        finished: finished_c,
+        finished,
     }
 }
 
