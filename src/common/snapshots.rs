@@ -96,7 +96,7 @@ pub async fn recover_shard_snapshot(
                         return Err(StorageError::bad_input(description));
                     }
                     let (snapshot_path, snapshot_temp_path) =
-                        snapshots::download::download_snapshot(client, url, download_dir.path()).await?;
+                        snapshots::download::download_snapshot(&client, url, download_dir.path()).await?;
                     (snapshot_path, snapshot_temp_path)
                 }
 

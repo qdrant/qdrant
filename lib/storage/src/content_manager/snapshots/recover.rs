@@ -55,7 +55,7 @@ pub async fn do_recover_from_snapshot(
     let dispatch = dispatcher.clone();
     let collection_name = collection_name.to_string();
     let recovery = tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatch, &collection_name, source, client).await
+        _do_recover_from_snapshot(dispatch, &collection_name, source, &client).await
     });
     if wait {
         Ok(recovery.await??)
@@ -68,7 +68,7 @@ async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
-    client: reqwest::Client,
+    client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover { location, priority } = source;
     let toc = dispatcher.toc();

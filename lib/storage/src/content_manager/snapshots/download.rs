@@ -29,7 +29,7 @@ fn snapshot_name(url: &Url) -> String {
 /// To persist the file, use `download_file(...).keep()`.
 #[must_use = "returns a TempPath, if dropped the downloaded file is deleted"]
 async fn download_file(
-    client: reqwest::Client,
+    client: &reqwest::Client,
     url: &Url,
     path: &Path,
 ) -> Result<TempPath, StorageError> {
@@ -64,7 +64,7 @@ async fn download_file(
 /// downloaded file is deleted automatically. To keep the file `keep()` may be used.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
 pub async fn download_snapshot(
-    client: reqwest::Client,
+    client: &reqwest::Client,
     url: Url,
     snapshots_dir: &Path,
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
