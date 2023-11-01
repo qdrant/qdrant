@@ -111,6 +111,32 @@ jobs:
         run: ./test_tls.sh
         working-directory: ./tests/tls
 
+  test-tls-snapshot-shard-transfer:
+
+    name: "TLS: Snapshot Shard Transfer"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: qdrant_tls
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
+          build-args: |
+            PROFILE=ci
+      - name: Run integration tests
+        run: ./test_tls_snapshot_shard_transfer.sh
+        working-directory: ./tests/tls
+
   test-consistency:
 
     runs-on: ubuntu-latest
