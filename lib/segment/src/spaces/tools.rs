@@ -28,7 +28,7 @@ where
     }
 
     // If big values is better - PQ should pop-out small values first.
-    // Hence is should be min-heap
+    // Hence it should be min-heap
     let mut pq = FixedLengthPriorityQueue::new(top);
     for element in elements {
         pq.push(element);
