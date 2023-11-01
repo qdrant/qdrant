@@ -73,13 +73,13 @@ impl LocalShard {
                     .unwrap()
                     .distance;
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
-                    // Don't post-process if we are dealing with custom scoring
-                    // TODO(luis): add discovery variant here too
-                    if matches!(req.query, QueryEnum::RecommendBestScore(_)) {
-                        return scored_point;
-                    }
-
-                    scored_point.score = distance.postprocess_score(scored_point.score);
+                    match req.query {
+                        QueryEnum::Nearest(_) => {
+                            scored_point.score = distance.postprocess_score(scored_point.score);
+                        }
+                        // Don't post-process if we are dealing with custom scoring
+                        QueryEnum::RecommendBestScore(_) => {}
+                    };
                     scored_point
                 });
 

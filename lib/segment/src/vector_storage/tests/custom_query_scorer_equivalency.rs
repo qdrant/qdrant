@@ -236,7 +236,7 @@ fn scoring_equivalency(
     let quantized_vectors = quantized_vectors.as_ref().map(|q| q.borrow());
 
     let attempts = 50;
-    for _i in 0..attempts {
+    for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &mut sampler);
 
         let raw_scorer = new_raw_scorer(
@@ -278,7 +278,7 @@ fn scoring_equivalency(
             assert_eq!(
                 raw_scores, other_scores,
                 "Scorer results are not equal, attempt: {}, query: {:?}",
-                _i, query
+                i, query
             );
         } else {
             // Quantization is used for the other storage, so score should be similar

@@ -129,17 +129,17 @@ mod test {
         fn correct_negative_order(a in -100f32..=100f32, b in -100f32..=100f32) {
             let dummy_similarity = |x: &f32| *x as ScoreType;
 
-            let positive_ordering = dummy_similarity(&a).total_cmp(&dummy_similarity(&b));
+            let ordering_before = dummy_similarity(&a).total_cmp(&dummy_similarity(&b));
 
             let query_a = RecoQuery::new(vec![], vec![a]);
             let query_b = RecoQuery::new(vec![], vec![b]);
 
-            let negative_ordering = query_a.score_by(dummy_similarity).total_cmp(&query_b.score_by(dummy_similarity));
+            let ordering_after = query_a.score_by(dummy_similarity).total_cmp(&query_b.score_by(dummy_similarity));
 
-            if positive_ordering == std::cmp::Ordering::Equal {
-                assert_eq!(positive_ordering, negative_ordering);
+            if ordering_before == std::cmp::Ordering::Equal {
+                assert_eq!(ordering_before, ordering_after);
             } else {
-                assert!(positive_ordering != negative_ordering)
+                assert_ne!(ordering_before, ordering_after)
             }
         }
 
@@ -148,14 +148,14 @@ mod test {
         fn correct_positive_order(a in -100f32..=100f32, b in -100f32..=100f32) {
             let dummy_similarity = |x: &f32| *x as ScoreType;
 
-            let positive_ordering = dummy_similarity(&a).total_cmp(&dummy_similarity(&b));
+            let ordering_before = dummy_similarity(&a).total_cmp(&dummy_similarity(&b));
 
             let query_a = RecoQuery::new(vec![a], vec![]);
             let query_b = RecoQuery::new(vec![b], vec![]);
 
-            let positive_ordering_after = query_a.score_by(dummy_similarity).total_cmp(&query_b.score_by(dummy_similarity));
+            let ordering_after = query_a.score_by(dummy_similarity).total_cmp(&query_b.score_by(dummy_similarity));
 
-            assert_eq!(positive_ordering, positive_ordering_after);
+            assert_eq!(ordering_before, ordering_after);
         }
 
         /// Guarantees that if the positive and negative chosen points yield within (-50, 50)
@@ -170,7 +170,7 @@ mod test {
 
             let ordering = query_p.score_by(dummy_similarity).total_cmp(&query_n.score_by(dummy_similarity));
 
-            assert!(ordering == std::cmp::Ordering::Equal || ordering == std::cmp::Ordering::Greater);
+            assert_ne!(ordering, std::cmp::Ordering::Less);
         }
     }
 }
