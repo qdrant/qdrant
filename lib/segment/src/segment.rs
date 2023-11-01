@@ -409,7 +409,8 @@ impl Segment {
                     ),
                 })
             } else {
-                let vector: &[_] = vector_storage.get_vector(point_offset).into();
+                // TODO(sparse) remove unwrap and return Vector type
+                let vector: &[_] = vector_storage.get_vector(point_offset).try_into().unwrap();
                 Ok(Some(vector.to_vec()))
             }
         } else {
@@ -429,7 +430,8 @@ impl Segment {
                 .is_deleted_vector(point_offset);
             if !is_vector_deleted {
                 let vector_storage = vector_data.vector_storage.borrow();
-                let vector: &[_] = vector_storage.get_vector(point_offset).into();
+                // TODO(sparse) remove unwrap after NamedVectors changes
+                let vector: &[_] = vector_storage.get_vector(point_offset).try_into().unwrap();
                 vectors.insert(vector_name.clone(), vector.to_vec());
             }
         }

@@ -138,7 +138,7 @@ impl VectorStorage for MemmapVectorStorage {
         let mut deleted_ids = vec![];
         for id in other_ids {
             check_process_stopped(stopped)?;
-            let vector = other.get_vector(id).into();
+            let vector = other.get_vector(id).try_into()?;
             let raw_bites = mmap_ops::transmute_to_u8_slice(vector);
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
@@ -276,7 +276,7 @@ mod tests {
 
         assert_eq!(borrowed_storage.total_vector_count(), 3);
 
-        let vector: &[_] = borrowed_storage.get_vector(1).into();
+        let vector: &[_] = borrowed_storage.get_vector(1).try_into().unwrap();
         let vector = vector.to_vec();
 
         assert_eq!(points[1], vector);
