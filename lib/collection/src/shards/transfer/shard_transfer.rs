@@ -103,13 +103,7 @@ pub async fn transfer_shard(
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_stream_records(
-                shard_holder.clone(),
-                shard_id,
-                remote_shard,
-                stopped.clone(),
-            )
-            .await
+            transfer_stream_records(shard_holder.clone(), shard_id, remote_shard, stopped).await
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
@@ -123,7 +117,7 @@ pub async fn transfer_shard(
                 snapshots_path,
                 collection_name,
                 temp_dir,
-                stopped.clone(),
+                stopped,
             )
             .await
         }
@@ -260,7 +254,7 @@ async fn transfer_snapshot(
     snapshots_path: &Path,
     collection_name: &str,
     temp_dir: &Path,
-    _stopped: Arc<AtomicBool>,
+    stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     log::debug!(
@@ -277,6 +271,8 @@ async fn transfer_snapshot(
         )));
     };
 
+    cancel_if_stopped(&stopped)?;
+
     // Queue proxy local shard
     replica_set
         .queue_proxify_local(remote_shard.clone())
@@ -285,6 +281,8 @@ async fn transfer_snapshot(
         replica_set.is_queue_proxy().await,
         "Local shard must be a queue proxy"
     );
+
+    cancel_if_stopped(&stopped)?;
 
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
@@ -301,6 +299,8 @@ async fn transfer_snapshot(
                 "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
             ))
         })?;
+
+    cancel_if_stopped(&stopped)?;
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
@@ -328,6 +328,8 @@ async fn transfer_snapshot(
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
     }
 
+    cancel_if_stopped(&stopped)?;
+
     // Set shard state to Partial
     log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
     consensus
@@ -343,9 +345,13 @@ async fn transfer_snapshot(
             ))
         })?;
 
+    cancel_if_stopped(&stopped)?;
+
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
     replica_set.queue_proxy_into_forward_proxy().await?;
+
+    cancel_if_stopped(&stopped)?;
 
     // Wait for Partial state in our replica set
     let partial_state = ReplicaState::Partial;
@@ -362,6 +368,8 @@ async fn transfer_snapshot(
                 "Shard being transferred did not reach {partial_state:?} state in time: {err}",
             ))
         })?;
+
+    cancel_if_stopped(&stopped)?;
 
     // Synchronize all nodes
     await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
@@ -404,6 +412,19 @@ async fn await_consensus_sync(
         _ = timeout => {
             log::warn!("All peers failed to synchronize consensus, continuing after timeout");
         }
+    }
+}
+
+/// Cancel the transfer if stopped.
+///
+/// Returns an error to return early during a transfer if the transfer is stopped.
+fn cancel_if_stopped(stopped: &AtomicBool) -> CollectionResult<()> {
+    if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+        Err(CollectionError::Cancelled {
+            description: "Transfer cancelled".to_string(),
+        })
+    } else {
+        Ok(())
     }
 }
 
