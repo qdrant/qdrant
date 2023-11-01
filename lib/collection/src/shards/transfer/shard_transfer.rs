@@ -13,7 +13,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use super::ShardTransferConsensus;
-use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
+use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
@@ -85,7 +85,7 @@ pub async fn transfer_shard(
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
-    stopped: CancellationToken,
+    cancel: CancellationToken,
 ) -> CollectionResult<()> {
     let shard_id = transfer_config.shard_id;
 
@@ -103,7 +103,7 @@ pub async fn transfer_shard(
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_stream_records(shard_holder.clone(), shard_id, remote_shard, stopped).await
+            transfer_stream_records(shard_holder.clone(), shard_id, remote_shard, cancel).await
         }
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
@@ -117,7 +117,7 @@ pub async fn transfer_shard(
                 snapshots_path,
                 collection_name,
                 temp_dir,
-                stopped,
+                cancel,
             )
             .await
         }
@@ -135,7 +135,7 @@ async fn transfer_stream_records(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    stopped: CancellationToken,
+    cancel: CancellationToken,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
@@ -159,7 +159,7 @@ async fn transfer_stream_records(
     log::trace!("Transferring points to shard {shard_id} by streaming records");
     let mut offset = None;
     loop {
-        if stopped.is_cancelled() {
+        if cancel.is_cancelled() {
             return Err(CollectionError::Cancelled {
                 description: "Transfer cancelled".to_string(),
             });
@@ -254,7 +254,7 @@ async fn transfer_snapshot(
     snapshots_path: &Path,
     collection_name: &str,
     temp_dir: &Path,
-    stopped: CancellationToken,
+    cancel: CancellationToken,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     log::debug!(
@@ -271,7 +271,7 @@ async fn transfer_snapshot(
         )));
     };
 
-    cancel_if_stopped(&stopped)?;
+    error_if_cancelled(&cancel)?;
 
     // Queue proxy local shard
     replica_set
@@ -282,7 +282,7 @@ async fn transfer_snapshot(
         "Local shard must be a queue proxy"
     );
 
-    cancel_if_stopped(&stopped)?;
+    error_if_cancelled(&cancel)?;
 
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
@@ -300,7 +300,7 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    cancel_if_stopped(&stopped)?;
+    error_if_cancelled(&cancel)?;
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
@@ -328,7 +328,7 @@ async fn transfer_snapshot(
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
     }
 
-    cancel_if_stopped(&stopped)?;
+    error_if_cancelled(&cancel)?;
 
     // Set shard state to Partial
     log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
@@ -345,13 +345,13 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    cancel_if_stopped(&stopped)?;
+    error_if_cancelled(&cancel)?;
 
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
     replica_set.queue_proxy_into_forward_proxy().await?;
 
-    cancel_if_stopped(&stopped)?;
+    error_if_cancelled(&cancel)?;
 
     // Wait for Partial state in our replica set
     let partial_state = ReplicaState::Partial;
@@ -369,7 +369,7 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    cancel_if_stopped(&stopped)?;
+    error_if_cancelled(&cancel)?;
 
     // Synchronize all nodes
     await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
@@ -415,11 +415,10 @@ async fn await_consensus_sync(
     }
 }
 
-/// Cancel the transfer if stopped.
-///
-/// Returns an error to return early during a transfer if the transfer is stopped.
-fn cancel_if_stopped(stopped: &CancellationToken) -> CollectionResult<()> {
-    if stopped.is_cancelled() {
+/// Return an error if cancelled.
+#[must_use = "a returned error must be propagated down function calls"]
+fn error_if_cancelled(cancel: &CancellationToken) -> CollectionResult<()> {
+    if cancel.is_cancelled() {
         Err(CollectionError::Cancelled {
             description: "Transfer cancelled".to_string(),
         })
@@ -755,12 +754,12 @@ pub fn spawn_transfer_task<T, F>(
     temp_dir: PathBuf,
     on_finish: T,
     on_error: F,
-) -> StoppableAsyncTaskHandle<bool>
+) -> CancellableAsyncTaskHandle<bool>
 where
     T: Future<Output = ()> + Send + 'static,
     F: Future<Output = ()> + Send + 'static,
 {
-    spawn_async_stoppable(move |stopped| async move {
+    spawn_async_cancellable(move |cancel| async move {
         let mut tries = MAX_RETRY_COUNT;
         let mut finished = false;
         while !finished && tries > 0 {
@@ -773,7 +772,7 @@ where
                 channel_service.clone(),
                 &snapshots_path,
                 &temp_dir,
-                stopped.clone(),
+                cancel.clone(),
             )
             .await;
             finished = match transfer_result {
@@ -798,7 +797,7 @@ where
                     false
                 }
             };
-            if stopped.is_cancelled() {
+            if cancel.is_cancelled() {
                 return false;
             }
             if !finished {

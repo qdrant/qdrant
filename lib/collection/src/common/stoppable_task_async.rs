@@ -6,24 +6,24 @@ use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-pub struct StoppableAsyncTaskHandle<T: Clone> {
+pub struct CancellableAsyncTaskHandle<T: Clone> {
     pub join_handle: JoinHandle<T>,
     result_holder: Arc<Mutex<Option<T>>>,
+    cancelled: CancellationToken,
     finished: Arc<AtomicBool>,
-    stopped: CancellationToken,
 }
 
-impl<T: Clone> StoppableAsyncTaskHandle<T> {
+impl<T: Clone> CancellableAsyncTaskHandle<T> {
     pub fn is_finished(&self) -> bool {
         self.finished.load(Ordering::Relaxed)
     }
 
-    pub fn ask_to_stop(&self) {
-        self.stopped.cancel();
+    pub fn ask_to_cancel(&self) {
+        self.cancelled.cancel();
     }
 
-    pub fn stop(self) -> JoinHandle<T> {
-        self.ask_to_stop();
+    pub fn cancel(self) -> JoinHandle<T> {
+        self.ask_to_cancel();
         self.join_handle
     }
 
@@ -32,23 +32,23 @@ impl<T: Clone> StoppableAsyncTaskHandle<T> {
     }
 }
 
-pub fn spawn_async_stoppable<F, T>(f: F) -> StoppableAsyncTaskHandle<T::Output>
+pub fn spawn_async_cancellable<F, T>(f: F) -> CancellableAsyncTaskHandle<T::Output>
 where
     F: FnOnce(CancellationToken) -> T,
     F: Send + 'static,
     T: Future + Send + 'static,
     T::Output: Clone + Send + 'static,
 {
-    let stopped = CancellationToken::new();
+    let cancelled = CancellationToken::new();
     let finished = Arc::new(AtomicBool::new(false));
     let result_holder = Arc::new(Mutex::new(None));
 
-    StoppableAsyncTaskHandle {
+    CancellableAsyncTaskHandle {
         join_handle: tokio::task::spawn({
-            let (stopped, finished, result_holder) =
-                (stopped.clone(), finished.clone(), result_holder.clone());
+            let (cancel, finished, result_holder) =
+                (cancelled.clone(), finished.clone(), result_holder.clone());
             async move {
-                let res = f(stopped).await;
+                let res = f(cancel).await;
                 let mut result_holder_w = result_holder.lock();
                 result_holder_w.replace(res.clone());
 
@@ -59,7 +59,7 @@ where
             }
         }),
         result_holder,
-        stopped,
+        cancelled,
         finished,
     }
 }
@@ -74,11 +74,11 @@ mod tests {
 
     const STEP_MILLIS: u64 = 5;
 
-    async fn long_task(stop: CancellationToken) -> i32 {
+    async fn long_task(cancel: CancellationToken) -> i32 {
         let mut n = 0;
         for i in 0..10 {
             n = i;
-            if stop.is_cancelled() {
+            if cancel.is_cancelled() {
                 break;
             }
             sleep(Duration::from_millis(STEP_MILLIS)).await;
@@ -88,18 +88,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_stop() {
-        let handle = spawn_async_stoppable(long_task);
+        let handle = spawn_async_cancellable(long_task);
 
         sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
         assert!(!handle.is_finished());
-        handle.ask_to_stop();
+        handle.ask_to_cancel();
         sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
         // If windows, we need to wait a bit more
         #[cfg(windows)]
         sleep(Duration::from_millis(STEP_MILLIS * 10)).await;
         assert!(handle.is_finished());
 
-        let res = handle.stop().await.unwrap();
+        let res = handle.cancel().await.unwrap();
         assert!(res < 10);
     }
 }
