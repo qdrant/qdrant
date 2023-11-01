@@ -51,4 +51,5 @@ async fn discover_batch_points(
 
 pub fn config_discovery_api(cfg: &mut web::ServiceConfig) {
     cfg.service(discover_points);
+    cfg.service(discover_batch_points);
 }

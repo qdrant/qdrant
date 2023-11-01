@@ -218,11 +218,6 @@ def test_discover_same_target():
     # while target part of the score (decimal part) should be the same
     assert scored_points1 != scored_points2
 
-    print("sorted ⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️")
-    print([{"id": point["id"], "score": point["score"]} for point in scored_points1])
-    print("\n")
-    print([{"id": point["id"], "score": point["score"]} for point in scored_points2])
-
     scored_points2_map = {point["id"]: point for point in scored_points2}
 
     for point1 in scored_points1:
@@ -234,7 +229,7 @@ def test_discover_same_target():
             target_score2 = point2["score"] - math.floor(point2["score"])
             assert math.isclose(target_score1, target_score2, rel_tol=1e-5)
 
-# TODO(luis): Fix missing `Content-Type` header
+
 def test_discover_batch():
     targets = []
     contexts = []
