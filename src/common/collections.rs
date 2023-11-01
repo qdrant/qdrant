@@ -11,7 +11,7 @@ use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
 };
 use collection::shards::replica_set;
-use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
@@ -59,20 +59,23 @@ fn generate_even_placement(
     mut pool: Vec<PeerId>,
     shard_number: usize,
     replication_factor: usize,
-) -> Vec<Vec<PeerId>> {
+) -> ShardsPlacement {
     let mut exact_placement = Vec::new();
     let mut rng = rand::thread_rng();
     pool.shuffle(&mut rng);
-    let mut next_pool = pool.clone();
+    let mut loop_iter = pool.iter().cycle();
+
+    // pool: [1,2,3,4]
+    // shuf_pool: [2,3,4,1]
+    //
+    // loop_iter:       [2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1,...]
+    // shard_placement: [2, 3, 4][1, 2, 3][4, 1, 2][3, 4, 1][2, 3, 4]
 
     let max_replication_factor = std::cmp::min(replication_factor, pool.len());
     for _shard in 0..shard_number {
         let mut shard_placement = Vec::new();
         for _replica in 0..max_replication_factor {
-            if next_pool.is_empty() {
-                next_pool = pool.clone();
-            }
-            shard_placement.push(next_pool.pop().unwrap());
+            shard_placement.push(*loop_iter.next().unwrap());
         }
         exact_placement.push(shard_placement);
     }

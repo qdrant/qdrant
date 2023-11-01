@@ -166,13 +166,13 @@ impl ShardHolder {
         self.key_mapping
             .write_optional(|_key_mapping| Some(shard_key_mapping))?;
 
-        self.rebuild_rings();
-
         for shard_id in all_shard_ids {
             if !shard_ids.contains(&shard_id) {
                 self.drop_and_remove_shard(shard_id).await?;
             }
         }
+
+        self.rebuild_rings();
 
         Ok(())
     }

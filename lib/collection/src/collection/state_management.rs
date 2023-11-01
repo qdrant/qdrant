@@ -78,6 +78,12 @@ impl Collection {
 
         let shard_ids = shards.keys().copied().collect::<HashSet<_>>();
 
+        // There are two components, where shard-related info is stored:
+        // Shard objects themselves and shard_holder, that maps shard_keys to shards.
+
+        // On the first state of the update, we update state of shards themselves
+        // and create new shards if needed
+
         for (shard_id, shard_info) in shards {
             match self.shards_holder.read().await.get_shard(&shard_id) {
                 Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
@@ -89,6 +95,8 @@ impl Collection {
                 }
             }
         }
+
+        // On the second step, we register missing shards and remove extra shards
 
         self.shards_holder
             .write()

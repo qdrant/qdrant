@@ -4,7 +4,7 @@ use crate::collection::Collection;
 use crate::config::ShardingMethod;
 use crate::operations::types::CollectionError;
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::shard::{PeerId, ShardId, ShardKey};
+use crate::shards::shard::{PeerId, ShardId, ShardKey, ShardsPlacement};
 
 impl Collection {
     pub async fn create_replica_set(
@@ -40,7 +40,7 @@ impl Collection {
     pub async fn create_shard_key(
         &self,
         shard_key: ShardKey,
-        placement: Vec<Vec<PeerId>>,
+        placement: ShardsPlacement,
     ) -> Result<(), CollectionError> {
         let state = self.state().await;
         match state.config.params.sharding_method.unwrap_or_default() {

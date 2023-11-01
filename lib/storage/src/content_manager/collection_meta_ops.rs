@@ -5,7 +5,7 @@ use collection::operations::config_diff::{
 };
 use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
-use collection::shards::shard::{PeerId, ShardId, ShardKey};
+use collection::shards::shard::{PeerId, ShardId, ShardKey, ShardsPlacement};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
@@ -315,7 +315,7 @@ pub struct SetShardReplicaState {
 pub struct CreateShardKey {
     pub collection_name: String,
     pub shard_key: ShardKey,
-    pub placement: Vec<Vec<PeerId>>,
+    pub placement: ShardsPlacement,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]

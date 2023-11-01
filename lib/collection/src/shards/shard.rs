@@ -20,6 +20,18 @@ pub type ShardId = u32;
 
 pub type PeerId = u64;
 
+/// List of peers that should be used to place replicas of a shard
+pub type ShardReplicasPlacement = Vec<PeerId>;
+
+/// List of shards placements. Each element defines placements of replicas for a single shard.
+/// Number of elements corresponds to the number of shards.
+/// Example: [
+///     [1, 2],
+///     [2, 3],
+///     [3, 4]
+/// ] - 3 shards, each has 2 replicas
+pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
+
 #[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ShardKey {
