@@ -2,7 +2,7 @@ use std::future::Future;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    NamedRecoQuery, NamedVector, VectorElementType, VectorType, DEFAULT_VECTOR_NAME,
+    NamedQuery, NamedVector, VectorElementType, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -347,7 +347,7 @@ fn recommend_by_best_score<'a>(
     let positive = positive.cloned().collect();
     let negative = negative.cloned().collect();
 
-    let query = QueryEnum::RecommendBestScore(NamedRecoQuery {
+    let query = QueryEnum::RecommendBestScore(NamedQuery {
         query: RecoQuery::new(positive, negative),
         using: request.using.clone().map(|x| match x {
             UsingVector::Name(name) => name,

@@ -12,6 +12,7 @@ use crate::types::Distance;
 use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
+use crate::vector_storage::query::TransformInto;
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
 pub(super) struct QuantizedScorerBuilder<'a> {
@@ -74,19 +75,19 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Recommend(reco_query) => {
-                let reco_query: RecoQuery<VectorType> = reco_query.into();
+                let reco_query: RecoQuery<VectorType> = reco_query.transform_into();
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(reco_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<VectorType> = discovery_query.into();
+                let discovery_query: DiscoveryQuery<VectorType> = discovery_query.transform_into();
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(discovery_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Context(context_query) => {
-                let context_query: ContextQuery<VectorType> = context_query.into();
+                let context_query: ContextQuery<VectorType> = context_query.transform_into();
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(context_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
