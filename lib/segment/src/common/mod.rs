@@ -13,9 +13,11 @@ pub mod version;
 
 use std::sync::atomic::AtomicBool;
 
+use sparse::common::sparse_vector::SparseVector;
+
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{QueryVector, VectorElementType, VectorRef};
 use crate::types::{SegmentConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
@@ -46,19 +48,19 @@ fn check_query_vector(
 ) -> OperationResult<()> {
     match query_vector {
         QueryVector::Nearest(vector) => {
-            check_vector_against_config(vector.to_vec_ref().into(), vector_config)?
+            check_vector_against_config(vector.to_vec_ref(), vector_config)?
         }
         QueryVector::Recommend(reco_query) => reco_query.flat_iter().try_for_each(|vector| {
-            check_vector_against_config(vector.to_vec_ref().into(), vector_config)
+            check_vector_against_config(vector.to_vec_ref(), vector_config)
         })?,
         QueryVector::Discovery(discovery_query) => {
             discovery_query.flat_iter().try_for_each(|vector| {
-                check_vector_against_config(vector.to_vec_ref().into(), vector_config)
+                check_vector_against_config(vector.to_vec_ref(), vector_config)
             })?
         }
         QueryVector::Context(discovery_context_query) => {
             discovery_context_query.flat_iter().try_for_each(|vector| {
-                check_vector_against_config(vector.to_vec_ref().into(), vector_config)
+                check_vector_against_config(vector.to_vec_ref(), vector_config)
             })?
         }
     }
@@ -113,6 +115,16 @@ fn get_vector_config_or_error<'a>(
 ///
 /// Returns an error if incompatible.
 fn check_vector_against_config(
+    vector: VectorRef,
+    vector_config: &VectorDataConfig,
+) -> OperationResult<()> {
+    match vector {
+        VectorRef::Dense(vector) => check_dense_vector(vector, vector_config),
+        VectorRef::Sparse(vector) => check_sparse_vector(vector, vector_config),
+    }
+}
+
+fn check_dense_vector(
     vector: &[VectorElementType],
     vector_config: &VectorDataConfig,
 ) -> OperationResult<()> {
@@ -125,6 +137,14 @@ fn check_vector_against_config(
         });
     }
     Ok(())
+}
+
+fn check_sparse_vector(
+    _vector: &SparseVector,
+    _vector_config: &VectorDataConfig,
+) -> OperationResult<()> {
+    // TODO(sparse)
+    todo!("Check sparse vector against config")
 }
 
 pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {

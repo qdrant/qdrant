@@ -156,7 +156,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        let vector = vector.into();
+        let vector = vector.try_into()?;
         self.vectors.insert(key, vector)?;
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
@@ -173,7 +173,7 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other.get_vector(point_id).into();
+            let other_vector = other.get_vector(point_id).try_into()?;
             let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted);

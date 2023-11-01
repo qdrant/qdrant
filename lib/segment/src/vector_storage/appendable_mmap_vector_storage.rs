@@ -112,7 +112,7 @@ impl VectorStorage for AppendableMmapVectorStorage {
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        self.vectors.insert(key, vector.into())?;
+        self.vectors.insert(key, vector.try_into()?)?;
         self.set_deleted(key, false)?;
         Ok(())
     }
@@ -128,7 +128,7 @@ impl VectorStorage for AppendableMmapVectorStorage {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_deleted = other.is_deleted_vector(point_id);
-            let other_vector = other.get_vector(point_id).into();
+            let other_vector = other.get_vector(point_id).try_into()?;
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted)?;
         }
