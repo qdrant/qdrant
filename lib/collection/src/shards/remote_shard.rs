@@ -14,7 +14,7 @@ use api::grpc::qdrant::{
     ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, ShardSnapshotLocation,
     WaitForShardStateRequest,
 };
-use api::grpc::transport_channel_pool::AddTimeout;
+use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
@@ -55,6 +55,9 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;
 use crate::shards::CollectionId;
+
+/// Timeout for transferring and recovering a shard snapshot on a remote peer.
+const SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT: Duration = MAX_GRPC_CHANNEL_TIMEOUT;
 
 /// RemoteShard
 ///
@@ -135,18 +138,25 @@ impl RemoteShard {
             .map_err(|err| err.into())
     }
 
-    async fn with_shard_snapshots_client<T, O: Future<Output = Result<T, Status>>>(
+    async fn with_shard_snapshots_client_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
         f: impl Fn(ShardSnapshotsClient<InterceptedService<Channel, AddTimeout>>) -> O,
+        timeout: Option<Duration>,
+        retries: usize,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
             .channel_pool
-            .with_channel(&current_address, |channel| {
-                let client = ShardSnapshotsClient::new(channel);
-                let client = client.max_decoding_message_size(usize::MAX);
-                f(client)
-            })
+            .with_channel_timeout(
+                &current_address,
+                |channel| {
+                    let client = ShardSnapshotsClient::new(channel);
+                    let client = client.max_decoding_message_size(usize::MAX);
+                    f(client)
+                },
+                timeout,
+                retries,
+            )
             .await
             .map_err(|err| err.into())
     }
@@ -430,6 +440,10 @@ impl RemoteShard {
     }
 
     /// Recover a shard at the remote from the given public `url`.
+    ///
+    /// # Warning
+    ///
+    /// This method specifies a timeout of 24 hours.
     pub async fn recover_shard_snapshot_from_url(
         &self,
         collection_name: &str,
@@ -438,20 +452,24 @@ impl RemoteShard {
         snapshot_priority: SnapshotPriority,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
-            .with_shard_snapshots_client(|mut client| async move {
-                client
-                    .recover_shard(RecoverShardSnapshotRequest {
-                        collection_name: collection_name.into(),
-                        shard_id,
-                        snapshot_location: Some(ShardSnapshotLocation {
-                            location: Some(Location::Url(url.to_string())),
-                        }),
-                        snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
-                            snapshot_priority,
-                        ) as i32,
-                    })
-                    .await
-            })
+            .with_shard_snapshots_client_timeout(
+                |mut client| async move {
+                    client
+                        .recover_shard(RecoverShardSnapshotRequest {
+                            collection_name: collection_name.into(),
+                            shard_id,
+                            snapshot_location: Some(ShardSnapshotLocation {
+                                location: Some(Location::Url(url.to_string())),
+                            }),
+                            snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
+                                snapshot_priority,
+                            ) as i32,
+                        })
+                        .await
+                },
+                Some(SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT),
+                api::grpc::transport_channel_pool::DEFAULT_RETRIES,
+            )
             .await?
             .into_inner();
         Ok(res)
