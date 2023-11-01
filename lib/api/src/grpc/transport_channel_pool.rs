@@ -30,7 +30,7 @@ pub const DEFAULT_POOL_SIZE: usize = 2;
 /// GOAWAY/ENHANCE_YOUR_CALM errors from occurring.
 /// More info: <https://github.com/qdrant/qdrant/issues/1907>
 const MAX_CONNECTIONS_PER_CHANNEL: usize = 1024;
-const DEFAULT_RETRIES: usize = 2;
+pub const DEFAULT_RETRIES: usize = 2;
 const DEFAULT_BACKOFF: Duration = Duration::from_millis(100);
 
 /// How long to wait for response from server, before checking health of the server
