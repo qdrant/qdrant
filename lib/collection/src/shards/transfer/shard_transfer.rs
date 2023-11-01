@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tempfile::TempPath;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 use super::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
@@ -85,7 +85,7 @@ pub async fn transfer_shard(
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
-    stopped: Arc<AtomicBool>,
+    stopped: CancellationToken,
 ) -> CollectionResult<()> {
     let shard_id = transfer_config.shard_id;
 
@@ -135,7 +135,7 @@ async fn transfer_stream_records(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    stopped: Arc<AtomicBool>,
+    stopped: CancellationToken,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
@@ -159,7 +159,7 @@ async fn transfer_stream_records(
     log::trace!("Transferring points to shard {shard_id} by streaming records");
     let mut offset = None;
     loop {
-        if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+        if stopped.is_cancelled() {
             return Err(CollectionError::Cancelled {
                 description: "Transfer cancelled".to_string(),
             });
@@ -254,7 +254,7 @@ async fn transfer_snapshot(
     snapshots_path: &Path,
     collection_name: &str,
     temp_dir: &Path,
-    stopped: Arc<AtomicBool>,
+    stopped: CancellationToken,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     log::debug!(
@@ -418,8 +418,8 @@ async fn await_consensus_sync(
 /// Cancel the transfer if stopped.
 ///
 /// Returns an error to return early during a transfer if the transfer is stopped.
-fn cancel_if_stopped(stopped: &AtomicBool) -> CollectionResult<()> {
-    if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+fn cancel_if_stopped(stopped: &CancellationToken) -> CollectionResult<()> {
+    if stopped.is_cancelled() {
         Err(CollectionError::Cancelled {
             description: "Transfer cancelled".to_string(),
         })
@@ -798,7 +798,7 @@ where
                     false
                 }
             };
-            if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+            if stopped.is_cancelled() {
                 return false;
             }
             if !finished {

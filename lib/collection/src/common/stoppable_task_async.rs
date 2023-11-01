@@ -1,15 +1,16 @@
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 pub struct StoppableAsyncTaskHandle<T: Clone> {
     pub join_handle: JoinHandle<T>,
     result_holder: Arc<Mutex<Option<T>>>,
     finished: Arc<AtomicBool>,
-    stopped: Weak<AtomicBool>,
+    stopped: CancellationToken,
 }
 
 impl<T: Clone> StoppableAsyncTaskHandle<T> {
@@ -18,9 +19,7 @@ impl<T: Clone> StoppableAsyncTaskHandle<T> {
     }
 
     pub fn ask_to_stop(&self) {
-        if let Some(v) = self.stopped.upgrade() {
-            v.store(true, Ordering::Relaxed);
-        }
+        self.stopped.cancel();
     }
 
     pub fn stop(self) -> JoinHandle<T> {
@@ -35,7 +34,7 @@ impl<T: Clone> StoppableAsyncTaskHandle<T> {
 
 pub fn spawn_async_stoppable<F, T>(f: F) -> StoppableAsyncTaskHandle<T::Output>
 where
-    F: FnOnce(Arc<AtomicBool>) -> T,
+    F: FnOnce(CancellationToken) -> T,
     F: Send + 'static,
     T: Future + Send + 'static,
     T::Output: Clone + Send + 'static,
@@ -43,17 +42,15 @@ where
     let finished = Arc::new(AtomicBool::new(false));
     let finished_c = finished.clone();
 
-    let stopped = Arc::new(AtomicBool::new(false));
-    // We are OK if original value is destroyed with the thread
-    // Weak reference is sufficient
-    let stopped_w = Arc::downgrade(&stopped);
+    let stopped = CancellationToken::new();
+    let stopped_clusure = stopped.clone();
 
     let result_holder = Arc::new(Mutex::new(None));
     let result_holder_c = result_holder.clone();
 
     StoppableAsyncTaskHandle {
         join_handle: tokio::task::spawn(async move {
-            let res = f(stopped).await;
+            let res = f(stopped_clusure).await;
             let mut result_holder_w = result_holder_c.lock();
             result_holder_w.replace(res.clone());
 
@@ -63,7 +60,7 @@ where
             res
         }),
         result_holder,
-        stopped: stopped_w,
+        stopped,
         finished: finished_c,
     }
 }
@@ -78,11 +75,11 @@ mod tests {
 
     const STEP_MILLIS: u64 = 5;
 
-    async fn long_task(stop: Arc<AtomicBool>) -> i32 {
+    async fn long_task(stop: CancellationToken) -> i32 {
         let mut n = 0;
         for i in 0..10 {
             n = i;
-            if stop.load(Ordering::Relaxed) {
+            if stop.is_cancelled() {
                 break;
             }
             sleep(Duration::from_millis(STEP_MILLIS)).await;
