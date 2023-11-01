@@ -346,6 +346,8 @@ pub enum SearchType {
     #[default]
     Nearest,
     RecommendBestScore,
+    Discover,
+    Context,
 }
 
 impl From<&QueryEnum> for SearchType {
@@ -353,6 +355,8 @@ impl From<&QueryEnum> for SearchType {
         match query {
             QueryEnum::Nearest(_) => Self::Nearest,
             QueryEnum::RecommendBestScore(_) => Self::RecommendBestScore,
+            QueryEnum::Discover(_) => Self::Discover,
+            QueryEnum::Context(_) => Self::Context,
         }
     }
 }

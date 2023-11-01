@@ -6,7 +6,7 @@ use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    Named, NamedRecoQuery, NamedVector, VectorStruct, DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVector, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -798,6 +798,8 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
                     },
                 )),
             },
+            QueryEnum::Discover(_) => todo!("luis in other PR"),
+            QueryEnum::Context(_) => todo!("luis in other PR"),
         }
     }
 }
@@ -867,7 +869,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     })
                 }
                 api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
-                    QueryEnum::RecommendBestScore(NamedRecoQuery {
+                    QueryEnum::RecommendBestScore(NamedQuery {
                         query: RecoQuery::new(
                             query.positives.into_iter().map(|v| v.data).collect(),
                             query.negatives.into_iter().map(|v| v.data).collect(),

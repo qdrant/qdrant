@@ -115,7 +115,7 @@ pub type VectorElementType = f32;
 
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
-/// Type for dense vector
+/// Type for vector
 pub type VectorType = Vec<VectorElementType>;
 
 pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
@@ -320,12 +320,12 @@ impl BatchVectorStruct {
 }
 
 #[derive(Debug, Clone)]
-pub struct NamedRecoQuery {
-    pub query: RecoQuery<VectorType>,
+pub struct NamedQuery<TQuery> {
+    pub query: TQuery,
     pub using: Option<String>,
 }
 
-impl Named for NamedRecoQuery {
+impl<T> Named for NamedQuery<T> {
     fn get_name(&self) -> &str {
         self.using.as_deref().unwrap_or(DEFAULT_VECTOR_NAME)
     }

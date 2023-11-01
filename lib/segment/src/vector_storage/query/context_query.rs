@@ -1,7 +1,9 @@
+use std::iter;
+
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, Vector, VectorType};
+use crate::data_types::vectors::{QueryVector, Vector};
 
 #[derive(Debug, Clone)]
 pub struct ContextPair<T> {
@@ -11,7 +13,7 @@ pub struct ContextPair<T> {
 
 impl<T> ContextPair<T> {
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
+        iter::once(&self.positive).chain(iter::once(&self.negative))
     }
 
     pub fn transform<F, U>(self, mut f: F) -> ContextPair<U>
@@ -109,12 +111,6 @@ impl<T> From<Vec<ContextPair<T>>> for ContextQuery<T> {
 impl From<ContextQuery<Vector>> for QueryVector {
     fn from(query: ContextQuery<Vector>) -> Self {
         QueryVector::Context(query)
-    }
-}
-
-impl From<ContextQuery<Vector>> for ContextQuery<VectorType> {
-    fn from(query: ContextQuery<Vector>) -> Self {
-        query.transform(|v| v.into())
     }
 }
 

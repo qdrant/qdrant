@@ -1,9 +1,11 @@
+use std::iter;
+
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, Vector, VectorType};
+use crate::data_types::vectors::{QueryVector, Vector};
 
 type RankType = i32;
 
@@ -32,7 +34,7 @@ impl<T> DiscoveryQuery<T> {
     pub fn flat_iter(&self) -> impl Iterator<Item = &T> {
         let pairs_iter = self.pairs.iter().flat_map(|pair| pair.iter());
 
-        std::iter::once(&self.target).chain(pairs_iter)
+        iter::once(&self.target).chain(pairs_iter)
     }
 
     fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
@@ -73,12 +75,6 @@ impl<T> Query<T> for DiscoveryQuery<T> {
 impl From<DiscoveryQuery<Vector>> for QueryVector {
     fn from(query: DiscoveryQuery<Vector>) -> Self {
         QueryVector::Discovery(query)
-    }
-}
-
-impl From<DiscoveryQuery<Vector>> for DiscoveryQuery<VectorType> {
-    fn from(query: DiscoveryQuery<Vector>) -> Self {
-        query.transform(|v| v.into())
     }
 }
 

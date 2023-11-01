@@ -7,6 +7,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use super::query::context_query::ContextQuery;
 use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
+use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector, VectorType};
@@ -282,7 +283,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 }
             }
             QueryVector::Recommend(reco_query) => {
-                let reco_query: RecoQuery<VectorType> = reco_query.into();
+                let reco_query: RecoQuery<VectorType> = reco_query.transform_into();
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(reco_query, storage);
                 Box::new(AsyncRawScorerImpl::new(
                     points_count,
@@ -294,7 +295,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 ))
             }
             QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<VectorType> = discovery_query.into();
+                let discovery_query: DiscoveryQuery<VectorType> = discovery_query.transform_into();
                 let query_scorer =
                     CustomQueryScorer::<TMetric, _, _>::new(discovery_query, storage);
                 Box::new(AsyncRawScorerImpl::new(
@@ -307,7 +308,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 ))
             }
             QueryVector::Context(context_query) => {
-                let context_query: ContextQuery<VectorType> = context_query.into();
+                let context_query: ContextQuery<VectorType> = context_query.transform_into();
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(context_query, storage);
                 Box::new(AsyncRawScorerImpl::new(
                     points_count,

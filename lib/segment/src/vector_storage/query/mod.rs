@@ -11,6 +11,14 @@ pub trait TransformInto<Output, T = VectorType, U = VectorType> {
     fn transform<F>(self, f: F) -> Output
     where
         F: FnMut(T) -> U;
+
+    fn transform_into(self) -> Output
+    where
+        Self: Sized,
+        T: Into<U>,
+    {
+        self.transform(|v| v.into())
+    }
 }
 
 pub trait Query<T> {
