@@ -158,9 +158,8 @@ mod test {
             assert_eq!(ordering_before, ordering_after);
         }
 
-        /// Guarantees that if the positive and negative chosen points yield within (-50, 50)
-        /// similarities, the point that was chosen from positive is always preferred on
-        /// the candidate list
+        /// Guarantees that the point that was chosen from positive is always preferred on
+        /// the candidate list over a point that was chosen from negatives
         #[test]
         fn correct_positive_and_negative_order(p in -100f32..=100f32, n in -100f32..=100f32) {
             let dummy_similarity = |x: &f32| *x as ScoreType;
