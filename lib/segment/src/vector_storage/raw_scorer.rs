@@ -9,7 +9,7 @@ use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
 use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
-use super::{DenseVectorStorage, VectorStorageEnum};
+use super::{DenseVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::spaces::metric::Metric;
@@ -19,7 +19,6 @@ use crate::types::Distance;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::sparse_raw_scorer::SparseRawScorer;
-use crate::vector_storage::VectorStorage;
 
 /// RawScorer            QueryScorer        Metric
 /// ┌────────────────┐   ┌──────────────┐   ┌───────────────────┐
@@ -127,7 +126,7 @@ pub fn new_stoppable_raw_scorer<'a>(
 
 pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
 
-pub fn raw_sparse_scorer_impl<'a, TVectorStorage: VectorStorage>(
+pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
@@ -241,7 +240,7 @@ pub fn raw_scorer_from_query_scorer<'a, TQueryScorer: QueryScorer + 'a>(
     }))
 }
 
-pub fn raw_sparse_scorer_from_query_scorer<'a, TVectorStorage: VectorStorage>(
+pub fn raw_sparse_scorer_from_query_scorer<'a, TVectorStorage: SparseVectorStorage>(
     vector: SparseVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,

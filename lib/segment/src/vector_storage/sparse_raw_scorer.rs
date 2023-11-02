@@ -4,10 +4,10 @@ use bitvec::slice::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use sparse::common::sparse_vector::SparseVector;
 
-use super::{RawScorer, VectorStorage};
+use super::{RawScorer, SparseVectorStorage};
 use crate::spaces::tools::peek_top_largest_iterable;
 
-pub struct SparseRawScorer<'a, TVectorStorage: VectorStorage> {
+pub struct SparseRawScorer<'a, TVectorStorage: SparseVectorStorage> {
     query: SparseVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
@@ -15,7 +15,7 @@ pub struct SparseRawScorer<'a, TVectorStorage: VectorStorage> {
     is_stopped: &'a AtomicBool,
 }
 
-impl<'a, TVectorStorage: VectorStorage> SparseRawScorer<'a, TVectorStorage> {
+impl<'a, TVectorStorage: SparseVectorStorage> SparseRawScorer<'a, TVectorStorage> {
     pub fn new(
         query: SparseVector,
         vector_storage: &'a TVectorStorage,
@@ -33,7 +33,7 @@ impl<'a, TVectorStorage: VectorStorage> SparseRawScorer<'a, TVectorStorage> {
     }
 }
 
-impl<'a, TVectorStorage: VectorStorage> RawScorer for SparseRawScorer<'a, TVectorStorage> {
+impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, TVectorStorage> {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         if self.is_stopped.load(Ordering::Relaxed) {
             return 0;
