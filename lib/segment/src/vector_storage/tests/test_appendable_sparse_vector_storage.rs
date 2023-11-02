@@ -6,9 +6,12 @@ use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use crate::data_types::vectors::QueryVector;
+use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+use crate::id_tracker::IdTrackerSS;
 use crate::types::Distance;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points: Vec<SparseVector> = vec![
@@ -19,6 +22,10 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         vec![(0, 1.0)].into(),
     ];
     let delete_mask = [false, false, true, true, false];
+    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
+        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+
+    let borrowed_id_tracker = id_tracker.borrow_mut();
     let mut borrowed_storage = storage.borrow_mut();
 
     // Insert all points
@@ -50,6 +57,21 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         2,
         "2 vectors must be deleted"
     );
+
+    // Check that deleted points are deleted through raw scorer
+    let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)].into();
+    let query_vector: QueryVector = vector.into();
+    let closest = new_raw_scorer(
+        query_vector,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
+    .unwrap()
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
+    assert_eq!(closest[0].idx, 0);
+    assert_eq!(closest[1].idx, 1);
+    assert_eq!(closest[2].idx, 4);
 
     // Delete 1, re-delete 2
     borrowed_storage
@@ -87,6 +109,10 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         vec![(0, 1.0)].into(),
     ];
     let delete_mask = [false, false, true, true, false];
+    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
+        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+
+    let borrowed_id_tracker = id_tracker.borrow_mut();
     let mut borrowed_storage = storage.borrow_mut();
 
     {
@@ -120,6 +146,21 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         2,
         "2 vectors must be deleted from other storage"
     );
+
+    // Check that deleted points are deleted through raw scorer
+    let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)].into();
+    let query_vector: QueryVector = vector.into();
+    let closest = new_raw_scorer(
+        query_vector,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
+    .unwrap()
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
+    assert_eq!(closest[0].idx, 0);
+    assert_eq!(closest[1].idx, 1);
+    assert_eq!(closest[2].idx, 4);
 
     // Delete all
     borrowed_storage

@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
+use sparse::common::sparse_vector::SparseVector;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
 use super::simple_vector_storage::SimpleVectorStorage;
@@ -90,6 +91,10 @@ pub trait VectorStorage {
 
 pub trait DenseVectorStorage: VectorStorage {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType];
+}
+
+pub trait SparseVectorStorage: VectorStorage {
+    fn get_sparse(&self, key: PointOffsetType) -> &SparseVector;
 }
 
 pub enum VectorStorageEnum {

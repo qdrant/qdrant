@@ -81,6 +81,17 @@ impl From<Vector> for VectorType {
     }
 }
 
+impl TryFrom<Vector> for SparseVector {
+    type Error = OperationError;
+
+    fn try_from(value: Vector) -> Result<Self, Self::Error> {
+        match value {
+            Vector::Dense(_) => Err(OperationError::WrongSparse),
+            Vector::Sparse(v) => Ok(v),
+        }
+    }
+}
+
 impl<'a> From<&'a [VectorElementType]> for VectorRef<'a> {
     fn from(val: &'a [VectorElementType]) -> Self {
         VectorRef::Dense(val)
@@ -370,5 +381,11 @@ impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
 impl<'a> From<VectorRef<'a>> for QueryVector {
     fn from(vec: VectorRef<'a>) -> Self {
         Self::Nearest(vec.to_vec())
+    }
+}
+
+impl From<SparseVector> for QueryVector {
+    fn from(vec: SparseVector) -> Self {
+        Self::Nearest(Vector::Sparse(vec))
     }
 }
