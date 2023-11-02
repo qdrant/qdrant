@@ -1,141 +1,49 @@
-use std::time::{Duration, Instant};
+use std::path::Path;
 use std::{fs, io, result};
+
+use storage::content_manager::errors::StorageError;
 
 use crate::settings::{Settings, TlsConfig};
 
-#[derive(Debug)]
 pub struct HttpClient {
-    https_client: Option<HttpsClient>,
+    tls_config: Option<TlsConfig>,
+    verify_https_client_certificate: bool,
 }
 
 impl HttpClient {
     pub fn from_settings(settings: &Settings) -> Result<Self> {
-        let https_client = HttpsClient::from_settings(settings)?;
-        Ok(Self { https_client })
-    }
-
-    pub fn get(&self) -> reqwest::Client {
-        match &self.https_client {
-            Some(https_client) => https_client.get_or_refresh(),
-            None => reqwest::Client::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct HttpsClient {
-    client: parking_lot::RwLock<HttpsClientWithAge>,
-    tls_config: TlsConfig,
-    verify_https_client_certificate: bool,
-}
-
-impl HttpsClient {
-    pub fn from_settings(settings: &Settings) -> Result<Option<Self>> {
-        if !settings.service.enable_tls {
-            return Ok(None);
-        }
-
-        let Some(tls_config) = settings.tls.clone() else {
+        if settings.service.enable_tls && settings.tls.is_none() {
             return Err(Error::TlsConfigUndefined);
-        };
-
-        let verify_https_client_certificate = settings.service.verify_https_client_certificate;
-
-        let client = HttpsClientWithAge::from_config(&tls_config, verify_https_client_certificate)?;
-
-        let client = Self {
-            client: client.into(),
-            tls_config,
-            verify_https_client_certificate,
-        };
-
-        Ok(Some(client))
-    }
-
-    pub fn get_or_refresh(&self) -> reqwest::Client {
-        {
-            let client = self.client.read();
-
-            if client.is_valid(self.ttl()) {
-                return client.get();
-            }
         }
 
-        let mut client = self.client.write();
+        let http_client = Self {
+            tls_config: settings.tls.clone(),
+            verify_https_client_certificate: settings.service.verify_https_client_certificate,
+        };
 
-        if client.is_expired(self.ttl()) {
-            let res = client.refresh(&self.tls_config, self.verify_https_client_certificate);
-
-            if let Err(err) = res {
-                log::error!("Failed to refresh HTTPS client, keeping current: {err}");
-            }
-        }
-
-        client.get()
+        Ok(http_client)
     }
 
-    pub fn ttl(&self) -> Duration {
-        match self.tls_config.cert_ttl {
-            None | Some(0) => Duration::MAX,
-            Some(secs) => Duration::from_secs(secs),
+    pub fn client(&self) -> Result<reqwest::Client> {
+        match &self.tls_config {
+            Some(tls_config) => https_client(tls_config, self.verify_https_client_certificate),
+            None => Ok(reqwest::Client::new()),
         }
     }
 }
 
-#[derive(Clone, Debug)]
-struct HttpsClientWithAge {
-    client: reqwest::Client,
-    last_update: Instant,
-}
-
-impl HttpsClientWithAge {
-    pub fn from_config(
-        tls_config: &TlsConfig,
-        verify_https_client_certificate: bool,
-    ) -> Result<Self> {
-        let client = Self {
-            client: https_client_from_config(tls_config, verify_https_client_certificate)?,
-            last_update: Instant::now(),
-        };
-
-        Ok(client)
-    }
-
-    pub fn refresh(
-        &mut self,
-        tls_config: &TlsConfig,
-        verify_https_client_certificate: bool,
-    ) -> Result<()> {
-        *self = Self::from_config(tls_config, verify_https_client_certificate)?;
-        Ok(())
-    }
-
-    pub fn get(&self) -> reqwest::Client {
-        self.client.clone()
-    }
-
-    pub fn is_valid(&self, ttl: Duration) -> bool {
-        self.age() <= ttl
-    }
-
-    pub fn is_expired(&self, ttl: Duration) -> bool {
-        !self.is_valid(ttl)
-    }
-
-    pub fn age(&self) -> Duration {
-        self.last_update.elapsed()
-    }
-}
-
-fn https_client_from_config(
+fn https_client(
     tls_config: &TlsConfig,
     verify_https_client_certificate: bool,
 ) -> Result<reqwest::Client> {
-    let mut builder =
-        reqwest::Client::builder().add_root_certificate(load_https_client_ca_cert(tls_config)?);
+    let mut builder = reqwest::Client::builder()
+        .add_root_certificate(https_client_ca_cert(tls_config.ca_cert.as_ref())?);
 
     if verify_https_client_certificate {
-        builder = builder.identity(load_https_client_identity(tls_config)?);
+        builder = builder.identity(https_client_identity(
+            tls_config.cert.as_ref(),
+            tls_config.key.as_ref(),
+        )?);
     }
 
     let client = builder.build()?;
@@ -143,26 +51,23 @@ fn https_client_from_config(
     Ok(client)
 }
 
-fn load_https_client_ca_cert(tls_config: &TlsConfig) -> Result<reqwest::Certificate> {
-    let ca_cert_pem = fs::read(&tls_config.ca_cert).map_err(|err| {
-        Error::failed_to_read("HTTPS client CA certificate file", &tls_config.ca_cert, err)
-    })?;
+fn https_client_ca_cert(ca_cert: &Path) -> Result<reqwest::tls::Certificate> {
+    let ca_cert_pem =
+        fs::read(ca_cert).map_err(|err| Error::failed_to_read(err, "CA certificate", ca_cert))?;
 
     let ca_cert = reqwest::Certificate::from_pem(&ca_cert_pem)?;
 
     Ok(ca_cert)
 }
 
-fn load_https_client_identity(tls_config: &TlsConfig) -> Result<reqwest::Identity> {
-    let mut identity_pem = fs::read(&tls_config.cert).map_err(|err| {
-        Error::failed_to_read("HTTPS client certificate file", &tls_config.cert, err)
-    })?;
+fn https_client_identity(cert: &Path, key: &Path) -> Result<reqwest::tls::Identity> {
+    let mut identity_pem =
+        fs::read(cert).map_err(|err| Error::failed_to_read(err, "certificate", cert))?;
 
-    let mut key_file = fs::File::open(&tls_config.key)
-        .map_err(|err| Error::failed_to_open("HTTPS client key file", &tls_config.key, err))?;
+    let mut key_file = fs::File::open(key).map_err(|err| Error::failed_to_read(err, "key", key))?;
 
     io::copy(&mut key_file, &mut identity_pem)
-        .map_err(|err| Error::failed_to_read("HTTPS client key file", &tls_config.key, err))?;
+        .map_err(|err| Error::failed_to_read(err, "key", key))?;
 
     let identity = reqwest::Identity::from_pem(&identity_pem)?;
 
@@ -175,23 +80,30 @@ pub type Result<T, E = Error> = result::Result<T, E>;
 pub enum Error {
     #[error("TLS config is not defined in the Qdrant config file")]
     TlsConfigUndefined,
-    #[error("{0}: {1}")]
-    Io(String, io::Error),
+
+    #[error("{1}: {0}")]
+    Io(#[source] io::Error, String),
+
     #[error("failed to setup HTTPS client: {0}")]
     Reqwest(#[from] reqwest::Error),
 }
 
 impl Error {
-    pub fn failed_to_open(what: &str, path: &str, source: io::Error) -> Self {
-        Self::Io(format!("failed to open {what} {path}"), source)
+    pub fn io(source: io::Error, context: impl Into<String>) -> Self {
+        Self::Io(source, context.into())
     }
 
-    pub fn failed_to_read(what: &str, path: &str, source: io::Error) -> Self {
-        Self::Io(format!("failed to read {what} {path}"), source)
+    pub fn failed_to_read(source: io::Error, file: &str, path: &Path) -> Self {
+        Self::io(
+            source,
+            format!("failed to read HTTPS client {file} file {}", path.display()),
+        )
     }
+}
 
-    pub fn io(context: impl Into<String>, source: io::Error) -> Self {
-        Self::Io(context.into(), source)
+impl From<Error> for StorageError {
+    fn from(err: Error) -> Self {
+        StorageError::service_error(format!("failed to initialize HTTP(S) client: {err}"))
     }
 }
 

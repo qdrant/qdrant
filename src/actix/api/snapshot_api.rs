@@ -162,6 +162,11 @@ async fn upload_snapshot(
             Err(err) => return process_response::<()>(Err(err), timing),
         };
 
+    let http_client = match http_client.client() {
+        Ok(http_client) => http_client,
+        Err(err) => return process_response::<()>(Err(err.into()), timing),
+    };
+
     let snapshot_recover = SnapshotRecover {
         location: snapshot_location,
         priority: params.priority,
@@ -172,9 +177,10 @@ async fn upload_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
-        http_client.get(),
+        http_client,
     )
     .await;
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -194,14 +200,20 @@ async fn recover_from_snapshot(
     let snapshot_recover = request.into_inner();
     let wait = params.wait.unwrap_or(true);
 
+    let http_client = match http_client.client() {
+        Ok(http_client) => http_client,
+        Err(err) => return process_response::<()>(Err(err.into()), timing),
+    };
+
     let response = do_recover_from_snapshot(
         dispatcher.get_ref(),
         &collection.name,
         snapshot_recover,
         wait,
-        http_client.get(),
+        http_client,
     )
     .await;
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -318,16 +330,21 @@ async fn recover_shard_snapshot(
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
-    let (collection, shard) = path.into_inner();
-    let future = common::snapshots::recover_shard_snapshot(
-        toc.into_inner(),
-        collection,
-        shard,
-        request.location,
-        request.priority.unwrap_or_default(),
-        http_client.get(),
-    )
-    .map_err(Into::into);
+    let future = async move {
+        let (collection, shard) = path.into_inner();
+
+        common::snapshots::recover_shard_snapshot(
+            toc.into_inner(),
+            collection,
+            shard,
+            request.location,
+            request.priority.unwrap_or_default(),
+            http_client.get_ref(),
+        )
+        .await?;
+
+        Ok(())
+    };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
