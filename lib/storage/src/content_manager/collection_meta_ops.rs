@@ -5,7 +5,7 @@ use collection::operations::config_diff::{
 };
 use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
-use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::shard::{PeerId, ShardId, ShardKey, ShardsPlacement};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
@@ -311,6 +311,19 @@ pub struct SetShardReplicaState {
     pub from_state: Option<ReplicaState>,
 }
 
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct CreateShardKey {
+    pub collection_name: String,
+    pub shard_key: ShardKey,
+    pub placement: ShardsPlacement,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct DropShardKey {
+    pub collection_name: String,
+    pub shard_key: ShardKey,
+}
+
 /// Enumeration of all possible collection update operations
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -321,6 +334,8 @@ pub enum CollectionMetaOperations {
     ChangeAliases(ChangeAliasesOperation),
     TransferShard(CollectionId, ShardTransferOperations),
     SetShardReplicaState(SetShardReplicaState),
+    CreateShardKey(CreateShardKey),
+    DropShardKey(DropShardKey),
     Nop { token: usize }, // Empty operation
 }
 

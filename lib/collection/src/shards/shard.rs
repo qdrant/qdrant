@@ -1,4 +1,5 @@
 use core::marker::{Send, Sync};
+use std::fmt::Display;
 use std::future::{self, Future};
 use std::path::Path;
 
@@ -19,11 +20,32 @@ pub type ShardId = u32;
 
 pub type PeerId = u64;
 
+/// List of peers that should be used to place replicas of a shard
+pub type ShardReplicasPlacement = Vec<PeerId>;
+
+/// List of shards placements. Each element defines placements of replicas for a single shard.
+/// Number of elements corresponds to the number of shards.
+/// Example: [
+///     [1, 2],
+///     [2, 3],
+///     [3, 4]
+/// ] - 3 shards, each has 2 replicas
+pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
+
 #[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ShardKey {
     Keyword(String),
     Number(u64),
+}
+
+impl Display for ShardKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
+            ShardKey::Number(number) => write!(f, "{}", number),
+        }
+    }
 }
 
 /// Shard

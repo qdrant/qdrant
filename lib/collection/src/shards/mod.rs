@@ -27,8 +27,6 @@ use shard::ShardId;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::shard_versioning::versioned_shard_path;
 
-pub const HASH_RING_SHARD_SCALE: u32 = 100;
-
 pub type CollectionId = String;
 
 pub type ShardVersion = usize;
