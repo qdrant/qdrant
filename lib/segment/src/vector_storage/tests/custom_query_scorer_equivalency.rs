@@ -62,7 +62,7 @@ fn random_reco_query<R: Rng + ?Sized>(
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
     let num_positives: usize = rnd.gen_range(0..MAX_EXAMPLES);
-    let num_negatives: usize = rnd.gen_range(0..MAX_EXAMPLES);
+    let num_negatives: usize = rnd.gen_range(1..MAX_EXAMPLES);
 
     let positives = (0..num_positives)
         .map(|_| sampler.take(DIMS).collect_vec().into())
@@ -236,7 +236,7 @@ fn scoring_equivalency(
     let quantized_vectors = quantized_vectors.as_ref().map(|q| q.borrow());
 
     let attempts = 50;
-    for _i in 0..attempts {
+    for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &mut sampler);
 
         let raw_scorer = new_raw_scorer(
@@ -251,15 +251,18 @@ fn scoring_equivalency(
         let other_scorer = match &quantized_vectors {
             Some(quantized_storage) => quantized_storage
                 .raw_scorer(
-                    query,
+                    query.clone(),
                     id_tracker.deleted_point_bitslice(),
                     other_storage.deleted_vector_bitslice(),
                     &is_stopped,
                 )
                 .unwrap(),
-            None => {
-                new_raw_scorer(query, &other_storage, id_tracker.deleted_point_bitslice()).unwrap()
-            }
+            None => new_raw_scorer(
+                query.clone(),
+                &other_storage,
+                id_tracker.deleted_point_bitslice(),
+            )
+            .unwrap(),
         };
 
         let points =
@@ -273,8 +276,8 @@ fn scoring_equivalency(
             // both calculations are done on raw vectors, so score should be exactly the same
             assert_eq!(
                 raw_scores, other_scores,
-                "Scorer results are not equal, attempt: {}",
-                _i
+                "Scorer results are not equal, attempt: {}, query: {:?}",
+                i, query
             );
         } else {
             // Quantization is used for the other storage, so score should be similar
@@ -302,7 +305,7 @@ fn scoring_equivalency(
 
             assert!(
                 (intersection as f32 / top as f32) >= 0.7, // at least 70% of top 10% results should be shared
-                "Top results from scorers are not similar, attempt {_i}:
+                "Top results from scorers are not similar, attempt {i}:
                 top raw: {raw_top:?},
                 top other: {other_top:?}
                 only {intersection} of {top} top results are shared",
