@@ -75,6 +75,7 @@ fn https_client_identity(cert: &Path, key: &Path) -> Result<reqwest::tls::Identi
 
     let mut key_file = fs::File::open(key).map_err(|err| Error::failed_to_read(err, "key", key))?;
 
+    // Concatenate certificate and key into a single PEM bytes
     io::copy(&mut key_file, &mut identity_pem)
         .map_err(|err| Error::failed_to_read(err, "key", key))?;
 
