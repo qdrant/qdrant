@@ -78,7 +78,9 @@ impl LocalShard {
                             scored_point.score = distance.postprocess_score(scored_point.score);
                         }
                         // Don't post-process if we are dealing with custom scoring
-                        QueryEnum::RecommendBestScore(_) => {}
+                        QueryEnum::RecommendBestScore(_)
+                        | QueryEnum::Discover(_)
+                        | QueryEnum::Context(_) => {}
                     };
                     scored_point
                 });

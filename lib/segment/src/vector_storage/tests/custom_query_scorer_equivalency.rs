@@ -257,13 +257,12 @@ fn scoring_equivalency(
                     &is_stopped,
                 )
                 .unwrap(),
-            None => {
-                new_raw_scorer(
+            None => new_raw_scorer(
                 query.clone(),
                 &other_storage,
                 id_tracker.deleted_point_bitslice(),
-            ).unwrap()
-            }
+            )
+            .unwrap(),
         };
 
         let points =
@@ -306,7 +305,7 @@ fn scoring_equivalency(
 
             assert!(
                 (intersection as f32 / top as f32) >= 0.7, // at least 70% of top 10% results should be shared
-                "Top results from scorers are not similar, attempt {_i}:
+                "Top results from scorers are not similar, attempt {i}:
                 top raw: {raw_top:?},
                 top other: {other_top:?}
                 only {intersection} of {top} top results are shared",
