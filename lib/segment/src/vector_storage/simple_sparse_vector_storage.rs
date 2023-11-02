@@ -10,6 +10,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 
+use super::SparseVectorStorage;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -123,6 +124,12 @@ impl SimpleSparseVectorStorage {
     }
 }
 
+impl SparseVectorStorage for SimpleSparseVectorStorage {
+    fn get_sparse(&self, key: PointOffsetType) -> &SparseVector {
+        self.vectors.get(key as usize).expect("Invalid point id")
+    }
+}
+
 impl VectorStorage for SimpleSparseVectorStorage {
     fn vector_dim(&self) -> usize {
         0 // not applicable
@@ -141,10 +148,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> VectorRef {
-        self.vectors
-            .get(key as usize)
-            .expect("Invalid point id")
-            .into()
+        self.get_sparse(key).into()
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
