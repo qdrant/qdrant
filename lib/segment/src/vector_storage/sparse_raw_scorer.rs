@@ -43,8 +43,7 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
             if !self.check_vector(point_id) {
                 continue;
             }
-            let vector: &SparseVector =
-                self.vector_storage.get_vector(point_id).try_into().unwrap();
+            let vector: &SparseVector = self.vector_storage.get_sparse(point_id);
             scores[size] = ScoredPointOffset {
                 idx: point_id,
                 score: vector.score(&self.query),
@@ -67,8 +66,7 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
         }
         let mut scores = vec![];
         for point_id in points {
-            let vector: &SparseVector =
-                self.vector_storage.get_vector(point_id).try_into().unwrap();
+            let vector: &SparseVector = self.vector_storage.get_sparse(point_id);
             scores.push(ScoredPointOffset {
                 idx: point_id,
                 score: vector.score(&self.query),
@@ -95,13 +93,13 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
-        let vector: &SparseVector = self.vector_storage.get_vector(point).try_into().unwrap();
+        let vector: &SparseVector = self.vector_storage.get_sparse(point);
         vector.score(&self.query)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        let vector_a: &SparseVector = self.vector_storage.get_vector(point_a).try_into().unwrap();
-        let vector_b: &SparseVector = self.vector_storage.get_vector(point_b).try_into().unwrap();
+        let vector_a: &SparseVector = self.vector_storage.get_sparse(point_a);
+        let vector_b: &SparseVector = self.vector_storage.get_sparse(point_b);
         vector_a.score(vector_b)
     }
 
@@ -114,8 +112,7 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
-                let vector: &SparseVector =
-                    self.vector_storage.get_vector(point_id).try_into().unwrap();
+                let vector: &SparseVector = self.vector_storage.get_sparse(point_id);
                 ScoredPointOffset {
                     idx: point_id,
                     score: vector.score(&self.query),
@@ -130,8 +127,7 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
             .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let point_id = point_id as PointOffsetType;
-                let vector: &SparseVector =
-                    self.vector_storage.get_vector(point_id).try_into().unwrap();
+                let vector: &SparseVector = self.vector_storage.get_sparse(point_id);
                 ScoredPointOffset {
                     idx: point_id,
                     score: vector.score(&self.query),
