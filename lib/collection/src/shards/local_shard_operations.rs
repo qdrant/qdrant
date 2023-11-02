@@ -14,7 +14,7 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
+    CountResult, PointRequest, QueryEnum, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
@@ -76,7 +76,15 @@ impl LocalShard {
                     .unwrap()
                     .distance;
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
-                    scored_point.score = distance.postprocess_score(scored_point.score);
+                    match req.query {
+                        QueryEnum::Nearest(_) => {
+                            scored_point.score = distance.postprocess_score(scored_point.score);
+                        }
+                        // Don't post-process if we are dealing with custom scoring
+                        QueryEnum::RecommendBestScore(_)
+                        | QueryEnum::Discover(_)
+                        | QueryEnum::Context(_) => {}
+                    };
                     scored_point
                 });
 
