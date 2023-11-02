@@ -995,6 +995,27 @@ impl From<validator::ValidationErrors> for CollectionError {
     }
 }
 
+impl From<cancel::Error> for CollectionError {
+    fn from(err: cancel::Error) -> Self {
+        match err {
+            cancel::Error::Join(err) => err.into(),
+            cancel::Error::Cancelled => Self::Cancelled {
+                description: err.to_string(),
+            },
+        }
+    }
+}
+
+impl From<tempfile::PathPersistError> for CollectionError {
+    fn from(err: tempfile::PathPersistError) -> Self {
+        Self::service_error(format!(
+            "failed to persist temporary file path {}: {}",
+            err.path.display(),
+            err.error,
+        ))
+    }
+}
+
 pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl Record {

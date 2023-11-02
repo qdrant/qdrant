@@ -45,7 +45,7 @@ impl ShardReplicaSet {
 
         if !is_distributed && !is_snapshot_local {
             return Err(CollectionError::service_error(format!(
-                "Can't restore snapshot is local mode with missing data at shard: {}",
+                "Can't restore snapshot in local mode with missing data at shard: {}",
                 snapshot_path.display()
             )));
         }
@@ -70,8 +70,16 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    /// Returns if local shard was recovered from path
-    pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
+    pub async fn restore_local_replica_from(
+        &self,
+        replica_path: &Path,
+        cancel: cancel::CancellationToken,
+    ) -> CollectionResult<bool> {
+        // `local.take()` call and `restore` task have to be executed as a single transaction
+
         if !LocalShard::check_data(replica_path) {
             return Ok(false);
         }
@@ -80,7 +88,12 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        let mut local = self.local.write().await;
+        let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
+
+        // Check `cancel` token one last time before starting non-cancellable section
+        if cancel.is_cancelled() {
+            return Err(cancel::Error::Cancelled.into());
+        }
 
         // Drop `LocalShard` instance to free resources and clear shard data
         let clear = local.take().is_some();

@@ -49,6 +49,7 @@ validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
 
 common = { path = "../common/common" }
+cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 segment = {path = "../segment"}
 api = {path = "../api"}

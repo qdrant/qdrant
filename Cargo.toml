@@ -91,6 +91,7 @@ prost = "0.11.9"
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
 common = { path = "lib/common/common" }
+cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }

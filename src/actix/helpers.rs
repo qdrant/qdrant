@@ -1,11 +1,11 @@
 use std::fmt::Debug;
+use std::future::Future;
 use std::io;
 
 use actix_web::rt::time::Instant;
 use actix_web::{error, http, Error, HttpResponse};
 use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
-use futures::Future;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
 
@@ -73,6 +73,9 @@ where
     }
 }
 
+/// # Cancel safety
+///
+/// Future must be cancel safe.
 pub async fn time<T, Fut>(future: Fut) -> impl actix_web::Responder
 where
     Fut: Future<Output = HttpResult<T>>,
@@ -99,6 +102,9 @@ where
     time_impl(future).await
 }
 
+/// # Cancel safety
+///
+/// Future must be cancel safe.
 async fn time_impl<T, Fut>(future: Fut) -> impl actix_web::Responder
 where
     Fut: Future<Output = HttpResult<Option<T>>>,
@@ -206,5 +212,11 @@ impl From<io::Error> for HttpError {
 impl From<tokio::task::JoinError> for HttpError {
     fn from(err: tokio::task::JoinError) -> Self {
         StorageError::service_error(err.to_string()).into()
+    }
+}
+
+impl From<cancel::Error> for HttpError {
+    fn from(err: cancel::Error) -> Self {
+        StorageError::from(err).into()
     }
 }

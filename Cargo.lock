@@ -850,6 +850,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cancel"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1058,6 +1067,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "atomicwrites",
+ "cancel",
  "chrono",
  "common",
  "criterion",
@@ -3730,6 +3740,7 @@ dependencies = [
  "actix-web-validator",
  "anyhow",
  "api",
+ "cancel",
  "chrono",
  "clap",
  "collection",
@@ -4809,6 +4820,7 @@ dependencies = [
  "api",
  "async-trait",
  "atomicwrites",
+ "cancel",
  "chrono",
  "collection",
  "common",
