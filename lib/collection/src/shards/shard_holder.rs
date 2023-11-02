@@ -473,9 +473,9 @@ impl ShardHolder {
             .await
     }
 
-    /// # Safety
+    /// # Cancel safety
     ///
-    /// This function is cancel-safe
+    /// This method is cancel safe.
     pub async fn list_shard_snapshots(
         &self,
         snapshots_path: &Path,
@@ -492,9 +492,9 @@ impl ShardHolder {
         list_snapshots_in_directory(&snapshots_path).await
     }
 
-    /// # Safety
+    /// # Cancel safety
     ///
-    /// This function is cancel-safe
+    /// This method is cancel safe.
     pub async fn create_shard_snapshot(
         &self,
         snapshots_path: &Path,
@@ -605,9 +605,9 @@ impl ShardHolder {
         get_snapshot_description(&snapshot_path).await
     }
 
-    /// # Safety
+    /// # Cancel safety
     ///
-    /// This function is *not* cancel-safe!
+    /// This method is *not* cancel safe.
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
@@ -669,7 +669,7 @@ impl ShardHolder {
 
         task.await??;
 
-        // `ShardHolder::recover_local_shard_from` is *not* cancel-safe!
+        // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
             .recover_local_shard_from(snapshot_temp_dir.path(), shard_id, cancel)
@@ -684,9 +684,9 @@ impl ShardHolder {
         Ok(())
     }
 
-    /// # Safety
+    /// # Cancel safety
     ///
-    /// This function is *not* cancel-safe
+    /// This method is *not* cancel safe.
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
@@ -701,7 +701,7 @@ impl ShardHolder {
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        // `ShardReplicaSet::restore_local_replica_from` is *not* cancel-safe!
+        // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         replica_set
             .restore_local_replica_from(snapshot_shard_path, cancel)
             .await

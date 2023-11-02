@@ -19,9 +19,9 @@ where
     Ok(output)
 }
 
-/// # Safety
+/// # Cancel safety
 ///
-/// Future has to be cancel-safe!
+/// Future must be cancel safe.
 pub async fn cancel_on_token<Fut>(
     cancel: CancellationToken,
     future: Fut,

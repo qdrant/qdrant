@@ -73,9 +73,9 @@ where
     }
 }
 
-/// # Safety
+/// # Cancel safety
 ///
-/// Future has to be cancel-safe!
+/// Future must be cancel safe.
 pub async fn time<T, Fut>(future: Fut) -> impl actix_web::Responder
 where
     Fut: Future<Output = HttpResult<T>>,
@@ -102,9 +102,9 @@ where
     time_impl(future).await
 }
 
-/// # Safety
+/// # Cancel safety
 ///
-/// Future has to be cancel-safe!
+/// Future must be cancel safe.
 async fn time_impl<T, Fut>(future: Fut) -> impl actix_web::Responder
 where
     Fut: Future<Output = HttpResult<Option<T>>>,

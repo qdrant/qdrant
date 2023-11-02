@@ -70,9 +70,9 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    /// # Safety
+    /// # Cancel safety
     ///
-    /// This function is *not* cancel-safe!
+    /// This method is *not* cancel safe.
     pub async fn restore_local_replica_from(
         &self,
         replica_path: &Path,
