@@ -196,9 +196,16 @@ impl<'a> SearchContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
     use super::*;
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
-    use crate::index::inverted_index::inverted_index_ram::InvertedIndexBuilder;
+    use crate::index::inverted_index::inverted_index_ram::{
+        InvertedIndexBuilder, InvertedIndexRam,
+    };
     use crate::index::posting_list::PostingList;
 
     fn _advance_test(inverted_index: &impl InvertedIndex) {
@@ -597,5 +604,108 @@ mod tests {
         let inverted_index_mmap =
             InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
         _prune_test(&inverted_index_mmap);
+    }
+
+    /// Generates a non empty sparse vector
+    pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_size: usize) -> SparseVector {
+        let size = rnd_gen.gen_range(1..max_size);
+        let mut tuples: Vec<(i32, f64)> = vec![];
+
+        for i in 1..=size {
+            let no_skip = rnd_gen.gen_bool(0.5);
+            if no_skip {
+                tuples.push((i as i32, rnd_gen.gen_range(0.0..100.0)));
+            }
+        }
+
+        // make sure we have at least one vector
+        if tuples.is_empty() {
+            tuples.push((
+                rnd_gen.gen_range(1..max_size) as i32,
+                rnd_gen.gen_range(0.0..100.0),
+            ));
+        }
+
+        SparseVector::from(tuples)
+    }
+
+    /// Generates a random inverted index with `num_vectors` vectors
+    fn random_inverted_index<R: Rng + ?Sized>(
+        rnd_gen: &mut R,
+        num_vectors: u32,
+        max_sparse_dimension: usize,
+    ) -> InvertedIndexRam {
+        let mut inverted_index_ram = InvertedIndexRam::empty();
+
+        for i in 1..=num_vectors {
+            let vector = random_sparse_vector(rnd_gen, max_sparse_dimension);
+            inverted_index_ram.upsert(i, vector);
+        }
+        inverted_index_ram
+    }
+
+    #[test]
+    fn next_min_partial_scan_test() {
+        let num_vectors = 100;
+        let max_sparse_dimension = 25;
+        let mut rnd = StdRng::seed_from_u64(42);
+        let is_stopped = AtomicBool::new(false);
+        let inverted_index_ram = random_inverted_index(&mut rnd, num_vectors, max_sparse_dimension);
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            3,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        let mut all_next_min_observed = HashSet::new();
+
+        while let Some(next_min) =
+            SearchContext::next_min(search_context.postings_iterators.as_slice())
+        {
+            all_next_min_observed.insert(next_min);
+            let next_candidate_id = search_context.advance().map(|s| s.idx);
+            assert_eq!(next_candidate_id, Some(next_min));
+        }
+
+        // Not all vectors are observed because only the indices of the query vector are explored.
+        assert!(all_next_min_observed.len() < num_vectors as usize);
+    }
+
+    #[test]
+    fn next_min_full_scan_test() {
+        let num_vectors = 100;
+        let max_sparse_dimension = 25;
+        let mut rnd = StdRng::seed_from_u64(42);
+        let is_stopped = AtomicBool::new(false);
+        let inverted_index_ram = random_inverted_index(&mut rnd, num_vectors, max_sparse_dimension);
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: (1..=max_sparse_dimension as u32).collect(),
+                values: vec![1.0; max_sparse_dimension],
+            },
+            3,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        // initial state
+        let min = SearchContext::next_min(search_context.postings_iterators.as_slice());
+        // no side effect
+        assert_eq!(min, Some(1));
+        assert_eq!(min, Some(1));
+
+        // Complete scan over all vectors because the query vector contains all dimensions in the index.
+        for i in 1..num_vectors {
+            let before_min = SearchContext::next_min(search_context.postings_iterators.as_slice());
+            assert_eq!(before_min, Some(i));
+            let next = search_context.advance().map(|s| s.idx);
+            assert_eq!(next, Some(i));
+            let new_min = SearchContext::next_min(search_context.postings_iterators.as_slice());
+            assert_eq!(new_min, Some(i + 1));
+        }
     }
 }
