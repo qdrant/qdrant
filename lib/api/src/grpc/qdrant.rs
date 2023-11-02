@@ -3336,7 +3336,7 @@ pub struct SearchBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
-    #[prost(uint64, optional, tag = "14")]
+    #[prost(uint64, optional, tag = "4")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }

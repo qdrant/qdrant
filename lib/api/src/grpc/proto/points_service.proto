@@ -4,7 +4,6 @@ import "points.proto";
 
 package qdrant;
 
-import "google/protobuf/struct.proto";
 
 service Points {
   /*
