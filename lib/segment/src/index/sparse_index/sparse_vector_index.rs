@@ -64,11 +64,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         for vector in vectors {
             check_process_stopped(is_stopped)?;
             // measure time according to filter
-            if with_filter {
-                let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
+            let _timer = if with_filter {
+                ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse)
             } else {
-                let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
-            }
+                ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse)
+            };
             let vector = match vector {
                 QueryVector::Nearest(vector) => vector,
                 QueryVector::Recommend(_) => {
@@ -144,16 +144,13 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
     }
 
-    fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         let borrowed_vector_storage = self.vector_storage.borrow();
         let borrowed_id_tracker = self.id_tracker.borrow();
-        let points_count = borrowed_vector_storage.total_vector_count();
+        let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
         let mut ram_index = InvertedIndexRam::empty();
-        for id in 0..points_count as PointOffsetType {
-            // do not add deleted points to the index
-            if borrowed_id_tracker.is_deleted_point(id) {
-                continue;
-            }
+        for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
+            check_process_stopped(stopped)?;
             let vector: &SparseVector = borrowed_vector_storage.get_vector(id).try_into()?;
             ram_index.upsert(id, vector.to_owned());
         }
