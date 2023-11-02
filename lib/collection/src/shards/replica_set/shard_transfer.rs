@@ -1,3 +1,4 @@
+use cancel::CancellationToken;
 use segment::types::PointIdType;
 
 use super::ShardReplicaSet;
@@ -121,6 +122,10 @@ impl ShardReplicaSet {
     }
 
     /// Un-proxify local shard wrapped as `ForwardProxy` or `QueueProxy`.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn un_proxify_local(&self) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
@@ -163,7 +168,7 @@ impl ShardReplicaSet {
                 );
 
                 // Finalize, insert local shard back and return finalize result
-                let result = proxy.finalize().await;
+                let result = proxy.finalize(CancellationToken::new()).await;
                 let (result, local_shard) = match result {
                     Ok((local_shard, _)) => (Ok(()), local_shard),
                     Err((err, queue_proxy)) => {
@@ -289,7 +294,7 @@ impl ShardReplicaSet {
         let Some(Shard::QueueProxy(queue_proxy)) = local_write.take() else {
             unreachable!();
         };
-        match queue_proxy.finalize().await {
+        match queue_proxy.finalize(CancellationToken::new()).await {
             // When finalization is successful, transform into forward proxy
             Ok((local_shard, remote_shard)) => {
                 log::trace!(

@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use cancel::future::cancel_on_token;
+use cancel::CancellationToken;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -132,11 +134,20 @@ impl QueueProxyShard {
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
-    pub async fn finalize(self) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
+    ///
+    /// If `cancel` is triggered - finalization may not actually complete in which case an error is
+    /// returned. None, some or all operations may be transmitted to the remote.
+    pub async fn finalize(
+        self,
+        cancel: CancellationToken,
+    ) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
         // Transfer all updates, do not unwrap on failure but return error with self
-        match self.transfer_all_missed_updates().await {
-            Ok(_) => Ok(self.forget_updates_and_finalize()),
-            Err(err) => Err((err, self)),
+        match cancel_on_token(cancel, self.transfer_all_missed_updates()).await {
+            Ok(Ok(_)) => Ok(self.forget_updates_and_finalize()),
+            // Transmission error
+            Ok(Err(err)) => Err((err, self)),
+            // Cancellation error
+            Err(err) => Err((err.into(), self)),
         }
     }
 
