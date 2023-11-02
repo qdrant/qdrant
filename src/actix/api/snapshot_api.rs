@@ -9,7 +9,7 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
 use collection::shards::shard::ShardId;
-use futures::TryFutureExt as _;
+use futures::{FutureExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -333,24 +333,37 @@ async fn upload_shard_snapshot(
     query: web::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
+    let (collection, shard) = path.into_inner();
     let SnapshotUploadingParam { wait, priority } = query.into_inner();
 
-    let future = async move {
-        let (collection, shard) = path.into_inner();
-        let collection = toc.get_collection(&collection).await?;
-        collection.assert_shard_exists(shard).await?;
+    // - `recover_shard_snapshot_impl` is *not* cancel safe
+    //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+        let future = async {
+            let collection = toc.get_collection(&collection).await?;
+            collection.assert_shard_exists(shard).await?;
+
+            Result::<_, helpers::HttpError>::Ok(collection)
+        };
+
+        let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
+
+        // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard,
             form.snapshot.file.path(),
             priority.unwrap_or_default(),
+            cancel,
         )
         .await?;
 
-        Ok(())
-    };
+        Result::<_, helpers::HttpError>::Ok(())
+    })
+    .map_err(Into::into)
+    .map(|res| res.and_then(|res| res));
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }

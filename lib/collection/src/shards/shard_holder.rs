@@ -473,6 +473,9 @@ impl ShardHolder {
             .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn list_shard_snapshots(
         &self,
         snapshots_path: &Path,
@@ -489,6 +492,9 @@ impl ShardHolder {
         list_snapshots_in_directory(&snapshots_path).await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn create_shard_snapshot(
         &self,
         snapshots_path: &Path,
@@ -496,6 +502,9 @@ impl ShardHolder {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
+        // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file` are handled by `tempfile`
+        //   and would be deleted, if future is cancelled
+
         let shard = self
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
@@ -523,8 +532,12 @@ impl ShardHolder {
             .create_snapshot(snapshot_temp_dir.path(), snapshot_target_dir.path(), false)
             .await?;
 
+        let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
         if let Err(err) = snapshot_temp_dir.close() {
-            log::error!("Failed to remove temporary directory: {err}");
+            log::error!(
+                "Failed to remove temporary directory {}: {err}",
+                snapshot_temp_dir_path.display(),
+            );
         }
 
         let mut temp_file = tempfile::Builder::new()
@@ -534,9 +547,19 @@ impl ShardHolder {
         let task = {
             let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
 
-            tokio::task::spawn_blocking(move || -> CollectionResult<_> {
+            cancel::blocking::spawn_cancel_on_drop(move |cancel| -> CollectionResult<_> {
                 let mut tar = TarBuilder::new(temp_file.as_file_mut());
+
+                if cancel.is_cancelled() {
+                    return Err(cancel::Error::Cancelled.into());
+                }
+
                 tar.append_dir_all(".", &snapshot_target_dir)?;
+
+                if cancel.is_cancelled() {
+                    return Err(cancel::Error::Cancelled.into());
+                }
+
                 tar.finish()?;
                 drop(tar);
 
@@ -546,8 +569,12 @@ impl ShardHolder {
 
         let task_result = task.await;
 
+        let snapshot_target_dir_path = snapshot_target_dir.path().to_path_buf();
         if let Err(err) = snapshot_target_dir.close() {
-            log::error!("Failed to remove temporary directory: {err}");
+            log::error!(
+                "Failed to remove temporary directory {}: {err}",
+                snapshot_target_dir_path.display(),
+            );
         }
 
         let temp_file = task_result??;
@@ -561,11 +588,27 @@ impl ShardHolder {
             }
         }
 
+        // Remove partially moved `snapshot_path`, if `move_file` fails
+        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
+
+        // `tempfile::NamedTempFile::persist` does not work if destination file is on another
+        // file-system, so we have to move the file explicitly
         move_file(temp_file.path(), &snapshot_path).await?;
+
+        // We successfully moved `snapshot_path`, so we `keep` it
+        snapshot_file.keep()?;
+
+        // We successfully moved `temp_file`, but `tempfile` will still try to delete the file on drop,
+        // so we `keep` it and ignore the error
+        let _ = temp_file.keep();
 
         get_snapshot_description(&snapshot_path).await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
+    #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
         snapshot_path: &Path,
@@ -574,6 +617,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
         if !self.contains_shard(&shard_id) {
             return Err(shard_not_found_error(shard_id));
@@ -596,25 +640,39 @@ impl ShardHolder {
         let task = {
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
-            tokio::task::spawn_blocking(move || -> CollectionResult<_> {
-                let mut tar = tar::Archive::new(snapshot);
-                tar.unpack(&snapshot_temp_dir)?;
-                drop(tar);
+            cancel::blocking::spawn_cancel_on_token(
+                cancel.child_token(),
+                move |cancel| -> CollectionResult<_> {
+                    let mut tar = tar::Archive::new(snapshot);
 
-                ShardReplicaSet::restore_snapshot(
-                    &snapshot_temp_dir,
-                    this_peer_id,
-                    is_distributed,
-                )?;
+                    if cancel.is_cancelled() {
+                        return Err(cancel::Error::Cancelled.into());
+                    }
 
-                Ok(())
-            })
+                    tar.unpack(&snapshot_temp_dir)?;
+                    drop(tar);
+
+                    if cancel.is_cancelled() {
+                        return Err(cancel::Error::Cancelled.into());
+                    }
+
+                    ShardReplicaSet::restore_snapshot(
+                        &snapshot_temp_dir,
+                        this_peer_id,
+                        is_distributed,
+                    )?;
+
+                    Ok(())
+                },
+            )
         };
 
         task.await??;
 
+        // `ShardHolder::recover_local_shard_from` is *not* cancel safe
+        // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
-            .recover_local_shard_from(snapshot_temp_dir.path(), shard_id)
+            .recover_local_shard_from(snapshot_temp_dir.path(), shard_id, cancel)
             .await?;
 
         if !recovered {
@@ -626,21 +684,26 @@ impl ShardHolder {
         Ok(())
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
-        let replica_set = self
-            .get_shard(&shard_id)
-            .ok_or_else(|| shard_not_found_error(shard_id))?;
-
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
+        let replica_set = self
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         replica_set
-            .restore_local_replica_from(snapshot_shard_path)
+            .restore_local_replica_from(snapshot_shard_path, cancel)
             .await
     }
 

@@ -11,8 +11,10 @@ use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
-use tokio::sync::RwLockReadGuard;
 
+/// # Cancel safety
+///
+/// This function is cancel safe.
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -27,6 +29,9 @@ pub async fn create_shard_snapshot(
     Ok(snapshot)
 }
 
+/// # Cancel safety
+///
+/// This function is cancel safe.
 pub async fn list_shard_snapshots(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -37,6 +42,9 @@ pub async fn list_shard_snapshots(
     Ok(snapshots)
 }
 
+/// # Cancel safety
+///
+/// This function is cancel safe.
 pub async fn delete_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -49,11 +57,14 @@ pub async fn delete_shard_snapshot(
         .await?;
 
     check_shard_snapshot_file_exists(&snapshot_path)?;
-    std::fs::remove_file(&snapshot_path)?;
+    tokio::fs::remove_file(&snapshot_path).await?;
 
     Ok(())
 }
 
+/// # Cancel safety
+///
+/// This function is cancel safe.
 pub async fn recover_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -61,62 +72,94 @@ pub async fn recover_shard_snapshot(
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
 ) -> Result<(), StorageError> {
-    let collection = toc.get_collection(&collection_name).await?;
-    collection.assert_shard_exists(shard_id).await?;
+    // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled
+    //   - remote snapshot is downloaded into `download_dir` and would be deleted with it
+    // - `recover_shard_snapshot_impl` is *not* cancel safe
+    //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
-    let download_dir = toc.snapshots_download_tempdir()?;
+    cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+        let future = async {
+            let collection = toc.get_collection(&collection_name).await?;
+            collection.assert_shard_exists(shard_id).await?;
 
-    let (snapshot_path, snapshot_temp_path) = match snapshot_location {
-        ShardSnapshotLocation::Url(url) => {
-            if !matches!(url.scheme(), "http" | "https") {
-                let description = format!(
-                    "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
-                    url.scheme(),
-                );
+            let download_dir = toc.snapshots_download_tempdir()?;
 
-                return Err(StorageError::bad_input(description));
+            let (snapshot_path, snapshot_temp_path) = match snapshot_location {
+                ShardSnapshotLocation::Url(url) => {
+                    if !matches!(url.scheme(), "http" | "https") {
+                        let description = format!(
+                            "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
+                            url.scheme(),
+                        );
+
+                        return Err(StorageError::bad_input(description));
+                    }
+                    let (snapshot_path, snapshot_temp_path) =
+                        snapshots::download::download_snapshot(url, download_dir.path()).await?;
+                    (snapshot_path, snapshot_temp_path)
+                }
+
+                ShardSnapshotLocation::Path(path) => {
+                    let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
+                    check_shard_snapshot_file_exists(&snapshot_path)?;
+                    (snapshot_path, None)
+                }
+            };
+
+            Result::<_, StorageError>::Ok((
+                collection,
+                download_dir,
+                snapshot_path,
+                snapshot_temp_path,
+            ))
+        };
+
+        let (collection, _download_dir, snapshot_path, snapshot_temp_path) =
+            cancel::future::cancel_on_token(cancel.clone(), future).await??;
+
+        // `recover_shard_snapshot_impl` is *not* cancel safe
+        let result = recover_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard_id,
+            &snapshot_path,
+            snapshot_priority,
+            cancel,
+        )
+        .await;
+
+        // Remove snapshot after recovery if downloaded
+        if let Some(path) = snapshot_temp_path {
+            if let Err(err) = path.close() {
+                log::error!("Failed to remove downloaded shards snapshot after recovery: {err}");
             }
-            let (snapshot_path, snapshot_temp_path) =
-                snapshots::download::download_snapshot(url, download_dir.path()).await?;
-            (snapshot_path, snapshot_temp_path)
         }
 
-        ShardSnapshotLocation::Path(path) => {
-            let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
-            check_shard_snapshot_file_exists(&snapshot_path)?;
-            (snapshot_path, None)
-        }
-    };
-
-    recover_shard_snapshot_impl(
-        &toc,
-        &collection,
-        shard_id,
-        &snapshot_path,
-        snapshot_priority,
-    )
-    .await?;
-
-    // Remove snapshot after recovery if downloaded
-    if let Some(path) = snapshot_temp_path {
-        if let Err(err) = path.close() {
-            log::error!("Failed to remove downloaded shards snapshot after recovery: {err}");
-        }
-    }
+        result
+    })
+    .await??;
 
     Ok(())
 }
 
+/// # Cancel safety
+///
+/// This function is *not* cancel safe.
 pub async fn recover_shard_snapshot_impl(
     toc: &TableOfContent,
-    collection: &RwLockReadGuard<'_, Collection>,
+    collection: &Collection,
     shard: ShardId,
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
+    cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
-    // TODO: Check snapshot compatibility?
-    // TODO: Switch replica into `Partial` state?
+    // `Collection::restore_shard_snapshot` and `activate_shard` calls *have to* be executed as a
+    // single transaction
+    //
+    // It is *possible* to make this function to be cancel safe, but it is *extremely tedious* to do so
 
+    // `Collection::restore_shard_snapshot` is *not* cancel safe
+    // (see `ShardReplicaSet::restore_local_replica_from`)
     collection
         .restore_shard_snapshot(
             shard,
@@ -124,6 +167,7 @@ pub async fn recover_shard_snapshot_impl(
             toc.this_peer_id,
             toc.is_distributed(),
             &toc.optional_temp_or_snapshot_temp_path()?,
+            cancel,
         )
         .await?;
 

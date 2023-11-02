@@ -197,8 +197,17 @@ async fn _do_recover_from_snapshot(
                 snapshot_shard_path.display()
             );
 
+            // TODO:
+            //   `_do_recover_from_snapshot` is not *yet* analyzed/organized for cancel safety,
+            //   but `recover_local_shard_from` requires `cancel::CanellationToken` argument *now*,
+            //   so we provide a token that is never triggered (in this case `recover_local_shard_from`
+            //   works *exactly* as before the `cancel::CancellationToken` parameter was added to it)
             let recovered = collection
-                .recover_local_shard_from(&snapshot_shard_path, *shard_id)
+                .recover_local_shard_from(
+                    &snapshot_shard_path,
+                    *shard_id,
+                    cancel::CancellationToken::new(),
+                )
                 .await?;
 
             if !recovered {

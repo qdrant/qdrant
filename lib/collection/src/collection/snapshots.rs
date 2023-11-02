@@ -214,19 +214,25 @@ impl Collection {
         Ok(())
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
+        // `ShardHolder::recover_local_shard_from` is *not* cancel safe
+        // (see `ShardReplicaSet::restore_local_replica_from`)
         self.shards_holder
             .read()
             .await
-            .recover_local_shard_from(snapshot_shard_path, shard_id)
+            .recover_local_shard_from(snapshot_shard_path, shard_id, cancel)
             .await
     }
 
@@ -284,6 +290,9 @@ impl Collection {
             .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
@@ -291,7 +300,14 @@ impl Collection {
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
+        // TODO:
+        //   Check that shard snapshot is compatible with the collection
+        //   (see `VectorsConfig::check_compatible_with_segment_config`)
+
+        // `ShardHolder::restore_shard_snapshot` is *not* cancel safe
+        // (see `ShardReplicaSet::restore_local_replica_from`)
         self.shards_holder
             .read()
             .await
@@ -302,6 +318,7 @@ impl Collection {
                 this_peer_id,
                 is_distributed,
                 temp_dir,
+                cancel,
             )
             .await
     }
