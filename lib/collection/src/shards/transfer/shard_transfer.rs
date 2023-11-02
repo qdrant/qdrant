@@ -349,7 +349,9 @@ async fn transfer_snapshot(
 
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
-    replica_set.queue_proxy_into_forward_proxy().await?;
+    replica_set
+        .queue_proxy_into_forward_proxy(cancel.clone())
+        .await?;
 
     error_if_cancelled(&cancel)?;
 
