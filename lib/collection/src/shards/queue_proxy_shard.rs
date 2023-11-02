@@ -1,8 +1,6 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-#[cfg(debug_assertions)]
-use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -269,7 +267,7 @@ impl ShardOperation for QueueProxyShard {
 #[cfg(debug_assertions)]
 impl Drop for QueueProxyShard {
     fn drop(&mut self) {
-        if !self.is_finalized() && !thread::panicking() {
+        if !self.is_finalized() && !std::thread::panicking() {
             panic!("To drop a queue proxy shard, finalize() must be used");
         }
     }
@@ -376,10 +374,10 @@ impl Inner {
 
         // Transfer batch with retries and store last transferred ID
         let last_idx = batch.last().map(|(idx, _)| *idx);
-        for attempts in (0..BATCH_RETRIES).rev() {
+        for remaining_attempts in (0..BATCH_RETRIES).rev() {
             match transfer_operations_batch(&batch, &self.remote_shard).await {
                 Ok(()) => {}
-                Err(err) if attempts > 0 => {
+                Err(err) if remaining_attempts > 0 => {
                     log::error!(
                         "Failed to transfer batch of updates to peer {}, retrying: {err}",
                         self.remote_shard.peer_id,
