@@ -196,6 +196,8 @@ impl<'a> SearchContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
@@ -659,12 +661,12 @@ mod tests {
             &is_stopped,
         );
 
-        let mut all_next_min_observed = vec![];
+        let mut all_next_min_observed = HashSet::new();
 
         while let Some(next_min) =
             SearchContext::next_min(search_context.postings_iterators.as_slice())
         {
-            all_next_min_observed.push(next_min);
+            all_next_min_observed.insert(next_min);
             let next_candidate_id = search_context.advance().map(|s| s.idx);
             assert_eq!(next_candidate_id, Some(next_min));
         }
