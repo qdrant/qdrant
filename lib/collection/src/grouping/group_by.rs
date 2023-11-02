@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{Named, DEFAULT_VECTOR_NAME};
@@ -132,6 +133,7 @@ impl GroupRequest {
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>>
     where
         F: Fn(String) -> Fut,
@@ -154,13 +156,7 @@ impl GroupRequest {
                 request.with_vector = None;
 
                 collection
-                    .search(
-                        request,
-                        read_consistency,
-                        shard_selection,
-                        // Timeout is handled by dropping this Future
-                        None,
-                    )
+                    .search(request, read_consistency, shard_selection, timeout)
                     .await
             }
             SourceRequest::Recommend(mut request) => {
@@ -177,8 +173,7 @@ impl GroupRequest {
                     collection,
                     collection_by_name,
                     read_consistency,
-                    // Timeout is handled by dropping this Future
-                    None,
+                    timeout,
                 )
                 .await
             }
@@ -280,6 +275,7 @@ pub async fn group_by<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>>
 where
     F: Fn(String) -> Fut + Clone,
@@ -333,6 +329,7 @@ where
                 collection_by_name.clone(),
                 read_consistency,
                 shard_selection,
+                timeout,
             )
             .await?;
 
@@ -381,6 +378,7 @@ where
                     collection_by_name.clone(),
                     read_consistency,
                     shard_selection,
+                    timeout,
                 )
                 .await?;
 

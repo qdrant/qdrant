@@ -99,6 +99,7 @@ mod group_by {
             |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
+            None,
         )
         .await;
 
@@ -154,6 +155,7 @@ mod group_by {
             |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
+            None,
         )
         .await;
 
@@ -217,6 +219,7 @@ mod group_by {
             |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
+            None,
         )
         .await;
 
@@ -252,6 +255,7 @@ mod group_by {
             |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
+            None,
         )
         .await;
 
@@ -298,6 +302,7 @@ mod group_by {
             |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
+            None,
         )
         .await;
 
@@ -342,6 +347,7 @@ mod group_by {
             |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
+            None,
         )
         .await;
 
@@ -382,6 +388,7 @@ mod group_by {
             |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
+            None,
         )
         .await;
 
@@ -422,6 +429,7 @@ mod group_by {
             |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
+            None,
         )
         .await;
 
@@ -466,6 +474,7 @@ mod group_by {
             |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
+            None,
         )
         .await;
 

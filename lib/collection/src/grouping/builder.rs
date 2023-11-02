@@ -81,6 +81,7 @@ where
             self.collection_by_name.clone(),
             self.read_consistency,
             self.shard_selection,
+            self.timeout,
         )
         .await?;
 
