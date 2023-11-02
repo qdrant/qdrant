@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use cancel::CancelError;
 use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -271,7 +272,7 @@ async fn transfer_snapshot(
         )));
     };
 
-    error_if_cancelled(&cancel)?;
+    cancel.error_if_cancelled()?;
 
     // Queue proxy local shard
     replica_set
@@ -282,7 +283,7 @@ async fn transfer_snapshot(
         "Local shard must be a queue proxy"
     );
 
-    error_if_cancelled(&cancel)?;
+    cancel.error_if_cancelled()?;
 
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
@@ -300,7 +301,7 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    error_if_cancelled(&cancel)?;
+    cancel.error_if_cancelled()?;
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
@@ -328,7 +329,7 @@ async fn transfer_snapshot(
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
     }
 
-    error_if_cancelled(&cancel)?;
+    cancel.error_if_cancelled()?;
 
     // Set shard state to Partial
     log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
@@ -345,13 +346,13 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    error_if_cancelled(&cancel)?;
+    cancel.error_if_cancelled()?;
 
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
     replica_set.queue_proxy_into_forward_proxy().await?;
 
-    error_if_cancelled(&cancel)?;
+    cancel.error_if_cancelled()?;
 
     // Wait for Partial state in our replica set
     let partial_state = ReplicaState::Partial;
@@ -369,7 +370,7 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    error_if_cancelled(&cancel)?;
+    cancel.error_if_cancelled()?;
 
     // Synchronize all nodes
     await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
@@ -412,18 +413,6 @@ async fn await_consensus_sync(
         _ = timeout => {
             log::warn!("All peers failed to synchronize consensus, continuing after timeout");
         }
-    }
-}
-
-/// Return an error if cancelled.
-#[must_use = "a returned error must be propagated down function calls"]
-fn error_if_cancelled(cancel: &CancellationToken) -> CollectionResult<()> {
-    if cancel.is_cancelled() {
-        Err(CollectionError::Cancelled {
-            description: "Transfer cancelled".to_string(),
-        })
-    } else {
-        Ok(())
     }
 }
 
