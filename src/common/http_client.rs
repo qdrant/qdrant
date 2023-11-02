@@ -12,13 +12,21 @@ pub struct HttpClient {
 
 impl HttpClient {
     pub fn from_settings(settings: &Settings) -> Result<Self> {
-        if settings.service.enable_tls && settings.tls.is_none() {
-            return Err(Error::TlsConfigUndefined);
-        }
+        let tls_config = if settings.service.enable_tls {
+            let Some(tls_config) = settings.tls.clone() else {
+                return Err(Error::TlsConfigUndefined);
+            };
+
+            Some(tls_config)
+        } else {
+            None
+        };
+
+        let verify_https_client_certificate = settings.service.verify_https_client_certificate;
 
         let http_client = Self {
-            tls_config: settings.tls.clone(),
-            verify_https_client_certificate: settings.service.verify_https_client_certificate,
+            tls_config,
+            verify_https_client_certificate,
         };
 
         Ok(http_client)
