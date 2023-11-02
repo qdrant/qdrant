@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use sparse::common::sparse_vector::SparseVector;
 
 use super::query::context_query::ContextQuery;
 use super::query::discovery_query::DiscoveryQuery;
@@ -9,7 +10,7 @@ use super::query::reco_query::RecoQuery;
 use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::{DenseVectorStorage, VectorStorageEnum};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -17,6 +18,8 @@ use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::sparse_raw_scorer::SparseRawScorer;
+use crate::vector_storage::VectorStorage;
 
 /// RawScorer            QueryScorer        Metric
 /// ┌────────────────┐   ┌──────────────┐   ┌───────────────────┐
@@ -116,11 +119,33 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::AppendableMemmap(vs) => {
             raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
-        VectorStorageEnum::SparseSimple(_vs) => panic!("sparse vector raw scorer"), // TODO(sparse)
+        VectorStorageEnum::SparseSimple(vs) => {
+            raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped)
+        }
     }
 }
 
 pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
+
+pub fn raw_sparse_scorer_impl<'a, TVectorStorage: VectorStorage>(
+    query: QueryVector,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    match query {
+        QueryVector::Nearest(vector) => Ok(raw_sparse_scorer_from_query_scorer(
+            vector.try_into()?,
+            vector_storage,
+            point_deleted,
+            vector_storage.deleted_vector_bitslice(),
+            is_stopped,
+        )),
+        QueryVector::Recommend(_) => Err(OperationError::WrongSparse),
+        QueryVector::Discovery(_) => Err(OperationError::WrongSparse),
+        QueryVector::Context(_) => Err(OperationError::WrongSparse),
+    }
+}
 
 pub fn new_raw_scorer<'a>(
     vector: QueryVector,
@@ -214,6 +239,22 @@ pub fn raw_scorer_from_query_scorer<'a, TQueryScorer: QueryScorer + 'a>(
         vec_deleted,
         is_stopped,
     }))
+}
+
+pub fn raw_sparse_scorer_from_query_scorer<'a, TVectorStorage: VectorStorage>(
+    vector: SparseVector,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    vec_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> Box<dyn RawScorer + 'a> {
+    Box::new(SparseRawScorer::new(
+        vector,
+        vector_storage,
+        point_deleted,
+        vec_deleted,
+        is_stopped,
+    ))
 }
 
 impl<'a, TQueryScorer> RawScorer for RawScorerImpl<'a, TQueryScorer>
