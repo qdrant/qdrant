@@ -8781,6 +8781,12 @@
           },
           {
             "$ref": "#/components/schemas/DropReplicaOperation"
+          },
+          {
+            "$ref": "#/components/schemas/CreateShardingKeyOperation"
+          },
+          {
+            "$ref": "#/components/schemas/DropShardingKeyOperation"
           }
         ]
       },
@@ -8880,6 +8886,75 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          }
+        }
+      },
+      "CreateShardingKeyOperation": {
+        "type": "object",
+        "required": [
+          "create_sharding_key"
+        ],
+        "properties": {
+          "create_sharding_key": {
+            "$ref": "#/components/schemas/CreateShardingKey"
+          }
+        }
+      },
+      "CreateShardingKey": {
+        "type": "object",
+        "required": [
+          "shard_key"
+        ],
+        "properties": {
+          "shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
+          },
+          "shards_number": {
+            "description": "How many shards to create for this key If not specified, will use the default value from config",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1,
+            "nullable": true
+          },
+          "replication_factor": {
+            "description": "How many replicas to create for each shard If not specified, will use the default value from config",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1,
+            "nullable": true
+          },
+          "placement": {
+            "description": "Placement of shards for this key List of peer ids, that can be used to place shards for this key If not specified, will be randomly placed among all peers",
+            "default": null,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DropShardingKeyOperation": {
+        "type": "object",
+        "required": [
+          "drop_sharding_key"
+        ],
+        "properties": {
+          "drop_sharding_key": {
+            "$ref": "#/components/schemas/DropShardingKey"
+          }
+        }
+      },
+      "DropShardingKey": {
+        "type": "object",
+        "required": [
+          "shard_key"
+        ],
+        "properties": {
+          "shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
           }
         }
       },
