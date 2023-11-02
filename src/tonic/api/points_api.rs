@@ -234,12 +234,14 @@ impl Points for PointsService {
             collection_name,
             discover_points,
             read_consistency,
+            timeout,
         } = request.into_inner();
         discover_batch(
             self.toc.as_ref(),
             collection_name,
             discover_points,
             read_consistency,
+            timeout.map(Duration::from_secs),
         )
         .await
     }

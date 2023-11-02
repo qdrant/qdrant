@@ -23,6 +23,7 @@ async fn discover_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
+        params.timeout(),
     )
     .await;
 
@@ -43,6 +44,7 @@ async fn discover_batch_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
+        params.timeout(),
     )
     .await;
 

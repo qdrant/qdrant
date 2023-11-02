@@ -1004,12 +1004,12 @@ pub async fn discover(
     toc: &TableOfContent,
     discover_points: DiscoverPoints,
 ) -> Result<Response<DiscoverResponse>, Status> {
-    let (request, collection_name, read_consistency) =
+    let (request, collection_name, read_consistency, timeout) =
         try_discover_request_from_grpc(discover_points)?;
 
     let timing = Instant::now();
     let discovered_points = toc
-        .discover(&collection_name, request, read_consistency)
+        .discover(&collection_name, request, read_consistency, timeout)
         .await
         .map_err(error_to_status)?;
 
@@ -1029,6 +1029,7 @@ pub async fn discover_batch(
     collection_name: String,
     discover_points: Vec<DiscoverPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
+    timeout: Option<Duration>,
 ) -> Result<Response<DiscoverBatchResponse>, Status> {
     let searches = discover_points
         .into_iter()
@@ -1041,7 +1042,7 @@ pub async fn discover_batch(
 
     let timing = Instant::now();
     let scored_points = toc
-        .discover_batch(&collection_name, discover_batch, read_consistency)
+        .discover_batch(&collection_name, discover_batch, read_consistency, timeout)
         .await
         .map_err(error_to_status)?;
 

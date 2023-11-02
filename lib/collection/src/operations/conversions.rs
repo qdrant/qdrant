@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
+use std::time::Duration;
 
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
 use api::grpc::qdrant::quantization_config_diff::Quantization;
@@ -132,7 +133,15 @@ pub fn try_record_from_grpc(
 
 pub fn try_discover_request_from_grpc(
     value: api::grpc::qdrant::DiscoverPoints,
-) -> Result<(DiscoverRequest, String, Option<ReadConsistency>), Status> {
+) -> Result<
+    (
+        DiscoverRequest,
+        String,
+        Option<ReadConsistency>,
+        Option<Duration>,
+    ),
+    Status,
+> {
     let api::grpc::qdrant::DiscoverPoints {
         collection_name,
         target,
@@ -146,6 +155,7 @@ pub fn try_discover_request_from_grpc(
         with_vectors,
         lookup_from,
         read_consistency,
+        timeout,
     } = value;
 
     let target = target.map(TryInto::try_into).transpose()?;
@@ -185,7 +195,9 @@ pub fn try_discover_request_from_grpc(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    Ok((request, collection_name, read_consistency))
+    let timeout = timeout.map(Duration::from_secs);
+
+    Ok((request, collection_name, read_consistency, timeout))
 }
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {

@@ -222,6 +222,7 @@ impl TableOfContent {
         collection_name: &str,
         request: DiscoverRequest,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         discovery::discover(
@@ -229,6 +230,7 @@ impl TableOfContent {
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
+            timeout,
         )
         .await
         .map_err(|err| err.into())
@@ -239,6 +241,7 @@ impl TableOfContent {
         collection_name: &str,
         request: DiscoverRequestBatch,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         discovery::discover_batch(
@@ -246,6 +249,7 @@ impl TableOfContent {
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
+            timeout,
         )
         .await
         .map_err(|err| err.into())

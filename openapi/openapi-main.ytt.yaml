@@ -525,6 +525,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(array(reference("ScoredPoint")))
       
   /collections/{collection_name}/points/discover/batch:
@@ -554,6 +561,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
   /collections/{collection_name}/points/count:

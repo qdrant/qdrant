@@ -554,8 +554,9 @@ pub async fn do_discover_points(
     collection_name: &str,
     request: DiscoverRequest,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.discover(collection_name, request, read_consistency)
+    toc.discover(collection_name, request, read_consistency, timeout)
         .await
 }
 
@@ -564,8 +565,9 @@ pub async fn do_discover_batch_points(
     collection_name: &str,
     request: DiscoverRequestBatch,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.discover_batch(collection_name, request, read_consistency)
+    toc.discover_batch(collection_name, request, read_consistency, timeout)
         .await
 }
 
