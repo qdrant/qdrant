@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
@@ -22,16 +22,6 @@ impl InvertedIndex for InvertedIndexRam {
 
     fn files(&self) -> Vec<PathBuf> {
         vec![]
-    }
-
-    fn indexed_vector_count(&self) -> usize {
-        // TODO(sparse) not super efficient
-        let ids = self
-            .postings
-            .iter()
-            .flat_map(|posting| posting.elements.iter().map(|e| e.record_id))
-            .collect::<HashSet<PointOffsetType>>();
-        ids.len()
     }
 
     fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {

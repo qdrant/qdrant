@@ -52,10 +52,6 @@ impl InvertedIndex for InvertedIndexMmap {
         ]
     }
 
-    fn indexed_vector_count(&self) -> usize {
-        self.file_header.posting_count
-    }
-
     fn upsert(&mut self, _id: PointOffsetType, _vector: SparseVector) {
         panic!("Cannot upsert into a read-only Mmap inverted index")
     }

@@ -18,9 +18,6 @@ pub trait InvertedIndex {
     /// Files used by this index
     fn files(&self) -> Vec<PathBuf>;
 
-    /// The number of indexed vectors, currently accessible
-    fn indexed_vector_count(&self) -> usize;
-
     /// Upsert a vector into the inverted index.
     fn upsert(&mut self, id: PointOffsetType, vector: SparseVector);
 
