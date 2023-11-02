@@ -800,6 +800,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
             filtered_exact: tm.exact_filtered.lock().get_statistics(),
+            filtered_sparse: Default::default(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
             unfiltered_sparse: Default::default(),
         }

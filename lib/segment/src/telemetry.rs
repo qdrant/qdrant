@@ -66,6 +66,9 @@ pub struct VectorIndexSearchesTelemetry {
     pub filtered_exact: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub filtered_sparse: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub unfiltered_exact: OperationDurationStatistics,
 }
 
@@ -73,14 +76,15 @@ impl From<&SparseSearchesTelemetry> for VectorIndexSearchesTelemetry {
     fn from(value: &SparseSearchesTelemetry) -> Self {
         VectorIndexSearchesTelemetry {
             index_name: None,
-            unfiltered_plain: value.unfiltered_plain.lock().get_statistics(),
+            unfiltered_plain: Default::default(),
             filtered_plain: Default::default(),
             unfiltered_hnsw: Default::default(),
-            filtered_small_cardinality: value.small_cardinality.lock().get_statistics(),
-            filtered_large_cardinality: value.large_cardinality.lock().get_statistics(),
+            filtered_small_cardinality: Default::default(),
+            filtered_large_cardinality: Default::default(),
             filtered_exact: Default::default(),
-            unfiltered_exact: Default::default(),
+            filtered_sparse: value.filtered_sparse.lock().get_statistics(),
             unfiltered_sparse: value.unfiltered_sparse.lock().get_statistics(),
+            unfiltered_exact: Default::default(),
         }
     }
 }
@@ -165,6 +169,7 @@ impl Anonymize for VectorIndexSearchesTelemetry {
             filtered_small_cardinality: self.filtered_small_cardinality.anonymize(),
             filtered_large_cardinality: self.filtered_large_cardinality.anonymize(),
             filtered_exact: self.filtered_exact.anonymize(),
+            filtered_sparse: self.filtered_sparse.anonymize(),
             unfiltered_exact: self.filtered_exact.anonymize(),
         }
     }

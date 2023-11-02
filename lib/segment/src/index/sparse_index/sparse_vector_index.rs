@@ -65,7 +65,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             check_process_stopped(is_stopped)?;
             // measure time according to filter
             if with_filter {
-                let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
+                let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
             } else {
                 let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
             }
