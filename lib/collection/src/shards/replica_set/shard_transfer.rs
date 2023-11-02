@@ -200,6 +200,10 @@ impl ShardReplicaSet {
     /// This intentionally forgets and drops updates pending to be transferred to the remote shard.
     /// The remote shard may therefore therefore be left in an inconsistent state, which should be
     /// resolved separately.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn revert_queue_proxy_local(&self) {
         let mut local_write = self.local.write().await;
 

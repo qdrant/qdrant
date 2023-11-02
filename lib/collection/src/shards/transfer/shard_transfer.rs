@@ -75,6 +75,9 @@ pub enum ShardTransferMethod {
     Snapshot,
 }
 
+/// # Cancel safety
+///
+/// This function is *not* cancel safe.
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
@@ -780,6 +783,13 @@ where
             finished = match transfer_result {
                 Ok(()) => true,
                 Err(error) => {
+                    // Revert queue proxy if we still have any to clean up or prepare for the next attempt
+                    if let Some(replica_set) =
+                        shards_holder.read().await.get_shard(&transfer.shard_id)
+                    {
+                        replica_set.revert_queue_proxy_local().await;
+                    }
+
                     if matches!(error, CollectionError::Cancelled { .. }) {
                         return false;
                     }
@@ -788,13 +798,6 @@ where
                         transfer.shard_id,
                         transfer.to,
                     );
-
-                    // Revert queue proxy if we still have any to prepare for the next attempt
-                    if let Some(replica_set) =
-                        shards_holder.read().await.get_shard(&transfer.shard_id)
-                    {
-                        replica_set.revert_queue_proxy_local().await;
-                    }
 
                     false
                 }
