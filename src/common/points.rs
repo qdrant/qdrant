@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
 use collection::operations::point_ops::{
@@ -464,9 +466,16 @@ pub async fn do_search_points(
     request: SearchRequest,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.search(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.search(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        timeout,
+    )
+    .await
 }
 
 pub async fn do_search_batch_points(
@@ -475,9 +484,16 @@ pub async fn do_search_batch_points(
     request: SearchRequestBatch,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.search_batch(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.search_batch(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        timeout,
+    )
+    .await
 }
 
 pub async fn do_core_search_batch_points(
@@ -486,9 +502,16 @@ pub async fn do_core_search_batch_points(
     request: CoreSearchRequestBatch,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.core_search_batch(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.core_search_batch(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        timeout,
+    )
+    .await
 }
 
 pub async fn do_search_point_groups(
@@ -497,12 +520,14 @@ pub async fn do_search_point_groups(
     request: SearchGroupsRequest,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
         request.into(),
         read_consistency,
         shard_selection,
+        timeout,
     )
     .await
 }
@@ -512,9 +537,16 @@ pub async fn do_recommend_point_groups(
     collection_name: &str,
     request: RecommendGroupsRequest,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
-    toc.group(collection_name, request.into(), read_consistency, None)
-        .await
+    toc.group(
+        collection_name,
+        request.into(),
+        read_consistency,
+        None,
+        timeout,
+    )
+    .await
 }
 
 pub async fn do_count_points(

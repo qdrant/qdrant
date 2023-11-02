@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
@@ -205,6 +206,7 @@ impl PointsInternal for PointsInternalService {
             collection_name,
             search_points,
             shard_id,
+            timeout,
         } = request.into_inner();
 
         // Individual `read_consistency` values are ignored by `search_batch`...
@@ -219,6 +221,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             None, // *Has* to be `None`!
             shard_id,
+            timeout.map(Duration::from_secs),
         )
         .await
     }
@@ -234,7 +237,10 @@ impl PointsInternal for PointsInternalService {
             collection_name,
             search_points,
             shard_id,
+            timeout,
         } = request.into_inner();
+
+        let timeout = timeout.map(Duration::from_secs);
 
         // Individual `read_consistency` values are ignored by `core_search_batch`...
         //
@@ -248,6 +254,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             None, // *Has* to be `None`!
             shard_id,
+            timeout,
         )
         .await
     }

@@ -19,7 +19,7 @@ use crate::actix::helpers::process_response;
 use crate::common::collections::*;
 
 #[derive(Debug, Deserialize, Validate)]
-struct WaitTimeout {
+pub struct WaitTimeout {
     #[validate(range(min = 1))]
     timeout: Option<u64>,
 }

@@ -1,3 +1,6 @@
+use std::num::NonZeroU64;
+use std::time::Duration;
+
 use collection::operations::consistency_params::ReadConsistency;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -8,6 +11,14 @@ pub struct ReadParams {
     #[serde(default, deserialize_with = "deserialize_read_consistency")]
     #[validate]
     pub consistency: Option<ReadConsistency>,
+    /// If set, overrides global timeout for this request. Unit is seconds.
+    pub timeout: Option<NonZeroU64>,
+}
+
+impl ReadParams {
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout.map(|num| Duration::from_secs(num.get()))
+    }
 }
 
 fn deserialize_read_consistency<'de, D>(
@@ -90,12 +101,14 @@ mod test {
     fn from_type(r#type: ReadConsistencyType) -> ReadParams {
         ReadParams {
             consistency: Some(ReadConsistency::Type(r#type)),
+            ..Default::default()
         }
     }
 
     fn from_factor(factor: usize) -> ReadParams {
         ReadParams {
             consistency: Some(ReadConsistency::Factor(factor)),
+            ..Default::default()
         }
     }
 }

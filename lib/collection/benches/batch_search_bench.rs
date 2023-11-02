@@ -147,6 +147,7 @@ fn batch_search_bench(c: &mut Criterion) {
                                     searches: vec![search_query],
                                 }),
                                 search_runtime_handle,
+                                None,
                             )
                             .await
                             .unwrap();
@@ -178,7 +179,7 @@ fn batch_search_bench(c: &mut Criterion) {
 
                     let search_query = SearchRequestBatch { searches };
                     let result = shard
-                        .search(Arc::new(search_query), search_runtime_handle)
+                        .search(Arc::new(search_query), search_runtime_handle, None)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

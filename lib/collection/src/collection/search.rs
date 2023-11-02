@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::future;
 use segment::spaces::tools;
@@ -16,6 +17,7 @@ impl Collection {
         request: SearchRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -25,7 +27,7 @@ impl Collection {
             searches: vec![request],
         };
         let results = self
-            .do_search_batch(request_batch, read_consistency, shard_selection)
+            .do_search_batch(request_batch, read_consistency, shard_selection, timeout)
             .await?;
         Ok(results.into_iter().next().unwrap())
     }
@@ -37,6 +39,7 @@ impl Collection {
         request: SearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // shortcuts batch if all requests with limit=0
         if request.searches.iter().all(|s| s.limit == 0) {
@@ -88,7 +91,12 @@ impl Collection {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
-                .do_search_batch(without_payload_batch, read_consistency, shard_selection)
+                .do_search_batch(
+                    without_payload_batch,
+                    read_consistency,
+                    shard_selection,
+                    timeout,
+                )
                 .await?;
             let filled_results = without_payload_results
                 .into_iter()
@@ -105,7 +113,7 @@ impl Collection {
             future::try_join_all(filled_results).await
         } else {
             let result = self
-                .do_search_batch(request, read_consistency, shard_selection)
+                .do_search_batch(request, read_consistency, shard_selection, timeout)
                 .await?;
             Ok(result)
         }
@@ -118,6 +126,7 @@ impl Collection {
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // shortcuts batch if all requests with limit=0
         if request.searches.iter().all(|s| s.limit == 0) {
@@ -169,7 +178,12 @@ impl Collection {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
-                .do_core_search_batch(without_payload_batch, read_consistency, shard_selection)
+                .do_core_search_batch(
+                    without_payload_batch,
+                    read_consistency,
+                    shard_selection,
+                    timeout,
+                )
                 .await?;
             let filled_results = without_payload_results
                 .into_iter()
@@ -186,7 +200,7 @@ impl Collection {
             future::try_join_all(filled_results).await
         } else {
             let result = self
-                .do_core_search_batch(request, read_consistency, shard_selection)
+                .do_core_search_batch(request, read_consistency, shard_selection, timeout)
                 .await?;
             Ok(result)
         }
@@ -199,6 +213,7 @@ impl Collection {
         request: SearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
@@ -207,7 +222,12 @@ impl Collection {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards.iter().map(|shard| {
-                shard.search(request.clone(), read_consistency, shard_selection.is_some())
+                shard.search(
+                    request.clone(),
+                    read_consistency,
+                    shard_selection.is_some(),
+                    timeout,
+                )
             });
             future::try_join_all(all_searches).await?
         };
@@ -227,6 +247,7 @@ impl Collection {
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
@@ -235,7 +256,12 @@ impl Collection {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards.iter().map(|shard| {
-                shard.core_search(request.clone(), read_consistency, shard_selection.is_some())
+                shard.core_search(
+                    request.clone(),
+                    read_consistency,
+                    shard_selection.is_some(),
+                    timeout,
+                )
             });
             future::try_join_all(all_searches).await?
         };

@@ -769,6 +769,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
                 vector_name => Some(vector_name.to_string()),
             },
             read_consistency: None,
+            timeout: None,
         }
     }
 }
@@ -943,6 +944,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
             offset: None,
             collection_name: String::new(),
             read_consistency: None,
+            timeout: None,
         };
 
         let SearchRequest {
@@ -1122,11 +1124,12 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             with_vectors: value.with_vectors,
             score_threshold: value.score_threshold,
             read_consistency: None,
-            limit: 0,
-            offset: None,
+            limit: 0,     // Will be calculated from group_size
+            offset: None, // Not enabled for groups
             collection_name: String::new(),
             positive_vectors: value.positive_vectors,
             negative_vectors: value.negative_vectors,
+            timeout: None, // Passed as query param
         };
 
         let RecommendRequest {

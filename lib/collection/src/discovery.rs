@@ -1,4 +1,5 @@
 use std::iter;
+use std::time::Duration;
 
 use futures::Future;
 use itertools::Itertools;
@@ -21,6 +22,7 @@ pub async fn discover<'a, F, Fut>(
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -38,6 +40,7 @@ where
         collection,
         collection_by_name,
         read_consistency,
+        timeout,
     )
     .await?;
     Ok(results.into_iter().next().unwrap())
@@ -48,6 +51,7 @@ pub async fn discover_batch<'a, F, Fut>(
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,
@@ -205,7 +209,7 @@ where
     };
 
     collection
-        .core_search_batch(batch, read_consistency, None)
+        .core_search_batch(batch, read_consistency, None, timeout)
         .await
 }
 

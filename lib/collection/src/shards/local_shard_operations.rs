@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
@@ -26,6 +27,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let (collection_params, indexing_threshold_kb) = {
             let collection_config = self.collection_config.read().await;
@@ -53,15 +55,16 @@ impl LocalShard {
             is_stopped.get_is_stopped(),
             indexing_threshold_kb,
         );
-        let timeout = self.shared_storage_config.search_timeout;
-        let res: Vec<Vec<ScoredPoint>> = tokio::select! {
-            res = search_request => res,
-            _ = tokio::time::sleep(timeout) => {
-                is_stopped.stop();
+
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+
+        let res = tokio::time::timeout(timeout, search_request)
+            .await
+            .map_err(|_| {
                 log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
-                Err(CollectionError::timeout(timeout.as_secs() as usize, "Search"))
-            }
-        }?;
+                // StoppingGuard takes care of setting is_stopped to true
+                CollectionError::timeout(timeout.as_secs() as usize, "Search")
+            })??;
 
         let top_results = res
             .into_iter()
@@ -192,10 +195,12 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.do_search(
             Arc::new(request.as_ref().clone().into()),
             search_runtime_handle,
+            timeout,
         )
         .await
     }
@@ -206,8 +211,10 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.do_search(request, search_runtime_handle).await
+        self.do_search(request, search_runtime_handle, timeout)
+            .await
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {

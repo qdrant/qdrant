@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use segment::types::{
@@ -86,6 +87,7 @@ impl ShardOperation for DummyShard {
         &self,
         _: Arc<SearchRequestBatch>,
         _: &Handle,
+        _: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy()
     }
@@ -96,6 +98,7 @@ impl ShardOperation for DummyShard {
         &self,
         _: Arc<CoreSearchRequestBatch>,
         _: &Handle,
+        _: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy()
     }

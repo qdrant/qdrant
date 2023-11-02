@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{Named, DEFAULT_VECTOR_NAME};
@@ -132,6 +133,7 @@ impl GroupRequest {
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>>
     where
         F: Fn(String) -> Fut,
@@ -154,7 +156,7 @@ impl GroupRequest {
                 request.with_vector = None;
 
                 collection
-                    .search(request, read_consistency, shard_selection)
+                    .search(request, read_consistency, shard_selection, timeout)
                     .await
             }
             SourceRequest::Recommend(mut request) => {
@@ -166,7 +168,14 @@ impl GroupRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
-                recommend_by(request, collection, collection_by_name, read_consistency).await
+                recommend_by(
+                    request,
+                    collection,
+                    collection_by_name,
+                    read_consistency,
+                    timeout,
+                )
+                .await
             }
         }
     }
@@ -266,6 +275,7 @@ pub async fn group_by<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>>
 where
     F: Fn(String) -> Fut + Clone,
@@ -292,7 +302,7 @@ where
 
         let source = &mut request.source;
 
-        // construct filter to exclude already found groups
+        // Construct filter to exclude already found groups
         let full_groups = aggregator.keys_of_filled_groups();
         if !full_groups.is_empty() {
             let except_any = except_on(&request.group_by, full_groups);
@@ -305,19 +315,21 @@ where
             }
         }
 
-        // exclude already aggregated points
+        // Exclude already aggregated points
         let ids = aggregator.ids().clone();
         if !ids.is_empty() {
             let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
             source.merge_filter(&exclude_ids);
         }
 
+        // Make request
         let points = request
             .r#do(
                 collection,
                 collection_by_name.clone(),
                 read_consistency,
                 shard_selection,
+                timeout,
             )
             .await?;
 
@@ -341,7 +353,7 @@ where
 
             let source = &mut request.source;
 
-            // construct filter to only include unsatisfied groups
+            // Construct filter to only include unsatisfied groups
             let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
             let match_any = match_on(&request.group_by, unsatisfied_groups);
             if !match_any.is_empty() {
@@ -352,19 +364,21 @@ where
                 source.merge_filter(&include_groups);
             }
 
-            // exclude already aggregated points
+            // Exclude already aggregated points
             let ids = aggregator.ids().clone();
             if !ids.is_empty() {
                 let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
                 source.merge_filter(&exclude_ids);
             }
 
+            // Make request
             let points = request
                 .r#do(
                     collection,
                     collection_by_name.clone(),
                     read_consistency,
                     shard_selection,
+                    timeout,
                 )
                 .await?;
 
