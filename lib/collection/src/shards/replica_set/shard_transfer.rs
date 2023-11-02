@@ -267,6 +267,10 @@ impl ShardReplicaSet {
     /// # Errors
     ///
     /// Returns an error if transferring all updates to the remote failed.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn queue_proxy_into_forward_proxy(&self) -> CollectionResult<()> {
         // First pass: transfer all missed updates with shared read lock
         {
