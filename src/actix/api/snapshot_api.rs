@@ -339,7 +339,7 @@ async fn recover_shard_snapshot(
             shard,
             request.location,
             request.priority.unwrap_or_default(),
-            http_client.get_ref(),
+            http_client.as_ref().clone(),
         )
         .await?;
 

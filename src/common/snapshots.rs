@@ -73,7 +73,7 @@ pub async fn recover_shard_snapshot(
     shard_id: ShardId,
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
-    client: &HttpClient,
+    client: HttpClient,
 ) -> Result<(), StorageError> {
     // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled
     //   - remote snapshot is downloaded into `download_dir` and would be deleted with it

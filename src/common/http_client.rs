@@ -5,6 +5,7 @@ use storage::content_manager::errors::StorageError;
 
 use crate::settings::{Settings, TlsConfig};
 
+#[derive(Clone)]
 pub struct HttpClient {
     tls_config: Option<TlsConfig>,
     verify_https_client_certificate: bool,
