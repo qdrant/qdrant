@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package qdrant;
 
-import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 service Snapshots {

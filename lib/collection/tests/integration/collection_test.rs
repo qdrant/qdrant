@@ -70,7 +70,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let search_res = collection.search(search_request, None, None).await;
+    let search_res = collection.search(search_request, None, None, None).await;
 
     match search_res {
         Ok(res) => {
@@ -127,7 +127,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
-    let search_res = collection.search(search_request, None, None).await;
+    let search_res = collection.search(search_request, None, None, None).await;
 
     match search_res {
         Ok(res) => {
@@ -332,6 +332,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("Should not be called in this test") },
+        None,
         None,
     )
     .await

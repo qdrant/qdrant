@@ -295,6 +295,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(array(reference("ScoredPoint")))
 
   /collections/{collection_name}/points/search/batch:
@@ -324,6 +331,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
   /collections/{collection_name}/points/search/groups:
@@ -353,6 +367,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("GroupsResult"))
 
   /collections/{collection_name}/points/recommend:
@@ -382,6 +403,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(array(reference("ScoredPoint")))
 
   /collections/{collection_name}/points/recommend/batch:
@@ -411,6 +439,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
   /collections/{collection_name}/points/recommend/groups:
@@ -440,6 +475,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("GroupsResult"))
 
   /collections/{collection_name}/points/count:

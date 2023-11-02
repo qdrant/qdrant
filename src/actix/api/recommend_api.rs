@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
@@ -18,8 +20,9 @@ async fn do_recommend_points(
     collection_name: &str,
     request: RecommendRequest,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.recommend(collection_name, request, read_consistency)
+    toc.recommend(collection_name, request, read_consistency, timeout)
         .await
 }
 
@@ -37,6 +40,7 @@ async fn recommend_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
+        params.timeout(),
     )
     .await;
 
@@ -48,8 +52,9 @@ async fn do_recommend_batch_points(
     collection_name: &str,
     request: RecommendRequestBatch,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.recommend_batch(collection_name, request, read_consistency)
+    toc.recommend_batch(collection_name, request, read_consistency, timeout)
         .await
 }
 
@@ -67,6 +72,7 @@ async fn recommend_batch_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
+        params.timeout(),
     )
     .await;
 
@@ -87,6 +93,7 @@ async fn recommend_point_groups(
         &collection.name,
         request.into_inner(),
         params.consistency,
+        params.timeout(),
     )
     .await;
 

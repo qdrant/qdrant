@@ -150,12 +150,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     };
 
     let reference_result = collection
-        .search(full_search_request.clone(), None, None)
+        .search(full_search_request.clone(), None, None, None)
         .await
         .unwrap();
 
     let recovered_result = recovered_collection
-        .search(full_search_request, None, None)
+        .search(full_search_request, None, None, None)
         .await
         .unwrap();
 

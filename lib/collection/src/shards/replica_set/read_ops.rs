@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::FutureExt as _;
 use segment::types::*;
@@ -57,13 +58,14 @@ impl ShardReplicaSet {
         request: Arc<SearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();
                 let search_runtime = self.search_runtime.clone();
 
-                async move { shard.search(request, &search_runtime).await }.boxed()
+                async move { shard.search(request, &search_runtime, timeout).await }.boxed()
             },
             read_consistency,
             local_only,
@@ -78,13 +80,14 @@ impl ShardReplicaSet {
         request: Arc<CoreSearchRequestBatch>,
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();
                 let search_runtime = self.search_runtime.clone();
 
-                async move { shard.core_search(request, &search_runtime).await }.boxed()
+                async move { shard.core_search(request, &search_runtime, timeout).await }.boxed()
             },
             read_consistency,
             local_only,

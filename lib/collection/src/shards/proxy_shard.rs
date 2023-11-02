@@ -208,9 +208,12 @@ impl ShardOperation for ProxyShard {
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
-        local_shard.search(request, search_runtime_handle).await
+        local_shard
+            .search(request, search_runtime_handle, timeout)
+            .await
     }
 
     // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
@@ -219,10 +222,11 @@ impl ShardOperation for ProxyShard {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle)
+            .core_search(request, search_runtime_handle, timeout)
             .await
     }
 

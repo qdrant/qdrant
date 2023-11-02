@@ -50,15 +50,16 @@ impl<T> StoppableTaskHandle<T> {
             Ok(_) => {}
             Err(err) if err.is_cancelled() => {}
             // Propagate panic
-            Err(err) if err.is_panic() && self.panic_handler.is_some() => {
-                log::trace!("Handling stoppable task panic through custom panic handler");
-                let panic = err.into_panic();
-                let panic_handler = self.panic_handler.unwrap();
-                panic_handler(panic);
-            }
-            Err(err) if err.is_panic() => {
-                log::debug!("Stoppable task panicked without panic handler");
-            }
+            Err(err) if err.is_panic() => match self.panic_handler {
+                Some(panic_handler) => {
+                    log::trace!("Handling stoppable task panic through custom panic handler");
+                    let panic = err.into_panic();
+                    panic_handler(panic);
+                }
+                None => {
+                    log::debug!("Stoppable task panicked without panic handler");
+                }
+            },
             // Log error on unknown error
             Err(err) => {
                 log::error!("Stoppable task handle error for unknown reason: {err}");

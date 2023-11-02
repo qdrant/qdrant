@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::payload_index_params::IndexParams;
@@ -674,6 +674,7 @@ pub async fn search(
         vector_name,
         with_vectors,
         read_consistency,
+        timeout,
     } = search_points;
 
     let search_request = SearchRequest {
@@ -703,6 +704,7 @@ pub async fn search(
         search_request,
         read_consistency,
         shard_selection,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;
@@ -726,6 +728,7 @@ pub async fn search_batch(
     search_points: Vec<SearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =
         search_points.into_iter().map(TryInto::try_into).collect();
@@ -743,6 +746,7 @@ pub async fn search_batch(
         search_requests,
         read_consistency,
         shard_selection,
+        timeout,
     )
     .await
     .map_err(error_to_status)?;
@@ -768,6 +772,7 @@ pub async fn core_search_batch(
     search_points: Vec<CoreSearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =
         search_points.into_iter().map(TryInto::try_into).collect();
@@ -785,6 +790,7 @@ pub async fn core_search_batch(
         search_requests,
         read_consistency,
         shard_selection,
+        timeout,
     )
     .await
     .map_err(error_to_status)?;
@@ -812,6 +818,7 @@ pub async fn search_groups(
     let SearchPointGroups {
         collection_name,
         read_consistency,
+        timeout,
         ..
     } = search_point_groups;
 
@@ -824,6 +831,7 @@ pub async fn search_groups(
         search_groups_request,
         read_consistency,
         shard_selection,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;
@@ -857,22 +865,22 @@ pub async fn recommend(
         with_vectors,
         lookup_from,
         read_consistency,
+        timeout,
     } = recommend_points;
+
+    let timeout = timeout.map(Duration::from_secs);
 
     let positive_ids = positive
         .into_iter()
         .map(TryInto::try_into)
         .collect::<Result<Vec<RecommendExample>, Status>>()?;
-
-    let positive_examples = positive_vectors.into_iter().map(Into::into).collect();
-
-    let positive = [positive_ids, positive_examples].concat();
+    let positive_vectors = positive_vectors.into_iter().map(Into::into).collect();
+    let positive = [positive_ids, positive_vectors].concat();
 
     let negative_ids = negative
         .into_iter()
         .map(TryInto::try_into)
         .collect::<Result<Vec<RecommendExample>, Status>>()?;
-
     let negative_vectors = negative_vectors
         .into_iter()
         .map(|v| RecommendExample::Vector(v.data))
@@ -902,7 +910,7 @@ pub async fn recommend(
 
     let timing = Instant::now();
     let recommended_points = toc
-        .recommend(&collection_name, request, read_consistency)
+        .recommend(&collection_name, request, read_consistency, timeout)
         .await
         .map_err(error_to_status)?;
 
@@ -922,6 +930,7 @@ pub async fn recommend_batch(
     collection_name: String,
     recommend_points: Vec<RecommendPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
+    timeout: Option<Duration>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> = recommend_points
         .into_iter()
@@ -935,7 +944,7 @@ pub async fn recommend_batch(
 
     let timing = Instant::now();
     let scored_points = toc
-        .recommend_batch(&collection_name, recommend_batch, read_consistency)
+        .recommend_batch(&collection_name, recommend_batch, read_consistency, timeout)
         .await
         .map_err(error_to_status)?;
 
@@ -961,6 +970,7 @@ pub async fn recommend_groups(
     let RecommendPointGroups {
         collection_name,
         read_consistency,
+        timeout,
         ..
     } = recommend_point_groups;
 
@@ -972,6 +982,7 @@ pub async fn recommend_groups(
         &collection_name,
         recommend_groups_request,
         read_consistency,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
@@ -145,13 +146,18 @@ impl Points for PointsService {
             collection_name,
             search_points,
             read_consistency,
+            timeout,
         } = request.into_inner();
+
+        let timeout = timeout.map(Duration::from_secs);
+
         search_batch(
             self.toc.as_ref(),
             collection_name,
             search_points,
             read_consistency,
             None,
+            timeout,
         )
         .await
     }
@@ -189,12 +195,14 @@ impl Points for PointsService {
             collection_name,
             recommend_points,
             read_consistency,
+            timeout,
         } = request.into_inner();
         recommend_batch(
             self.toc.as_ref(),
             collection_name,
             recommend_points,
             read_consistency,
+            timeout.map(Duration::from_secs),
         )
         .await
     }

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use segment::types::{
@@ -39,6 +40,7 @@ pub trait ShardOperation {
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
 
     // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
@@ -47,6 +49,7 @@ pub trait ShardOperation {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult>;

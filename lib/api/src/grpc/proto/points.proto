@@ -239,12 +239,14 @@ message SearchPoints {
   optional string vector_name = 10; // Which vector to use for search, if not specified - use default vector
   optional WithVectorsSelector with_vectors = 11; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message SearchBatchPoints {
   string collection_name = 1; // Name of the collection
   repeated SearchPoints search_points = 2;
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message WithLookup {
@@ -268,6 +270,7 @@ message SearchPointGroups {
   uint32 group_size = 11; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
   optional WithLookup with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
+  optional uint64 timeout = 14; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message ScrollPoints {
@@ -316,12 +319,14 @@ message RecommendPoints {
   optional RecommendStrategy strategy = 16; // How to use the example vectors to find the results
   repeated Vector positive_vectors = 17; // Look for vectors closest to those
   repeated Vector negative_vectors = 18; // Try to avoid vectors like this
+  optional uint64 timeout = 19; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message RecommendBatchPoints {
   string collection_name = 1; // Name of the collection
   repeated RecommendPoints recommend_points = 2;
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message RecommendPointGroups {
@@ -343,6 +348,7 @@ message RecommendPointGroups {
   optional RecommendStrategy strategy = 17; // How to use the example vectors to find the results
   repeated Vector positive_vectors = 18; // Look for vectors closest to those
   repeated Vector negative_vectors = 19; // Try to avoid vectors like this
+  optional uint64 timeout = 20; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message CountPoints {
