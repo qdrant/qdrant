@@ -2,6 +2,12 @@ use std::future::Future;
 
 use super::*;
 
+/// # Cancel safety
+///
+/// This function is cancel safe.
+///
+/// If cancelled, the provided future will still run to completion. It may return early by using
+/// the `CancellationToken`.
 pub async fn spawn_cancel_on_drop<Task, Fut>(task: Task) -> Result<Fut::Output, Error>
 where
     Task: FnOnce(CancellationToken) -> Fut,
@@ -21,7 +27,9 @@ where
 
 /// # Cancel safety
 ///
-/// Future must be cancel safe.
+/// This function is cancel safe.
+///
+/// The provided future must be cancel safe.
 pub async fn cancel_on_token<Fut>(
     cancel: CancellationToken,
     future: Fut,
