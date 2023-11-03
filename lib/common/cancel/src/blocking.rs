@@ -4,8 +4,7 @@ use super::*;
 ///
 /// This function is cancel safe.
 ///
-/// If cancelled, the provided closure will still run to completion. It may return early by using
-/// the `CancellationToken`.
+/// If cancelled, the cancellation token provided to the `task` will be triggered automatically.
 pub async fn spawn_cancel_on_drop<Out, Task>(task: Task) -> Result<Out, Error>
 where
     Task: FnOnce(CancellationToken) -> Out + Send + 'static,
@@ -29,8 +28,10 @@ where
 ///
 /// This function is cancel safe.
 ///
-/// If cancelled, the provided closure will still run to completion. It may return early by using
-/// the `CancellationToken`.
+/// If cancelled without triggering the cancellation token, the `task` will still run to completion.
+///
+/// This function *will* return early, and the `task` *may* return early by triggering the
+/// cancellation token.
 pub async fn spawn_cancel_on_token<Out, Task>(
     cancel: CancellationToken,
     task: Task,

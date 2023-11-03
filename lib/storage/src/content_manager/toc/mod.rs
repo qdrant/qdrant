@@ -344,11 +344,15 @@ impl TableOfContent {
         collection_name: String,
         shard_id: ShardId,
     ) -> Result<(), StorageError> {
+        // TODO: Ensure cancel safety!
+
         log::info!(
             "Initiating receiving shard {}:{}",
             collection_name,
             shard_id
         );
+
+        // TODO: Ensure cancel safety!
         let initiate_shard_transfer_future = self
             .get_collection(&collection_name)
             .await?
