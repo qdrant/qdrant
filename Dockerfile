@@ -124,6 +124,7 @@ ARG USER_ID=0
 RUN if [ "$USER_ID" != 0 ]; then \
         groupadd --gid "$USER_ID" qdrant; \
         useradd --uid "$USER_ID" --gid "$USER_ID" -m qdrant; \
+        mkdir -p snapshots storage; \
         chown -R "$USER_ID:$USER_ID" "$APP"; \
     fi
 
