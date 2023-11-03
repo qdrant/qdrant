@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use cancel::future::cancel_on_token;
 use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -300,8 +301,6 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    error_if_cancelled(&cancel)?;
-
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
     shard_download_url.set_path(&format!(
@@ -310,19 +309,19 @@ async fn transfer_snapshot(
     ));
 
     log::trace!("Transferring and recovering shard {shard_id} snapshot on peer {remote_peer_id}");
-    remote_shard
-        .recover_shard_snapshot_from_url(
+    cancel_on_token(
+        cancel.clone(),
+        remote_shard.recover_shard_snapshot_from_url(
             collection_name,
             shard_id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
-        )
-        .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to recover shard snapshot on remote: {err}"
-            ))
-        })?;
+        ),
+    )
+    .await?
+    .map_err(|err| {
+        CollectionError::service_error(format!("Failed to recover shard snapshot on remote: {err}"))
+    })?;
 
     if let Err(err) = snapshot_temp_path.close() {
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");

@@ -444,6 +444,10 @@ impl RemoteShard {
     /// # Warning
     ///
     /// This method specifies a timeout of 24 hours.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. Recovery may be aborted on the remote.
     pub async fn recover_shard_snapshot_from_url(
         &self,
         collection_name: &str,
