@@ -91,13 +91,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     })
                 }
             };
-            let sparse_vector: &SparseVector = vector.to_vec_ref().try_into()?;
-            let mut search_context = SearchContext::new(
-                sparse_vector.to_owned(),
-                top,
-                &self.inverted_index,
-                is_stopped,
-            );
+            let sparse_vector: SparseVector = vector.clone().try_into()?;
+            let mut search_context =
+                SearchContext::new(sparse_vector, top, &self.inverted_index, is_stopped);
             let points = search_context.search(&condition);
             result.push(points);
         }
