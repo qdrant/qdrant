@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
+use crate::common::stoppable_task_async::CancellableAsyncTaskHandle;
 use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
 pub struct TransferTasksPool {
     collection_id: CollectionId,
-    tasks: HashMap<ShardTransferKey, StoppableAsyncTaskHandle<bool>>,
+    tasks: HashMap<ShardTransferKey, CancellableAsyncTaskHandle<bool>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -55,7 +55,7 @@ impl TransferTasksPool {
     /// Returns false if the task was not found
     pub async fn stop_if_exists(&mut self, transfer_key: &ShardTransferKey) -> TaskResult {
         if let Some(task) = self.tasks.remove(transfer_key) {
-            match task.stop().await {
+            match task.cancel().await {
                 Ok(res) => {
                     if res {
                         log::info!(
@@ -94,7 +94,7 @@ impl TransferTasksPool {
     pub fn add_task(
         &mut self,
         shard_transfer: &ShardTransfer,
-        task: StoppableAsyncTaskHandle<bool>,
+        task: CancellableAsyncTaskHandle<bool>,
     ) {
         self.tasks.insert(shard_transfer.key(), task);
     }
