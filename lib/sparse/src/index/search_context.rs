@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::types::ScoredPointOffset;
+use common::types::{PointOffsetType, ScoredPointOffset};
 
 use crate::common::sparse_vector::SparseVector;
 use crate::index::inverted_index::InvertedIndex;
@@ -49,6 +49,8 @@ impl<'a> SearchContext<'a> {
         }
     }
 
+    /// Advance posting lists iterators and return the next candidate by increasing ids.
+    ///
     /// Example
     ///
     /// postings_iterators:
@@ -104,6 +106,9 @@ impl<'a> SearchContext<'a> {
         })
     }
 
+    /// Returns the next min record id from all posting list iterators
+    ///
+    /// returns None if all posting list iterators are exhausted
     fn next_min(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
         let mut min_record_id = None;
 
@@ -129,7 +134,11 @@ impl<'a> SearchContext<'a> {
         });
     }
 
-    pub fn search(&mut self) -> Vec<ScoredPointOffset> {
+    /// Search for the top k results that satisfy the filter condition
+    pub fn search<F: Fn(PointOffsetType) -> bool>(
+        &mut self,
+        filter_condition: &F,
+    ) -> Vec<ScoredPointOffset> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
@@ -137,6 +146,10 @@ impl<'a> SearchContext<'a> {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
                 break;
+            }
+            // check filter condition
+            if !filter_condition(candidate.idx) {
+                continue;
             }
             // push candidate to result queue
             self.result_queue.push(candidate);
@@ -202,11 +215,17 @@ mod tests {
     use rand::{Rng, SeedableRng};
 
     use super::*;
+    use crate::common::sparse_vector_fixture::random_sparse_vector;
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::{
         InvertedIndexBuilder, InvertedIndexRam,
     };
     use crate::index::posting_list::PostingList;
+
+    /// Match all filter condition for testing
+    fn match_all(_p: PointOffsetType) -> bool {
+        true
+    }
 
     fn _advance_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
@@ -277,7 +296,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -336,7 +355,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -372,7 +391,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 120.0,
@@ -407,7 +426,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -435,7 +454,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(),
+            search_context.search(&match_all),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -604,29 +623,6 @@ mod tests {
         let inverted_index_mmap =
             InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
         _prune_test(&inverted_index_mmap);
-    }
-
-    /// Generates a non empty sparse vector
-    pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_size: usize) -> SparseVector {
-        let size = rnd_gen.gen_range(1..max_size);
-        let mut tuples: Vec<(i32, f64)> = vec![];
-
-        for i in 1..=size {
-            let no_skip = rnd_gen.gen_bool(0.5);
-            if no_skip {
-                tuples.push((i as i32, rnd_gen.gen_range(0.0..100.0)));
-            }
-        }
-
-        // make sure we have at least one vector
-        if tuples.is_empty() {
-            tuples.push((
-                rnd_gen.gen_range(1..max_size) as i32,
-                rnd_gen.gen_range(0.0..100.0),
-            ));
-        }
-
-        SparseVector::from(tuples)
     }
 
     /// Generates a random inverted index with `num_vectors` vectors

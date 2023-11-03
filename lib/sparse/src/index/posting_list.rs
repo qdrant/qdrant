@@ -36,7 +36,7 @@ pub struct PostingList {
 }
 
 impl PostingList {
-    #[cfg(test)]
+    /// used for testing
     pub fn from(records: Vec<(PointOffsetType, DimWeight)>) -> PostingList {
         let mut posting_list = PostingBuilder::new();
         for (id, weight) in records {
@@ -172,7 +172,7 @@ impl PostingBuilder {
 
 /// Iterator over posting list elements offering skipping abilities to avoid full iteration.
 pub struct PostingListIterator<'a> {
-    elements: &'a [PostingElement],
+    pub elements: &'a [PostingElement],
     current_index: usize,
 }
 

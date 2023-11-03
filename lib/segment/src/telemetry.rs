@@ -50,6 +50,9 @@ pub struct VectorIndexSearchesTelemetry {
     pub unfiltered_hnsw: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub unfiltered_sparse: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_plain: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
@@ -60,6 +63,9 @@ pub struct VectorIndexSearchesTelemetry {
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_exact: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub filtered_sparse: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub unfiltered_exact: OperationDurationStatistics,
@@ -140,10 +146,12 @@ impl Anonymize for VectorIndexSearchesTelemetry {
             index_name: None,
             unfiltered_plain: self.unfiltered_plain.anonymize(),
             unfiltered_hnsw: self.unfiltered_hnsw.anonymize(),
+            unfiltered_sparse: self.unfiltered_sparse.anonymize(),
             filtered_plain: self.filtered_plain.anonymize(),
             filtered_small_cardinality: self.filtered_small_cardinality.anonymize(),
             filtered_large_cardinality: self.filtered_large_cardinality.anonymize(),
             filtered_exact: self.filtered_exact.anonymize(),
+            filtered_sparse: self.filtered_sparse.anonymize(),
             unfiltered_exact: self.filtered_exact.anonymize(),
         }
     }
