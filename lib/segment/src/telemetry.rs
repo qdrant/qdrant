@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
-use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
 use crate::types::{
     PayloadIndexInfo, SegmentConfig, SegmentInfo, VectorDataConfig, VectorDataInfo,
 };
@@ -70,23 +69,6 @@ pub struct VectorIndexSearchesTelemetry {
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub unfiltered_exact: OperationDurationStatistics,
-}
-
-impl From<&SparseSearchesTelemetry> for VectorIndexSearchesTelemetry {
-    fn from(value: &SparseSearchesTelemetry) -> Self {
-        VectorIndexSearchesTelemetry {
-            index_name: None,
-            unfiltered_plain: Default::default(),
-            filtered_plain: Default::default(),
-            unfiltered_hnsw: Default::default(),
-            filtered_small_cardinality: Default::default(),
-            filtered_large_cardinality: Default::default(),
-            filtered_exact: Default::default(),
-            filtered_sparse: value.filtered_sparse.lock().get_statistics(),
-            unfiltered_sparse: value.unfiltered_sparse.lock().get_statistics(),
-            unfiltered_exact: Default::default(),
-        }
-    }
 }
 
 impl Anonymize for SegmentTelemetry {
