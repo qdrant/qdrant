@@ -15,6 +15,14 @@ pub struct InvertedIndexRam {
 }
 
 impl InvertedIndex for InvertedIndexRam {
+    //TODO(sparse) Ram index is not persisted
+    fn open(_path: &Path) -> std::io::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(InvertedIndexRam::empty())
+    }
+
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
         self.get(id)
             .map(|posting_list| PostingListIterator::new(&posting_list.elements))

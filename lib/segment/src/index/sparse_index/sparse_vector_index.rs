@@ -34,17 +34,17 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Create new sparse vector index
-    pub fn new(
+    pub fn open(
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-        path: &Path, // TODO(sparse) use path to load/save index
-        inverted_index: TInvertedIndex,
-    ) -> Self {
+        path: &Path,
+    ) -> OperationResult<Self> {
         let searches_telemetry = SparseSearchesTelemetry::new();
-        let path = path.to_path_buf();
         let max_point_id = 0;
-        Self {
+        let inverted_index = TInvertedIndex::open(path)?;
+        let path = path.to_path_buf();
+        let index = Self {
             id_tracker,
             vector_storage,
             payload_index,
@@ -52,7 +52,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             inverted_index,
             searches_telemetry,
             max_point_id,
-        }
+        };
+        Ok(index)
     }
 
     /// Search index using sparse vector query

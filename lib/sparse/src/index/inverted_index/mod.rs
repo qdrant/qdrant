@@ -11,6 +11,11 @@ pub mod inverted_index_mmap;
 pub mod inverted_index_ram;
 
 pub trait InvertedIndex {
+    /// Open existing index based on path
+    fn open(path: &Path) -> std::io::Result<Self>
+    where
+        Self: Sized;
+
     /// Get posting list for dimension id
     fn get(&self, id: &DimId) -> Option<PostingListIterator>;
 

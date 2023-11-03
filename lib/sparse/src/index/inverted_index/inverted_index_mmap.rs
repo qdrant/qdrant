@@ -41,6 +41,13 @@ struct PostingListFileHeader {
 }
 
 impl InvertedIndex for InvertedIndexMmap {
+    fn open(path: &Path) -> std::io::Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::load(path)
+    }
+
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
         self.get(id).map(PostingListIterator::new)
     }
