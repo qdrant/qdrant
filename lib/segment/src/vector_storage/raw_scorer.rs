@@ -20,17 +20,26 @@ use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::sparse_raw_scorer::SparseRawScorer;
 
-/// RawScorer            QueryScorer        Metric
-/// ┌────────────────┐   ┌──────────────┐   ┌───────────────────┐
-/// │                │   │              │   │  - Cosine         │
-/// │       ┌─────┐  │   │     ┌─────┐  │   │  - Dot            │
-/// │       │     │◄─┼───┤     │     │◄─┼───┤  - Euclidean      │
-/// │       └─────┘  │   │     └─────┘  │   │                   │
-/// │                │   │              │   │                   │
-/// └────────────────┘   └──────────────┘   └───────────────────┘
-/// - Deletions          - Scoring logic    - Vector Distance
-/// - Stopping           - Query holding
-/// - Access patterns    - Complex Queries
+/// RawScorer composition:
+///                                              Metric
+///                                             ┌───────────────────┐
+///                                             │  - Cosine         │
+///   RawScorer            QueryScorer          │  - Dot            │
+///  ┌────────────────┐   ┌──────────────┐  ┌───┤  - Euclidean      │
+///  │                │   │              │  │   │                   │
+///  │       ┌─────┐  │   │    ┌─────┐   │  │   └───────────────────┘
+///  │       │     │◄─┼───┤    │     │◄──┼──┘   - Vector Distance
+///  │       └─────┘  │   │    └─────┘   │
+///  │                │   │              │
+///  └────────────────┘   │    ┌─────┐   │        Query
+///  - Deletions          │    │     │◄──┼───┐   ┌───────────────────┐
+///  - Stopping           │    └─────┘   │   │   │  - RecoQuery      │
+///  - Access patterns    │              │   │   │  - DiscoveryQuery │
+///                       └──────────────┘   └───┤  - ContextQuery   │
+///                       - Query holding        │                   │
+///                       - Vector storage       └───────────────────┘
+///                                              - Scoring logic
+///                                              - Complex queries
 ///
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
