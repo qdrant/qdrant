@@ -365,8 +365,20 @@ impl TableOfContent {
                     }
                     ShardKeySelectorInternal::All => {
                         let shard_keys = collection.get_shard_keys().await;
-                        Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering)
+                        if shard_keys.is_empty() {
+                            collection
+                                .update_from_client(operation, wait, ordering, None)
+                                .await?
+                        } else {
+                            Self::_update_shard_keys(
+                                &collection,
+                                shard_keys,
+                                operation,
+                                wait,
+                                ordering,
+                            )
                             .await?
+                        }
                     }
                     ShardKeySelectorInternal::ShardKey(shard_key) => {
                         collection

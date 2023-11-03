@@ -1499,12 +1499,16 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
 
 impl From<api::grpc::qdrant::ShardKeySelector> for ShardKeySelector {
     fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
-        ShardKeySelector::ShardKeys(
-            value
-                .shard_keys
-                .into_iter()
-                .filter_map(convert_shard_key_from_grpc)
-                .collect(),
-        )
+        let shard_keys: Vec<_> = value
+            .shard_keys
+            .into_iter()
+            .filter_map(convert_shard_key_from_grpc)
+            .collect();
+
+        if shard_keys.len() == 1 {
+            ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
+        } else {
+            ShardKeySelector::ShardKeys(shard_keys)
+        }
     }
 }
