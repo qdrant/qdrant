@@ -3649,6 +3649,7 @@ pub struct DiscoverPoints {
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "5")]
+    #[validate(range(min = 1))]
     pub limit: u64,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
@@ -3674,6 +3675,7 @@ pub struct DiscoverPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "13")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
@@ -3693,6 +3695,7 @@ pub struct DiscoverBatchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
