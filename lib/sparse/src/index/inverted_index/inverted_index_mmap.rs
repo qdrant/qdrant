@@ -2,6 +2,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
@@ -11,6 +12,7 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimId;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
@@ -39,6 +41,13 @@ struct PostingListFileHeader {
 }
 
 impl InvertedIndex for InvertedIndexMmap {
+    fn open(path: &Path) -> std::io::Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::load(path)
+    }
+
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
         self.get(id).map(PostingListIterator::new)
     }
@@ -50,8 +59,15 @@ impl InvertedIndex for InvertedIndexMmap {
         ]
     }
 
-    fn indexed_vector_count(&self) -> usize {
-        self.file_header.posting_count
+    fn upsert(&mut self, _id: PointOffsetType, _vector: SparseVector) {
+        panic!("Cannot upsert into a read-only Mmap inverted index")
+    }
+
+    fn from_ram_index<P: AsRef<Path>>(
+        ram_index: InvertedIndexRam,
+        path: P,
+    ) -> std::io::Result<Self> {
+        Self::convert_and_save(&ram_index, path)
     }
 }
 

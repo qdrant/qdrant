@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 
@@ -15,6 +15,14 @@ pub struct InvertedIndexRam {
 }
 
 impl InvertedIndex for InvertedIndexRam {
+    //TODO(sparse) Ram index is not persisted
+    fn open(_path: &Path) -> std::io::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(InvertedIndexRam::empty())
+    }
+
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
         self.get(id)
             .map(|posting_list| PostingListIterator::new(&posting_list.elements))
@@ -24,8 +32,15 @@ impl InvertedIndex for InvertedIndexRam {
         vec![]
     }
 
-    fn indexed_vector_count(&self) -> usize {
-        self.postings.len()
+    fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
+        self.upsert(id, vector);
+    }
+
+    fn from_ram_index<P: AsRef<Path>>(
+        ram_index: InvertedIndexRam,
+        _path: P,
+    ) -> std::io::Result<Self> {
+        Ok(ram_index)
     }
 }
 

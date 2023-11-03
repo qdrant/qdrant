@@ -61,10 +61,10 @@ pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     config: HnswGraphConfig,
     path: PathBuf,
     graph: Option<GraphLayers<TGraphLinks>>,
-    searches_telemetry: SearchesTelemetry,
+    searches_telemetry: HNSWSearchesTelemetry,
 }
 
-struct SearchesTelemetry {
+struct HNSWSearchesTelemetry {
     unfiltered_plain: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,
     small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
@@ -110,7 +110,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         } else {
             None
         };
-
         Ok(HNSWIndex {
             id_tracker,
             vector_storage,
@@ -119,7 +118,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             config,
             path: path.to_owned(),
             graph,
-            searches_telemetry: SearchesTelemetry {
+            searches_telemetry: HNSWSearchesTelemetry {
                 unfiltered_hnsw: OperationDurationsAggregator::new(),
                 unfiltered_plain: OperationDurationsAggregator::new(),
                 small_cardinality: OperationDurationsAggregator::new(),
@@ -793,7 +792,6 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
     fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
         let tm = &self.searches_telemetry;
-
         VectorIndexSearchesTelemetry {
             index_name: None,
             unfiltered_plain: tm.unfiltered_plain.lock().get_statistics(),
@@ -802,7 +800,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
             filtered_exact: tm.exact_filtered.lock().get_statistics(),
+            filtered_sparse: Default::default(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
+            unfiltered_sparse: Default::default(),
         }
     }
 

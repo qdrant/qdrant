@@ -8393,9 +8393,11 @@
           "filtered_large_cardinality",
           "filtered_plain",
           "filtered_small_cardinality",
+          "filtered_sparse",
           "unfiltered_exact",
           "unfiltered_hnsw",
-          "unfiltered_plain"
+          "unfiltered_plain",
+          "unfiltered_sparse"
         ],
         "properties": {
           "index_name": {
@@ -8408,6 +8410,9 @@
           "unfiltered_hnsw": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
+          "unfiltered_sparse": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
           "filtered_plain": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
@@ -8418,6 +8423,9 @@
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "filtered_exact": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_sparse": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "unfiltered_exact": {
