@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -5,6 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use segment::common::operation_error::OperationResult;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::QueryVector;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
@@ -21,25 +23,21 @@ use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
+use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
 /// Max dimension of sparse vectors used in tests
-const MAX_SPARSE_DIM: usize = 1024;
+const MAX_SPARSE_DIM: usize = 512;
 
-/// Prepares a sparse vector index with random sparse vectors
-fn fixture_sparse_index<I: InvertedIndex, R: Rng + ?Sized>(
-    rnd: &mut R,
-    max_dim: usize,
-    stopped: &AtomicBool,
-) -> SparseVectorIndex<I> {
-    // test params
-    let num_vectors = 1000;
-
+/// Helper to open a test sparse vector index
+fn fixture_open_sparse_index<I: InvertedIndex>(
+    index_dir: &Path,
+    num_vectors: usize, // used to size the id tracker
+) -> OperationResult<SparseVectorIndex<I>> {
     // temp dirs
     let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
     let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
     // setup
@@ -51,36 +49,54 @@ fn fixture_sparse_index<I: InvertedIndex, R: Rng + ?Sized>(
         id_tracker.clone(),
         payload_dir.path(),
         true,
-    )
-    .unwrap();
+    )?;
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let vector_storage =
-        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot)?;
 
-    let mut sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
+    let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
         id_tracker,
         vector_storage.clone(),
         wrapped_payload_index,
-        index_dir.path(),
-    )
-    .unwrap();
+        index_dir,
+    )?;
+
+    Ok(sparse_vector_index)
+}
+
+/// Prepares a sparse vector index with random sparse vectors
+fn fixture_sparse_index_ram<R: Rng + ?Sized>(
+    rnd: &mut R,
+    max_dim: usize,
+    stopped: &AtomicBool,
+) -> SparseVectorIndex<InvertedIndexRam> {
+    // test params
+    let num_vectors = 1000;
+
+    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+    let mut sparse_vector_index = fixture_open_sparse_index(index_dir.path(), num_vectors).unwrap();
+    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
 
     // add points to storage
     for idx in 0..num_vectors {
         let vec = &random_sparse_vector(rnd, max_dim);
-        vector_storage
-            .borrow_mut()
+        borrowed_storage
             .insert_vector(idx as PointOffsetType, vec.into())
             .unwrap();
     }
+    drop(borrowed_storage);
+
+    // assert all points are in storage
     assert_eq!(
-        vector_storage.borrow().available_vector_count(),
+        sparse_vector_index
+            .vector_storage
+            .borrow()
+            .available_vector_count(),
         num_vectors
     );
 
-    // build index
+    // build index to refresh RAM index
     sparse_vector_index.build_index(stopped).unwrap();
     assert_eq!(sparse_vector_index.indexed_vector_count(), num_vectors);
     sparse_vector_index
@@ -91,8 +107,7 @@ fn sparse_vector_index_ram_no_filter_search() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        fixture_sparse_index(&mut rnd, MAX_SPARSE_DIM, &stopped);
+    let sparse_vector_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
 
     // random query vectors
     let attempts = 100;
@@ -140,13 +155,8 @@ fn sparse_vector_index_ram_no_filter_search() {
     }
 }
 
-#[test]
-fn sparse_vector_index_ram_consistent_with_storage() {
-    let stopped = AtomicBool::new(false);
-    let mut rnd = StdRng::seed_from_u64(42);
-
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        fixture_sparse_index(&mut rnd, MAX_SPARSE_DIM, &stopped);
+/// Checks that the sparse vector index is consistent with the underlying storage
+fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage.borrow();
     let point_count = borrowed_vector_storage.available_vector_count();
     for id in 0..point_count as PointOffsetType {
@@ -170,10 +180,50 @@ fn sparse_vector_index_ram_consistent_with_storage() {
         let top = sparse_vector_index.max_result_count(vector);
         let query_vector: QueryVector = vector.to_owned().into();
         let results = sparse_vector_index
-            .search(&[&query_vector], None, top, None, &stopped)
+            .search(&[&query_vector], None, top, None, &false.into())
             .unwrap();
         assert!(results[0].iter().any(|s| s.idx == id));
     }
+}
+
+#[test]
+fn sparse_vector_index_consistent_with_storage() {
+    let stopped = AtomicBool::new(false);
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let sparse_vector_ram_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
+
+    // check consistency with underlying RAM inverted index
+    check_index_storage_consistency(&sparse_vector_ram_index);
+
+    let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
+    // copy index mmap and save to disk
+    let _mmap_inverted_index = InvertedIndexMmap::convert_and_save(
+        &sparse_vector_ram_index.inverted_index,
+        &mmap_index_dir,
+    )
+    .unwrap();
+
+    // load index from memmap file
+    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
+        sparse_vector_ram_index.id_tracker.clone(),
+        sparse_vector_ram_index.vector_storage.clone(),
+        sparse_vector_ram_index.payload_index.clone(),
+        mmap_index_dir.path(),
+    )
+    .unwrap();
+
+    // check consistency with underlying mmap inverted index
+    check_index_storage_consistency(&sparse_vector_mmap_index);
+}
+
+#[test]
+fn sparse_vector_index_load_missing_mmap() {
+    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+    let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
+        fixture_open_sparse_index(index_dir.path(), 0);
+    // fails to open index if mmap file is missing
+    assert!(sparse_vector_index.is_err())
 }
 
 #[test]
@@ -182,8 +232,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
     let top = 10;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        fixture_sparse_index(&mut rnd, MAX_SPARSE_DIM, &stopped);
+    let mut sparse_vector_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
 
     // sanity check (all indexed, no deleted points)
     assert_eq!(
@@ -270,8 +319,7 @@ fn sparse_vector_index_ram_filtered_search() {
     let field_value = "important value";
 
     // setup index
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        fixture_sparse_index(&mut rnd, MAX_SPARSE_DIM, &stopped);
+    let sparse_vector_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
 
     // query index by payload
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
