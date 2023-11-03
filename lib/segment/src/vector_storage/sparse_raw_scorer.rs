@@ -76,20 +76,7 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {
-        // Deleted points propagate to vectors; check vector deletion for possible early return
-        !self
-            .vec_deleted
-            .get(point as usize)
-            .map(|x| *x)
-            // Default to not deleted if our deleted flags failed grow
-            .unwrap_or(false)
-            // Additionally check point deletion for integrity if delete propagation to vector failed
-            && !self
-            .point_deleted
-            .get(point as usize)
-            .map(|x| *x)
-            // Default to deleted if the point mapping was removed from the ID tracker
-            .unwrap_or(true)
+        sparse_check_vector(point, self.point_deleted, self.vec_deleted)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
@@ -135,4 +122,24 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
             });
         peek_top_largest_iterable(scores, top)
     }
+}
+
+// TODO(sparse) extracted for reuse but should be unified RawScorerImpl
+pub fn sparse_check_vector<'a>(
+    point: PointOffsetType,
+    point_deleted: &'a BitSlice,
+    vec_deleted: &'a BitSlice,
+) -> bool {
+    // Deleted points propagate to vectors; check vector deletion for possible early return
+    !vec_deleted
+        .get(point as usize)
+        .map(|x| *x)
+        // Default to not deleted if our deleted flags failed grow
+        .unwrap_or(false)
+        // Additionally check point deletion for integrity if delete propagation to vector failed
+        && !point_deleted
+        .get(point as usize)
+        .map(|x| *x)
+        // Default to deleted if the point mapping was removed from the ID tracker
+        .unwrap_or(true)
 }

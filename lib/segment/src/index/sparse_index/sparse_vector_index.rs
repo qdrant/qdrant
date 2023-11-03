@@ -19,6 +19,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::sparse_raw_scorer::sparse_check_vector;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
@@ -131,14 +132,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
         // filter for deleted points
         let not_deleted_condition = |idx: PointOffsetType| -> bool {
-            !deleted_point_bitslice
-                .get(idx as usize)
-                .map(|x| *x)
-                .unwrap_or(false)
-                && !deleted_vectors
-                    .get(idx as usize)
-                    .map(|x| *x)
-                    .unwrap_or(false)
+            sparse_check_vector(idx, deleted_point_bitslice, deleted_vectors)
         };
         match filter {
             Some(filter) => {
