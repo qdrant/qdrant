@@ -14,7 +14,7 @@ fn main() -> std::io::Result<()> {
         // configures all attributes.
         .configure_validation()
         .file_descriptor_set_path(build_out_dir.join("qdrant_descriptor.bin"))
-        .emit_rerun_if_changed(true)
+        .emit_rerun_if_changed(false)
         .out_dir("src/grpc/") // saves generated structures at this location
         .compile(
             &["src/grpc/proto/qdrant.proto"], // proto entry point
@@ -23,6 +23,9 @@ fn main() -> std::io::Result<()> {
 
     // Append trait extension imports to generated gRPC output
     append_to_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
+
+    // Only rerun if proto files changed
+    println!("cargo:rerun-if-changed=src/grpc/proto/");
 
     Ok(())
 }
