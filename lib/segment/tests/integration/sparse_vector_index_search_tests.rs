@@ -8,9 +8,7 @@ use rand::{Rng, SeedableRng};
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::QueryVector;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
-use segment::fixtures::payload_fixtures::{
-    random_full_sparse_vector, random_sparse_vector, STR_KEY,
-};
+use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -22,6 +20,7 @@ use segment::vector_storage::simple_sparse_vector_storage::open_simple_sparse_ve
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
+use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use tempfile::Builder;
 

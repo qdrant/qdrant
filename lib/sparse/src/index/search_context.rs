@@ -215,6 +215,7 @@ mod tests {
     use rand::{Rng, SeedableRng};
 
     use super::*;
+    use crate::common::sparse_vector_fixture::random_sparse_vector;
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::{
         InvertedIndexBuilder, InvertedIndexRam,
@@ -622,29 +623,6 @@ mod tests {
         let inverted_index_mmap =
             InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
         _prune_test(&inverted_index_mmap);
-    }
-
-    /// Generates a non empty sparse vector
-    pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_size: usize) -> SparseVector {
-        let size = rnd_gen.gen_range(1..max_size);
-        let mut tuples: Vec<(i32, f64)> = vec![];
-
-        for i in 1..=size {
-            let no_skip = rnd_gen.gen_bool(0.5);
-            if no_skip {
-                tuples.push((i as i32, rnd_gen.gen_range(0.0..100.0)));
-            }
-        }
-
-        // make sure we have at least one vector
-        if tuples.is_empty() {
-            tuples.push((
-                rnd_gen.gen_range(1..max_size) as i32,
-                rnd_gen.gen_range(0.0..100.0),
-            ));
-        }
-
-        SparseVector::from(tuples)
     }
 
     /// Generates a random inverted index with `num_vectors` vectors
