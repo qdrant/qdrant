@@ -23,7 +23,6 @@ use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
 /// Max dimension of sparse vectors used in tests
@@ -112,7 +111,7 @@ fn sparse_vector_index_no_filter_search() {
     // expects the filter to have no effect on the results because the filter matches everything
     for query in query_vectors.into_iter() {
         // top to get all results
-        let top = sparse_vector_index.inverted_index.max_result_count(&query);
+        let top = sparse_vector_index.max_result_count(&query);
         assert!(top > 0);
         let query_vector: QueryVector = query.into();
         // with filter
@@ -168,7 +167,7 @@ fn sparse_vector_index_consistent_with_storage() {
                 .any(|e| e.record_id == id && e.weight == *dim_value));
         }
         // check the vector can be found via search using large top
-        let top = sparse_vector_index.inverted_index.max_result_count(vector);
+        let top = sparse_vector_index.max_result_count(vector);
         let query_vector: QueryVector = vector.to_owned().into();
         let results = sparse_vector_index
             .search(&[&query_vector], None, top, None, &stopped)

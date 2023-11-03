@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -102,6 +103,20 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         }
 
         Ok(result)
+    }
+
+    /// Returns the maximum number of results that can be returned by the index for a given sparse vector
+    /// Warning: the cost of this function grows with the number of dimensions in the query vector
+    pub fn max_result_count(&self, query_vector: &SparseVector) -> usize {
+        let mut unique_record_ids = HashSet::new();
+        for dim_id in query_vector.indices.iter() {
+            if let Some(posting_list) = self.inverted_index.get(dim_id) {
+                for element in posting_list.elements.iter() {
+                    unique_record_ids.insert(element.record_id);
+                }
+            }
+        }
+        unique_record_ids.len()
     }
 }
 

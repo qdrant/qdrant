@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
@@ -28,17 +27,4 @@ pub trait InvertedIndex {
     ) -> std::io::Result<Self>
     where
         Self: Sized;
-
-    /// Returns the maximum number of results that can be returned by the index for a given sparse vector
-    fn max_result_count(&self, query_vector: &SparseVector) -> usize {
-        let mut possible_ids = HashSet::new();
-        for dim_id in query_vector.indices.iter() {
-            if let Some(posting_list) = self.get(dim_id) {
-                for element in posting_list.elements.iter() {
-                    possible_ids.insert(element.record_id);
-                }
-            }
-        }
-        possible_ids.len()
-    }
 }
