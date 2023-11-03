@@ -1,22 +1,28 @@
 use std::time::Duration;
 
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
+use collection::operations::payload_ops::{
+    DeletePayload, DeletePayloadOp, PayloadOps, SetPayload, SetPayloadOp,
+};
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointsSelector, WriteOrdering,
+    FilterSelector, PointIdsList, PointInsertOperations, PointOperations, PointsSelector,
+    WriteOrdering,
 };
 use collection::operations::types::{
     CoreSearchRequestBatch, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
     GroupsResult, PointRequest, RecommendGroupsRequest, Record, ScrollRequest, ScrollResult,
     SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
 };
-use collection::operations::vector_ops::{DeleteVectors, UpdateVectors, VectorOperations};
+use collection::operations::vector_ops::{
+    DeleteVectors, UpdateVectors, UpdateVectorsOp, VectorOperations,
+};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
 use segment::types::{PayloadFieldSchema, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::shard_key_selection::ShardKeySelectorInternal;
 use storage::content_manager::toc::TableOfContent;
 use validator::Validate;
 
@@ -117,6 +123,7 @@ pub async fn do_upsert_points(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    let (shard_key, operation) = operation.decompose();
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
     toc.update(
@@ -125,6 +132,7 @@ pub async fn do_upsert_points(
         shard_selection,
         wait,
         ordering,
+        shard_key.into(),
     )
     .await
 }
@@ -137,13 +145,15 @@ pub async fn do_delete_points(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let point_operation = match points {
-        PointsSelector::PointIdsSelector(points) => {
-            PointOperations::DeletePoints { ids: points.points }
-        }
-        PointsSelector::FilterSelector(filter_selector) => {
-            PointOperations::DeletePointsByFilter(filter_selector.filter)
-        }
+    let (point_operation, shard_key_selector) = match points {
+        PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => (
+            PointOperations::DeletePoints { ids: points },
+            ShardKeySelectorInternal::from(shard_key),
+        ),
+        PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => (
+            PointOperations::DeletePointsByFilter(filter),
+            ShardKeySelectorInternal::from(shard_key),
+        ),
     };
     let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
     toc.update(
@@ -152,6 +162,7 @@ pub async fn do_delete_points(
         shard_selection,
         wait,
         ordering,
+        shard_key_selector,
     )
     .await
 }
@@ -164,14 +175,20 @@ pub async fn do_update_vectors(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let collection_operation =
-        CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(operation));
+    let UpdateVectors { points, shard_key } = operation;
+
+    let shard_key_selector = ShardKeySelectorInternal::from(shard_key);
+
+    let collection_operation = CollectionUpdateOperations::VectorOperation(
+        VectorOperations::UpdateVectors(UpdateVectorsOp { points }),
+    );
     toc.update(
         collection_name,
         collection_operation,
         shard_selection,
         wait,
         ordering,
+        shard_key_selector,
     )
     .await
 }
@@ -184,11 +201,20 @@ pub async fn do_delete_vectors(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let vector_names: Vec<_> = operation.vector.into_iter().collect();
+    let DeleteVectors {
+        vector,
+        filter,
+        points,
+        shard_key,
+    } = operation;
+
+    let shard_key_selector = ShardKeySelectorInternal::from(shard_key);
+
+    let vector_names: Vec<_> = vector.into_iter().collect();
 
     let mut result = None;
 
-    if let Some(filter) = operation.filter {
+    if let Some(filter) = filter {
         let vectors_operation =
             VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
         let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
@@ -199,12 +225,13 @@ pub async fn do_delete_vectors(
                 shard_selection,
                 wait,
                 ordering,
+                shard_key_selector.clone(),
             )
             .await?,
         );
     }
 
-    if let Some(points) = operation.points {
+    if let Some(points) = points {
         let vectors_operation = VectorOperations::DeleteVectors(points.into(), vector_names);
         let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
         result = Some(
@@ -214,6 +241,7 @@ pub async fn do_delete_vectors(
                 shard_selection,
                 wait,
                 ordering,
+                shard_key_selector,
             )
             .await?,
         );
@@ -230,14 +258,26 @@ pub async fn do_set_payload(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    let SetPayload {
+        points,
+        payload,
+        filter,
+        shard_key,
+    } = operation;
+
     let collection_operation =
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(operation));
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+            payload,
+            points,
+            filter,
+        }));
     toc.update(
         collection_name,
         collection_operation,
         shard_selection,
         wait,
         ordering,
+        shard_key.into(),
     )
     .await
 }
@@ -250,14 +290,26 @@ pub async fn do_overwrite_payload(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    let SetPayload {
+        points,
+        payload,
+        filter,
+        shard_key,
+    } = operation;
+
     let collection_operation =
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(operation));
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(SetPayloadOp {
+            payload,
+            points,
+            filter,
+        }));
     toc.update(
         collection_name,
         collection_operation,
         shard_selection,
         wait,
         ordering,
+        shard_key.into(),
     )
     .await
 }
@@ -270,14 +322,26 @@ pub async fn do_delete_payload(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    let DeletePayload {
+        keys,
+        points,
+        filter,
+        shard_key,
+    } = operation;
+
     let collection_operation =
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::DeletePayload(operation));
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::DeletePayload(DeletePayloadOp {
+            keys,
+            points,
+            filter,
+        }));
     toc.update(
         collection_name,
         collection_operation,
         shard_selection,
         wait,
         ordering,
+        shard_key.into(),
     )
     .await
 }
@@ -290,22 +354,25 @@ pub async fn do_clear_payload(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let points_operation = match points {
-        PointsSelector::PointIdsSelector(points) => PayloadOps::ClearPayload {
-            points: points.points,
-        },
-        PointsSelector::FilterSelector(filter_selector) => {
-            PayloadOps::ClearPayloadByFilter(filter_selector.filter)
-        }
+    let (point_operation, shard_key_selector) = match points {
+        PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => (
+            PayloadOps::ClearPayload { points },
+            ShardKeySelectorInternal::from(shard_key),
+        ),
+        PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => (
+            PayloadOps::ClearPayloadByFilter(filter),
+            ShardKeySelectorInternal::from(shard_key),
+        ),
     };
 
-    let collection_operation = CollectionUpdateOperations::PayloadOperation(points_operation);
+    let collection_operation = CollectionUpdateOperations::PayloadOperation(point_operation);
     toc.update(
         collection_name,
         collection_operation,
         shard_selection,
         wait,
         ordering,
+        shard_key_selector,
     )
     .await
 }
@@ -435,6 +502,7 @@ pub async fn do_create_index(
         shard_selection,
         wait,
         ordering,
+        ShardKeySelectorInternal::All,
     )
     .await
 }
@@ -456,6 +524,7 @@ pub async fn do_delete_index(
         shard_selection,
         wait,
         ordering,
+        ShardKeySelectorInternal::All,
     )
     .await
 }

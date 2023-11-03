@@ -82,13 +82,13 @@ impl EstimateOperationEffectArea for vector_ops::VectorOperations {
     }
 }
 
-impl EstimateOperationEffectArea for point_ops::PointInsertOperations {
+impl EstimateOperationEffectArea for point_ops::PointInsertOperationsInternal {
     fn estimate_effect_area(&self) -> OperationEffectArea {
         match self {
-            point_ops::PointInsertOperations::PointsBatch(batch) => {
+            point_ops::PointInsertOperationsInternal::PointsBatch(batch) => {
                 OperationEffectArea::Points(batch.ids.clone())
             }
-            point_ops::PointInsertOperations::PointsList(list) => {
+            point_ops::PointInsertOperationsInternal::PointsList(list) => {
                 OperationEffectArea::Points(list.iter().map(|x| x.id).collect())
             }
         }

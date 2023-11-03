@@ -205,8 +205,9 @@ impl ShardHolder {
     pub fn split_by_shard<O: SplitByShard + Clone>(
         &self,
         operation: O,
+        shard_keys_selection: &Option<ShardKey>,
     ) -> Vec<(&ShardReplicaSet, O)> {
-        let Some(hashring) = self.rings.get(&None) else {
+        let Some(hashring) = self.rings.get(shard_keys_selection) else {
             return vec![];
         };
 
@@ -216,10 +217,24 @@ impl ShardHolder {
                 .into_iter()
                 .map(|(shard_id, operation)| (self.shards.get(&shard_id).unwrap(), operation))
                 .collect(),
-            OperationToShard::ToAll(operation) => self
-                .all_shards()
-                .map(|shard| (shard, operation.clone()))
-                .collect(),
+            OperationToShard::ToAll(operation) => {
+                if let Some(shard_key) = shard_keys_selection {
+                    let shard_ids = self
+                        .key_mapping
+                        .read()
+                        .get(shard_key)
+                        .cloned()
+                        .unwrap_or_default();
+                    shard_ids
+                        .into_iter()
+                        .map(|shard_id| (self.shards.get(&shard_id).unwrap(), operation.clone()))
+                        .collect()
+                } else {
+                    self.all_shards()
+                        .map(|shard| (shard, operation.clone()))
+                        .collect()
+                }
+            }
         };
         shard_ops
     }

@@ -3,8 +3,8 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
 use api::grpc::conversions::{
-    convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc, from_grpc_dist, payload_to_proto,
-    proto_to_payloads,
+    convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
+    from_grpc_dist, payload_to_proto, proto_to_payloads,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
@@ -42,6 +42,7 @@ use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
     LocalShardInfo, LookupLocation, OptimizersStatus, RecommendRequest, Record, RemoteShardInfo,
@@ -757,27 +758,28 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::PointsSelector> for PointsSelector {
-    type Error = Status;
-
-    fn try_from(value: api::grpc::qdrant::PointsSelector) -> Result<Self, Self::Error> {
-        match value.points_selector_one_of {
-            Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Points(points)) => {
-                Ok(PointIdsSelector(PointIdsList {
-                    points: points
-                        .ids
-                        .into_iter()
-                        .map(|p| p.try_into())
-                        .collect::<Result<Vec<_>, _>>()?,
-                }))
-            }
-            Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Filter(f)) => {
-                Ok(PointsSelector::FilterSelector(FilterSelector {
-                    filter: f.try_into()?,
-                }))
-            }
-            _ => Err(Status::invalid_argument("Malformed PointsSelector type")),
+pub fn try_points_selector_from_grpc(
+    value: api::grpc::qdrant::PointsSelector,
+    shard_key_selector: Option<api::grpc::qdrant::ShardKeySelector>,
+) -> Result<PointsSelector, Status> {
+    match value.points_selector_one_of {
+        Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Points(points)) => {
+            Ok(PointIdsSelector(PointIdsList {
+                points: points
+                    .ids
+                    .into_iter()
+                    .map(|p| p.try_into())
+                    .collect::<Result<Vec<_>, _>>()?,
+                shard_key: shard_key_selector.map(ShardKeySelector::from),
+            }))
         }
+        Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Filter(f)) => {
+            Ok(PointsSelector::FilterSelector(FilterSelector {
+                filter: f.try_into()?,
+                shard_key: shard_key_selector.map(ShardKeySelector::from),
+            }))
+        }
+        _ => Err(Status::invalid_argument("Malformed PointsSelector type")),
     }
 }
 
@@ -1492,5 +1494,17 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 })
             }
         })
+    }
+}
+
+impl From<api::grpc::qdrant::ShardKeySelector> for ShardKeySelector {
+    fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
+        ShardKeySelector::ShardKeys(
+            value
+                .shard_keys
+                .into_iter()
+                .filter_map(convert_shard_key_from_grpc)
+                .collect(),
+        )
     }
 }

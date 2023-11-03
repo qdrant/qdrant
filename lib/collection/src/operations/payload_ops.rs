@@ -6,11 +6,24 @@ use validator::Validate;
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::shards::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(try_from = "SetPayloadShadow")]
 pub struct SetPayload {
+    pub payload: Payload,
+    /// Assigns payload to each point in this list
+    pub points: Option<Vec<PointIdType>>,
+    /// Assigns payload to each point that satisfy this filter condition
+    pub filter: Option<Filter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+pub struct SetPayloadOp {
     pub payload: Payload,
     /// Assigns payload to each point in this list
     pub points: Option<Vec<PointIdType>>,
@@ -23,6 +36,7 @@ struct SetPayloadShadow {
     pub payload: Payload,
     pub points: Option<Vec<PointIdType>>,
     pub filter: Option<Filter>,
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 pub struct PointsSelectorValidationError;
@@ -45,6 +59,7 @@ impl TryFrom<SetPayloadShadow> for SetPayload {
                 payload: value.payload,
                 points: value.points,
                 filter: value.filter,
+                shard_key: value.shard_key,
             })
         } else {
             Err(PointsSelectorValidationError)
@@ -61,6 +76,19 @@ pub struct DeletePayload {
     pub points: Option<Vec<PointIdType>>,
     /// Deletes values from points that satisfy this filter condition
     pub filter: Option<Filter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+pub struct DeletePayloadOp {
+    /// List of payload keys to remove from payload
+    pub keys: Vec<PayloadKeyType>,
+    /// Deletes values from each point in this list
+    pub points: Option<Vec<PointIdType>>,
+    /// Deletes values from points that satisfy this filter condition
+    pub filter: Option<Filter>,
 }
 
 #[derive(Deserialize)]
@@ -68,6 +96,7 @@ struct DeletePayloadShadow {
     pub keys: Vec<PayloadKeyType>,
     pub points: Option<Vec<PointIdType>>,
     pub filter: Option<Filter>,
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 impl TryFrom<DeletePayloadShadow> for DeletePayload {
@@ -79,6 +108,7 @@ impl TryFrom<DeletePayloadShadow> for DeletePayload {
                 keys: value.keys,
                 points: value.points,
                 filter: value.filter,
+                shard_key: value.shard_key,
             })
         } else {
             Err(PointsSelectorValidationError)
@@ -87,19 +117,19 @@ impl TryFrom<DeletePayloadShadow> for DeletePayload {
 }
 
 /// Define operations description for point payloads manipulation
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
-    SetPayload(SetPayload),
+    SetPayload(SetPayloadOp),
     /// Deletes specified payload values if they are assigned
-    DeletePayload(DeletePayload),
+    DeletePayload(DeletePayloadOp),
     /// Drops all Payload values associated with given points.
     ClearPayload { points: Vec<PointIdType> },
     /// Clear all Payload values by given filter criteria.
     ClearPayloadByFilter(Filter),
     /// Overwrite full payload with given keys
-    OverwritePayload(SetPayload),
+    OverwritePayload(SetPayloadOp),
 }
 
 impl PayloadOps {
@@ -145,12 +175,12 @@ impl SplitByShard for PayloadOps {
     }
 }
 
-impl SplitByShard for DeletePayload {
+impl SplitByShard for DeletePayloadOp {
     fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match (&self.points, &self.filter) {
             (Some(_), _) => {
                 split_iter_by_shard(self.points.unwrap(), |id| *id, ring).map(|points| {
-                    DeletePayload {
+                    DeletePayloadOp {
                         points: Some(points),
                         keys: self.keys.clone(),
                         filter: self.filter.clone(),
@@ -163,14 +193,16 @@ impl SplitByShard for DeletePayload {
     }
 }
 
-impl SplitByShard for SetPayload {
+impl SplitByShard for SetPayloadOp {
     fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match (&self.points, &self.filter) {
             (Some(_), _) => {
-                split_iter_by_shard(self.points.unwrap(), |id| *id, ring).map(|points| SetPayload {
-                    points: Some(points),
-                    payload: self.payload.clone(),
-                    filter: self.filter.clone(),
+                split_iter_by_shard(self.points.unwrap(), |id| *id, ring).map(|points| {
+                    SetPayloadOp {
+                        points: Some(points),
+                        payload: self.payload.clone(),
+                        filter: self.filter.clone(),
+                    }
                 })
             }
             (None, Some(_)) => OperationToShard::to_all(self),

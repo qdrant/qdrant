@@ -64,7 +64,7 @@ async fn setup() -> Resources {
     );
 
     collection
-        .update_from_client(upsert_points, true, WriteOrdering::default())
+        .update_from_client_simple(upsert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use futures::{future, TryStreamExt as _};
 use itertools::Itertools as _;
-use segment::types::{WithPayload, WithPayloadInterface};
+use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
 use super::Collection;
@@ -47,18 +47,29 @@ impl Collection {
         }
     }
 
+    pub async fn update_from_client_simple(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+        ordering: WriteOrdering,
+    ) -> CollectionResult<UpdateResult> {
+        self.update_from_client(operation, wait, ordering, None)
+            .await
+    }
+
     pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
+        shard_keys_selection: Option<ShardKey>,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
         let _update_lock = self.updates_lock.read().await;
 
         let mut results = {
             let shards_holder = self.shards_holder.read().await;
-            let shard_to_op = shards_holder.split_by_shard(operation);
+            let shard_to_op = shards_holder.split_by_shard(operation, &shard_keys_selection);
 
             if shard_to_op.is_empty() {
                 return Err(CollectionError::bad_request(

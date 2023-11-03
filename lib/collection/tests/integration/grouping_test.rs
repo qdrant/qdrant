@@ -75,7 +75,7 @@ mod group_by {
         );
 
         let insert_result = collection
-            .update_from_client(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(insert_points, true, WriteOrdering::default())
             .await
             .expect("insert failed");
 
@@ -549,7 +549,7 @@ mod group_by_builder {
             );
 
             let insert_result = collection
-                .update_from_client(insert_points, true, WriteOrdering::default())
+                .update_from_client_simple(insert_points, true, WriteOrdering::default())
                 .await
                 .expect("insert failed");
 
@@ -580,7 +580,7 @@ mod group_by_builder {
                 .into(),
             );
             let insert_result = lookup_collection
-                .update_from_client(insert_points, true, WriteOrdering::default())
+                .update_from_client_simple(insert_points, true, WriteOrdering::default())
                 .await
                 .expect("insert failed");
 

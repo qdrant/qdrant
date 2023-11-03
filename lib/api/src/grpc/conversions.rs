@@ -121,6 +121,16 @@ pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {
     }
 }
 
+pub fn convert_shard_key_from_grpc(value: ShardKey) -> Option<segment::types::ShardKey> {
+    match value.key {
+        None => None,
+        Some(key) => match key {
+            shard_key::Key::Keyword(keyword) => Some(segment::types::ShardKey::Keyword(keyword)),
+            shard_key::Key::Number(number) => Some(segment::types::ShardKey::Number(number)),
+        },
+    }
+}
+
 pub fn convert_shard_key_from_grpc_opt(
     value: Option<ShardKey>,
 ) -> Option<segment::types::ShardKey> {

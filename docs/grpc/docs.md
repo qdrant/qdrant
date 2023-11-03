@@ -135,7 +135,9 @@
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
     - [PointsUpdateOperation](#qdrant-PointsUpdateOperation)
+    - [PointsUpdateOperation.ClearPayload](#qdrant-PointsUpdateOperation-ClearPayload)
     - [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload)
+    - [PointsUpdateOperation.DeletePoints](#qdrant-PointsUpdateOperation-DeletePoints)
     - [PointsUpdateOperation.DeleteVectors](#qdrant-PointsUpdateOperation-DeleteVectors)
     - [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList)
     - [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload)
@@ -167,6 +169,7 @@
     - [SearchResponse](#qdrant-SearchResponse)
     - [SetPayloadPoints](#qdrant-SetPayloadPoints)
     - [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry)
+    - [ShardKeySelector](#qdrant-ShardKeySelector)
     - [UpdateBatchPoints](#qdrant-UpdateBatchPoints)
     - [UpdateBatchResponse](#qdrant-UpdateBatchResponse)
     - [UpdatePointVectors](#qdrant-UpdatePointVectors)
@@ -1537,6 +1540,7 @@ The JSON representation for `Value` is a JSON value.
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -1678,6 +1682,7 @@ The JSON representation for `Value` is a JSON value.
 | keys | [string](#string) | repeated | List of keys to delete |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -1697,6 +1702,7 @@ The JSON representation for `Value` is a JSON value.
 | points_selector | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
 | vectors | [VectorsSelector](#qdrant-VectorsSelector) |  | List of vector names to delete |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -1715,6 +1721,7 @@ The JSON representation for `Value` is a JSON value.
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2281,13 +2288,31 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | upsert | [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList) |  |  |
-| delete | [PointsSelector](#qdrant-PointsSelector) |  |  |
+| delete_deprecated | [PointsSelector](#qdrant-PointsSelector) |  | **Deprecated.**  |
 | set_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
 | overwrite_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
 | delete_payload | [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload) |  |  |
-| clear_payload | [PointsSelector](#qdrant-PointsSelector) |  |  |
+| clear_payload_deprecated | [PointsSelector](#qdrant-PointsSelector) |  | **Deprecated.**  |
 | update_vectors | [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors) |  |  |
 | delete_vectors | [PointsUpdateOperation.DeleteVectors](#qdrant-PointsUpdateOperation-DeleteVectors) |  |  |
+| delete_points | [PointsUpdateOperation.DeletePoints](#qdrant-PointsUpdateOperation-DeletePoints) |  |  |
+| clear_payload | [PointsUpdateOperation.ClearPayload](#qdrant-PointsUpdateOperation-ClearPayload) |  |  |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-ClearPayload"></a>
+
+### PointsUpdateOperation.ClearPayload
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2304,6 +2329,23 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | keys | [string](#string) | repeated |  |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-DeletePoints"></a>
+
+### PointsUpdateOperation.DeletePoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2320,6 +2362,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
 | vectors | [VectorsSelector](#qdrant-VectorsSelector) |  | List of vector names to delete |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2335,6 +2378,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2351,6 +2395,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | payload | [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry) | repeated |  |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2382,6 +2427,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2614,6 +2660,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | id | [PointId](#qdrant-PointId) |  |  |
 | payload | [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry) | repeated |  |
 | vectors | [Vectors](#qdrant-Vectors) | optional |  |
+| shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
 
 
 
@@ -2649,6 +2696,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | score | [float](#float) |  | Similarity score |
 | version | [uint64](#uint64) |  | Last update operation applied to this point |
 | vectors | [Vectors](#qdrant-Vectors) | optional | Vectors to search |
+| shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
 
 
 
@@ -2860,6 +2908,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | payload | [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry) | repeated | New payload values |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2876,6 +2925,23 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-ShardKeySelector"></a>
+
+### ShardKeySelector
+---------------------------------------------
+----------------- ShardKeySelector ----------
+---------------------------------------------
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_keys | [ShardKey](#qdrant-ShardKey) | repeated | List of shard keys which should be used in the request |
 
 
 
@@ -2928,6 +2994,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
@@ -2962,6 +3029,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
 
 
 
