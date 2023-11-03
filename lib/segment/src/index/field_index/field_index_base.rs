@@ -73,9 +73,9 @@ pub trait ValueIndexer<T> {
         id: PointOffsetType,
         payload: &MultiValue<&Value>,
     ) -> OperationResult<()> {
+        self.remove_point(id)?;
         match payload {
             MultiValue::Multiple(values) => {
-                self.remove_point(id)?;
                 let mut flatten_values: Vec<_> = vec![];
 
                 for value in values {
@@ -93,12 +93,10 @@ pub trait ValueIndexer<T> {
                 self.add_many(id, flatten_values)
             }
             MultiValue::Single(Some(Value::Array(values))) => {
-                self.remove_point(id)?;
                 self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())
             }
             MultiValue::Single(Some(value)) => {
                 if let Some(x) = self.get_value(value) {
-                    self.remove_point(id)?;
                     self.add_many(id, vec![x])
                 } else {
                     Ok(())
