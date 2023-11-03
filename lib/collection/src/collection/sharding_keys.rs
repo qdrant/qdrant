@@ -98,6 +98,8 @@ impl Collection {
                 .create_replica_set(shard_id, shard_replicas_placement)
                 .await?;
 
+            // ToDo: initialize payload index
+
             self.shards_holder.write().await.add_shard(
                 shard_id,
                 replica_set,

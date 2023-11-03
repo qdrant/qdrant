@@ -5,6 +5,7 @@ mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
 mod state_management;
+mod payload_index_schema;
 
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -17,12 +18,14 @@ use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
@@ -40,6 +43,7 @@ pub struct Collection {
     pub(crate) shards_holder: Arc<LockedShardHolder>,
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
+    pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
