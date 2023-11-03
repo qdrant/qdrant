@@ -170,6 +170,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             ram_index.upsert(id, vector.to_owned());
         }
         self.max_point_id = available_point_count as PointOffsetType - 1;
+        // TODO(sparse) this operation loads the entire index into memory which can cause OOM on large storage
         self.inverted_index = TInvertedIndex::from_ram_index(ram_index, &self.path)?;
         Ok(())
     }
