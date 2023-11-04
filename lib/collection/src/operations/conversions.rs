@@ -167,7 +167,7 @@ pub fn try_discover_request_from_grpc(
                 pair.positive.map(|p| p.try_into()),
                 pair.negative.map(|n| n.try_into()),
             ) {
-                (Some(Ok(positive)), Some(Ok(negative))) => Ok((positive, negative)),
+                (Some(Ok(positive)), Some(Ok(negative))) => Ok([positive, negative]),
                 (Some(Err(e)), _) | (_, Some(Err(e))) => Err(e),
                 (None, _) | (_, None) => Err(Status::invalid_argument(
                     "Both positive and negative are required in a context pair",

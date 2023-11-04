@@ -136,7 +136,7 @@ where
             .flatten()
             .map(|pair| {
                 let mut vector_pair = convert_to_vectors(
-                    iter::once(&pair.0).chain(iter::once(&pair.1)),
+                    iter::once(&pair[0]).chain(iter::once(&pair[1])),
                     &referenced_vectors,
                     &lookup_vector_name,
                     lookup_collection_name,
@@ -220,7 +220,7 @@ fn iterate_examples(request: &DiscoverRequest) -> impl Iterator<Item = &Recommen
         .flat_map(|pairs| {
             pairs
                 .iter()
-                .flat_map(|pair| iter::once(&pair.0).chain(iter::once(&pair.1)))
+                .flat_map(|pair| iter::once(&pair[0]).chain(iter::once(&pair[1])))
         })
         .chain(request.target.iter())
 }

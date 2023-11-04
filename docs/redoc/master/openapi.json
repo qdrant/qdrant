@@ -9190,7 +9190,6 @@
           },
           "placement": {
             "description": "Placement of shards for this key List of peer ids, that can be used to place shards for this key If not specified, will be randomly placed among all peers",
-            "default": null,
             "type": "array",
             "items": {
               "type": "integer",
@@ -9950,18 +9949,13 @@
             ]
           },
           "context_pairs": {
-            "description": "Pairs of (positive, negative) examples to provide context to the search",
+            "description": "Pairs of [positive, negative] examples to provide context to the search",
             "type": "array",
             "items": {
               "type": "array",
-              "items": [
-                {
-                  "$ref": "#/components/schemas/RecommendExample"
-                },
-                {
-                  "$ref": "#/components/schemas/RecommendExample"
-                }
-              ],
+              "items": {
+                "$ref": "#/components/schemas/RecommendExample"
+              },
               "maxItems": 2,
               "minItems": 2
             },

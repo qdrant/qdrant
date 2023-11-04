@@ -596,8 +596,8 @@ pub struct DiscoverRequest {
     /// Look for vectors closest to this
     pub target: Option<RecommendExample>,
 
-    /// Pairs of (positive, negative) examples to provide context to the search
-    pub context_pairs: Option<Vec<(RecommendExample, RecommendExample)>>,
+    /// Pairs of [positive, negative] examples to provide context to the search
+    pub context_pairs: Option<Vec<[RecommendExample; 2]>>,
 
     /// Look only for points which satisfies this conditions
     #[validate]
