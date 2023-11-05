@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 /// If more than this number of concurrent requests occurred - new list will be created dynamically,
 /// but will be deleted right after query finishes.
 /// Implemented in order to limit memory leak
-const POOL_KEEP_LIMIT: usize = 16;
+const POOL_KEEP_LIMIT: usize = 128;
 
 /// Visited list handle is an owner of the `VisitedList`, which is returned by `VisitedPool` and returned back to it
 #[derive(Debug)]
