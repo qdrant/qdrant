@@ -156,7 +156,7 @@ impl GraphLayersBuilder {
     }
 
     pub fn merge_from_other(&mut self, other: GraphLayersBuilder) {
-        self.max_level = AtomicUsize::new(std::cmp::max(
+        self.max_level = AtomicUsize::new(max(
             self.max_level.load(std::sync::atomic::Ordering::Relaxed),
             other.max_level.load(std::sync::atomic::Ordering::Relaxed),
         ));
@@ -218,8 +218,7 @@ impl GraphLayersBuilder {
         }
         let point_layers = &mut self.links_layers[point_id as usize];
         while point_layers.len() <= level {
-            let mut links = vec![];
-            links.reserve(self.m);
+            let links = Vec::with_capacity(self.m);
             point_layers.push(RwLock::new(links));
         }
         self.max_level
@@ -265,8 +264,7 @@ impl GraphLayersBuilder {
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let mut result_list = vec![];
-        result_list.reserve(m);
+        let mut result_list = Vec::with_capacity(m);
         for current_closest in candidates {
             if result_list.len() >= m {
                 break;
