@@ -17,7 +17,7 @@ pub struct PayloadIndexSchema {
 }
 
 impl Collection {
-    fn payload_index_file(collection_path: &Path) -> PathBuf {
+    pub(crate) fn payload_index_file(collection_path: &Path) -> PathBuf {
         collection_path.join(PAYLOAD_INDEX_CONFIG_FILE)
     }
 
