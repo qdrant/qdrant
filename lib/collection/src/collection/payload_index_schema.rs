@@ -11,7 +11,7 @@ use crate::save_on_disk::SaveOnDisk;
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "payload_index.json";
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq)]
 pub struct PayloadIndexSchema {
     pub schema: HashMap<PayloadKeyType, PayloadFieldSchema>,
 }

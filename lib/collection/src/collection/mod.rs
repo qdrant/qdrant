@@ -1,5 +1,5 @@
 mod collection_ops;
-mod payload_index_schema;
+pub mod payload_index_schema;
 mod point_ops;
 mod search;
 mod shard_transfer;
@@ -420,6 +420,7 @@ impl Collection {
                 .collect(),
             transfers,
             shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
+            payload_index_schema: self.payload_index_schema.read().clone(),
         }
     }
 
