@@ -13,7 +13,7 @@ pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "payload_index.json";
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct PayloadIndexSchema {
-    schema: HashMap<PayloadKeyType, PayloadFieldSchema>,
+    pub schema: HashMap<PayloadKeyType, PayloadFieldSchema>,
 }
 
 impl Collection {
