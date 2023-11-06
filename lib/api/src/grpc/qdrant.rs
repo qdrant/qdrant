@@ -3906,8 +3906,8 @@ pub struct PointsOperationResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResult {
     /// Number of operation
-    #[prost(uint64, tag = "1")]
-    pub operation_id: u64,
+    #[prost(uint64, optional, tag = "1")]
+    pub operation_id: ::core::option::Option<u64>,
     /// Operation status
     #[prost(enumeration = "UpdateStatus", tag = "2")]
     pub status: i32,
