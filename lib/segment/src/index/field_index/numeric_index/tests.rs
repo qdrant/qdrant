@@ -6,6 +6,7 @@ use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
+use crate::common::utils::MultiValue;
 
 const COLUMN_NAME: &str = "test";
 
@@ -65,6 +66,26 @@ fn cardinality_request(index: &NumericIndex<f64>, query: Range) -> CardinalityEs
     assert!(estimation.min <= result.len());
     assert!(estimation.max >= result.len());
     estimation
+}
+
+#[test]
+fn test_set_empty_payload() {
+    let (_temp_dir, mut index) = random_index(1000, 1, false);
+
+    let point_id = 42;
+
+    let value = index.get_values(point_id).unwrap();
+
+    assert!(!value.is_empty());
+
+    let payload = serde_json::json!(null);
+    index
+        .add_point(point_id, &MultiValue::one(&payload))
+        .unwrap();
+
+    let value = index.get_values(point_id).unwrap();
+
+    assert!(value.is_empty());
 }
 
 #[rstest]
