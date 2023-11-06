@@ -127,7 +127,7 @@ impl<'a> SearchContext<'a> {
     /// Make sure the longest posting list is at the head of the posting list iterators
     fn sort_posting_lists_by_len(&mut self) {
         // decreasing order
-        self.postings_iterators.sort_by(|a, b| {
+        self.postings_iterators.sort_unstable_by(|a, b| {
             b.posting_list_iterator
                 .len_to_end()
                 .cmp(&a.posting_list_iterator.len_to_end())
