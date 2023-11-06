@@ -8993,7 +8993,6 @@
           },
           "placement": {
             "description": "Placement of shards for this key List of peer ids, that can be used to place shards for this key If not specified, will be randomly placed among all peers",
-            "default": null,
             "type": "array",
             "items": {
               "type": "integer",
