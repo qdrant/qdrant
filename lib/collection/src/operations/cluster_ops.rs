@@ -50,7 +50,6 @@ pub struct CreateShardingKey {
     /// Placement of shards for this key
     /// List of peer ids, that can be used to place shards for this key
     /// If not specified, will be randomly placed among all peers
-    #[serde(default)]
     pub placement: Option<Vec<PeerId>>,
 }
 
