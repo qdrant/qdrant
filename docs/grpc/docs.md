@@ -3009,7 +3009,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| operation_id | [uint64](#uint64) |  | Number of operation |
+| operation_id | [uint64](#uint64) | optional | Number of operation |
 | status | [UpdateStatus](#qdrant-UpdateStatus) |  | Operation status |
 
 
