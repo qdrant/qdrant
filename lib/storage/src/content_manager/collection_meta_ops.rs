@@ -9,7 +9,7 @@ use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
-use segment::types::{QuantizationConfig, ShardKey};
+use segment::types::{PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -324,6 +324,19 @@ pub struct DropShardKey {
     pub shard_key: ShardKey,
 }
 
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct CreatePayloadIndex {
+    pub collection_name: String,
+    pub field_name: PayloadKeyType,
+    pub field_schema: PayloadFieldSchema,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct DropPayloadIndex {
+    pub collection_name: String,
+    pub field_name: PayloadKeyType,
+}
+
 /// Enumeration of all possible collection update operations
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -336,6 +349,8 @@ pub enum CollectionMetaOperations {
     SetShardReplicaState(SetShardReplicaState),
     CreateShardKey(CreateShardKey),
     DropShardKey(DropShardKey),
+    CreatePayloadIndex(CreatePayloadIndex),
+    DropPayloadIndex(DropPayloadIndex),
     Nop { token: usize }, // Empty operation
 }
 

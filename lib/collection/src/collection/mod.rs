@@ -1,11 +1,11 @@
 mod collection_ops;
+mod payload_index_schema;
 mod point_ops;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
 mod state_management;
-mod payload_index_schema;
 
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -18,8 +18,8 @@ use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
-use crate::collection::payload_index_schema::PayloadIndexSchema;
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
@@ -120,10 +120,13 @@ impl Collection {
         CollectionVersion::save(path)?;
         collection_config.save(path)?;
 
+        let payload_index_schema = Self::load_payload_index_schema(path)?;
+
         Ok(Self {
             id: name.clone(),
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
+            payload_index_schema,
             shared_storage_config,
             this_peer_id,
             path: path.to_owned(),
@@ -207,10 +210,14 @@ impl Collection {
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
+        let payload_index_schema = Self::load_payload_index_schema(path)
+            .expect("Can't load or initialize payload index schema");
+
         Self {
             id: collection_id.clone(),
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
+            payload_index_schema,
             shared_storage_config,
             this_peer_id,
             path: path.to_owned(),
