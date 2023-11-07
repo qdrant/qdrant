@@ -96,7 +96,20 @@ impl ForwardProxyShard {
                 "Scroll batch for `{}` took {} ms",
                 self.remote_shard.id,
                 start_time.elapsed().as_millis()
-            )
+            );
+
+            // Estimate JSON payload size by measuring the first point
+            // This is cude and inefficient, it uses serde_json to measure paylaod size
+            let payload_size_estimate = batch.first().and_then(|record| record.payload.as_ref()).and_then(|payload| {
+                match serde_json::to_vec(payload) {
+                    Ok(payload_json) => Some(payload_json.len()),
+                    Err(err) => {
+                        log::warn!(target: "ExtraDebug", "Failed to estimate payload size, could not convert into JSON: {err}");
+                        None
+                    },
+                }
+            }).map(|size| size * batch.len().saturating_sub(1));
+            log::debug!(target: "ExtraDebug", "Estimated size of transfer batch JSON payload is {payload_size_estimate:?} bytes");
         }
 
         let next_page_offset = if batch.len() < limit {
