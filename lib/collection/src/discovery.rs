@@ -1,4 +1,3 @@
-use std::iter;
 use std::time::Duration;
 
 use futures::Future;
@@ -64,9 +63,9 @@ where
 
     // Validate context_pairs and/or target have value(s)
     request_batch.searches.iter().try_for_each(|request| {
-        let no_pairs = request.context_pairs.is_none()
+        let no_pairs = request.context.is_none()
             || request
-                .context_pairs
+                .context
                 .as_ref()
                 .is_some_and(|pairs| pairs.is_empty());
 
@@ -131,12 +130,12 @@ where
         .cloned();
 
         let context_pairs = request
-            .context_pairs
+            .context
             .iter()
             .flatten()
             .map(|pair| {
                 let mut vector_pair = convert_to_vectors(
-                    iter::once(&pair[0]).chain(iter::once(&pair[1])),
+                    pair.iter(),
                     &referenced_vectors,
                     &lookup_vector_name,
                     lookup_collection_name,
@@ -215,13 +214,9 @@ where
 
 fn iterate_examples(request: &DiscoverRequest) -> impl Iterator<Item = &RecommendExample> {
     request
-        .context_pairs
+        .context
         .iter()
-        .flat_map(|pairs| {
-            pairs
-                .iter()
-                .flat_map(|pair| iter::once(&pair[0]).chain(iter::once(&pair[1])))
-        })
+        .flat_map(|pairs| pairs.iter().flat_map(|pair| pair.iter()))
         .chain(request.target.iter())
 }
 

@@ -9948,16 +9948,11 @@
               }
             ]
           },
-          "context_pairs": {
-            "description": "Pairs of [positive, negative] examples to provide context to the search",
+          "context": {
+            "description": "Pairs of { positive, negative } examples to provide context to the search",
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "$ref": "#/components/schemas/RecommendExample"
-              },
-              "maxItems": 2,
-              "minItems": 2
+              "$ref": "#/components/schemas/ContextExamplePair"
             },
             "nullable": true
           },
@@ -10041,6 +10036,21 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "ContextExamplePair": {
+        "type": "object",
+        "required": [
+          "negative",
+          "positive"
+        ],
+        "properties": {
+          "positive": {
+            "$ref": "#/components/schemas/RecommendExample"
+          },
+          "negative": {
+            "$ref": "#/components/schemas/RecommendExample"
           }
         }
       },

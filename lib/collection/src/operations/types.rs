@@ -577,6 +577,18 @@ pub struct RecommendGroupsRequest {
     pub group_request: BaseGroupRequest,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct ContextExamplePair {
+    pub positive: RecommendExample,
+    pub negative: RecommendExample,
+}
+
+impl ContextExamplePair {
+    pub fn iter(&self) -> impl Iterator<Item = &RecommendExample> {
+        iter::once(&self.positive).chain(iter::once(&self.negative))
+    }
+}
+
 /// Use context and a target to find the most similar points, constrained by the context.
 ///
 /// When using only the context, a special search is performed where pairs of points are
@@ -596,8 +608,8 @@ pub struct DiscoverRequest {
     /// Look for vectors closest to this
     pub target: Option<RecommendExample>,
 
-    /// Pairs of [positive, negative] examples to provide context to the search
-    pub context_pairs: Option<Vec<[RecommendExample; 2]>>,
+    /// Pairs of { positive, negative } examples to provide context to the search
+    pub context: Option<Vec<ContextExamplePair>>,
 
     /// Look only for points which satisfies this conditions
     #[validate]

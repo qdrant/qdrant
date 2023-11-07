@@ -20,10 +20,10 @@ def random_example(dim=4, min_id=1, max_id=8):
         return random.randint(min_id, max_id)
 
 
-def count_ids_in_examples(context_pairs, target) -> int:
+def count_ids_in_examples(context, target) -> int:
     set_ = set()
-    for pair in context_pairs:
-        for example in pair:
+    for pair in context:
+        for example in [pair['positive'], pair['negative']]:
             if isinstance(example, int):
                 set_.add(example)
     if isinstance(target, int):
@@ -40,16 +40,16 @@ def setup(on_disk_vectors):
 
 # Context is when we don't include a target vector
 def test_context():
-    context_pairs = [
-        [random_example(), random_example()],
-        [random_example(), random_example()],
+    context = [
+        {"positive": random_example(), "negative": random_example()},
+        {"positive": random_example(), "negative": random_example()},
     ]
     response = request_with_validation(
         api="/collections/{collection_name}/points/discover",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "context_pairs": context_pairs,
+            "context": context,
             "limit": 8,
         },
     )
@@ -57,7 +57,7 @@ def test_context():
 
     scored_points = response.json()["result"]
 
-    assert len(scored_points) == 8 - count_ids_in_examples(context_pairs, None)
+    assert len(scored_points) == 8 - count_ids_in_examples(context, None)
 
     # Score in context search relates to loss, so max score for context search is 0.0
     for point in scored_points:
@@ -106,9 +106,9 @@ def test_only_target_is_search():
 # Only when we use both target and context, we are doing discovery
 def test_discover_same_context():
     target1 = random_example()
-    context_pairs = [
-        [random_example(), random_example()],
-        [random_example(), random_example()],
+    context = [
+        {"positive": random_example(), "negative": random_example()},
+        {"positive": random_example(), "negative": random_example()},
     ]
 
     response = request_with_validation(
@@ -117,7 +117,7 @@ def test_discover_same_context():
         path_params={"collection_name": collection_name},
         body={
             "target": target1,
-            "context_pairs": context_pairs,
+            "context": context,
             "limit": 8,
             "params": {
                 "exact": True,
@@ -128,7 +128,7 @@ def test_discover_same_context():
 
     scored_points1 = response.json()["result"]
 
-    assert len(scored_points1) == 8 - count_ids_in_examples(context_pairs, target1)
+    assert len(scored_points1) == 8 - count_ids_in_examples(context, target1)
 
     target2 = random_example()
 
@@ -138,7 +138,7 @@ def test_discover_same_context():
         path_params={"collection_name": collection_name},
         body={
             "target": target2,
-            "context_pairs": context_pairs,
+            "context": context,
             "limit": 8,
             "params": {
                 "exact": True,
@@ -149,7 +149,7 @@ def test_discover_same_context():
 
     scored_points2 = response.json()["result"]
 
-    assert len(scored_points2) == 8 - count_ids_in_examples(context_pairs, target2)
+    assert len(scored_points2) == 8 - count_ids_in_examples(context, target2)
 
     # We keep same context, so context part of the score (integer part) should be the same,
     # while target part of the score (decimal part) should be different
@@ -172,14 +172,14 @@ def test_discover_same_context():
 def test_discover_same_target():
     target = random_example()
 
-    context_pairs1 = [
-        [random_example(), random_example()],
-        [random_example(), random_example()],
+    context1 = [
+        {"positive": random_example(), "negative": random_example()},
+        {"positive": random_example(), "negative": random_example()},
     ]
 
-    context_pairs2 = [
-        [random_example(), random_example()],
-        [random_example(), random_example()],
+    context2 = [
+        {"positive": random_example(), "negative": random_example()},
+        {"positive": random_example(), "negative": random_example()},
     ]
 
     response = request_with_validation(
@@ -188,7 +188,7 @@ def test_discover_same_target():
         path_params={"collection_name": collection_name},
         body={
             "target": target,
-            "context_pairs": context_pairs1,
+            "context": context1,
             "limit": 8,
         },
     )
@@ -196,7 +196,7 @@ def test_discover_same_target():
 
     scored_points1 = response.json()["result"]
 
-    assert len(scored_points1) == 8 - count_ids_in_examples(context_pairs1, target)
+    assert len(scored_points1) == 8 - count_ids_in_examples(context1, target)
 
     response = request_with_validation(
         api="/collections/{collection_name}/points/discover",
@@ -204,7 +204,7 @@ def test_discover_same_target():
         path_params={"collection_name": collection_name},
         body={
             "target": target,
-            "context_pairs": context_pairs2,
+            "context": context2,
             "limit": 8,
         },
     )
@@ -212,7 +212,7 @@ def test_discover_same_target():
 
     scored_points2 = response.json()["result"]
 
-    assert len(scored_points2) == 8 - count_ids_in_examples(context_pairs2, target)
+    assert len(scored_points2) == 8 - count_ids_in_examples(context2, target)
 
     # We keep same target, so context part of the score (integer part) can be different,
     # while target part of the score (decimal part) should be the same
@@ -223,8 +223,7 @@ def test_discover_same_target():
     for point1 in scored_points1:
         if point1["id"] in scored_points2_map:
             point2 = scored_points2_map[point1["id"]]
-            print(point1)
-            print(point2)
+
             target_score1 = point1["score"] - math.floor(point1["score"])
             target_score2 = point2["score"] - math.floor(point2["score"])
             assert math.isclose(target_score1, target_score2, rel_tol=1e-5)
@@ -240,11 +239,11 @@ def test_discover_batch():
         target = random_example()
         targets.append(target)
 
-        context_pairs = [
-            [random_example(), random_example()],
-            [random_example(), random_example()],
+        context = [
+            {"positive": random_example(), "negative": random_example()},
+            {"positive": random_example(), "negative": random_example()},
         ]
-        contexts.append(context_pairs)
+        contexts.append(context)
 
         response = request_with_validation(
             api="/collections/{collection_name}/points/discover",
@@ -252,7 +251,7 @@ def test_discover_batch():
             path_params={"collection_name": collection_name},
             body={
                 "target": target,
-                "context_pairs": context_pairs,
+                "context": context,
                 "limit": 8,
             },
         )
@@ -264,10 +263,10 @@ def test_discover_batch():
     searches = [
         {
             "target": target,
-            "context_pairs": context_pairs,
+            "context": context,
             "limit": 8,
         }
-        for target, context_pairs in zip(targets, contexts)
+        for target, context in zip(targets, contexts)
     ]
 
     response = request_with_validation(

@@ -17,9 +17,9 @@ use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
 use super::types::{
-    BaseGroupRequest, CoreSearchRequest, DiscoverRequest, GroupsResult, PointGroup, QueryEnum,
-    RecommendExample, RecommendGroupsRequest, RecommendStrategy, SearchGroupsRequest,
-    VectorParamsDiff, VectorsConfigDiff,
+    BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequest, GroupsResult,
+    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequest, RecommendStrategy,
+    SearchGroupsRequest, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -167,7 +167,9 @@ pub fn try_discover_request_from_grpc(
                 pair.positive.map(|p| p.try_into()),
                 pair.negative.map(|n| n.try_into()),
             ) {
-                (Some(Ok(positive)), Some(Ok(negative))) => Ok([positive, negative]),
+                (Some(Ok(positive)), Some(Ok(negative))) => {
+                    Ok(ContextExamplePair { positive, negative })
+                }
                 (Some(Err(e)), _) | (_, Some(Err(e))) => Err(e),
                 (None, _) | (_, None) => Err(Status::invalid_argument(
                     "Both positive and negative are required in a context pair",
@@ -178,7 +180,7 @@ pub fn try_discover_request_from_grpc(
 
     let request = DiscoverRequest {
         target,
-        context_pairs: Some(context_pairs),
+        context: Some(context_pairs),
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
