@@ -1,9 +1,10 @@
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::future::{self, BoxFuture};
 use futures::stream::FuturesUnordered;
@@ -104,6 +105,39 @@ pub enum ReplicaState {
     Listener,
 }
 
+#[derive(Copy, Clone, Debug)]
+struct SyncState {
+    last_attempt: Instant,
+    backoff: Duration,
+}
+
+impl Default for SyncState {
+    fn default() -> Self {
+        Self {
+            last_attempt: Instant::now(),
+            backoff: Duration::from_secs(0),
+        }
+    }
+}
+
+impl SyncState {
+    pub fn should_retry_now(&mut self) -> bool {
+        let retry = self.last_attempt.elapsed() >= self.backoff;
+
+        if retry {
+            self.last_attempt = Instant::now();
+
+            self.backoff = if self.backoff.is_zero() {
+                Duration::from_secs(1)
+            } else {
+                cmp::min(self.backoff * 2, Duration::from_secs(10))
+            };
+        }
+
+        retry
+    }
+}
+
 /// Represents a change in replica set, due to scaling of `replication_factor`
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
@@ -166,7 +200,7 @@ pub struct ShardReplicaSet {
     /// List is checked on each consensus round and submitted to the consensus.
     /// If the state of the peer is changed in the consensus, it is removed from the list.
     /// Update and read operations are not performed on the peers marked as dead.
-    locally_disabled_peers: parking_lot::RwLock<HashSet<PeerId>>,
+    locally_disabled_peers: parking_lot::RwLock<HashMap<PeerId, parking_lot::Mutex<SyncState>>>,
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
     notify_peer_failure_cb: ChangePeerState,
@@ -587,7 +621,7 @@ impl ShardReplicaSet {
             replica_set
                 .locally_disabled_peers
                 .write()
-                .insert(this_peer_id);
+                .insert(this_peer_id, Default::default());
         }
 
         replica_set
@@ -717,7 +751,7 @@ impl ShardReplicaSet {
     }
 
     pub fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
-        self.locally_disabled_peers.read().contains(peer_id)
+        self.locally_disabled_peers.read().contains_key(peer_id)
     }
 
     /// Check whether a peer is registered as `active`.
@@ -1119,7 +1153,7 @@ impl ShardReplicaSet {
                 if has_other_active_peers {
                     self.locally_disabled_peers
                         .write()
-                        .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
+                        .insert(self.this_peer_id(), Default::default()); // TODO: Blocking `write` call in async context
 
                     // Notify peer failure
                     self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
@@ -1464,8 +1498,13 @@ impl ShardReplicaSet {
                 self.shard_id
             );
 
-            self.locally_disabled_peers.write().insert(*peer_id);
-            self.notify_peer_failure(*peer_id);
+            let mut locally_disabled_peers = self.locally_disabled_peers.write();
+
+            let sync_state = locally_disabled_peers.entry(*peer_id).or_default();
+
+            if sync_state.get_mut().should_retry_now() {
+                self.notify_peer_failure(*peer_id);
+            }
         }
 
         wait_for_deactivation
@@ -1486,7 +1525,10 @@ impl ShardReplicaSet {
 
         locally_disabled.remove(&peer_id_to_remove);
 
-        if active_peers.is_subset(&locally_disabled) {
+        if active_peers
+            .iter()
+            .all(|peer_id| locally_disabled.contains_key(peer_id))
+        {
             log::warn!("Resolving consensus/local state inconsistency");
             locally_disabled.clear();
         }
@@ -1495,8 +1537,10 @@ impl ShardReplicaSet {
     /// Check if the are any locally disabled peers
     /// And if so, report them to the consensus
     pub async fn sync_local_state(&self) -> CollectionResult<()> {
-        for failed_peer in self.locally_disabled_peers.read().iter() {
-            self.notify_peer_failure(*failed_peer);
+        for (failed_peer, sync_state) in self.locally_disabled_peers.read().iter() {
+            if sync_state.lock().should_retry_now() {
+                self.notify_peer_failure(*failed_peer);
+            }
         }
         Ok(())
     }
@@ -1528,8 +1572,17 @@ impl ShardReplicaSet {
                         .map_err(|err| {
                             if err.is_transient() {
                                 // Deactivate the peer if forwarding failed with transient error
-                                self.locally_disabled_peers.write().insert(leader_peer);
-                                self.notify_peer_failure(leader_peer);
+                                let mut locally_disabled_peers = self.locally_disabled_peers.write();
+
+                                let sync_state = locally_disabled_peers
+                                    .entry(leader_peer)
+                                    .or_default();
+
+                                if sync_state.get_mut().should_retry_now() {
+                                        self.notify_peer_failure(leader_peer);
+
+                                }
+
                                 // return service error
                                 CollectionError::service_error(format!(
                                     "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
