@@ -35,7 +35,7 @@ pub fn setup(user_filters: &str) -> anyhow::Result<()> {
     let reg = tracing_subscriber::registry().with(
         fmt::layer()
             .with_ansi(true)
-            .with_span_events(fmt::format::FmtSpan::NEW)
+            .with_span_events(fmt::format::FmtSpan::NEW | fmt::format::FmtSpan::CLOSE)
             .with_filter(
                 filter::EnvFilter::builder()
                     .with_regex(false)
