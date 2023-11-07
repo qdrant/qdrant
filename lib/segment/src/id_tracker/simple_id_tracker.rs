@@ -76,6 +76,9 @@ impl SimpleIdTracker {
         let mapping_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
             DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF),
         );
+
+        let start = std::time::Instant::now();
+
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let internal_id: PointOffsetType =
@@ -119,6 +122,15 @@ impl SimpleIdTracker {
             }
         }
 
+        log::debug!(
+            target: "ExtraDebug",
+            "Loaded {} ids from mapping database in {:?}",
+            internal_to_external.len(),
+            start.elapsed(),
+        );
+
+        let start = std::time::Instant::now();
+
         let mut internal_to_version: Vec<SeqNumberType> = Default::default();
         let versions_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
@@ -142,6 +154,13 @@ impl SimpleIdTracker {
                 );
             }
         }
+
+        log::debug!(
+            target: "ExtraDebug",
+            "Loaded {} ids from version database in {:?}",
+            internal_to_version.len(),
+            start.elapsed(),
+        );
 
         #[cfg(debug_assertions)]
         {

@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use rand::Rng;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
     WithVector,
@@ -71,6 +72,9 @@ impl ForwardProxyShard {
         batch_size: usize,
         runtime_handle: &Handle,
     ) -> CollectionResult<Option<PointIdType>> {
+        let do_log_extra_debug = rand::thread_rng().gen_bool(0.01);
+        let start_time = std::time::Instant::now();
+
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
         let _update_lock = self.update_lock.lock().await;
@@ -85,6 +89,16 @@ impl ForwardProxyShard {
                 runtime_handle,
             )
             .await?;
+
+        if do_log_extra_debug {
+            log::debug!(
+                target: "ExtraDebug",
+                "Scroll batch for `{}` took {} ms",
+                self.remote_shard.id,
+                start_time.elapsed().as_millis()
+            )
+        }
+
         let next_page_offset = if batch.len() < limit {
             // This was the last page
             None
@@ -109,11 +123,22 @@ impl ForwardProxyShard {
             ))
         };
 
+        let start_time = std::time::Instant::now();
+
         // We only need to wait for the last batch.
         let wait = next_page_offset.is_none();
         self.remote_shard
             .update(insert_points_operation, wait)
             .await?;
+
+        if do_log_extra_debug {
+            log::debug!(
+                target: "ExtraDebug",
+                "Transfer batch for `{}` took {} ms",
+                self.remote_shard.id,
+                start_time.elapsed().as_millis()
+            )
+        }
 
         Ok(next_page_offset)
     }

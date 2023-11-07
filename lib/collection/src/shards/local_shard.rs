@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -194,7 +195,17 @@ impl LocalShard {
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
+                        let start = std::time::Instant::now();
+
                         let mut res = load_segment(&segments_path)?;
+
+                        log::debug!(
+                            target: "ExtraDebug",
+                            "Segment load took {} ms, path: {}",
+                            start.elapsed().as_millis(),
+                            segments_path.to_str().unwrap()
+                        );
+
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
                         } else {
@@ -451,9 +462,13 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
+        let wal_start_time = std::time::Instant::now();
+        let mut num_operations = 0;
         for (op_num, update) in wal.read_all() {
+            num_operations += 1;
+            let start = std::time::Instant::now();
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(segments, op_num, update) {
+            match &CollectionUpdater::update(segments, op_num, update.clone()) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 
@@ -479,7 +494,32 @@ impl LocalShard {
                 Ok(_) => (),
             }
             bar.inc(1);
+
+            if start.elapsed() > Duration::from_millis(200) {
+                log::debug!(
+                    target: "ExtraDebug",
+                    "Applying WAL operation took too long: {elapsed:?}, \
+                     collection: {collection_id}, \
+                     shard: {path}, \
+                     op_num: {op_num}",
+                    elapsed = start.elapsed(),
+                    collection_id = collection_id,
+                    path = self.path.display(),
+                    op_num = op_num
+                );
+            }
         }
+
+        log::debug!(
+            target: "ExtraDebug",
+            "Loaded {num_operations} operations from WAL in {elapsed:?}, \
+             collection: {collection_id}, \
+             shard: {path}",
+            num_operations = num_operations,
+            elapsed = wal_start_time.elapsed(),
+            collection_id = collection_id,
+            path = self.path.display()
+        );
 
         self.segments.read().flush_all(true)?;
         bar.finish();

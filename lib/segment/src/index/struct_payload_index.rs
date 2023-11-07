@@ -102,8 +102,17 @@ impl StructPayloadIndex {
         let mut field_indexes: IndexesMap = Default::default();
 
         for (field, payload_schema) in &self.config.indexed_fields {
+            let start_time = std::time::Instant::now();
+
             let field_index = self.load_from_db(field, payload_schema.to_owned(), is_appendable)?;
             field_indexes.insert(field.clone(), field_index);
+
+            log::debug!(
+                target: "ExtraDebug",
+                "Loading field `{}` took {} ms",
+                field,
+                start_time.elapsed().as_millis()
+            )
         }
         self.field_indexes = field_indexes;
         Ok(())

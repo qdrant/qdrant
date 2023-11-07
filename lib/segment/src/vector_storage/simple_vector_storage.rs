@@ -53,6 +53,8 @@ pub fn open_simple_vector_storage(
 
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
 
+    let start_time = std::time::Instant::now();
+
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
@@ -66,6 +68,13 @@ pub fn open_simple_vector_storage(
         }
         vectors.insert(point_id, &stored_record.vector)?;
     }
+
+    log::debug!(
+        target: "ExtraDebug",
+        "SimpleVectorStorage::open_simple_vector_storage() for `{}` took {} ms",
+        database_column_name,
+        start_time.elapsed().as_millis()
+    );
 
     debug!("Segment vectors: {}", vectors.len());
     debug!(

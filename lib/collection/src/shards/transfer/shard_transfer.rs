@@ -207,7 +207,17 @@ pub async fn transfer_shard(
     // * Initiate shard, use snapshot link for initialization
     // * Transfer difference between snapshot and current shard state
 
+    let start = std::time::Instant::now();
+
     remote_shard.initiate_transfer().await?;
+
+    log::debug!(
+        target: "ExtraDebug",
+        "initiate_transfer for `{}` took {} ms",
+        shard_id,
+        start.elapsed().as_millis()
+    );
+
     {
         let shard_holder_guard = shard_holder.read().await;
         let transferring_shard = shard_holder_guard.get_shard(&shard_id);
@@ -219,6 +229,12 @@ pub async fn transfer_shard(
             )));
         }
     }
+
+    log::debug!(
+        target: "ExtraDebug",
+        "Start transfer_batches for `{}`",
+        shard_id,
+    );
 
     // Transfer contents batch by batch
     transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
@@ -464,6 +480,8 @@ where
         let mut tries = MAX_RETRY_COUNT;
         let mut finished = false;
         while !finished && tries > 0 {
+            let start_time = std::time::Instant::now();
+
             let transfer_result = transfer_shard(
                 shards_holder.clone(),
                 transfer.shard_id,
@@ -473,6 +491,14 @@ where
                 stopped.clone(),
             )
             .await;
+
+            log::debug!(
+                target: "ExtraDebug",
+                "transfer_shard for `{}` took {} ms",
+                transfer.shard_id,
+                start_time.elapsed().as_millis()
+            );
+
             finished = match transfer_result {
                 Ok(()) => true,
                 Err(error) => {
