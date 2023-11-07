@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use futures::Future;
 use itertools::Itertools;
-use segment::data_types::vectors::{NamedQuery, NamedVector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{NamedQuery, DEFAULT_VECTOR_NAME};
 use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -151,20 +151,11 @@ where
             .collect_vec();
 
         let query: QueryEnum = match (target, context_pairs) {
-            // Target and pairs => Discovery
-            (Some(target), pairs) if !pairs.is_empty() => QueryEnum::Discover(NamedQuery {
+            // Target with/without pairs => Discovery
+            (Some(target), pairs) => QueryEnum::Discover(NamedQuery {
                 query: DiscoveryQuery::new(target, pairs),
                 using: Some(lookup_vector_name),
             }),
-
-            // Only target => Nearest
-            (Some(target), _) => QueryEnum::Nearest(
-                NamedVector {
-                    name: lookup_vector_name,
-                    vector: target,
-                }
-                .into(),
-            ),
 
             // Only pairs => Context
             (None, pairs) => QueryEnum::Context(NamedQuery {

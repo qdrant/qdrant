@@ -65,7 +65,7 @@ def test_context():
 
 
 # When we only use target, it should be the exact same as search
-def test_only_target_is_search():
+def test_only_target_is_search_with_different_scoring():
     target = random_vector()
 
     # First, search
@@ -98,9 +98,11 @@ def test_only_target_is_search():
 
     assert len(discover_points) == 8
 
-    # Results should be equal
+    # Results should be in same order, but different scores
     assert len(search_points) == len(discover_points)
-    assert search_points == discover_points
+    for search_point, discover_point in zip(search_points, discover_points):
+        assert search_point["id"] == discover_point["id"]
+        assert search_point["score"] != discover_point["score"]
 
 
 # Only when we use both target and context, we are doing discovery

@@ -490,7 +490,7 @@ paths:
         - points
       summary: Discover points
       description: >
-        Use context and a target to find the most similar points, constrained by the context.
+        Use context and a target to find the most similar points to the target, constrained by the context.
         
         When using only the context, a special search is performed where pairs of points are 
         used to generate a loss that guides the search towards the zone where most positive 
@@ -499,14 +499,12 @@ paths:
         Since the score of a context relates to loss, the maximum score a point can get is 0.0, 
         and it becomes normal that many points can have 0.0 as score.
         
-        Using only a target is equivalent to regular search, so the score is the distance to the target.
-        
-        When using both context and target, the score behaves a little different: The 
+        When using target (with or without context), the score behaves a little different: The 
         integer part of the score represents the "rank" with respect to the context, while the
         decimal part of the score relates to the distance to the target.
       operationId: discover_points
       requestBody:
-        description: Request points based on [positive, negative] pairs of examples, and/or a target
+        description: Request points based on {positive, negative} pairs of examples, and/or a target
         content:
           application/json:
             schema:
@@ -542,7 +540,7 @@ paths:
       description: Look for points based on target and/or positive and negative example pairs, in batch.
       operationId: discover_batch_points
       requestBody:
-        description: Batch request points based on [positive, negative] pairs of examples, and/or a target.
+        description: Batch request points based on { positive, negative } pairs of examples, and/or a target.
         content:
           application/json:
             schema:
