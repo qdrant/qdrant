@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -33,13 +34,16 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
-    /// Create new sparse vector index
+    /// Open a sparse vector index at a given path
     pub fn open(
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         path: &Path,
     ) -> OperationResult<Self> {
+        // create directory if it does not exist
+        create_dir_all(path)?;
+
         let searches_telemetry = SparseSearchesTelemetry::new();
         let max_point_id = 0;
         let inverted_index = TInvertedIndex::open(path)?;
@@ -158,13 +162,14 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let borrowed_id_tracker = self.id_tracker.borrow();
         let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
         let mut ram_index = InvertedIndexRam::empty();
-        let available_point_count = borrowed_id_tracker.available_point_count();
+        let mut index_point_count: usize = 0;
         for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             let vector: &SparseVector = borrowed_vector_storage.get_vector(id).try_into()?;
             ram_index.upsert(id, vector.to_owned());
+            index_point_count += 1;
         }
-        self.max_point_id = available_point_count as PointOffsetType - 1;
+        self.max_point_id = index_point_count.saturating_sub(1) as PointOffsetType;
         // TODO(sparse) this operation loads the entire index into memory which can cause OOM on large storage
         self.inverted_index = TInvertedIndex::from_ram_index(ram_index, &self.path)?;
         Ok(())
