@@ -477,6 +477,7 @@ impl Consensus {
 
     /// Listens for the next proposal and sends it to the Raft node.
     /// Returns `true` if something happened and `false` if timeout was reached.
+    #[tracing::instrument(skip(self))]
     fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<bool> {
         // Poll the async. channel on the consensus runtime.
         // https://docs.rs/tokio/1.22.0/tokio/sync/mpsc/index.html#communicating-between-sync-and-async-code
@@ -608,6 +609,7 @@ impl Consensus {
     }
 
     /// Returns `true` if consensus should be stopped, `false` otherwise.
+    #[tracing::instrument(skip_all)]
     fn on_ready(&mut self) -> anyhow::Result<bool> {
         if !self.node.has_ready() {
             // No updates to process
@@ -651,6 +653,7 @@ impl Consensus {
     ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns None instead of LightReady.
+    #[tracing::instrument(skip_all)]
     fn process_ready(
         &mut self,
         mut ready: raft::Ready,
@@ -714,6 +717,7 @@ impl Consensus {
     ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns `true`, otherwise `false`.
+    #[tracing::instrument(skip_all)]
     fn process_light_ready(&mut self, mut light_rd: raft::LightReady) -> anyhow::Result<bool> {
         let store = self.store();
         // Update commit index.
