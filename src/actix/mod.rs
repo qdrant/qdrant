@@ -22,6 +22,7 @@ use storage::dispatcher::Dispatcher;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
+use crate::actix::api::discovery_api::config_discovery_api;
 use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
@@ -139,6 +140,7 @@ pub fn init(
                 .configure(config_service_api)
                 .configure(config_search_api)
                 .configure(config_recommend_api)
+                .configure(config_discovery_api)
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)

@@ -3600,6 +3600,104 @@ pub struct RecommendPointGroups {
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorExample {
+    #[prost(oneof = "vector_example::Example", tags = "1, 2")]
+    pub example: ::core::option::Option<vector_example::Example>,
+}
+/// Nested message and enum types in `VectorExample`.
+pub mod vector_example {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Example {
+        #[prost(message, tag = "1")]
+        Id(super::PointId),
+        #[prost(message, tag = "2")]
+        Vector(super::Vector),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextExamplePair {
+    #[prost(message, optional, tag = "1")]
+    pub positive: ::core::option::Option<VectorExample>,
+    #[prost(message, optional, tag = "2")]
+    pub negative: ::core::option::Option<VectorExample>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverPoints {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Use this as the primary search objective
+    #[prost(message, optional, tag = "2")]
+    pub target: ::core::option::Option<VectorExample>,
+    /// Search will be constrained by these pairs of examples
+    #[prost(message, repeated, tag = "3")]
+    pub context_pairs: ::prost::alloc::vec::Vec<ContextExamplePair>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "4")]
+    #[validate]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
+    #[prost(uint64, tag = "5")]
+    #[validate(range(min = 1))]
+    pub limit: u64,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "7")]
+    #[validate]
+    pub params: ::core::option::Option<SearchParams>,
+    /// Offset of the result
+    #[prost(uint64, optional, tag = "8")]
+    pub offset: ::core::option::Option<u64>,
+    /// Define which vector to use for recommendation, if not specified - default vector
+    #[prost(string, optional, tag = "9")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "10")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Name of the collection to use for points lookup, if not specified - use current collection
+    #[prost(message, optional, tag = "11")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "12")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "13")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverBatchPoints {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    #[validate]
+    pub discover_points: ::prost::alloc::vec::Vec<DiscoverPoints>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "3")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3908,6 +4006,26 @@ pub struct RecommendResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<BatchResult>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverBatchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<BatchResult>,
     /// Time spent to process
@@ -4924,6 +5042,70 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         ///
+        /// Use context and a target to find the most similar points, constrained by the context.
+        ///
+        /// When using only the context, a special search is performed where pairs of points are
+        /// used to generate a loss that guides the search towards the zone where most positive
+        /// examples overlap. This means that the score minimizes the scenario of finding a point
+        /// closer to a negative than to a positive part of a pair.
+        /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
+        /// and it becomes normal that many points can have 0.0 as score.
+        ///
+        /// Using only a target is equivalent to regular search, so the score is the distance to the target.
+        ///
+        /// When using both context and target, the score behaves a little different: The
+        /// integer part of the score represents the "rank" with respect to the context, while the
+        /// decimal part of the score relates to the distance to the target.
+        pub async fn discover(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DiscoverPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Discover");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Discover"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Batch request points based on [positive, negative] pairs of examples, and/or a target
+        pub async fn discover_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DiscoverBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverBatchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/DiscoverBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "DiscoverBatch"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
         /// Count points in collection with given filtering conditions
         pub async fn count(
             &mut self,
@@ -5130,6 +5312,37 @@ pub mod points_server {
             request: tonic::Request<super::RecommendPointGroups>,
         ) -> std::result::Result<
             tonic::Response<super::RecommendGroupsResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Use context and a target to find the most similar points, constrained by the context.
+        ///
+        /// When using only the context, a special search is performed where pairs of points are
+        /// used to generate a loss that guides the search towards the zone where most positive
+        /// examples overlap. This means that the score minimizes the scenario of finding a point
+        /// closer to a negative than to a positive part of a pair.
+        /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
+        /// and it becomes normal that many points can have 0.0 as score.
+        ///
+        /// Using only a target is equivalent to regular search, so the score is the distance to the target.
+        ///
+        /// When using both context and target, the score behaves a little different: The
+        /// integer part of the score represents the "rank" with respect to the context, while the
+        /// decimal part of the score relates to the distance to the target.
+        async fn discover(
+            &self,
+            request: tonic::Request<super::DiscoverPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Batch request points based on [positive, negative] pairs of examples, and/or a target
+        async fn discover_batch(
+            &self,
+            request: tonic::Request<super::DiscoverBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverBatchResponse>,
             tonic::Status,
         >;
         ///
@@ -6035,6 +6248,96 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/Discover" => {
+                    #[allow(non_camel_case_types)]
+                    struct DiscoverSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::DiscoverPoints>
+                    for DiscoverSvc<T> {
+                        type Response = super::DiscoverResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DiscoverPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::discover(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DiscoverSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/DiscoverBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct DiscoverBatchSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::DiscoverBatchPoints>
+                    for DiscoverBatchSvc<T> {
+                        type Response = super::DiscoverBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DiscoverBatchPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::discover_batch(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DiscoverBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/qdrant.Points/Count" => {
                     #[allow(non_camel_case_types)]
                     struct CountSvc<T: Points>(pub Arc<T>);
@@ -6340,8 +6643,33 @@ pub struct RecoQuery {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextPair {
+    #[prost(message, optional, tag = "1")]
+    pub positive: ::core::option::Option<Vector>,
+    #[prost(message, optional, tag = "2")]
+    pub negative: ::core::option::Option<Vector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoveryQuery {
+    #[prost(message, optional, tag = "1")]
+    pub target: ::core::option::Option<Vector>,
+    #[prost(message, repeated, tag = "2")]
+    pub context_pairs: ::prost::alloc::vec::Vec<ContextPair>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextQuery {
+    #[prost(message, repeated, tag = "1")]
+    pub context_pairs: ::prost::alloc::vec::Vec<ContextPair>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryEnum {
-    #[prost(oneof = "query_enum::Query", tags = "1, 2")]
+    #[prost(oneof = "query_enum::Query", tags = "1, 2, 3, 4")]
     pub query: ::core::option::Option<query_enum::Query>,
 }
 /// Nested message and enum types in `QueryEnum`.
@@ -6356,6 +6684,12 @@ pub mod query_enum {
         /// Recommend points with higher similarity to positive examples
         #[prost(message, tag = "2")]
         RecommendBestScore(super::RecoQuery),
+        /// Search for points that get closer to a target, constrained by a context of positive and negative pairs
+        #[prost(message, tag = "3")]
+        Discover(super::DiscoveryQuery),
+        /// Use only the context to find points that minimize loss against negative examples
+        #[prost(message, tag = "4")]
+        Context(super::ContextQuery),
     }
 }
 /// This is only used internally, so it makes more sense to add it here rather than in points.proto

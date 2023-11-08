@@ -352,6 +352,41 @@ message RecommendPointGroups {
   optional uint64 timeout = 20; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
+message VectorExample {
+  oneof example {
+    PointId id = 1;
+    Vector vector = 2;
+  }
+}
+
+message ContextExamplePair {
+  VectorExample positive = 1;
+  VectorExample negative = 2;
+}
+
+message DiscoverPoints {
+  string collection_name = 1; // name of the collection
+  VectorExample target = 2; // Use this as the primary search objective
+  repeated ContextExamplePair context_pairs = 3; // Search will be constrained by these pairs of examples
+  Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
+  uint64 limit = 5; // Max number of result
+  WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
+  SearchParams params = 7; // Search config
+  optional uint64 offset = 8; // Offset of the result
+  optional string using = 9; // Define which vector to use for recommendation, if not specified - default vector
+  optional WithVectorsSelector with_vectors = 10; // Options for specifying which vectors to include into response
+  optional LookupLocation lookup_from = 11; // Name of the collection to use for points lookup, if not specified - use current collection
+  optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
+}
+
+message DiscoverBatchPoints {
+  string collection_name = 1; // Name of the collection
+  repeated DiscoverPoints discover_points = 2;
+  optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
+}
+
 message CountPoints {
   string collection_name = 1; // name of the collection
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
@@ -499,6 +534,16 @@ message RecommendResponse {
 }
 
 message RecommendBatchResponse {
+  repeated BatchResult result = 1;
+  double time = 2; // Time spent to process
+}
+
+message DiscoverResponse {
+  repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
+}
+
+message DiscoverBatchResponse {
   repeated BatchResult result = 1;
   double time = 2; // Time spent to process
 }

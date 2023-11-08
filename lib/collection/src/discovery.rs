@@ -1,9 +1,8 @@
-use std::iter;
 use std::time::Duration;
 
 use futures::Future;
 use itertools::Itertools;
-use segment::data_types::vectors::{NamedQuery, NamedVector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{NamedQuery, DEFAULT_VECTOR_NAME};
 use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -64,9 +63,9 @@ where
 
     // Validate context_pairs and/or target have value(s)
     request_batch.searches.iter().try_for_each(|request| {
-        let no_pairs = request.context_pairs.is_none()
+        let no_pairs = request.context.is_none()
             || request
-                .context_pairs
+                .context
                 .as_ref()
                 .is_some_and(|pairs| pairs.is_empty());
 
@@ -131,12 +130,12 @@ where
         .cloned();
 
         let context_pairs = request
-            .context_pairs
+            .context
             .iter()
             .flatten()
             .map(|pair| {
                 let mut vector_pair = convert_to_vectors(
-                    iter::once(&pair.0).chain(iter::once(&pair.1)),
+                    pair.iter(),
                     &referenced_vectors,
                     &lookup_vector_name,
                     lookup_collection_name,
@@ -152,20 +151,11 @@ where
             .collect_vec();
 
         let query: QueryEnum = match (target, context_pairs) {
-            // Target and pairs => Discovery
-            (Some(target), pairs) if !pairs.is_empty() => QueryEnum::Discover(NamedQuery {
+            // Target with/without pairs => Discovery
+            (Some(target), pairs) => QueryEnum::Discover(NamedQuery {
                 query: DiscoveryQuery::new(target, pairs),
                 using: Some(lookup_vector_name),
             }),
-
-            // Only target => Nearest
-            (Some(target), _) => QueryEnum::Nearest(
-                NamedVector {
-                    name: lookup_vector_name,
-                    vector: target,
-                }
-                .into(),
-            ),
 
             // Only pairs => Context
             (None, pairs) => QueryEnum::Context(NamedQuery {
@@ -215,13 +205,9 @@ where
 
 fn iterate_examples(request: &DiscoverRequest) -> impl Iterator<Item = &RecommendExample> {
     request
-        .context_pairs
+        .context
         .iter()
-        .flat_map(|pairs| {
-            pairs
-                .iter()
-                .flat_map(|pair| iter::once(&pair.0).chain(iter::once(&pair.1)))
-        })
+        .flat_map(|pairs| pairs.iter().flat_map(|pair| pair.iter()))
         .chain(request.target.iter())
 }
 

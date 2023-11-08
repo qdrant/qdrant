@@ -5,26 +5,30 @@ use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
     points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
     CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
-    DeletePointVectors, DeletePoints, FieldType, GetPoints, GetResponse, PayloadIndexParams,
-    PointsOperationResponse, PointsSelector, ReadConsistency as ReadConsistencyGrpc,
-    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
-    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints,
-    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
+    FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponse, PointsSelector,
+    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
+    SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
+    UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::conversions::write_ordering_from_proto;
+use collection::operations::conversions::{
+    try_discover_request_from_grpc, write_ordering_from_proto,
+};
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation,
 };
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequestBatch, PointRequest, RecommendExample,
-    RecommendRequestBatch, ScrollRequest, SearchRequest, SearchRequestBatch,
+    default_exact_count, CoreSearchRequestBatch, DiscoverRequestBatch, PointRequest,
+    RecommendExample, RecommendRequestBatch, ScrollRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
+use itertools::Itertools;
 use segment::data_types::vectors::NamedVector;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -848,6 +852,7 @@ pub async fn recommend(
     toc: &TableOfContent,
     recommend_points: RecommendPoints,
 ) -> Result<Response<RecommendResponse>, Status> {
+    // TODO(luis): check if we can make this into a From impl
     let RecommendPoints {
         collection_name,
         positive,
@@ -989,6 +994,65 @@ pub async fn recommend_groups(
 
     let response = RecommendGroupsResponse {
         result: Some(groups_result.into()),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn discover(
+    toc: &TableOfContent,
+    discover_points: DiscoverPoints,
+) -> Result<Response<DiscoverResponse>, Status> {
+    let (request, collection_name, read_consistency, timeout) =
+        try_discover_request_from_grpc(discover_points)?;
+
+    let timing = Instant::now();
+    let discovered_points = toc
+        .discover(&collection_name, request, read_consistency, timeout)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = DiscoverResponse {
+        result: discovered_points
+            .into_iter()
+            .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn discover_batch(
+    toc: &TableOfContent,
+    collection_name: String,
+    discover_points: Vec<DiscoverPoints>,
+    read_consistency: Option<ReadConsistencyGrpc>,
+    timeout: Option<Duration>,
+) -> Result<Response<DiscoverBatchResponse>, Status> {
+    let searches = discover_points
+        .into_iter()
+        .map(|discover_points| Ok::<_, Status>(try_discover_request_from_grpc(discover_points)?.0))
+        .try_collect()?;
+
+    let discover_batch = DiscoverRequestBatch { searches };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let scored_points = toc
+        .discover_batch(&collection_name, discover_batch, read_consistency, timeout)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = DiscoverBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
+            .collect(),
         time: timing.elapsed().as_secs_f64(),
     };
 

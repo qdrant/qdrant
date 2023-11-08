@@ -1,21 +1,25 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
+use std::time::Duration;
 
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    Named, NamedQuery, NamedVector, VectorStruct, DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVector, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, QuantizationConfig};
+use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
 use tonic::Status;
 
+use super::consistency_params::ReadConsistency;
 use super::types::{
-    BaseGroupRequest, CoreSearchRequest, GroupsResult, PointGroup, QueryEnum, RecommendExample,
-    RecommendGroupsRequest, RecommendStrategy, SearchGroupsRequest, VectorParamsDiff,
-    VectorsConfigDiff,
+    BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequest, GroupsResult,
+    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequest, RecommendStrategy,
+    SearchGroupsRequest, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -125,6 +129,77 @@ pub fn try_record_from_grpc(
         payload,
         vector,
     })
+}
+
+pub fn try_discover_request_from_grpc(
+    value: api::grpc::qdrant::DiscoverPoints,
+) -> Result<
+    (
+        DiscoverRequest,
+        String,
+        Option<ReadConsistency>,
+        Option<Duration>,
+    ),
+    Status,
+> {
+    let api::grpc::qdrant::DiscoverPoints {
+        collection_name,
+        target,
+        context_pairs,
+        filter,
+        limit,
+        offset,
+        with_payload,
+        params,
+        using,
+        with_vectors,
+        lookup_from,
+        read_consistency,
+        timeout,
+    } = value;
+
+    let target = target.map(TryInto::try_into).transpose()?;
+
+    let context_pairs = context_pairs
+        .into_iter()
+        .map(|pair| {
+            match (
+                pair.positive.map(|p| p.try_into()),
+                pair.negative.map(|n| n.try_into()),
+            ) {
+                (Some(Ok(positive)), Some(Ok(negative))) => {
+                    Ok(ContextExamplePair { positive, negative })
+                }
+                (Some(Err(e)), _) | (_, Some(Err(e))) => Err(e),
+                (None, _) | (_, None) => Err(Status::invalid_argument(
+                    "Both positive and negative are required in a context pair",
+                )),
+            }
+        })
+        .try_collect()?;
+
+    let request = DiscoverRequest {
+        target,
+        context: Some(context_pairs),
+        filter: filter.map(|f| f.try_into()).transpose()?,
+        params: params.map(|p| p.into()),
+        limit: limit as usize,
+        offset: offset.unwrap_or_default() as usize,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: Some(
+            with_vectors
+                .map(|selector| selector.into())
+                .unwrap_or_default(),
+        ),
+        using: using.map(|u| u.into()),
+        lookup_from: lookup_from.map(|l| l.into()),
+    };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timeout = timeout.map(Duration::from_secs);
+
+    Ok((request, collection_name, read_consistency, timeout))
 }
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
@@ -784,23 +859,44 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
             QueryEnum::RecommendBestScore(named) => api::grpc::qdrant::QueryEnum {
                 query: Some(api::grpc::qdrant::query_enum::Query::RecommendBestScore(
                     api::grpc::qdrant::RecoQuery {
-                        positives: named
+                        positives: named.query.positives.into_iter().map_into().collect(),
+                        negatives: named.query.negatives.into_iter().map_into().collect(),
+                    },
+                )),
+            },
+            QueryEnum::Discover(named) => api::grpc::qdrant::QueryEnum {
+                query: Some(api::grpc::qdrant::query_enum::Query::Discover(
+                    api::grpc::qdrant::DiscoveryQuery {
+                        target: Some(api::grpc::qdrant::Vector {
+                            data: named.query.target,
+                        }),
+                        context_pairs: named
                             .query
-                            .positives
+                            .pairs
                             .into_iter()
-                            .map(|v| api::grpc::qdrant::Vector { data: v })
-                            .collect(),
-                        negatives: named
-                            .query
-                            .negatives
-                            .into_iter()
-                            .map(|v| api::grpc::qdrant::Vector { data: v })
+                            .map(|pair| api::grpc::qdrant::ContextPair {
+                                positive: Some(pair.positive.into()),
+                                negative: Some(pair.negative.into()),
+                            })
                             .collect(),
                     },
                 )),
             },
-            QueryEnum::Discover(_) => todo!("luis in other PR"),
-            QueryEnum::Context(_) => todo!("luis in other PR"),
+            QueryEnum::Context(named) => api::grpc::qdrant::QueryEnum {
+                query: Some(api::grpc::qdrant::query_enum::Query::Context(
+                    api::grpc::qdrant::ContextQuery {
+                        context_pairs: named
+                            .query
+                            .pairs
+                            .into_iter()
+                            .map(|pair| api::grpc::qdrant::ContextPair {
+                                positive: Some(pair.positive.into()),
+                                negative: Some(pair.negative.into()),
+                            })
+                            .collect(),
+                    },
+                )),
+            },
         }
     }
 }
@@ -851,6 +947,20 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookupInterface {
     }
 }
 
+fn try_context_pair_from_grpc(
+    pair: api::grpc::qdrant::ContextPair,
+) -> Result<ContextPair<VectorType>, Status> {
+    match (pair.positive, pair.negative) {
+        (Some(positive), Some(negative)) => Ok(ContextPair {
+            positive: positive.data,
+            negative: negative.data,
+        }),
+        _ => Err(Status::invalid_argument(
+            "All context pairs must have both positive and negative parts",
+        )),
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     type Error = Status;
 
@@ -858,27 +968,61 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
         let query = value
             .query
             .and_then(|query| query.query)
-            .map(|query| match query {
-                api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
-                    QueryEnum::Nearest(match value.vector_name {
-                        Some(name) => NamedVector {
-                            name,
-                            vector: vector.data,
-                        }
-                        .into(),
-                        None => vector.data.into(),
-                    })
-                }
-                api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
-                    QueryEnum::RecommendBestScore(NamedQuery {
-                        query: RecoQuery::new(
-                            query.positives.into_iter().map(|v| v.data).collect(),
-                            query.negatives.into_iter().map(|v| v.data).collect(),
-                        ),
-                        using: value.vector_name,
-                    })
-                }
+            .map(|query| {
+                Ok(match query {
+                    api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
+                        QueryEnum::Nearest(match value.vector_name {
+                            Some(name) => NamedVector {
+                                name,
+                                vector: vector.data,
+                            }
+                            .into(),
+                            None => vector.data.into(),
+                        })
+                    }
+                    api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
+                        QueryEnum::RecommendBestScore(NamedQuery {
+                            query: RecoQuery::new(
+                                query.positives.into_iter().map(|v| v.data).collect(),
+                                query.negatives.into_iter().map(|v| v.data).collect(),
+                            ),
+                            using: value.vector_name,
+                        })
+                    }
+                    api::grpc::qdrant::query_enum::Query::Discover(query) => {
+                        let target = match query.target {
+                            Some(target) => target,
+                            None => {
+                                return Err(Status::invalid_argument("Target is not specified"))
+                            }
+                        };
+
+                        let pairs = query
+                            .context_pairs
+                            .into_iter()
+                            .map(try_context_pair_from_grpc)
+                            .try_collect()?;
+
+                        QueryEnum::Discover(NamedQuery {
+                            query: DiscoveryQuery::new(target.data, pairs),
+                            using: value.vector_name,
+                        })
+                    }
+                    api::grpc::qdrant::query_enum::Query::Context(query) => {
+                        let pairs = query
+                            .context_pairs
+                            .into_iter()
+                            .map(try_context_pair_from_grpc)
+                            .try_collect()?;
+
+                        QueryEnum::Context(NamedQuery {
+                            query: ContextQuery::new(pairs),
+                            using: value.vector_name,
+                        })
+                    }
+                })
             })
+            .transpose()?
             .ok_or(Status::invalid_argument("Query is not specified"))?;
 
         Ok(Self {
@@ -1061,6 +1205,25 @@ impl TryFrom<api::grpc::qdrant::PointId> for RecommendExample {
 impl From<api::grpc::qdrant::Vector> for RecommendExample {
     fn from(value: api::grpc::qdrant::Vector) -> Self {
         Self::Vector(value.data)
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::VectorExample) -> Result<Self, Self::Error> {
+        let example = match value.example {
+            Some(api::grpc::qdrant::vector_example::Example::Id(id)) => {
+                Self::PointId(id.try_into()?)
+            }
+            Some(api::grpc::qdrant::vector_example::Example::Vector(vector)) => {
+                Self::Vector(vector.data)
+            }
+            None => Err(Status::invalid_argument(
+                "Vector example, which can be id or bare vector, is malformed",
+            ))?,
+        };
+        Ok(example)
     }
 }
 

@@ -136,7 +136,7 @@ pub type VectorElementType = f32;
 
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
-/// Type for vector
+/// Type for dense vector
 pub type VectorType = Vec<VectorElementType>;
 
 pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
