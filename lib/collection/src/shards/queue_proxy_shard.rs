@@ -133,7 +133,7 @@ impl QueueProxyShard {
     ///
     /// # Cancel safety
     ///
-    /// This method is *not* cancel safe.
+    /// This method is *not* cancel safe, it consumes `self`.
     ///
     /// If `cancel` is triggered - finalization may not actually complete in which case an error is
     /// returned. None, some or all operations may be transmitted to the remote.

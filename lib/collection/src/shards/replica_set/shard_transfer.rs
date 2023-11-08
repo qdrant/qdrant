@@ -203,7 +203,9 @@ impl ShardReplicaSet {
     ///
     /// # Cancel safety
     ///
-    /// This method is *not* cancel safe.
+    /// This method is cancel safe.
+    ///
+    /// If `cancel` is triggered - the queue proxy may not be reverted to a local proxy.
     pub async fn revert_queue_proxy_local(&self) {
         let mut local_write = self.local.write().await;
 

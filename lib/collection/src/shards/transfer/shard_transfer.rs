@@ -246,6 +246,14 @@ async fn transfer_stream_records(
 /// - The local shard is un-proxified
 /// - The shard transfer is finished
 /// - The remote shard state is set to `Active` through consensus
+///
+/// # Cancel safety
+///
+/// This method is *not* cancel safe.
+///
+/// If `cancel` is triggered - the remote shard may only be partially recovered/transferred and the
+/// local shard may be left in an unexpected state. This must be resolved manually in case of
+/// cancellation.
 #[allow(clippy::too_many_arguments)]
 async fn transfer_snapshot(
     transfer_config: ShardTransfer,
