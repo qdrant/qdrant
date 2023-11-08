@@ -99,8 +99,7 @@ impl Batch {
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
     pub points: Vec<PointIdType>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 
@@ -117,14 +116,12 @@ impl From<Vec<PointIdType>> for PointIdsList {
 #[serde(rename_all = "snake_case")]
 pub struct FilterSelector {
     pub filter: Filter,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PointsSelector {
     /// Select points by list of IDs
     PointIdsSelector(PointIdsList),
@@ -159,16 +156,14 @@ pub struct PointSyncOperation {
 #[derive(Debug, Deserialize, Serialize, Clone, Validate, JsonSchema)]
 pub struct PointsBatch {
     pub batch: Batch,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, Validate)]
 pub struct PointsList {
     pub points: Vec<PointStruct>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 

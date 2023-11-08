@@ -19,8 +19,7 @@ pub struct UpdateVectors {
     #[validate]
     #[validate(length(min = 1, message = "must specify points to update"))]
     pub points: Vec<PointVectors>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -46,8 +45,7 @@ pub struct DeleteVectors {
     #[serde(alias = "vectors")]
     #[validate(length(min = 1, message = "must specify vector names to delete"))]
     pub vector: HashSet<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 

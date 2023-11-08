@@ -17,8 +17,7 @@ pub struct SetPayload {
     pub points: Option<Vec<PointIdType>>,
     /// Assigns payload to each point that satisfy this filter condition
     pub filter: Option<Filter>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 
@@ -76,8 +75,7 @@ pub struct DeletePayload {
     pub points: Option<Vec<PointIdType>>,
     /// Deletes values from points that satisfy this filter condition
     pub filter: Option<Filter>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
 
