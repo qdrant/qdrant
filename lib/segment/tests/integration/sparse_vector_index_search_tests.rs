@@ -1,113 +1,38 @@
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use segment::common::operation_error::OperationResult;
-use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::QueryVector;
-use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::STR_KEY;
+use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
-use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::{PayloadIndex, VectorIndex};
-use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
-use segment::types::{Condition, Distance, FieldCondition, Filter, Payload};
-use segment::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use segment::types::{Condition, FieldCondition, Filter, Payload};
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
-use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
 /// Max dimension of sparse vectors used in tests
 const MAX_SPARSE_DIM: usize = 512;
 
-/// Helper to open a test sparse vector index
-fn fixture_open_sparse_index<I: InvertedIndex>(
-    index_dir: &Path,
-    num_vectors: usize, // used to size the id tracker
-) -> OperationResult<SparseVectorIndex<I>> {
-    // temp dirs
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-
-    // setup
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_vectors)));
-    let payload_storage = InMemoryPayloadStorage::default();
-    let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
-    let payload_index = StructPayloadIndex::open(
-        wrapped_payload_storage,
-        id_tracker.clone(),
-        payload_dir.path(),
-        true,
-    )?;
-    let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
-
-    let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot)?;
-
-    let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
-        id_tracker,
-        vector_storage.clone(),
-        wrapped_payload_index,
-        index_dir,
-    )?;
-
-    Ok(sparse_vector_index)
-}
-
-/// Prepares a sparse vector index with random sparse vectors
-fn fixture_sparse_index_ram<R: Rng + ?Sized>(
-    rnd: &mut R,
-    max_dim: usize,
-    stopped: &AtomicBool,
-) -> SparseVectorIndex<InvertedIndexRam> {
-    // test params
-    let num_vectors = 1000;
-
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
-    let mut sparse_vector_index = fixture_open_sparse_index(index_dir.path(), num_vectors).unwrap();
-    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
-
-    // add points to storage
-    for idx in 0..num_vectors {
-        let vec = &random_sparse_vector(rnd, max_dim);
-        borrowed_storage
-            .insert_vector(idx as PointOffsetType, vec.into())
-            .unwrap();
-    }
-    drop(borrowed_storage);
-
-    // assert all points are in storage
-    assert_eq!(
-        sparse_vector_index
-            .vector_storage
-            .borrow()
-            .available_vector_count(),
-        num_vectors
-    );
-
-    // build index to refresh RAM index
-    sparse_vector_index.build_index(stopped).unwrap();
-    assert_eq!(sparse_vector_index.indexed_vector_count(), num_vectors);
-    sparse_vector_index
-}
+/// Number of vectors to index in tests
+const NUM_VECTORS: usize = 1000;
 
 #[test]
 fn sparse_vector_index_ram_no_filter_search() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let sparse_vector_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
+    let sparse_vector_index =
+        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
 
     // random query vectors
     let attempts = 100;
@@ -191,18 +116,20 @@ fn sparse_vector_index_consistent_with_storage() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let sparse_vector_ram_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
+    let sparse_vector_ram_index =
+        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
 
     // check consistency with underlying RAM inverted index
     check_index_storage_consistency(&sparse_vector_ram_index);
 
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
     // copy index mmap and save to disk
-    let _mmap_inverted_index = InvertedIndexMmap::convert_and_save(
+    let mmap_inverted_index = InvertedIndexMmap::convert_and_save(
         &sparse_vector_ram_index.inverted_index,
         &mmap_index_dir,
     )
     .unwrap();
+    drop(mmap_inverted_index);
 
     // load index from memmap file
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
@@ -232,7 +159,8 @@ fn sparse_vector_index_ram_deleted_points_search() {
     let top = 10;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let mut sparse_vector_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
+    let mut sparse_vector_index =
+        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
 
     // sanity check (all indexed, no deleted points)
     assert_eq!(
@@ -319,7 +247,8 @@ fn sparse_vector_index_ram_filtered_search() {
     let field_value = "important value";
 
     // setup index
-    let sparse_vector_index = fixture_sparse_index_ram(&mut rnd, MAX_SPARSE_DIM, &stopped);
+    let sparse_vector_index =
+        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
 
     // query index by payload
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
