@@ -3,6 +3,7 @@
 syntax = "proto3";
 
 package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 // `Struct` represents a structured data value, consisting of fields
 // which map to dynamically typed values. In some languages, `Struct`

@@ -11,6 +11,7 @@ import "shard_snapshots_service.proto";
 import "snapshots_service.proto";
 
 package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 service Qdrant {
   rpc HealthCheck (HealthCheckRequest) returns (HealthCheckReply) {}

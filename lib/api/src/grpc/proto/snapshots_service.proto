@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "google/protobuf/timestamp.proto";
 

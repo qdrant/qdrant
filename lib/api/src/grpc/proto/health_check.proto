@@ -2,6 +2,7 @@
 syntax = "proto3";
 
 package grpc.health.v1;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 message HealthCheckRequest {
   string service = 1;

@@ -3,6 +3,7 @@ syntax = "proto3";
 import "collections.proto";
 
 package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 service Collections {
   /*

@@ -1,5 +1,6 @@
 syntax = "proto3";
 package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 message VectorParams {
   uint64 size = 1; // Size of the vectors
