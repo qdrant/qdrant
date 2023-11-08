@@ -593,7 +593,7 @@ impl ContextExamplePair {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct DiscoverRequest {
-    /// Look for vectors closest to this
+    /// Look for vectors closest to this.
     ///
     /// When using the target (with or without context), the integer part of the score represents
     /// the "rank" with respect to the context, while the decimal part of the score relates to the
