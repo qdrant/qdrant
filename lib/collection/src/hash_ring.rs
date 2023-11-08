@@ -71,8 +71,8 @@ mod tests {
 
         for i in 0..20 {
             match ring.get(&i) {
-                None => panic!("Key {} have no shard", i),
-                Some(x) => assert!(*x == 5 || *x == 7 || *x == 8 || *x == 20),
+                None => panic!("Key {i} has no shard"),
+                Some(x) => assert!([5, 7, 8, 20].contains(x)),
             }
         }
     }

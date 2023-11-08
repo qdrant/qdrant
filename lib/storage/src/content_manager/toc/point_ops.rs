@@ -291,9 +291,7 @@ impl TableOfContent {
         ordering: WriteOrdering,
     ) -> Result<UpdateResult, StorageError> {
         if shard_keys.is_empty() {
-            return Err(StorageError::bad_input(
-                "Empty shard keys selection".to_string(),
-            ));
+            return Err(StorageError::bad_input("Empty shard keys selection"));
         }
 
         let updates: Vec<_> = shard_keys

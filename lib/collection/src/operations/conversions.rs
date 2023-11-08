@@ -769,7 +769,7 @@ pub fn try_points_selector_from_grpc(
                     .ids
                     .into_iter()
                     .map(|p| p.try_into())
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .collect::<Result<_, _>>()?,
                 shard_key: shard_key_selector.map(ShardKeySelector::from),
             }))
         }

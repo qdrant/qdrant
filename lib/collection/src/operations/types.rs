@@ -778,7 +778,7 @@ impl CollectionError {
     pub fn shard_key_not_found(shard_key: &Option<ShardKey>) -> CollectionError {
         match shard_key {
             Some(shard_key) => CollectionError::NotFound {
-                what: format!("Shard key {} not found", shard_key),
+                what: format!("Shard key {shard_key} not found"),
             },
             None => CollectionError::NotFound {
                 what: "Shard expected, but not provided".to_string(),
