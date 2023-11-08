@@ -169,7 +169,7 @@ impl ShardReplicaSet {
                     Err((err, queue_proxy)) => {
                         log::error!("Failed to un-proxify local shard because transferring remaining queue items to remote failed: {err}");
                         let (wrapped_shard, _remote_shard) =
-                            queue_proxy.forget_updates_and_finalize().await;
+                            queue_proxy.forget_updates_and_finalize();
                         (Err(err), wrapped_shard)
                     }
                 };
@@ -206,7 +206,7 @@ impl ShardReplicaSet {
         };
 
         log::debug!("Forgetting queue proxy updates and reverting to local shard");
-        let (local_shard, _) = queue_proxy.forget_updates_and_finalize().await;
+        let (local_shard, _) = queue_proxy.forget_updates_and_finalize();
         let _ = local_write.insert(Shard::Local(local_shard));
     }
 

@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::collections::HashSet;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use itertools::Itertools;
@@ -95,7 +96,8 @@ pub struct UpdateHandler {
     /// Maximum version to acknowledge to WAL to prevent truncating too early
     /// This is used when another part still relies on part of the WAL, such as the queue proxy
     /// shard.
-    pub(super) max_ack_version: Arc<TokioMutex<Option<u64>>>,
+    /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
+    pub(super) max_ack_version: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
 }
@@ -123,7 +125,7 @@ impl UpdateHandler {
             flush_stop: None,
             runtime_handle,
             wal,
-            max_ack_version: Default::default(),
+            max_ack_version: Arc::new(u64::MAX.into()),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
@@ -487,7 +489,7 @@ impl UpdateHandler {
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        max_ack: Arc<TokioMutex<Option<u64>>>,
+        max_ack: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
     ) {
@@ -528,16 +530,14 @@ impl UpdateHandler {
             // Acknowledge confirmed version in WAL, but don't exceed specified maximum
             // This is to prevent truncating WAL entries that may still be used by other things
             // such as the queue proxy shard.
-            let max_ack_version = match *max_ack.lock().await {
-                Some(max_id) => {
-                    if confirmed_version > max_id {
-                        trace!("Acknowledging message {max_id} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
-                    }
-                    confirmed_version.min(max_id)
-                }
-                None => confirmed_version,
-            };
-            if let Err(err) = wal.lock().ack(max_ack_version) {
+            // Default maximum ack version is `u64::MAX` to allow acknowledging all confirmed.
+            let max_ack = max_ack.load(std::sync::atomic::Ordering::Relaxed);
+            if confirmed_version > max_ack {
+                trace!("Acknowledging message {max_ack} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
+            }
+            let ack = confirmed_version.min(max_ack);
+
+            if let Err(err) = wal.lock().ack(ack) {
                 segments.write().report_optimizer_error(err);
             }
         }
