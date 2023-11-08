@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-#[cfg(debug_assertions)]
-use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use cancel::future::cancel_on_token;
+use cancel::CancellationToken;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -74,6 +74,15 @@ impl QueueProxyShard {
     }
 
     /// Transfer all updates that the remote missed from WAL
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - none, some or all operations of that batch may be transmitted to the remote.
+    ///
+    /// The maximum acknowledged WAL version likely won't be updated. In the worst case this might
+    /// cause double sending operations. This should be fine as operations are idempotent.
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
         self.inner
             .as_ref()
@@ -121,11 +130,24 @@ impl QueueProxyShard {
     ///
     /// Because we have ownership (`self`) we have exclusive access to the internals. It guarantees
     /// that we will not process new operations on the shard while finalization is happening.
-    pub async fn finalize(self) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe, it consumes `self`.
+    ///
+    /// If `cancel` is triggered - finalization may not actually complete in which case an error is
+    /// returned. None, some or all operations may be transmitted to the remote.
+    pub async fn finalize(
+        self,
+        cancel: CancellationToken,
+    ) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
         // Transfer all updates, do not unwrap on failure but return error with self
-        match self.transfer_all_missed_updates().await {
-            Ok(_) => Ok(self.forget_updates_and_finalize()),
-            Err(err) => Err((err, self)),
+        match cancel_on_token(cancel, self.transfer_all_missed_updates()).await {
+            Ok(Ok(_)) => Ok(self.forget_updates_and_finalize()),
+            // Transmission error
+            Ok(Err(err)) => Err((err, self)),
+            // Cancellation error
+            Err(err) => Err((err.into(), self)),
         }
     }
 
@@ -256,7 +278,7 @@ impl ShardOperation for QueueProxyShard {
 #[cfg(debug_assertions)]
 impl Drop for QueueProxyShard {
     fn drop(&mut self) {
-        if !self.is_finalized() && !thread::panicking() {
+        if !self.is_finalized() && !std::thread::panicking() {
             panic!("To drop a queue proxy shard, finalize() must be used");
         }
     }
@@ -302,6 +324,15 @@ impl Inner {
     }
 
     /// Transfer all updates that the remote missed from WAL
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - none, some or all operations of that batch may be transmitted to the remote.
+    ///
+    /// The maximum acknowledged WAL version likely won't be updated. In the worst case this might
+    /// cause double sending operations. This should be fine as operations are idempotent.
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
         while !self.transfer_wal_batch().await? {}
 
@@ -316,6 +347,16 @@ impl Inner {
     ///
     /// Returns `true` if this was the last batch and we're now done. `false` if more batches must
     /// be sent.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - none, some or all operations of that batch may be transmitted to the remote.
+    ///
+    /// The internal field keeping track of the last transfer likely won't be updated. In the worst
+    /// case this might cause double sending operations. This should be fine as operations are
+    /// idempotent.
     async fn transfer_wal_batch(&self) -> CollectionResult<bool> {
         let mut update_lock = Some(self.update_lock.lock().await);
         let start_index = self.last_update_idx.load(Ordering::Relaxed) + 1;
@@ -344,10 +385,10 @@ impl Inner {
 
         // Transfer batch with retries and store last transferred ID
         let last_idx = batch.last().map(|(idx, _)| *idx);
-        for attempts in (0..BATCH_RETRIES).rev() {
+        for remaining_attempts in (0..BATCH_RETRIES).rev() {
             match transfer_operations_batch(&batch, &self.remote_shard).await {
-                Ok(()) => break,
-                Err(err) if attempts > 0 => {
+                Ok(()) => {}
+                Err(err) if remaining_attempts > 0 => {
                     log::error!(
                         "Failed to transfer batch of updates to peer {}, retrying: {err}",
                         self.remote_shard.peer_id,
@@ -356,9 +397,10 @@ impl Inner {
                 }
                 Err(err) => return Err(err),
             }
-        }
-        if let Some(idx) = last_idx {
-            self.last_update_idx.store(idx, Ordering::Relaxed);
+
+            if let Some(idx) = last_idx {
+                self.last_update_idx.store(idx, Ordering::Relaxed);
+            }
         }
 
         Ok(last_batch)
@@ -471,6 +513,12 @@ impl ShardOperation for Inner {
 }
 
 /// Transfer batch of operations without retries
+///
+/// # Cancel safety
+///
+/// This method is cancel safe.
+///
+/// If cancelled - none, some or all operations of the batch may be transmitted to the remote.
 async fn transfer_operations_batch(
     batch: &[(u64, CollectionUpdateOperations)],
     remote_shard: &RemoteShard,

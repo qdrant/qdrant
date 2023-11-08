@@ -1,5 +1,11 @@
 use super::*;
 
+/// # Cancel safety
+///
+/// This function is cancel safe.
+///
+/// If cancelled, the provided closure will still run to completion. It may return early by using
+/// the `CancellationToken`.
 pub async fn spawn_cancel_on_drop<Out, Task>(task: Task) -> Result<Out, Error>
 where
     Task: FnOnce(CancellationToken) -> Out + Send + 'static,
@@ -19,6 +25,12 @@ where
     Ok(output)
 }
 
+/// # Cancel safety
+///
+/// This function is cancel safe.
+///
+/// If cancelled, the provided closure will still run to completion. It may return early by using
+/// the `CancellationToken`.
 pub async fn spawn_cancel_on_token<Out, Task>(
     cancel: CancellationToken,
     task: Task,

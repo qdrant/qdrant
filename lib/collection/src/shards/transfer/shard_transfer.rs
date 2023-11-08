@@ -75,6 +75,9 @@ pub enum ShardTransferMethod {
     Snapshot,
 }
 
+/// # Cancel safety
+///
+/// This function is *not* cancel safe.
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
@@ -243,6 +246,14 @@ async fn transfer_stream_records(
 /// - The local shard is un-proxified
 /// - The shard transfer is finished
 /// - The remote shard state is set to `Active` through consensus
+///
+/// # Cancel safety
+///
+/// This method is *not* cancel safe.
+///
+/// If `cancel` is triggered - the remote shard may only be partially recovered/transferred and the
+/// local shard may be left in an unexpected state. This must be resolved manually in case of
+/// cancellation.
 #[allow(clippy::too_many_arguments)]
 async fn transfer_snapshot(
     transfer_config: ShardTransfer,
@@ -349,7 +360,9 @@ async fn transfer_snapshot(
 
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
-    replica_set.queue_proxy_into_forward_proxy().await?;
+    replica_set
+        .queue_proxy_into_forward_proxy(cancel.clone())
+        .await?;
 
     error_if_cancelled(&cancel)?;
 
@@ -778,6 +791,13 @@ where
             finished = match transfer_result {
                 Ok(()) => true,
                 Err(error) => {
+                    // Revert queue proxy if we still have any to clean up or prepare for the next attempt
+                    if let Some(replica_set) =
+                        shards_holder.read().await.get_shard(&transfer.shard_id)
+                    {
+                        replica_set.revert_queue_proxy_local().await;
+                    }
+
                     if matches!(error, CollectionError::Cancelled { .. }) {
                         return false;
                     }
@@ -786,13 +806,6 @@ where
                         transfer.shard_id,
                         transfer.to,
                     );
-
-                    // Revert queue proxy if we still have any to prepare for the next attempt
-                    if let Some(replica_set) =
-                        shards_holder.read().await.get_shard(&transfer.shard_id)
-                    {
-                        replica_set.revert_queue_proxy_local().await;
-                    }
 
                     false
                 }

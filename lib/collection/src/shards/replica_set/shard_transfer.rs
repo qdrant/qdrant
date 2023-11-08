@@ -1,3 +1,5 @@
+use cancel::future::cancel_on_token;
+use cancel::CancellationToken;
 use segment::types::PointIdType;
 
 use super::ShardReplicaSet;
@@ -121,6 +123,10 @@ impl ShardReplicaSet {
     }
 
     /// Un-proxify local shard wrapped as `ForwardProxy` or `QueueProxy`.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn un_proxify_local(&self) -> CollectionResult<()> {
         let mut local_write = self.local.write().await;
 
@@ -163,7 +169,7 @@ impl ShardReplicaSet {
                 );
 
                 // Finalize, insert local shard back and return finalize result
-                let result = proxy.finalize().await;
+                let result = proxy.finalize(CancellationToken::new()).await;
                 let (result, local_shard) = match result {
                     Ok((local_shard, _)) => (Ok(()), local_shard),
                     Err((err, queue_proxy)) => {
@@ -194,6 +200,12 @@ impl ShardReplicaSet {
     /// This intentionally forgets and drops updates pending to be transferred to the remote shard.
     /// The remote shard may therefore therefore be left in an inconsistent state, which should be
     /// resolved separately.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If `cancel` is triggered - the queue proxy may not be reverted to a local proxy.
     pub async fn revert_queue_proxy_local(&self) {
         let mut local_write = self.local.write().await;
 
@@ -267,17 +279,28 @@ impl ShardReplicaSet {
     /// # Errors
     ///
     /// Returns an error if transferring all updates to the remote failed.
-    pub async fn queue_proxy_into_forward_proxy(&self) -> CollectionResult<()> {
-        // First pass: transfer all missed updates with shared read lock
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
+    ///
+    /// If `cancel` is triggered - transforming the queue proxy into a forward proxy may not
+    /// actually complete in which case an error is returned. None, some or all queued operations
+    /// may be transmitted to the remote.
+    pub async fn queue_proxy_into_forward_proxy(
+        &self,
+        cancel: CancellationToken,
+    ) -> CollectionResult<()> {
+        // First pass: transfer all missed updates with shared read lock, cancellable
         {
             let local_read = self.local.read().await;
             let Some(Shard::QueueProxy(proxy)) = &*local_read else {
                 return Ok(());
             };
-            proxy.transfer_all_missed_updates().await?;
+            cancel_on_token(cancel.clone(), proxy.transfer_all_missed_updates()).await??;
         }
 
-        // Second pass: transfer new updates, safely finalize and transform
+        // Second pass: transfer new updates, safely finalize and transform, not cancellable
         let mut local_write = self.local.write().await;
         if !matches!(*local_write, Some(Shard::QueueProxy(_))) {
             return Ok(());
@@ -285,7 +308,7 @@ impl ShardReplicaSet {
         let Some(Shard::QueueProxy(queue_proxy)) = local_write.take() else {
             unreachable!();
         };
-        match queue_proxy.finalize().await {
+        match queue_proxy.finalize(cancel).await {
             // When finalization is successful, transform into forward proxy
             Ok((local_shard, remote_shard)) => {
                 log::trace!(
