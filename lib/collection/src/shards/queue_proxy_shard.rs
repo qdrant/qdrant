@@ -272,16 +272,27 @@ struct Inner {
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
+    /// Maximum acknowledged WAL version of the wrapped shard.
+    /// We keep it here for access in `set_max_ack_version()` without needing async locks.
+    /// See `set_max_ack_version()` and `UpdateHandler::max_ack_version` for more details.
+    max_ack_version: Arc<AtomicU64>,
 }
 
 impl Inner {
     pub async fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
         let last_idx = wrapped_shard.wal.lock().last_index();
+        let max_ack_version = wrapped_shard
+            .update_handler
+            .lock()
+            .await
+            .max_ack_version
+            .clone();
         let shard = Self {
             wrapped_shard,
             remote_shard,
             last_update_idx: last_idx.into(),
             update_lock: Default::default(),
+            max_ack_version,
         };
 
         // Set max acknowledged version for WAL to not truncate parts we still need to transfer later
@@ -361,10 +372,8 @@ impl Inner {
     ///
     /// Providing `None` will release this limitation.
     async fn set_max_ack_version(&self, max_version: Option<u64>) {
-        let update_handler = self.wrapped_shard.update_handler.lock().await;
-        update_handler
-            .max_ack_version
-            .store(max_version.unwrap_or(u64::MAX), Ordering::Relaxed);
+        let max_version = max_version.unwrap_or(u64::MAX);
+        self.max_ack_version.store(max_version, Ordering::Relaxed);
     }
 }
 
