@@ -124,7 +124,7 @@ impl QueueProxyShard {
     pub async fn finalize(self) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
         // Transfer all updates, do not unwrap on failure but return error with self
         match self.transfer_all_missed_updates().await {
-            Ok(_) => Ok(self.forget_updates_and_finalize().await),
+            Ok(_) => Ok(self.forget_updates_and_finalize()),
             Err(err) => Err((err, self)),
         }
     }
@@ -141,13 +141,13 @@ impl QueueProxyShard {
     /// This intentionally forgets and drops updates pending to be transferred to the remote shard.
     /// The remote shard is therefore left in an inconsistent state, which should be resolved
     /// separately.
-    pub async fn forget_updates_and_finalize(mut self) -> (LocalShard, RemoteShard) {
+    pub fn forget_updates_and_finalize(mut self) -> (LocalShard, RemoteShard) {
         // Unwrap queue proxy shards and release max acknowledged version for WAL
         let queue_proxy = self
             .inner
             .take()
             .expect("Queue proxy has already been finalized");
-        queue_proxy.set_max_ack_version(None).await;
+        queue_proxy.set_max_ack_version(None);
 
         (queue_proxy.wrapped_shard, queue_proxy.remote_shard)
     }
@@ -296,7 +296,7 @@ impl Inner {
         };
 
         // Set max acknowledged version for WAL to not truncate parts we still need to transfer later
-        shard.set_max_ack_version(Some(last_idx)).await;
+        shard.set_max_ack_version(Some(last_idx));
 
         shard
     }
@@ -307,7 +307,7 @@ impl Inner {
 
         // Set max acknowledged version for WAL to last item we transferred
         let last_idx = self.last_update_idx.load(Ordering::Relaxed);
-        self.set_max_ack_version(Some(last_idx)).await;
+        self.set_max_ack_version(Some(last_idx));
 
         Ok(())
     }
@@ -371,7 +371,7 @@ impl Inner {
     /// Using this function we set the WAL not to truncate past the given point.
     ///
     /// Providing `None` will release this limitation.
-    async fn set_max_ack_version(&self, max_version: Option<u64>) {
+    fn set_max_ack_version(&self, max_version: Option<u64>) {
         let max_version = max_version.unwrap_or(u64::MAX);
         self.max_ack_version.store(max_version, Ordering::Relaxed);
     }
