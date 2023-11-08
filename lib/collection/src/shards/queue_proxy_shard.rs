@@ -362,8 +362,9 @@ impl Inner {
     /// Providing `None` will release this limitation.
     async fn set_max_ack_version(&self, max_version: Option<u64>) {
         let update_handler = self.wrapped_shard.update_handler.lock().await;
-        let mut max_ack_version = update_handler.max_ack_version.lock().await;
-        *max_ack_version = max_version;
+        update_handler
+            .max_ack_version
+            .store(max_version.unwrap_or(u64::MAX), Ordering::Relaxed);
     }
 }
 
