@@ -14,7 +14,6 @@ multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 
 [dev-dependencies]
-tempfile = "3.8.0"
 criterion = "0.5"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
@@ -27,7 +26,7 @@ pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 
 
 [dependencies]
-
+tempfile = "3.8.0"
 parking_lot = "0.12"
 rayon = "1.7.0"
 num_cpus = "1.16"
@@ -114,3 +113,6 @@ harness = false
 name = "boolean_filtering"
 harness = false
 
+[[bench]]
+name = "sparse_index_search"
+harness = false
