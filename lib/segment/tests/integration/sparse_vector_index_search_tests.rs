@@ -21,7 +21,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
 /// Max dimension of sparse vectors used in tests
-const MAX_SPARSE_DIM: usize = 512;
+const MAX_SPARSE_DIM: usize = 2048;
 
 /// Number of vectors to index in tests
 const NUM_VECTORS: usize = 1000;
@@ -31,8 +31,19 @@ fn sparse_vector_index_ram_no_filter_search() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let sparse_vector_index =
-        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
+    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+
+    let sparse_vector_index = fixture_sparse_index_ram(
+        &mut rnd,
+        NUM_VECTORS,
+        MAX_SPARSE_DIM,
+        payload_dir.path(),
+        storage_dir.path(),
+        index_dir.path(),
+        &stopped,
+    );
 
     // random query vectors
     let attempts = 100;
@@ -116,8 +127,19 @@ fn sparse_vector_index_consistent_with_storage() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let sparse_vector_ram_index =
-        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
+    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+
+    let sparse_vector_ram_index = fixture_sparse_index_ram(
+        &mut rnd,
+        NUM_VECTORS,
+        MAX_SPARSE_DIM,
+        payload_dir.path(),
+        storage_dir.path(),
+        index_dir.path(),
+        &stopped,
+    );
 
     // check consistency with underlying RAM inverted index
     check_index_storage_consistency(&sparse_vector_ram_index);
@@ -147,8 +169,10 @@ fn sparse_vector_index_consistent_with_storage() {
 #[test]
 fn sparse_vector_index_load_missing_mmap() {
     let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
-        fixture_open_sparse_index(index_dir.path(), 0);
+        fixture_open_sparse_index(index_dir.path(), payload_dir.path(), storage_dir.path(), 0);
     // fails to open index if mmap file is missing
     assert!(sparse_vector_index.is_err())
 }
@@ -159,8 +183,19 @@ fn sparse_vector_index_ram_deleted_points_search() {
     let top = 10;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let mut sparse_vector_index =
-        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
+    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+
+    let mut sparse_vector_index = fixture_sparse_index_ram(
+        &mut rnd,
+        NUM_VECTORS,
+        MAX_SPARSE_DIM,
+        payload_dir.path(),
+        storage_dir.path(),
+        index_dir.path(),
+        &stopped,
+    );
 
     // sanity check (all indexed, no deleted points)
     assert_eq!(
@@ -243,14 +278,25 @@ fn sparse_vector_index_ram_deleted_points_search() {
 fn sparse_vector_index_ram_filtered_search() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
-    let field_name = "field";
-    let field_value = "important value";
+
+    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
 
     // setup index
-    let sparse_vector_index =
-        fixture_sparse_index_ram(&mut rnd, NUM_VECTORS, MAX_SPARSE_DIM, &stopped);
+    let sparse_vector_index = fixture_sparse_index_ram(
+        &mut rnd,
+        NUM_VECTORS,
+        MAX_SPARSE_DIM,
+        payload_dir.path(),
+        storage_dir.path(),
+        index_dir.path(),
+        &stopped,
+    );
 
     // query index by payload
+    let field_name = "field";
+    let field_value = "important value";
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         field_name,
         field_value.to_owned().into(),
@@ -314,4 +360,66 @@ fn sparse_vector_index_ram_filtered_search() {
         .unwrap();
     assert_eq!(after_result.len(), 1);
     assert_eq!(after_result[0].len(), half_indexed_count); // expect half of the points
+}
+
+#[test]
+fn sparse_vector_index_plain_search() {
+    let stopped = AtomicBool::new(false);
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+
+    // setup index
+    let sparse_vector_index = fixture_sparse_index_ram(
+        &mut rnd,
+        NUM_VECTORS,
+        MAX_SPARSE_DIM,
+        payload_dir.path(),
+        storage_dir.path(),
+        index_dir.path(),
+        &stopped,
+    );
+
+    // query index by payload
+    let field_name = "field";
+    let field_value = "important value";
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        field_name,
+        field_value.to_owned().into(),
+    )));
+
+    // query all sparse dimension to get all points
+    let query_vector: QueryVector = random_full_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
+
+    // empty when searching payload index directly
+    let before_plain_results = sparse_vector_index
+        .search_plain(&[&query_vector], &filter, 10, &stopped)
+        .unwrap();
+
+    assert_eq!(before_plain_results.len(), 1);
+    assert_eq!(before_plain_results[0].len(), 0);
+
+    let payload: Payload = json!({
+        field_name: field_value,
+    })
+    .into();
+
+    // add payload to all points
+    let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
+    for idx in 0..NUM_VECTORS {
+        payload_index
+            .assign(idx as PointOffsetType, &payload)
+            .unwrap();
+    }
+    drop(payload_index);
+
+    // same results when searching payload index directly
+    let after_plain_results = sparse_vector_index
+        .search_plain(&[&query_vector], &filter, NUM_VECTORS, &stopped)
+        .unwrap();
+
+    assert_eq!(after_plain_results.len(), 1);
+    assert_eq!(after_plain_results[0].len(), NUM_VECTORS);
 }

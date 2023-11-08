@@ -8,6 +8,7 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 pub struct SparseSearchesTelemetry {
     pub filtered_sparse: Arc<Mutex<OperationDurationsAggregator>>,
     pub unfiltered_sparse: Arc<Mutex<OperationDurationsAggregator>>,
+    pub filtered_plain: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl SparseSearchesTelemetry {
@@ -15,6 +16,7 @@ impl SparseSearchesTelemetry {
         SparseSearchesTelemetry {
             filtered_sparse: OperationDurationsAggregator::new(),
             unfiltered_sparse: OperationDurationsAggregator::new(),
+            filtered_plain: OperationDurationsAggregator::new(),
         }
     }
 }
@@ -30,7 +32,7 @@ impl From<&SparseSearchesTelemetry> for VectorIndexSearchesTelemetry {
         VectorIndexSearchesTelemetry {
             index_name: None,
             unfiltered_plain: Default::default(),
-            filtered_plain: Default::default(),
+            filtered_plain: value.filtered_plain.lock().get_statistics(),
             unfiltered_hnsw: Default::default(),
             filtered_small_cardinality: Default::default(),
             filtered_large_cardinality: Default::default(),

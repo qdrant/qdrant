@@ -215,6 +215,7 @@ impl<'a> PostingListIterator<'a> {
     /// If the iterator skipped to the end, None is returned and current index is set to the length of the list.
     /// Uses binary search.
     pub fn skip_to(&mut self, id: PointOffsetType) -> Option<&PostingElement> {
+        // Check if we are already at the end
         if self.current_index >= self.elements.len() {
             return None;
         }
