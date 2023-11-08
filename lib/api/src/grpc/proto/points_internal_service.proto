@@ -103,10 +103,26 @@ message RecoQuery {
   repeated Vector negatives = 2;
 }
 
+message ContextPair {
+  Vector positive = 1;
+  Vector negative = 2;
+}
+
+message DiscoveryQuery {
+  Vector target = 1;
+  repeated ContextPair context_pairs = 2;
+}
+
+message ContextQuery { 
+  repeated ContextPair context_pairs = 1; 
+}
+
 message QueryEnum {
   oneof query {
     Vector nearest_neighbors = 1; // ANN
     RecoQuery recommend_best_score = 2; // Recommend points with higher similarity to positive examples
+    DiscoveryQuery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
+    ContextQuery context = 4; // Use only the context to find points that minimize loss against negative examples
   }
 }
 

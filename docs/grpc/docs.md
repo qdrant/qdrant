@@ -92,6 +92,7 @@
     - [BatchResult](#qdrant-BatchResult)
     - [ClearPayloadPoints](#qdrant-ClearPayloadPoints)
     - [Condition](#qdrant-Condition)
+    - [ContextExamplePair](#qdrant-ContextExamplePair)
     - [CountPoints](#qdrant-CountPoints)
     - [CountResponse](#qdrant-CountResponse)
     - [CountResult](#qdrant-CountResult)
@@ -100,6 +101,10 @@
     - [DeletePayloadPoints](#qdrant-DeletePayloadPoints)
     - [DeletePointVectors](#qdrant-DeletePointVectors)
     - [DeletePoints](#qdrant-DeletePoints)
+    - [DiscoverBatchPoints](#qdrant-DiscoverBatchPoints)
+    - [DiscoverBatchResponse](#qdrant-DiscoverBatchResponse)
+    - [DiscoverPoints](#qdrant-DiscoverPoints)
+    - [DiscoverResponse](#qdrant-DiscoverResponse)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
@@ -169,6 +174,7 @@
     - [UpsertPoints](#qdrant-UpsertPoints)
     - [ValuesCount](#qdrant-ValuesCount)
     - [Vector](#qdrant-Vector)
+    - [VectorExample](#qdrant-VectorExample)
     - [Vectors](#qdrant-Vectors)
     - [VectorsSelector](#qdrant-VectorsSelector)
     - [WithLookup](#qdrant-WithLookup)
@@ -1557,6 +1563,22 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-ContextExamplePair"></a>
+
+### ContextExamplePair
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| positive | [VectorExample](#qdrant-VectorExample) |  |  |
+| negative | [VectorExample](#qdrant-VectorExample) |  |  |
+
+
+
+
+
+
 <a name="qdrant-CountPoints"></a>
 
 ### CountPoints
@@ -1693,6 +1715,83 @@ The JSON representation for `Value` is a JSON value.
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+
+
+
+
+
+
+<a name="qdrant-DiscoverBatchPoints"></a>
+
+### DiscoverBatchPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| discover_points | [DiscoverPoints](#qdrant-DiscoverPoints) | repeated |  |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+
+
+
+
+
+
+<a name="qdrant-DiscoverBatchResponse"></a>
+
+### DiscoverBatchResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [BatchResult](#qdrant-BatchResult) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-DiscoverPoints"></a>
+
+### DiscoverPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | name of the collection |
+| target | [VectorExample](#qdrant-VectorExample) |  | Use this as the primary search objective |
+| context_pairs | [ContextExamplePair](#qdrant-ContextExamplePair) | repeated | Search will be constrained by these pairs of examples |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| limit | [uint64](#uint64) |  | Max number of result |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| offset | [uint64](#uint64) | optional | Offset of the result |
+| using | [string](#string) | optional | Define which vector to use for recommendation, if not specified - default vector |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+
+
+
+
+
+
+<a name="qdrant-DiscoverResponse"></a>
+
+### DiscoverResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
 
 
 
@@ -2902,6 +3001,22 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-VectorExample"></a>
+
+### VectorExample
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [PointId](#qdrant-PointId) |  |  |
+| vector | [Vector](#qdrant-Vector) |  |  |
+
+
+
+
+
+
 <a name="qdrant-Vectors"></a>
 
 ### Vectors
@@ -3112,6 +3227,14 @@ How to use positive and negative vectors to find the results, default is `Averag
 | Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | RecommendBatch | [RecommendBatchPoints](#qdrant-RecommendBatchPoints) | [RecommendBatchResponse](#qdrant-RecommendBatchResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | RecommendGroups | [RecommendPointGroups](#qdrant-RecommendPointGroups) | [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field |
+| Discover | [DiscoverPoints](#qdrant-DiscoverPoints) | [DiscoverResponse](#qdrant-DiscoverResponse) | Use context and a target to find the most similar points, constrained by the context.
+
+When using only the context, a special search is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair. Since the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have 0.0 as score.
+
+Using only a target is equivalent to regular search, so the score is the distance to the target.
+
+When using both context and target, the score behaves a little different: The integer part of the score represents the &#34;rank&#34; with respect to the context, while the decimal part of the score relates to the distance to the target. |
+| DiscoverBatch | [DiscoverBatchPoints](#qdrant-DiscoverBatchPoints) | [DiscoverBatchResponse](#qdrant-DiscoverBatchResponse) | Batch request points based on [positive, negative] pairs of examples, and/or a target |
 | Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
 | UpdateBatch | [UpdateBatchPoints](#qdrant-UpdateBatchPoints) | [UpdateBatchResponse](#qdrant-UpdateBatchResponse) | Perform multiple update operations in one request |
 

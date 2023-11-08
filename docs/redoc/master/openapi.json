@@ -4697,6 +4697,211 @@
         }
       }
     },
+    "/collections/{collection_name}/points/discover": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Discover points",
+        "description": "Use context and a target to find the most similar points to the target, constrained by the context.\nWhen using only the context, a special search is performed where pairs of points are  used to generate a loss that guides the search towards the zone where most positive  examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair.  Since the score of a context relates to loss, the maximum score a point can get is 0.0,  and it becomes normal that many points can have 0.0 as score.\nWhen using target (with or without context), the score behaves a little different: The  integer part of the score represents the \"rank\" with respect to the context, while the decimal part of the score relates to the distance to the target.\n",
+        "operationId": "discover_points",
+        "requestBody": {
+          "description": "Request points based on {positive, negative} pairs of examples, and/or a target",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ScoredPoint"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/points/discover/batch": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Discover batch points",
+        "description": "Look for points based on target and/or positive and negative example pairs, in batch.",
+        "operationId": "discover_batch_points",
+        "requestBody": {
+          "description": "Batch request points based on { positive, negative } pairs of examples, and/or a target.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverRequestBatch"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/ScoredPoint"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/count": {
       "post": {
         "tags": [
@@ -9732,6 +9937,144 @@
             "type": "string"
           }
         ]
+      },
+      "DiscoverRequest": {
+        "description": "Use context and a target to find the most similar points, constrained by the context.",
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "target": {
+            "description": "Look for vectors closest to this\n\nWhen using the target (with or without context), the integer part of the score represents the \"rank\" with respect to the context, while the decimal part of the score relates to the distance to the target.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendExample"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "context": {
+            "description": "Pairs of { positive, negative } examples to provide context to the search.\n\nWhen using only the context, a special search is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair. Since the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have a score of 0.0.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextExamplePair"
+            },
+            "nullable": true
+          },
+          "filter": {
+            "description": "Look only for points which satisfies this conditions",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "params": {
+            "description": "Additional search params",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "limit": {
+            "description": "Max number of result to return",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
+          },
+          "offset": {
+            "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
+            "default": 0,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "with_payload": {
+            "description": "Select which payload to return with the response. Default: None",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "using": {
+            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsingVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "lookup_from": {
+            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LookupLocation"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "ContextExamplePair": {
+        "type": "object",
+        "required": [
+          "negative",
+          "positive"
+        ],
+        "properties": {
+          "positive": {
+            "$ref": "#/components/schemas/RecommendExample"
+          },
+          "negative": {
+            "$ref": "#/components/schemas/RecommendExample"
+          }
+        }
+      },
+      "DiscoverRequestBatch": {
+        "type": "object",
+        "required": [
+          "searches"
+        ],
+        "properties": {
+          "searches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoverRequest"
+            }
+          }
+        }
       }
     }
   }

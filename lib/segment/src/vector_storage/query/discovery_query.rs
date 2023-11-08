@@ -83,6 +83,8 @@ mod test {
     use std::cmp::Ordering;
 
     use common::types::ScoreType;
+    use itertools::Itertools;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -143,5 +145,51 @@ mod test {
             expected,
             "Comparison is incorrect, expected {expected:?} for {score} against {fixed_score}"
         );
+    }
+
+    proptest! {
+        #[test]
+        fn same_target_only_changes_rank(
+            target in -1000f32..1000f32,
+            pairs1 in prop::collection::vec((0f32..1000f32, 0.0f32..1000f32), 0..10),
+            pairs2 in prop::collection::vec((0f32..1000f32, 0.0f32..1000f32), 0..10),
+        ) {
+            let dummy_similarity = |x: &ScoreType| *x as ScoreType;
+
+            let pairs1 = pairs1.into_iter().map(ContextPair::from).collect();
+            let query1 = DiscoveryQuery::new(target, pairs1);
+            let score1 = query1.score_by(dummy_similarity);
+
+            let pairs2 = pairs2.into_iter().map(ContextPair::from).collect();
+            let query2 = DiscoveryQuery::new(target, pairs2);
+            let score2 = query2.score_by(dummy_similarity);
+
+            let target_part1 = score1 - score1.floor();
+            let target_part2 = score2 - score2.floor();
+
+            assert!((target_part1 - target_part2).abs() <= 1.0e-6, "Target part of score is not similar, score1: {score1}, score2: {score2}");
+        }
+
+        #[test]
+        fn same_context_only_changes_target(
+            target1 in -1000f32..1000f32,
+            target2 in -1000f32..1000f32,
+            pairs in prop::collection::vec((0f32..1000f32, 0.0f32..1000f32), 0..10),
+        )
+        {
+            let dummy_similarity = |x: &ScoreType| *x as ScoreType;
+
+            let pairs = pairs.into_iter().map(ContextPair::from).collect_vec();
+            let query1 = DiscoveryQuery::new(target1, pairs.clone());
+            let score1 = query1.score_by(dummy_similarity);
+
+            let query2 = DiscoveryQuery::new(target2, pairs);
+            let score2 = query2.score_by(dummy_similarity);
+
+            let context_part1 = score1.floor();
+            let context_part2 = score2.floor();
+
+            assert!(context_part1 == context_part2, "Context part of score isn't equal, score1: {score1}, score2: {score2}");
+        }
     }
 }

@@ -4,7 +4,8 @@ use std::time::Duration;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, GetPoints,
+    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
+    DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, GetPoints,
     GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
     RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
     ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
@@ -15,7 +16,8 @@ use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
-    delete_vectors, recommend_groups, search_groups, update_batch, update_vectors,
+    delete_vectors, discover, discover_batch, recommend_groups, search_groups, update_batch,
+    update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
@@ -213,6 +215,35 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
         recommend_groups(self.toc.as_ref(), request.into_inner()).await
+    }
+
+    async fn discover(
+        &self,
+        request: Request<DiscoverPoints>,
+    ) -> Result<Response<DiscoverResponse>, Status> {
+        validate(request.get_ref())?;
+        discover(self.toc.as_ref(), request.into_inner()).await
+    }
+
+    async fn discover_batch(
+        &self,
+        request: Request<DiscoverBatchPoints>,
+    ) -> Result<Response<DiscoverBatchResponse>, Status> {
+        validate(request.get_ref())?;
+        let DiscoverBatchPoints {
+            collection_name,
+            discover_points,
+            read_consistency,
+            timeout,
+        } = request.into_inner();
+        discover_batch(
+            self.toc.as_ref(),
+            collection_name,
+            discover_points,
+            read_consistency,
+            timeout.map(Duration::from_secs),
+        )
+        .await
     }
 
     async fn count(

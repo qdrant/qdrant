@@ -6,8 +6,8 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::*;
 use collection::operations::CollectionUpdateOperations;
-use collection::recommendations;
 use collection::shards::shard::ShardId;
+use collection::{discovery, recommendations};
 use segment::types::ScoredPoint;
 
 use super::TableOfContent;
@@ -215,6 +215,44 @@ impl TableOfContent {
             .await
             .map(|groups| GroupsResult { groups })
             .map_err(|err| err.into())
+    }
+
+    pub async fn discover(
+        &self,
+        collection_name: &str,
+        request: DiscoverRequest,
+        read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<ScoredPoint>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        discovery::discover(
+            request,
+            &collection,
+            |name| self.get_collection_opt(name),
+            read_consistency,
+            timeout,
+        )
+        .await
+        .map_err(|err| err.into())
+    }
+
+    pub async fn discover_batch(
+        &self,
+        collection_name: &str,
+        request: DiscoverRequestBatch,
+        read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        discovery::discover_batch(
+            request,
+            &collection,
+            |name| self.get_collection_opt(name),
+            read_consistency,
+            timeout,
+        )
+        .await
+        .map_err(|err| err.into())
     }
 
     /// Paginate over all stored points with given filtering conditions

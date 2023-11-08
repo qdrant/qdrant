@@ -11,3 +11,4 @@
 /static
 *.log
 .qdrant-initialized
+/.hypothesis

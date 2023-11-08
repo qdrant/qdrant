@@ -483,6 +483,90 @@ paths:
             type: integer
             minimum: 1
       responses: #@ response(reference("GroupsResult"))
+  
+  /collections/{collection_name}/points/discover:
+    post:
+      tags:
+        - points
+      summary: Discover points
+      description: >
+        Use context and a target to find the most similar points to the target, constrained by the context.
+        
+        When using only the context, a special search is performed where pairs of points are 
+        used to generate a loss that guides the search towards the zone where most positive 
+        examples overlap. This means that the score minimizes the scenario of finding a point
+        closer to a negative than to a positive part of a pair. 
+        Since the score of a context relates to loss, the maximum score a point can get is 0.0, 
+        and it becomes normal that many points can have 0.0 as score.
+        
+        When using target (with or without context), the score behaves a little different: The 
+        integer part of the score represents the "rank" with respect to the context, while the
+        decimal part of the score relates to the distance to the target.
+      operationId: discover_points
+      requestBody:
+        description: Request points based on {positive, negative} pairs of examples, and/or a target
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoverRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(array(reference("ScoredPoint")))
+      
+  /collections/{collection_name}/points/discover/batch:
+    post:
+      tags:
+        - points
+      summary: Discover batch points
+      description: Look for points based on target and/or positive and negative example pairs, in batch.
+      operationId: discover_batch_points
+      requestBody:
+        description: Batch request points based on { positive, negative } pairs of examples, and/or a target.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoverRequestBatch"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(array(array(reference("ScoredPoint"))))
 
   /collections/{collection_name}/points/count:
     post:

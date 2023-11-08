@@ -5,7 +5,6 @@ import "points.proto";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
-
 service Points {
   /*
   Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
@@ -75,10 +74,31 @@ service Points {
   Look for the points which are closer to stored positive examples and at the same time further to negative examples.
    */
   rpc RecommendBatch (RecommendBatchPoints) returns (RecommendBatchResponse) {}
-    /*
+  /*
   Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
    */
   rpc RecommendGroups (RecommendPointGroups) returns (RecommendGroupsResponse) {}
+  /*
+  Use context and a target to find the most similar points, constrained by the context.
+  
+  When using only the context, a special search is performed where pairs of points are 
+  used to generate a loss that guides the search towards the zone where most positive 
+  examples overlap. This means that the score minimizes the scenario of finding a point
+  closer to a negative than to a positive part of a pair. 
+  Since the score of a context relates to loss, the maximum score a point can get is 0.0, 
+  and it becomes normal that many points can have 0.0 as score.
+  
+  Using only a target is equivalent to regular search, so the score is the distance to the target.
+  
+  When using both context and target, the score behaves a little different: The 
+  integer part of the score represents the "rank" with respect to the context, while the
+  decimal part of the score relates to the distance to the target.
+   */
+  rpc Discover (DiscoverPoints) returns (DiscoverResponse) {}
+  /*
+  Batch request points based on [positive, negative] pairs of examples, and/or a target
+   */
+  rpc DiscoverBatch (DiscoverBatchPoints) returns (DiscoverBatchResponse) {}
   /*
    Count points in collection with given filtering conditions
    */
