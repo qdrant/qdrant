@@ -311,13 +311,12 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     fn search_plain(
         &self,
         vector: &QueryVector,
-        filter: &Filter,
+        filtered_points: &[PointOffsetType],
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.as_ref().map(|q| q.borrow());
 
@@ -331,7 +330,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_deref(), params, top);
 
-        let filtered_points = payload_index.query_points(filter);
         let search_result =
             raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top);
 
@@ -346,9 +344,12 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let payload_index = self.payload_index.borrow();
+        // share filtered points for all query vectors
+        let filtered_points = payload_index.query_points(filter);
         vectors
             .iter()
-            .map(|vector| self.search_plain(vector, filter, top, params, is_stopped))
+            .map(|vector| self.search_plain(vector, &filtered_points, top, params, is_stopped))
             .collect()
     }
 
