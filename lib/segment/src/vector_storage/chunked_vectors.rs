@@ -8,7 +8,7 @@ use std::path::Path;
 use common::types::PointOffsetType;
 
 use super::div_ceil;
-use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
+use crate::common::vector_utils::TrySetCapacityExact;
 
 // chunk size in bytes
 const CHUNK_SIZE: usize = 32 * 1024 * 1024;
@@ -17,9 +17,14 @@ const CHUNK_SIZE: usize = 32 * 1024 * 1024;
 const MIN_CHUNK_CAPACITY: usize = 16;
 
 pub struct ChunkedVectors<T> {
+    /// Vector's dimension.
+    ///
+    /// Each vector will consume `size_of::<T>() * dim` bytes.
     dim: usize,
-    len: usize,            // amount of stored vectors
-    chunk_capacity: usize, // max amount of vectors in each chunk
+    /// Number of stored vectors in all chunks.
+    len: usize,
+    /// Maximum number of vectors in each chunk.
+    chunk_capacity: usize,
     chunks: Vec<Vec<T>>,
 }
 
@@ -69,22 +74,29 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         let chunk_idx = key / self.chunk_capacity;
         let chunk_data = &mut self.chunks[chunk_idx];
         let idx = (key % self.chunk_capacity) * self.dim;
+
+        // Grow the current chunk if needed to fit the new vector.
+        //
+        // All chunks are dynamically resized to fit their vectors in it.
+        // Chunks have a size of zero by default. It's grown with zeroes to fit new vectors.
+        //
+        // The capacity for the first chunk is allocated normally to keep the memory footprint as
+        // small as possible, see
+        // <https://doc.rust-lang.org/std/vec/struct.Vec.html#capacity-and-reallocation>).
+        // All other chunks allocate their capacity in full on first use to prevent expensive
+        // reallocations when their data grows.
         if chunk_data.len() < idx + self.dim {
-            if chunk_idx == 0 {
-                // Do not overallocate the first chunk, because it is likely to be small
-                // and we don't want to waste memory.
-                let desired_capacity = idx + self.dim;
-                chunk_data.try_set_capacity(desired_capacity)?;
-            } else {
-                // Once we have more than one chunk, we don't want to overallocate
-                // and we keep the exact capacity of each chunk.
+            // If the chunk is not the first one, allocate it fully on first use
+            if chunk_idx != 0 {
                 let desired_capacity = self.chunk_capacity * self.dim;
                 chunk_data.try_set_capacity_exact(desired_capacity)?;
             }
             chunk_data.resize(idx + self.dim, T::default());
         }
+
         let data = &mut chunk_data[idx..idx + self.dim];
         data.copy_from_slice(vector);
+
         Ok(())
     }
 }
