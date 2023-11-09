@@ -138,12 +138,6 @@ impl Validate for PointsSelector {
     }
 }
 
-// Structure used for deriving custom JsonSchema only
-// #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-// struct PointsList {
-//     points: Vec<PointStruct>,
-// }
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PointSyncOperation {
     /// Minimal id of the sync range

@@ -9,6 +9,7 @@ use crate::hash_ring::HashRing;
 use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::shards::shard::ShardId;
 
+/// This data structure is used in API interface and applied across multiple shards
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(try_from = "SetPayloadShadow")]
 pub struct SetPayload {
@@ -21,6 +22,11 @@ pub struct SetPayload {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+/// This data structure is used inside shard operations queue
+/// and supposed to be written into WAL of individual shard.
+///
+/// Unlike `SetPayload` it does not contain `shard_key` field
+/// as individual shard does not need to know about shard key
 #[derive(Debug, Deserialize, Serialize, Validate, Clone)]
 pub struct SetPayloadOp {
     pub payload: Payload,
@@ -66,6 +72,7 @@ impl TryFrom<SetPayloadShadow> for SetPayload {
     }
 }
 
+/// This data structure is used in API interface and applied across multiple shards
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(try_from = "DeletePayloadShadow")]
 pub struct DeletePayload {
@@ -79,6 +86,11 @@ pub struct DeletePayload {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+/// This data structure is used inside shard operations queue
+/// and supposed to be written into WAL of individual shard.
+///
+/// Unlike `DeletePayload` it does not contain `shard_key` field
+/// as individual shard does not need to know about shard key
 #[derive(Debug, Deserialize, Serialize, Validate, Clone)]
 pub struct DeletePayloadOp {
     /// List of payload keys to remove from payload
