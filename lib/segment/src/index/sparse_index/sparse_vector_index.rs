@@ -132,7 +132,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let mut results = Vec::with_capacity(vectors.len());
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
-        let vector_storage: &VectorStorageEnum = &self.vector_storage.borrow();
+        let vector_storage = &self.vector_storage.borrow();
         for &vector in vectors {
             check_process_stopped(is_stopped)?;
             let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
