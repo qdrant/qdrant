@@ -2908,6 +2908,17 @@ pub struct Vector {
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
 }
+/// ---------------------------------------------
+/// ----------------- ShardKeySelector ----------
+/// ---------------------------------------------
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardKeySelector {
+    /// List of shard keys which should be used in the request
+    #[prost(message, repeated, tag = "1")]
+    pub shard_keys: ::prost::alloc::vec::Vec<ShardKey>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2925,6 +2936,9 @@ pub struct UpsertPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -2944,6 +2958,9 @@ pub struct DeletePoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -2985,6 +3002,9 @@ pub struct UpdatePointVectors {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3018,6 +3038,9 @@ pub struct DeletePointVectors {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "5")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "6")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3040,6 +3063,9 @@ pub struct SetPayloadPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3062,6 +3088,9 @@ pub struct DeletePayloadPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3081,6 +3110,9 @@ pub struct ClearPayloadPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3721,7 +3753,7 @@ pub struct CountPoints {
 pub struct PointsUpdateOperation {
     #[prost(
         oneof = "points_update_operation::Operation",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10"
     )]
     pub operation: ::core::option::Option<points_update_operation::Operation>,
 }
@@ -3733,6 +3765,9 @@ pub mod points_update_operation {
     pub struct PointStructList {
         #[prost(message, repeated, tag = "1")]
         pub points: ::prost::alloc::vec::Vec<super::PointStruct>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3746,6 +3781,9 @@ pub mod points_update_operation {
         /// Affected points
         #[prost(message, optional, tag = "2")]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3756,6 +3794,9 @@ pub mod points_update_operation {
         /// Affected points
         #[prost(message, optional, tag = "2")]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3764,6 +3805,9 @@ pub mod points_update_operation {
         /// List of points and vectors to update
         #[prost(message, repeated, tag = "1")]
         pub points: ::prost::alloc::vec::Vec<super::PointVectors>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3775,6 +3819,32 @@ pub mod points_update_operation {
         /// List of vector names to delete
         #[prost(message, optional, tag = "2")]
         pub vectors: ::core::option::Option<super::VectorsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(validator::Validate)]
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DeletePoints {
+        /// Affected points
+        #[prost(message, optional, tag = "1")]
+        pub points: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct ClearPayload {
+        /// Affected points
+        #[prost(message, optional, tag = "1")]
+        pub points: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3783,7 +3853,7 @@ pub mod points_update_operation {
         #[prost(message, tag = "1")]
         Upsert(PointStructList),
         #[prost(message, tag = "2")]
-        Delete(super::PointsSelector),
+        DeleteDeprecated(super::PointsSelector),
         #[prost(message, tag = "3")]
         SetPayload(SetPayload),
         #[prost(message, tag = "4")]
@@ -3791,11 +3861,15 @@ pub mod points_update_operation {
         #[prost(message, tag = "5")]
         DeletePayload(DeletePayload),
         #[prost(message, tag = "6")]
-        ClearPayload(super::PointsSelector),
+        ClearPayloadDeprecated(super::PointsSelector),
         #[prost(message, tag = "7")]
         UpdateVectors(UpdateVectors),
         #[prost(message, tag = "8")]
         DeleteVectors(DeleteVectors),
+        #[prost(message, tag = "9")]
+        DeletePoints(DeletePoints),
+        #[prost(message, tag = "10")]
+        ClearPayload(ClearPayload),
     }
 }
 #[derive(validator::Validate)]
@@ -3857,6 +3931,9 @@ pub struct ScoredPoint {
     /// Vectors to search
     #[prost(message, optional, tag = "6")]
     pub vectors: ::core::option::Option<Vectors>,
+    /// Shard key
+    #[prost(message, optional, tag = "7")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3981,6 +4058,9 @@ pub struct RetrievedPoint {
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(message, optional, tag = "4")]
     pub vectors: ::core::option::Option<Vectors>,
+    /// Shard key
+    #[prost(message, optional, tag = "5")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

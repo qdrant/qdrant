@@ -1,10 +1,6 @@
 use core::marker::{Send, Sync};
-use std::fmt::Display;
 use std::future::{self, Future};
 use std::path::Path;
-
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 
 use super::update_tracker::UpdateTracker;
 use crate::operations::types::CollectionResult;
@@ -31,22 +27,6 @@ pub type ShardReplicasPlacement = Vec<PeerId>;
 ///     [3, 4]
 /// ] - 3 shards, each has 2 replicas
 pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
-
-#[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
-#[serde(untagged)]
-pub enum ShardKey {
-    Keyword(String),
-    Number(u64),
-}
-
-impl Display for ShardKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
-            ShardKey::Number(number) => write!(f, "{}", number),
-        }
-    }
-}
 
 /// Shard
 ///

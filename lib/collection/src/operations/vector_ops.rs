@@ -10,6 +10,7 @@ use validator::{Validate, ValidationError};
 use super::point_ops::PointIdsList;
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::shards::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -18,6 +19,8 @@ pub struct UpdateVectors {
     #[validate]
     #[validate(length(min = 1, message = "must specify points to update"))]
     pub points: Vec<PointVectors>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct PointVectors {
@@ -42,13 +45,23 @@ pub struct DeleteVectors {
     #[serde(alias = "vectors")]
     #[validate(length(min = 1, message = "must specify vector names to delete"))]
     pub vector: HashSet<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+pub struct UpdateVectorsOp {
+    /// Points with named vectors
+    #[validate]
+    #[validate(length(min = 1, message = "must specify points to update"))]
+    pub points: Vec<PointVectors>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum VectorOperations {
     /// Update vectors
-    UpdateVectors(UpdateVectors),
+    UpdateVectors(UpdateVectorsOp),
     /// Delete vectors if exists
     DeleteVectors(PointIdsList, Vec<String>),
     /// Delete vectors by given filter criteria
@@ -102,7 +115,7 @@ impl SplitByShard for VectorOperations {
                 let shard_ops = shard_points.into_iter().map(|(shard_id, points)| {
                     (
                         shard_id,
-                        VectorOperations::UpdateVectors(UpdateVectors { points }),
+                        VectorOperations::UpdateVectors(UpdateVectorsOp { points }),
                     )
                 });
                 OperationToShard::by_shard(shard_ops)

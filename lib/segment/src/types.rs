@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::Deref;
@@ -186,6 +186,9 @@ pub struct ScoredPoint {
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,
+    /// Shard Key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
 }
 
 impl Eq for ScoredPoint {}
@@ -225,8 +228,7 @@ pub enum SegmentType {
 #[serde(rename_all = "snake_case")]
 pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<PayloadSchemaParams>,
     /// Number of points indexed with this index
     pub points: usize,
@@ -374,12 +376,10 @@ pub struct HnswConfig {
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub on_disk: Option<bool>,
     /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
 }
 
@@ -506,8 +506,7 @@ pub struct BinaryQuantization {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
@@ -582,8 +581,7 @@ impl Default for Indexes {
 
 /// Type of payload index
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "options")]
+#[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadIndexType {
     // Do not index anything, just keep of what should be indexed later
     #[default]
@@ -594,8 +592,7 @@ pub enum PayloadIndexType {
 
 /// Type of payload storage
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "options")]
+#[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
     #[default]
@@ -934,8 +931,7 @@ impl<'a> From<&'a Map<String, Value>> for OwnedPayloadRef<'a> {
 /// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
 /// ```
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadVariant<T> {
     List(Vec<T>),
     Value(T),
@@ -952,8 +948,7 @@ impl<T: Clone> PayloadVariant<T> {
 
 /// Json representation of a payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum JsonPayload {
     Keyword(PayloadVariant<String>),
     Integer(PayloadVariant<IntPayloadType>),
@@ -975,15 +970,13 @@ pub enum PayloadSchemaType {
 
 /// Payload type with parameters
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSchemaParams {
     Text(TextIndexParams),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
@@ -1108,8 +1101,7 @@ pub struct MatchExcept {
 
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
@@ -1119,8 +1111,7 @@ pub enum MatchInterface {
 
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(from = "MatchInterface")]
-#[serde(untagged)]
+#[serde(untagged, from = "MatchInterface")]
 pub enum Match {
     Value(MatchValue),
     Text(MatchText),
@@ -1343,8 +1334,7 @@ impl PolygonWrapper {
 ///
 /// Matches coordinates inside the polygon, defined by `exterior` and `interiors`
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(try_from = "GeoPolygonShadow")]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "GeoPolygonShadow", rename_all = "snake_case")]
 pub struct GeoPolygon {
     /// The exterior line bounds the surface
     /// must consist of a minimum of 4 points, and the first and last points
@@ -1690,8 +1680,7 @@ impl Validate for Condition {
 
 /// Options for specifying which payload to include or not
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum WithPayloadInterface {
     /// If `true` - return all payload,
     /// If `false` - do not return payload
@@ -1710,8 +1699,7 @@ impl From<bool> for WithPayloadInterface {
 
 /// Options for specifying which vector to include
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum WithVector {
     /// If `true` - return all vector,
     /// If `false` - do not return vector
@@ -1779,8 +1767,7 @@ impl From<&WithPayloadInterface> for WithPayload {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorInclude {
     /// Only include this payload keys
     pub include: Vec<PayloadKeyType>,
@@ -1793,8 +1780,7 @@ impl PayloadSelectorInclude {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorExclude {
     /// Exclude this fields from returning payload
     pub exclude: Vec<PayloadKeyType>,
@@ -1808,8 +1794,7 @@ impl PayloadSelectorExclude {
 
 /// Specifies how to treat payload selector
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-#[serde(rename_all = "snake_case")]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSelector {
     /// Include only this fields into response payload
     Include(PayloadSelectorInclude),
@@ -1864,8 +1849,7 @@ impl PayloadSelector {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct WithPayload {
     /// Enable return payloads or not
     pub enable: bool,
@@ -1874,8 +1858,7 @@ pub struct WithPayload {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
     #[validate]
@@ -3007,3 +2990,19 @@ mod tests {
 }
 
 pub type TheMap<K, V> = BTreeMap<K, V>;
+
+#[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum ShardKey {
+    Keyword(String),
+    Number(u64),
+}
+
+impl Display for ShardKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
+            ShardKey::Number(number) => write!(f, "{}", number),
+        }
+    }
+}

@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use itertools::Itertools;
+// TODO rename ReplicaShard to ReplicaSetShard
+use segment::types::ShardKey;
 use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -20,7 +22,7 @@ use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet}; // TODO rename ReplicaShard to ReplicaSetShard
-use crate::shards::shard::{PeerId, ShardId, ShardKey};
+use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
@@ -203,8 +205,9 @@ impl ShardHolder {
     pub fn split_by_shard<O: SplitByShard + Clone>(
         &self,
         operation: O,
+        shard_keys_selection: &Option<ShardKey>,
     ) -> Vec<(&ShardReplicaSet, O)> {
-        let Some(hashring) = self.rings.get(&None) else {
+        let Some(hashring) = self.rings.get(shard_keys_selection) else {
             return vec![];
         };
 
@@ -214,10 +217,24 @@ impl ShardHolder {
                 .into_iter()
                 .map(|(shard_id, operation)| (self.shards.get(&shard_id).unwrap(), operation))
                 .collect(),
-            OperationToShard::ToAll(operation) => self
-                .all_shards()
-                .map(|shard| (shard, operation.clone()))
-                .collect(),
+            OperationToShard::ToAll(operation) => {
+                if let Some(shard_key) = shard_keys_selection {
+                    let shard_ids = self
+                        .key_mapping
+                        .read()
+                        .get(shard_key)
+                        .cloned()
+                        .unwrap_or_default();
+                    shard_ids
+                        .into_iter()
+                        .map(|shard_id| (self.shards.get(&shard_id).unwrap(), operation.clone()))
+                        .collect()
+                } else {
+                    self.all_shards()
+                        .map(|shard| (shard, operation.clone()))
+                        .collect()
+                }
+            }
         };
         shard_ops
     }

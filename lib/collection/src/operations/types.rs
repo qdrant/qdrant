@@ -22,7 +22,7 @@ use segment::data_types::vectors::{
 };
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -44,7 +44,7 @@ use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::shard::{PeerId, ShardId, ShardKey};
+use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::shard_transfer::ShardTransferMethod;
 use crate::wal::WalError;
 
@@ -87,6 +87,9 @@ pub struct Record {
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,
+    /// Shard Key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
 }
 
 /// Current statistics and configuration of the collection
@@ -773,6 +776,17 @@ impl CollectionError {
         match self {
             Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
             _ => None,
+        }
+    }
+
+    pub fn shard_key_not_found(shard_key: &Option<ShardKey>) -> CollectionError {
+        match shard_key {
+            Some(shard_key) => CollectionError::NotFound {
+                what: format!("Shard key {shard_key} not found"),
+            },
+            None => CollectionError::NotFound {
+                what: "Shard expected, but not provided".to_string(),
+            },
         }
     }
 

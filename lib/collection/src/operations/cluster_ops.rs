@@ -2,10 +2,11 @@ use std::num::NonZeroU32;
 
 use common::validation::validate_move_shard_different_peers;
 use schemars::JsonSchema;
+use segment::types::ShardKey;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
 
-use crate::shards::shard::{PeerId, ShardId, ShardKey};
+use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::shard_transfer::ShardTransferMethod;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

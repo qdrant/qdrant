@@ -331,6 +331,7 @@ impl SegmentsSearcher {
                                 Some(selected_vectors.into())
                             }
                         },
+                        shard_key: None,
                     },
                 );
                 point_version.insert(id, version);

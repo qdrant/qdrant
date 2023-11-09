@@ -259,7 +259,7 @@ mod tests {
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
-    use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
+    use crate::operations::point_ops::{Batch, PointOperations};
     use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
@@ -547,21 +547,21 @@ mod tests {
         }
 
         let point_payload: Payload = json!({"number":10000i64}).into();
-        let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
-                ids: vec![501.into(), 502.into(), 503.into()],
-                vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                ]
-                .into(),
-                payloads: Some(vec![
-                    Some(point_payload.clone()),
-                    Some(point_payload.clone()),
-                    Some(point_payload),
-                ]),
-            }));
+        let insert_point_ops: PointOperations = Batch {
+            ids: vec![501.into(), 502.into(), 503.into()],
+            vectors: vec![
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+            ]
+            .into(),
+            payloads: Some(vec![
+                Some(point_payload.clone()),
+                Some(point_payload.clone()),
+                Some(point_payload),
+            ]),
+        }
+        .into();
 
         let smallest_size = infos
             .iter()
@@ -620,17 +620,17 @@ mod tests {
             "Testing that new segment is created if none left"
         );
 
-        let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
-                ids: vec![601.into(), 602.into(), 603.into()],
-                vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                ]
-                .into(),
-                payloads: None,
-            }));
+        let insert_point_ops: PointOperations = Batch {
+            ids: vec![601.into(), 602.into(), 603.into()],
+            vectors: vec![
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+            ]
+            .into(),
+            payloads: None,
+        }
+        .into();
 
         process_point_operation(
             locked_holder.deref(),

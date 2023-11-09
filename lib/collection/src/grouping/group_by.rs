@@ -496,6 +496,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                     ScoredPoint {
                         id: 2.into(),
@@ -503,6 +504,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                 ],
             ),
@@ -515,6 +517,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                     ScoredPoint {
                         id: 4.into(),
@@ -522,6 +525,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                 ],
             ),
@@ -545,6 +549,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_a.clone()),
                 vector: None,
+                shard_key: None,
             },
             ScoredPoint {
                 id: 2.into(),
@@ -552,6 +557,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_a.clone()),
                 vector: None,
+                shard_key: None,
             },
             ScoredPoint {
                 id: 3.into(),
@@ -559,6 +565,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_b.clone()),
                 vector: None,
+                shard_key: None,
             },
             ScoredPoint {
                 id: 4.into(),
@@ -566,6 +573,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_b.clone()),
                 vector: None,
+                shard_key: None,
             },
         ];
 

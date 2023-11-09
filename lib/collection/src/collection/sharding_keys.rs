@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
+use segment::types::ShardKey;
+
 use crate::collection::Collection;
 use crate::config::ShardingMethod;
 use crate::operations::types::CollectionError;
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::shard::{PeerId, ShardId, ShardKey, ShardsPlacement};
+use crate::shards::shard::{PeerId, ShardId, ShardsPlacement};
 
 impl Collection {
     pub async fn create_replica_set(

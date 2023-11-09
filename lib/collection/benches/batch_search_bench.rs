@@ -5,7 +5,9 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use collection::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStruct,
+};
 use collection::operations::types::{SearchRequest, SearchRequestBatch, VectorParams};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
@@ -39,7 +41,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         points.push(point);
     }
     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperations::PointsList(points),
+        PointInsertOperationsInternal::PointsList(points),
     ))
 }
 

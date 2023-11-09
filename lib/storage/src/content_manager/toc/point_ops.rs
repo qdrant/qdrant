@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use collection::collection::Collection;
 use collection::grouping::group_by::GroupRequest;
 use collection::grouping::GroupBy;
 use collection::operations::consistency_params::ReadConsistency;
@@ -8,10 +9,12 @@ use collection::operations::types::*;
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
 use collection::{discovery, recommendations};
-use segment::types::ScoredPoint;
+use futures::future::try_join_all;
+use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
 use crate::content_manager::errors::StorageError;
+use crate::content_manager::shard_key_selection::ShardKeySelectorInternal;
 
 impl TableOfContent {
     /// Recommend points using positive and negative example from the request
@@ -280,6 +283,29 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    async fn _update_shard_keys(
+        collection: &Collection,
+        shard_keys: Vec<ShardKey>,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+        ordering: WriteOrdering,
+    ) -> Result<UpdateResult, StorageError> {
+        if shard_keys.is_empty() {
+            return Err(StorageError::bad_input("Empty shard keys selection"));
+        }
+
+        let updates: Vec<_> = shard_keys
+            .into_iter()
+            .map(|shard_key| {
+                collection.update_from_client(operation.clone(), wait, ordering, Some(shard_key))
+            })
+            .collect();
+
+        let results = try_join_all(updates).await?;
+
+        Ok(results.into_iter().next().unwrap())
+    }
+
     pub async fn update(
         &self,
         collection_name: &str,
@@ -287,6 +313,7 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
         ordering: WriteOrdering,
+        shard_keys_selector: ShardKeySelectorInternal,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 
@@ -297,16 +324,19 @@ impl TableOfContent {
         // └┬──────────────────┘
         //  │ Shard: None
         //  │ Ordering: Strong
+        //  │ ShardKey: Some("cats")
         // ┌▼──────────────────┐
         // │ First Node        │ <- update_from_client
         // └┬──────────────────┘
         //  │ Shard: Some(N)
         //  │ Ordering: Strong
+        //  │ ShardKey: None
         // ┌▼──────────────────┐
         // │ Leader node       │ <- update_from_peer
         // └┬──────────────────┘
         //  │ Shard: Some(N)
         //  │ Ordering: None(Weak)
+        //  │ ShardKey: None
         // ┌▼──────────────────┐
         // │ Updating node     │ <- update_from_peer
         // └───────────────────┘
@@ -325,9 +355,40 @@ impl TableOfContent {
                 if operation.is_write_operation() {
                     self.check_write_lock()?;
                 }
-                collection
-                    .update_from_client(operation, wait, ordering)
-                    .await
+                let res = match shard_keys_selector {
+                    ShardKeySelectorInternal::Empty => {
+                        collection
+                            .update_from_client(operation, wait, ordering, None)
+                            .await?
+                    }
+                    ShardKeySelectorInternal::All => {
+                        let shard_keys = collection.get_shard_keys().await;
+                        if shard_keys.is_empty() {
+                            collection
+                                .update_from_client(operation, wait, ordering, None)
+                                .await?
+                        } else {
+                            Self::_update_shard_keys(
+                                &collection,
+                                shard_keys,
+                                operation,
+                                wait,
+                                ordering,
+                            )
+                            .await?
+                        }
+                    }
+                    ShardKeySelectorInternal::ShardKey(shard_key) => {
+                        collection
+                            .update_from_client(operation, wait, ordering, Some(shard_key))
+                            .await?
+                    }
+                    ShardKeySelectorInternal::ShardKeys(shard_keys) => {
+                        Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering)
+                            .await?
+                    }
+                };
+                Ok(res)
             }
         };
         result.map_err(|err| err.into())

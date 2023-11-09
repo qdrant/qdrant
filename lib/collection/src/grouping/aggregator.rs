@@ -196,6 +196,7 @@ mod unit_tests {
             score,
             payload: Some(Payload::from(serde_json::json!({ "docId": payloads }))),
             vector: None,
+            shard_key: None,
         }
     }
 
@@ -206,6 +207,7 @@ mod unit_tests {
             score,
             payload: None,
             vector: None,
+            shard_key: None,
         }
     }
 

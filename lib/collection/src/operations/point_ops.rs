@@ -2,8 +2,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use itertools::izip;
-use schemars::gen::SchemaGenerator;
-use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
@@ -14,6 +12,7 @@ use validator::Validate;
 
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::Record;
 use crate::shards::shard::ShardId;
 
@@ -55,6 +54,7 @@ impl TryFrom<Record> for PointStruct {
             id,
             payload,
             vector,
+            shard_key: _,
         } = record;
 
         if vector.is_none() {
@@ -99,11 +99,16 @@ impl Batch {
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
     pub points: Vec<PointIdType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 impl From<Vec<PointIdType>> for PointIdsList {
     fn from(points: Vec<PointIdType>) -> Self {
-        Self { points }
+        Self {
+            points,
+            shard_key: None,
+        }
     }
 }
 
@@ -111,11 +116,12 @@ impl From<Vec<PointIdType>> for PointIdsList {
 #[serde(rename_all = "snake_case")]
 pub struct FilterSelector {
     pub filter: Filter,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PointsSelector {
     /// Select points by list of IDs
     PointIdsSelector(PointIdsList),
@@ -132,12 +138,6 @@ impl Validate for PointsSelector {
     }
 }
 
-// Structure used for deriving custom JsonSchema only
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-struct PointsList {
-    points: Vec<PointStruct>,
-}
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PointSyncOperation {
     /// Minimal id of the sync range
@@ -147,9 +147,50 @@ pub struct PointSyncOperation {
     pub points: Vec<PointStruct>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Validate, JsonSchema)]
+pub struct PointsBatch {
+    pub batch: Batch,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, Validate)]
+pub struct PointsList {
+    pub points: Vec<PointStruct>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(untagged)]
+pub enum PointInsertOperations {
+    /// Inset points from a batch.
+    PointsBatch(PointsBatch),
+    /// Insert points from a list
+    PointsList(PointsList),
+}
+
+impl Validate for PointInsertOperations {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            PointInsertOperations::PointsBatch(batch) => batch.validate(),
+            PointInsertOperations::PointsList(list) => list.validate(),
+        }
+    }
+}
+
+impl PointInsertOperations {
+    pub fn decompose(self) -> (Option<ShardKeySelector>, PointInsertOperationsInternal) {
+        match self {
+            PointInsertOperations::PointsBatch(batch) => (batch.shard_key, batch.batch.into()),
+            PointInsertOperations::PointsList(list) => (list.shard_key, list.points.into()),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum PointInsertOperations {
+pub enum PointInsertOperationsInternal {
     /// Inset points from a batch.
     #[serde(rename = "batch")]
     PointsBatch(Batch),
@@ -158,137 +199,105 @@ pub enum PointInsertOperations {
     PointsList(Vec<PointStruct>),
 }
 
-impl JsonSchema for PointInsertOperations {
-    fn schema_name() -> String {
-        "PointInsertOperations".to_string()
-    }
-
-    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
-        let def_path = gen.settings().definitions_path.clone();
-        let a_schema: Schema = Batch::json_schema(gen);
-        let proxy_b_schema = PointsList::json_schema(gen);
-        let definitions = gen.definitions_mut();
-        definitions.insert(Batch::schema_name(), a_schema);
-
-        let field_a_name = "batch".to_string();
-
-        let get_obj_schema = |field: String, schema_name: String| {
-            let schema_ref = Schema::Object(SchemaObject {
-                reference: Some(format!("{def_path}{schema_name}")),
-                ..Default::default()
-            });
-            Schema::Object(SchemaObject {
-                object: Some(Box::new(ObjectValidation {
-                    required: vec![field.clone()].into_iter().collect(),
-                    properties: vec![(field, schema_ref)].into_iter().collect(),
-                    ..Default::default()
-                })),
-                ..Default::default()
-            })
-        };
-
-        let proxy_a_schema = get_obj_schema(field_a_name, Batch::schema_name());
-
-        let proxy_a_name = "PointsBatch".to_string();
-
-        definitions.insert(proxy_a_name.clone(), proxy_a_schema);
-        definitions.insert(PointsList::schema_name(), proxy_b_schema);
-
-        let proxy_a_ref = Schema::Object(SchemaObject {
-            reference: Some(format!("{def_path}{proxy_a_name}")),
-            ..Default::default()
-        });
-
-        let proxy_b_ref = Schema::Object(SchemaObject {
-            reference: Some(format!("{}{}", def_path, PointsList::schema_name())),
-            ..Default::default()
-        });
-
-        Schema::Object(SchemaObject {
-            subschemas: Some(Box::new(SubschemaValidation {
-                one_of: Some(vec![proxy_a_ref, proxy_b_ref]),
-                ..Default::default()
-            })),
-            ..Default::default()
-        })
-    }
-}
-
-impl Validate for PointInsertOperations {
+impl Validate for PointInsertOperationsInternal {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            PointInsertOperations::PointsList(_) => Ok(()),
-            PointInsertOperations::PointsBatch(batch) => {
-                let bad_input_description = |ids: usize, vecs: usize| -> String {
-                    format!("number of ids and vectors must be equal ({ids} != {vecs})")
-                };
-                let create_error = |message: String| -> validator::ValidationErrors {
-                    let mut errors = validator::ValidationErrors::new();
-                    errors.add("batch", {
-                        let mut error = validator::ValidationError::new("point_insert_operation");
-                        error.message.replace(Cow::from(message));
-                        error
-                    });
-                    errors
-                };
-
-                match &batch.vectors {
-                    BatchVectorStruct::Single(vectors) => {
-                        if batch.ids.len() != vectors.len() {
-                            return Err(create_error(bad_input_description(
-                                batch.ids.len(),
-                                vectors.len(),
-                            )));
-                        }
-                    }
-                    BatchVectorStruct::Multi(named_vectors) => {
-                        for vectors in named_vectors.values() {
-                            if batch.ids.len() != vectors.len() {
-                                return Err(create_error(bad_input_description(
-                                    batch.ids.len(),
-                                    vectors.len(),
-                                )));
-                            }
-                        }
-                    }
-                }
-                if let Some(payload_vector) = &batch.payloads {
-                    if payload_vector.len() != batch.ids.len() {
-                        return Err(create_error(format!(
-                            "number of ids and payloads must be equal ({} != {})",
-                            batch.ids.len(),
-                            payload_vector.len(),
-                        )));
-                    }
-                }
-                Ok(())
-            }
+            PointInsertOperationsInternal::PointsBatch(batch) => batch.validate(),
+            PointInsertOperationsInternal::PointsList(_list) => Ok(()),
         }
     }
 }
 
-impl SplitByShard for PointInsertOperations {
+impl Validate for Batch {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        let batch = self;
+
+        let bad_input_description = |ids: usize, vecs: usize| -> String {
+            format!("number of ids and vectors must be equal ({ids} != {vecs})")
+        };
+        let create_error = |message: String| -> validator::ValidationErrors {
+            let mut errors = validator::ValidationErrors::new();
+            errors.add("batch", {
+                let mut error = validator::ValidationError::new("point_insert_operation");
+                error.message.replace(Cow::from(message));
+                error
+            });
+            errors
+        };
+
+        match &batch.vectors {
+            BatchVectorStruct::Single(vectors) => {
+                if batch.ids.len() != vectors.len() {
+                    return Err(create_error(bad_input_description(
+                        batch.ids.len(),
+                        vectors.len(),
+                    )));
+                }
+            }
+            BatchVectorStruct::Multi(named_vectors) => {
+                for vectors in named_vectors.values() {
+                    if batch.ids.len() != vectors.len() {
+                        return Err(create_error(bad_input_description(
+                            batch.ids.len(),
+                            vectors.len(),
+                        )));
+                    }
+                }
+            }
+        }
+        if let Some(payload_vector) = &batch.payloads {
+            if payload_vector.len() != batch.ids.len() {
+                return Err(create_error(format!(
+                    "number of ids and payloads must be equal ({} != {})",
+                    batch.ids.len(),
+                    payload_vector.len(),
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl SplitByShard for PointInsertOperationsInternal {
     fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match self {
-            PointInsertOperations::PointsBatch(batch) => batch
+            PointInsertOperationsInternal::PointsBatch(batch) => batch
                 .split_by_shard(ring)
-                .map(PointInsertOperations::PointsBatch),
-            PointInsertOperations::PointsList(list) => list
+                .map(PointInsertOperationsInternal::PointsBatch),
+            PointInsertOperationsInternal::PointsList(list) => list
                 .split_by_shard(ring)
-                .map(PointInsertOperations::PointsList),
+                .map(PointInsertOperationsInternal::PointsList),
         }
     }
 }
 
 impl From<Batch> for PointInsertOperations {
     fn from(batch: Batch) -> Self {
-        PointInsertOperations::PointsBatch(batch)
+        PointInsertOperations::PointsBatch(PointsBatch {
+            batch,
+            shard_key: None,
+        })
     }
 }
 
 impl From<Vec<PointStruct>> for PointInsertOperations {
     fn from(points: Vec<PointStruct>) -> Self {
-        PointInsertOperations::PointsList(points)
+        PointInsertOperations::PointsList(PointsList {
+            points,
+            shard_key: None,
+        })
+    }
+}
+
+impl From<Batch> for PointInsertOperationsInternal {
+    fn from(batch: Batch) -> Self {
+        PointInsertOperationsInternal::PointsBatch(batch)
+    }
+}
+
+impl From<Vec<PointStruct>> for PointInsertOperationsInternal {
+    fn from(points: Vec<PointStruct>) -> Self {
+        PointInsertOperationsInternal::PointsList(points)
     }
 }
 
@@ -296,7 +305,7 @@ impl From<Vec<PointStruct>> for PointInsertOperations {
 #[serde(rename_all = "snake_case")]
 pub enum PointOperations {
     /// Insert or update points
-    UpsertPoints(PointInsertOperations),
+    UpsertPoints(PointInsertOperationsInternal),
     /// Delete point if exists
     DeletePoints { ids: Vec<PointIdType> },
     /// Delete points by given filter criteria
@@ -448,13 +457,13 @@ impl SplitByShard for PointOperations {
 
 impl From<Batch> for PointOperations {
     fn from(batch: Batch) -> Self {
-        PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(batch))
+        PointOperations::UpsertPoints(batch.into())
     }
 }
 
 impl From<Vec<PointStruct>> for PointOperations {
     fn from(points: Vec<PointStruct>) -> Self {
-        PointOperations::UpsertPoints(PointInsertOperations::PointsList(points))
+        PointOperations::UpsertPoints(points.into())
     }
 }
 
@@ -473,25 +482,28 @@ mod tests {
 
     #[test]
     fn validate_batch() {
-        let batch = PointInsertOperations::PointsBatch(Batch {
+        let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
             vectors: vec![].into(),
             payloads: None,
-        });
+        }
+        .into();
         assert!(batch.validate().is_err());
 
-        let batch = PointInsertOperations::PointsBatch(Batch {
+        let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
             vectors: vec![vec![0.1]].into(),
             payloads: None,
-        });
+        }
+        .into();
         assert!(batch.validate().is_ok());
 
-        let batch = PointInsertOperations::PointsBatch(Batch {
+        let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
             vectors: vec![vec![0.1]].into(),
             payloads: Some(vec![]),
-        });
+        }
+        .into();
         assert!(batch.validate().is_err());
     }
 }
