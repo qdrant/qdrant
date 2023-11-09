@@ -21,7 +21,7 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::sparse_raw_scorer::sparse_check_vector;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum};
 
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -69,7 +69,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         with_filter: bool,
         condition: impl Fn(PointOffsetType) -> bool,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let mut result = vec![];
+        let mut result = Vec::with_capacity(vectors.len());
 
         for vector in vectors {
             check_process_stopped(is_stopped)?;
@@ -119,6 +119,35 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             }
         }
         unique_record_ids.len()
+    }
+
+    /// Plain search not using the inverted index.
+    pub fn search_plain(
+        &self,
+        vectors: &[&QueryVector],
+        filter: &Filter,
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let mut results = Vec::with_capacity(vectors.len());
+        let id_tracker = self.id_tracker.borrow();
+        let payload_index = self.payload_index.borrow();
+        let vector_storage = &self.vector_storage.borrow();
+        for &vector in vectors {
+            check_process_stopped(is_stopped)?;
+            let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
+            let raw_scorer = new_stoppable_raw_scorer(
+                vector.clone(),
+                vector_storage,
+                id_tracker.deleted_point_bitslice(),
+                is_stopped,
+            )?;
+            let filtered_points = payload_index.query_points(filter);
+            let search_results =
+                raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), top);
+            results.push(search_results);
+        }
+        Ok(results)
     }
 }
 
