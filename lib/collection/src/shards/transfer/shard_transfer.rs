@@ -759,11 +759,7 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     spawn_async_cancellable(move |cancel| async move {
-        let mut result = Err(CollectionError::Cancelled {
-            description:
-                "shard transfer task exit without attempting any work, this is a programming error"
-                    .into(),
-        });
+        let mut result = Err(cancel::Error::Cancelled);
 
         for attempt in 0..MAX_RETRY_COUNT {
             let future = async {
@@ -771,7 +767,7 @@ where
                     sleep(RETRY_DELAY * attempt as u32).await;
 
                     log::warn!(
-                        "Retrying shard transfer {} -> {} (retry {attempt})",
+                        "Retrying shard transfer {collection_id}:{} -> {} (retry {attempt})",
                         transfer.shard_id,
                         transfer.to,
                     );
@@ -790,41 +786,37 @@ where
                 .await
             };
 
-            result = cancel::future::cancel_on_token(cancel.clone(), future)
-                .await
-                .map_err(Into::into)
-                .and_then(|res| res);
+            result = cancel::future::cancel_on_token(cancel.clone(), future).await;
 
-            match &result {
-                Ok(()) => break,
+            // If `transfer_shard` returned error...
+            if let Ok(Err(err)) = &result {
+                log::error!(
+                    "Failed to transfer shard {collection_id}:{} -> {}: {err}",
+                    transfer.shard_id,
+                    transfer.to,
+                );
+            }
 
-                // TODO: Should we break early if shard transfer is cancelled, or should we handle it as regular error?
-                Err(CollectionError::Cancelled { .. }) => break,
-
-                Err(err) => {
-                    log::error!(
-                        "Failed to transfer shard {} -> {}: {err}",
-                        transfer.shard_id,
-                        transfer.to,
-                    );
-
-                    // Revert queue proxy if we still have any to prepare for the next attempt
-                    if let Some(shard) = shards_holder.read().await.get_shard(&transfer.shard_id) {
-                        shard.revert_queue_proxy_local().await;
-                    }
+            // If `transfer_shard` returned error or task was cancelled...
+            if matches!(result, Ok(Err(_)) | Err(_)) {
+                // Revert queue proxy if we still have any to prepare for the next attempt
+                if let Some(shard) = shards_holder.read().await.get_shard(&transfer.shard_id) {
+                    shard.revert_queue_proxy_local().await;
                 }
+            }
+
+            // If `transfer_shard` returned success or task was cancelled...
+            if !matches!(result, Ok(Err(_))) {
+                break;
             }
         }
 
         match &result {
-            Ok(()) => on_finish.await,
-
-            // TODO: Should we ignore `on_error` if shard transfer is cancelled, or should we handle it as regular error?
-            Err(CollectionError::Cancelled { .. }) => (),
-
-            Err(_) => on_error.await,
+            Ok(Ok(())) => on_finish.await,
+            Ok(Err(_)) => on_error.await,
+            Err(_) => (), // do nothing, if task was cancelled
         }
 
-        result.is_ok()
+        matches!(result, Ok(Ok(())))
     })
 }
