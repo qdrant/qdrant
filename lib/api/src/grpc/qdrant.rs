@@ -5044,7 +5044,7 @@ pub mod points_client {
         ///
         /// Use context and a target to find the most similar points to the target, constrained by the context.
         ///
-        /// When using only the context (without a target), a special search –called context search– is performed where
+        /// When using only the context (without a target), a special search - called context search - is performed where
         /// pairs of points are used to generate a loss that guides the search towards the zone where
         /// most positive examples overlap. This means that the score minimizes the scenario of
         /// finding a point closer to a negative than to a positive part of a pair.
@@ -5318,7 +5318,7 @@ pub mod points_server {
         ///
         /// Use context and a target to find the most similar points to the target, constrained by the context.
         ///
-        /// When using only the context (without a target), a special search –called context search– is performed where
+        /// When using only the context (without a target), a special search - called context search - is performed where
         /// pairs of points are used to generate a loss that guides the search towards the zone where
         /// most positive examples overlap. This means that the score minimizes the scenario of
         /// finding a point closer to a negative than to a positive part of a pair.
