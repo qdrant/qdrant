@@ -590,24 +590,28 @@ impl ContextExamplePair {
 }
 
 /// Use context and a target to find the most similar points, constrained by the context.
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct DiscoverRequest {
-    /// Look for vectors closest to this
+    /// Look for vectors closest to this.
     ///
     /// When using the target (with or without context), the integer part of the score represents
-    /// the "rank" with respect to the context, while the decimal part of the score relates to the
+    /// the rank with respect to the context, while the decimal part of the score relates to the
     /// distance to the target.
     pub target: Option<RecommendExample>,
 
-    /// Pairs of { positive, negative } examples to provide context to the search.
+    /// Pairs of { positive, negative } examples to constrain the search.
     ///
-    /// When using only the context, a special search is performed where pairs of points are
-    /// used to generate a loss that guides the search towards the zone where most positive
-    /// examples overlap. This means that the score minimizes the scenario of finding a point
-    /// closer to a negative than to a positive part of a pair.
+    /// When using only the context (without a target), a special search - called context search - is
+    /// performed where pairs of points are used to generate a loss that guides the search towards the
+    /// zone where most positive examples overlap. This means that the score minimizes the scenario of
+    /// finding a point closer to a negative than to a positive part of a pair.
+    ///
     /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
     /// and it becomes normal that many points can have a score of 0.0.
+    ///
+    /// For discovery search (when including a target), the context part of the score for each pair
+    /// is calculated +1 if the point is closer to a positive than to a negative part of a pair,
+    /// and -1 otherwise.
     pub context: Option<Vec<ContextExamplePair>>,
 
     /// Look only for points which satisfies this conditions
