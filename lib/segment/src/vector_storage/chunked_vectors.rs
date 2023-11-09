@@ -79,7 +79,9 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
                 // Once we have more than one chunk, we don't want to overallocate
                 // and we keep the exact capacity of each chunk.
                 let desired_capacity = self.chunk_capacity * self.dim;
-                chunk_data.try_set_capacity_exact(desired_capacity)?;
+                if chunk_data.capacity() == 0 {
+                    chunk_data.try_set_capacity_exact(desired_capacity)?;
+                }
             }
             chunk_data.resize(idx + self.dim, T::default());
         }
