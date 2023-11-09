@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use collection::collection::Collection;
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointStruct, WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
 use collection::operations::types::{CollectionError, CollectionResult, ScrollRequest};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
@@ -111,14 +111,14 @@ async fn replicate_shard_data(
             .collect();
 
         let upsert_request = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::PointsList(records)),
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(records)),
         );
 
         let target_collection =
             handle_get_collection(collections_read.get(target_collection_name))?;
 
         target_collection
-            .update_from_client(upsert_request, false, WriteOrdering::default())
+            .update_from_client_simple(upsert_request, false, WriteOrdering::default())
             .await?;
 
         if offset.is_none() {
@@ -220,7 +220,7 @@ pub async fn transfer_indexes(
             }),
         );
         target_collection
-            .update_from_client(request, false, WriteOrdering::default())
+            .update_from_client_simple(request, false, WriteOrdering::default())
             .await?;
     }
 

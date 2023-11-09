@@ -605,6 +605,7 @@ impl Segment {
                     score: scored_point_offset.score,
                     payload,
                     vector,
+                    shard_key: None,
                 })
             })
             .collect()

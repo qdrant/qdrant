@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use segment::common::version::StorageVersion;
+use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
@@ -247,6 +248,16 @@ impl Collection {
 
     pub fn name(&self) -> String {
         self.id.clone()
+    }
+
+    pub async fn get_shard_keys(&self) -> Vec<ShardKey> {
+        self.shards_holder
+            .read()
+            .await
+            .get_shard_key_to_ids_mapping()
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// Return a list of local shards, present on this peer

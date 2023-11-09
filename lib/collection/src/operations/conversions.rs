@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
-use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
+use api::grpc::conversions::{
+    convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
+    from_grpc_dist, payload_to_proto, proto_to_payloads,
+};
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
 use itertools::Itertools;
@@ -39,6 +42,7 @@ use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
     LocalShardInfo, LookupLocation, OptimizersStatus, RecommendRequest, Record, RemoteShardInfo,
@@ -47,7 +51,6 @@ use crate::operations::types::{
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::shard::ShardKey;
 use crate::shards::transfer::shard_transfer::ShardTransferMethod;
 
 pub fn sharding_method_to_proto(sharding_method: ShardingMethod) -> i32 {
@@ -128,6 +131,7 @@ pub fn try_record_from_grpc(
         id,
         payload,
         vector,
+        shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
     })
 }
 
@@ -409,6 +413,7 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
             vectors,
+            shard_key: record.shard_key.map(convert_shard_key_to_grpc),
         }
     }
 }
@@ -753,27 +758,28 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::PointsSelector> for PointsSelector {
-    type Error = Status;
-
-    fn try_from(value: api::grpc::qdrant::PointsSelector) -> Result<Self, Self::Error> {
-        match value.points_selector_one_of {
-            Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Points(points)) => {
-                Ok(PointIdsSelector(PointIdsList {
-                    points: points
-                        .ids
-                        .into_iter()
-                        .map(|p| p.try_into())
-                        .collect::<Result<Vec<_>, _>>()?,
-                }))
-            }
-            Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Filter(f)) => {
-                Ok(PointsSelector::FilterSelector(FilterSelector {
-                    filter: f.try_into()?,
-                }))
-            }
-            _ => Err(Status::invalid_argument("Malformed PointsSelector type")),
+pub fn try_points_selector_from_grpc(
+    value: api::grpc::qdrant::PointsSelector,
+    shard_key_selector: Option<api::grpc::qdrant::ShardKeySelector>,
+) -> Result<PointsSelector, Status> {
+    match value.points_selector_one_of {
+        Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Points(points)) => {
+            Ok(PointIdsSelector(PointIdsList {
+                points: points
+                    .ids
+                    .into_iter()
+                    .map(|p| p.try_into())
+                    .collect::<Result<_, _>>()?,
+                shard_key: shard_key_selector.map(ShardKeySelector::from),
+            }))
         }
+        Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Filter(f)) => {
+            Ok(PointsSelector::FilterSelector(FilterSelector {
+                filter: f.try_into()?,
+                shard_key: shard_key_selector.map(ShardKeySelector::from),
+            }))
+        }
+        _ => Err(Status::invalid_argument("Malformed PointsSelector type")),
     }
 }
 
@@ -1365,26 +1371,13 @@ impl From<AliasDescription> for api::grpc::qdrant::AliasDescription {
     }
 }
 
-impl From<ShardKey> for api::grpc::qdrant::ShardKey {
-    fn from(value: ShardKey) -> Self {
-        match value {
-            ShardKey::Keyword(keyword) => Self {
-                key: Some(api::grpc::qdrant::shard_key::Key::Keyword(keyword)),
-            },
-            ShardKey::Number(number) => Self {
-                key: Some(api::grpc::qdrant::shard_key::Key::Number(number)),
-            },
-        }
-    }
-}
-
 impl From<LocalShardInfo> for api::grpc::qdrant::LocalShardInfo {
     fn from(value: LocalShardInfo) -> Self {
         Self {
             shard_id: value.shard_id,
             points_count: value.points_count as u64,
             state: value.state as i32,
-            shard_key: value.shard_key.map(Into::into),
+            shard_key: value.shard_key.map(convert_shard_key_to_grpc),
         }
     }
 }
@@ -1395,7 +1388,7 @@ impl From<RemoteShardInfo> for api::grpc::qdrant::RemoteShardInfo {
             shard_id: value.shard_id,
             peer_id: value.peer_id,
             state: value.state as i32,
-            shard_key: value.shard_key.map(Into::into),
+            shard_key: value.shard_key.map(convert_shard_key_to_grpc),
         }
     }
 }
@@ -1501,5 +1494,21 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 })
             }
         })
+    }
+}
+
+impl From<api::grpc::qdrant::ShardKeySelector> for ShardKeySelector {
+    fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
+        let shard_keys: Vec<_> = value
+            .shard_keys
+            .into_iter()
+            .filter_map(convert_shard_key_from_grpc)
+            .collect();
+
+        if shard_keys.len() == 1 {
+            ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
+        } else {
+            ShardKeySelector::ShardKeys(shard_keys)
+        }
     }
 }

@@ -1,4 +1,4 @@
-use api::grpc::conversions::payload_to_proto;
+use api::grpc::conversions::{convert_shard_key_from_grpc_opt, payload_to_proto};
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
@@ -13,10 +13,12 @@ use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdTyp
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
-use crate::operations::payload_ops::{DeletePayload, SetPayload};
-use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation, WriteOrdering};
+use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
+use crate::operations::point_ops::{
+    PointInsertOperationsInternal, PointSyncOperation, WriteOrdering,
+};
 use crate::operations::types::CollectionResult;
-use crate::operations::vector_ops::UpdateVectors;
+use crate::operations::vector_ops::UpdateVectorsOp;
 use crate::operations::CreateIndex;
 use crate::shards::shard::ShardId;
 
@@ -47,7 +49,7 @@ pub fn internal_sync_points(
 pub fn internal_upsert_points(
     shard_id: Option<ShardId>,
     collection_name: String,
-    point_insert_operations: PointInsertOperations,
+    point_insert_operations: PointInsertOperationsInternal,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpsertPointsInternal> {
@@ -57,13 +59,14 @@ pub fn internal_upsert_points(
             collection_name,
             wait: Some(wait),
             points: match point_insert_operations {
-                PointInsertOperations::PointsBatch(batch) => batch.try_into()?,
-                PointInsertOperations::PointsList(list) => list
+                PointInsertOperationsInternal::PointsBatch(batch) => batch.try_into()?,
+                PointInsertOperationsInternal::PointsList(list) => list
                     .into_iter()
                     .map(|id| id.try_into())
                     .collect::<Result<Vec<_>, Status>>()?,
             },
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     })
 }
@@ -86,6 +89,7 @@ pub fn internal_delete_points(
                 })),
             }),
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -106,6 +110,7 @@ pub fn internal_delete_points_by_filter(
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
             }),
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -113,7 +118,7 @@ pub fn internal_delete_points_by_filter(
 pub fn internal_update_vectors(
     shard_id: Option<ShardId>,
     collection_name: String,
-    update_vectors: UpdateVectors,
+    update_vectors: UpdateVectorsOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> UpdateVectorsInternal {
@@ -131,6 +136,7 @@ pub fn internal_update_vectors(
                 })
                 .collect(),
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -157,6 +163,7 @@ pub fn internal_delete_vectors(
                 names: vector_names,
             }),
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -181,6 +188,7 @@ pub fn internal_delete_vectors_by_filter(
                 names: vector_names,
             }),
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -188,7 +196,7 @@ pub fn internal_delete_vectors_by_filter(
 pub fn internal_set_payload(
     shard_id: Option<ShardId>,
     collection_name: String,
-    set_payload: SetPayload,
+    set_payload: SetPayloadOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> SetPayloadPointsInternal {
@@ -212,6 +220,7 @@ pub fn internal_set_payload(
             payload: payload_to_proto(set_payload.payload),
             points_selector,
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -219,7 +228,7 @@ pub fn internal_set_payload(
 pub fn internal_delete_payload(
     shard_id: Option<ShardId>,
     collection_name: String,
-    delete_payload: DeletePayload,
+    delete_payload: DeletePayloadOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeletePayloadPointsInternal {
@@ -243,6 +252,7 @@ pub fn internal_delete_payload(
             keys: delete_payload.keys,
             points_selector,
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -265,6 +275,7 @@ pub fn internal_clear_payload(
                 })),
             }),
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -285,6 +296,7 @@ pub fn internal_clear_payload_by_filter(
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
             }),
             ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     }
 }
@@ -390,5 +402,6 @@ pub fn try_scored_point_from_grpc(
         score: point.score,
         payload,
         vector,
+        shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
     })
 }

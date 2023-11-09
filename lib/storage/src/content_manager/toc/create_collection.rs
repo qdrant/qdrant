@@ -83,6 +83,11 @@ impl TableOfContent {
                 }
             }
             ShardingMethod::Custom => {
+                if init_from.is_some() {
+                    return Err(StorageError::bad_input(
+                        "Can't initialize collection from another collection with custom sharding method"
+                    ));
+                }
                 if let Some(shard_number) = shard_number {
                     shard_number
                 } else {

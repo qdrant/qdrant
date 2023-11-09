@@ -56,3 +56,24 @@ impl<T: Hash + Copy> HashRing<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_non_seq_keys() {
+        let mut ring = HashRing::fair(100);
+        ring.add(5);
+        ring.add(7);
+        ring.add(8);
+        ring.add(20);
+
+        for i in 0..20 {
+            match ring.get(&i) {
+                None => panic!("Key {i} has no shard"),
+                Some(x) => assert!([5, 7, 8, 20].contains(x)),
+            }
+        }
+    }
+}

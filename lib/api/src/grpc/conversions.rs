@@ -18,15 +18,15 @@ use crate::grpc::qdrant::value::Kind;
 use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
-    with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
-    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
-    HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
-    ListValue, Match, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    ProductQuantization, QuantizationConfig, QuantizationSearchParams, QuantizationType, Range,
-    RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, Struct,
-    TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector,
-    WithPayloadSelector, WithVectorsSelector,
+    shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
+    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
+    HasIdCondition, HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition,
+    ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
+    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
+    PayloadSchemaType, PointId, ProductQuantization, QuantizationConfig, QuantizationSearchParams,
+    QuantizationType, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint,
+    SearchParams, ShardKey, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
+    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -106,6 +106,44 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
                 }
                 Ok(serde_json::Value::Array(list))
             }
+        },
+    }
+}
+
+pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {
+    match value {
+        segment::types::ShardKey::Keyword(keyword) => ShardKey {
+            key: Some(shard_key::Key::Keyword(keyword)),
+        },
+        segment::types::ShardKey::Number(number) => ShardKey {
+            key: Some(shard_key::Key::Number(number)),
+        },
+    }
+}
+
+pub fn convert_shard_key_from_grpc(value: ShardKey) -> Option<segment::types::ShardKey> {
+    match value.key {
+        None => None,
+        Some(key) => match key {
+            shard_key::Key::Keyword(keyword) => Some(segment::types::ShardKey::Keyword(keyword)),
+            shard_key::Key::Number(number) => Some(segment::types::ShardKey::Number(number)),
+        },
+    }
+}
+
+pub fn convert_shard_key_from_grpc_opt(
+    value: Option<ShardKey>,
+) -> Option<segment::types::ShardKey> {
+    match value {
+        None => None,
+        Some(key) => match key.key {
+            None => None,
+            Some(key) => match key {
+                shard_key::Key::Keyword(keyword) => {
+                    Some(segment::types::ShardKey::Keyword(keyword))
+                }
+                shard_key::Key::Number(number) => Some(segment::types::ShardKey::Number(number)),
+            },
         },
     }
 }
@@ -430,6 +468,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score: point.score,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
+            shard_key: point.shard_key.map(convert_shard_key_to_grpc),
         }
     }
 }
