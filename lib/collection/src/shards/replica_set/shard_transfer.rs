@@ -194,6 +194,8 @@ impl ShardReplicaSet {
                 // fails to send all updates to the remote shard.
                 // Instead we should transform it into a forward proxy shard before unproxify is
                 // called to handle errors at an earlier time.
+                // Also, we're holding a write lock here which could block other accessors for a
+                // long time if transferring updates takes a long time.
                 // See `Self::queue_proxy_into_forward_proxy()` for more details.
 
                 log::warn!(
