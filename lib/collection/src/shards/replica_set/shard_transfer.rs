@@ -317,7 +317,6 @@ impl ShardReplicaSet {
             proxy.remote_shard.peer_id,
         );
 
-        // TODO: Is cancelling `ForwardProxyShard::transfer_indexes` safe for *receiver*?
         proxy.transfer_indexes().await
     }
 
