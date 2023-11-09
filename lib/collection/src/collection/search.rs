@@ -343,10 +343,20 @@ impl Collection {
             .into_iter()
             .zip(request.searches.iter())
             .map(|(res, request)| {
-                let distance = collection_params
-                    .get_vector_params(request.query.get_vector_name())?
-                    .distance;
-                let mut top_res = match distance.distance_order() {
+                let order = match &request.query {
+                    QueryEnum::Nearest(_) => collection_params
+                        .get_vector_params(request.query.get_vector_name())?
+                        .distance
+                        .distance_order(),
+
+                    // Score comes from special handling of the distances in a way that it doesn't
+                    // directly represent distance anymore, so the order is always `LargeBetter`
+                    QueryEnum::Discover(_)
+                    | QueryEnum::Context(_)
+                    | QueryEnum::RecommendBestScore(_) => Order::LargeBetter,
+                };
+
+                let mut top_res = match order {
                     Order::LargeBetter => {
                         tools::peek_top_largest_iterable(res, request.limit + request.offset)
                     }
