@@ -218,8 +218,6 @@ def test_discover_same_target():
 
     # We keep same target, so context part of the score (integer part) can be different,
     # while target part of the score (decimal part) should be the same
-    assert scored_points1 != scored_points2
-
     scored_points2_map = {point["id"]: point for point in scored_points2}
 
     for point1 in scored_points1:
