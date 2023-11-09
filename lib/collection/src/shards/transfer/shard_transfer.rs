@@ -495,6 +495,8 @@ pub async fn handle_transferred_shard_proxy(
     to: PeerId,
     sync: bool,
 ) -> CollectionResult<bool> {
+    // TODO: Ensure cancel safety!
+
     let replica_set = match shard_holder.get_shard(&shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
