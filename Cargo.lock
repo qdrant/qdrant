@@ -4785,6 +4785,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "io",
+ "itertools 0.11.0",
  "memmap2 0.7.1",
  "memory",
  "ordered-float 4.1.1",
@@ -4792,6 +4793,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "validator",
 ]
 
 [[package]]

@@ -33,7 +33,7 @@ pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_dim_size: usiz
         ));
     }
 
-    SparseVector::from(tuples)
+    SparseVector::try_from(tuples).unwrap()
 }
 
 /// Generates a sparse vector with all dimensions filled
@@ -47,5 +47,5 @@ pub fn random_full_sparse_vector<R: Rng + ?Sized>(
         tuples.push((i as i32, rnd_gen.gen_range(VALUE_RANGE)));
     }
 
-    SparseVector::from(tuples)
+    SparseVector::try_from(tuples).unwrap()
 }
