@@ -1,23 +1,52 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use sparse::common::sparse_vector::SparseVector;
+
 use super::tiny_map;
-use super::vectors::{VectorElementType, DEFAULT_VECTOR_NAME};
+use super::vectors::{Vector, VectorElementType, VectorRef, DEFAULT_VECTOR_NAME};
 use crate::types::Distance;
 
 type CowKey<'a> = Cow<'a, str>;
-type CowValue<'a> = Cow<'a, [VectorElementType]>;
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum CowValue<'a> {
+    Dense(Cow<'a, [VectorElementType]>),
+    Sparse(Cow<'a, SparseVector>),
+}
+
+impl<'a> Default for CowValue<'a> {
+    fn default() -> Self {
+        CowValue::Dense(Cow::Owned(Vec::new()))
+    }
+}
+
 type TinyMap<'a> = tiny_map::TinyMap<CowKey<'a>, CowValue<'a>>;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct NamedVectors<'a> {
     map: TinyMap<'a>,
 }
 
+impl<'a> CowValue<'a> {
+    pub fn to_owned(self) -> Vector {
+        match self {
+            CowValue::Dense(v) => Vector::Dense(v.into_owned()),
+            CowValue::Sparse(v) => Vector::Sparse(v.into_owned()),
+        }
+    }
+}
+
 impl<'a> NamedVectors<'a> {
-    pub fn from_ref(key: &'a str, value: &'a [VectorElementType]) -> Self {
+    pub fn from_ref(key: &'a str, value: VectorRef<'a>) -> Self {
         let mut map = TinyMap::new();
-        map.insert(Cow::Borrowed(key), Cow::Borrowed(value));
+        map.insert(
+            Cow::Borrowed(key),
+            match value {
+                VectorRef::Dense(v) => CowValue::Dense(Cow::Borrowed(v)),
+                VectorRef::Sparse(v) => CowValue::Sparse(Cow::Borrowed(v)),
+            },
+        );
         Self { map }
     }
 
@@ -25,7 +54,7 @@ impl<'a> NamedVectors<'a> {
         NamedVectors {
             map: arr
                 .into_iter()
-                .map(|(k, v)| (CowKey::from(k), CowValue::from(v)))
+                .map(|(k, v)| (CowKey::from(k), CowValue::Dense(Cow::Owned(v))))
                 .collect(),
         }
     }
@@ -34,7 +63,33 @@ impl<'a> NamedVectors<'a> {
         Self {
             map: map
                 .into_iter()
-                .map(|(k, v)| (CowKey::from(k), CowValue::from(v)))
+                .map(|(k, v)| (CowKey::from(k), CowValue::Dense(Cow::Owned(v))))
+                .collect(),
+        }
+    }
+
+    pub fn from_sparse_map(map: HashMap<String, SparseVector>) -> Self {
+        Self {
+            map: map
+                .into_iter()
+                .map(|(k, v)| (CowKey::from(k), CowValue::Sparse(Cow::Owned(v))))
+                .collect(),
+        }
+    }
+
+    pub fn from_mixed_map(map: HashMap<String, Vector>) -> Self {
+        Self {
+            map: map
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        CowKey::from(k),
+                        match v {
+                            Vector::Dense(v) => CowValue::Dense(Cow::Owned(v)),
+                            Vector::Sparse(v) => CowValue::Sparse(Cow::Owned(v)),
+                        },
+                    )
+                })
                 .collect(),
         }
     }
@@ -43,19 +98,55 @@ impl<'a> NamedVectors<'a> {
         Self {
             map: map
                 .iter()
-                .map(|(k, v)| (CowKey::from(k), CowValue::from(v)))
+                .map(|(k, v)| (CowKey::from(k), CowValue::Dense(Cow::Borrowed(v))))
                 .collect(),
         }
     }
 
-    pub fn insert(&mut self, name: String, vector: Vec<VectorElementType>) {
-        self.map
-            .insert(CowKey::Owned(name), CowValue::Owned(vector));
+    pub fn from_sparse_map_ref(map: &'a HashMap<String, SparseVector>) -> Self {
+        Self {
+            map: map
+                .iter()
+                .map(|(k, v)| (CowKey::from(k), CowValue::Sparse(Cow::Borrowed(v))))
+                .collect(),
+        }
     }
 
-    pub fn insert_ref(&mut self, name: &'a str, vector: &'a [VectorElementType]) {
-        self.map
-            .insert(CowKey::Borrowed(name), CowValue::Borrowed(vector));
+    pub fn from_mixed_map_ref(map: &'a HashMap<String, Vector>) -> Self {
+        Self {
+            map: map
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        CowKey::from(k),
+                        match v {
+                            Vector::Dense(v) => CowValue::Dense(Cow::Borrowed(v)),
+                            Vector::Sparse(v) => CowValue::Sparse(Cow::Borrowed(v)),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    pub fn insert(&mut self, name: String, vector: Vector) {
+        self.map.insert(
+            CowKey::Owned(name),
+            match vector {
+                Vector::Dense(v) => CowValue::Dense(Cow::Owned(v)),
+                Vector::Sparse(v) => CowValue::Sparse(Cow::Owned(v)),
+            },
+        );
+    }
+
+    pub fn insert_ref(&mut self, name: &'a str, vector: VectorRef<'a>) {
+        self.map.insert(
+            CowKey::Borrowed(name),
+            match vector {
+                VectorRef::Dense(v) => CowValue::Dense(Cow::Borrowed(v)),
+                VectorRef::Sparse(v) => CowValue::Sparse(Cow::Borrowed(v)),
+            },
+        );
     }
 
     pub fn contains_key(&self, key: &str) -> bool {
@@ -74,35 +165,62 @@ impl<'a> NamedVectors<'a> {
         self.map.iter().map(|(k, _)| k.as_ref())
     }
 
-    pub fn into_default_vector(mut self) -> Option<Vec<VectorElementType>> {
-        self.map
-            .get_mut(DEFAULT_VECTOR_NAME)
-            .map(|src| std::mem::take(src).into_owned())
+    pub fn into_default_vector(mut self) -> Option<Vector> {
+        self.map.get_mut(DEFAULT_VECTOR_NAME).map(|src| match src {
+            CowValue::Dense(src) => Vector::Dense(std::mem::take(src).into_owned()),
+            CowValue::Sparse(src) => Vector::Sparse(std::mem::take(src).into_owned()),
+        })
     }
 
-    pub fn into_owned_map(self) -> HashMap<String, Vec<VectorElementType>> {
+    pub fn into_owned_map(self) -> HashMap<String, Vector> {
         self.map
             .into_iter()
-            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .map(|(k, v)| {
+                (
+                    k.into_owned(),
+                    match v {
+                        CowValue::Dense(src) => Vector::Dense(src.into_owned()),
+                        CowValue::Sparse(src) => Vector::Sparse(src.into_owned()),
+                    },
+                )
+            })
             .collect()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &[VectorElementType])> {
-        self.map.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
+    pub fn iter(&self) -> impl Iterator<Item = (&str, VectorRef<'_>)> {
+        self.map.iter().map(|(k, v)| {
+            (
+                k.as_ref(),
+                match v {
+                    CowValue::Dense(v) => VectorRef::Dense(v.as_ref()),
+                    CowValue::Sparse(v) => VectorRef::Sparse(v.as_ref()),
+                },
+            )
+        })
     }
 
-    pub fn get(&self, key: &str) -> Option<&[VectorElementType]> {
-        self.map.get(key).map(|v| v.as_ref())
+    pub fn get(&self, key: &str) -> Option<VectorRef<'_>> {
+        match self.map.get(key) {
+            Some(CowValue::Dense(v)) => Some(VectorRef::Dense(v.as_ref())),
+            Some(CowValue::Sparse(v)) => Some(VectorRef::Sparse(v.as_ref())),
+            None => None,
+        }
     }
 
     pub fn preprocess<F>(&mut self, distance_map: F)
     where
-        F: Fn(&str) -> Distance,
+        F: Fn(&str) -> Option<Distance>,
     {
         for (name, vector) in self.map.iter_mut() {
-            let distance = distance_map(name);
-            let preprocessed_vector = distance.preprocess_vector(vector.to_vec());
-            *vector = CowValue::Owned(preprocessed_vector);
+            if let Some(distance) = distance_map(name) {
+                match vector {
+                    CowValue::Dense(v) => {
+                        let preprocessed_vector = distance.preprocess_vector(v.to_vec());
+                        *vector = CowValue::Dense(Cow::Owned(preprocessed_vector))
+                    }
+                    CowValue::Sparse(_) => {}
+                }
+            }
         }
     }
 }

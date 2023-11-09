@@ -143,8 +143,22 @@ pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
     NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
 }
 
+pub fn default_sparse_vector(vec: SparseVector) -> NamedVectors<'static> {
+    let mut result = NamedVectors::default();
+    result.insert(DEFAULT_VECTOR_NAME.to_owned(), vec.into());
+    result
+}
+
 pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
-    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec)
+    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
+}
+
+pub fn only_default_sparse_vector(vec: &SparseVector) -> NamedVectors {
+    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
+}
+
+pub fn only_default_mixed_vector(vec: &Vector) -> NamedVectors {
+    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
 }
 
 /// Full vector data per point separator with single and multiple vector modes
@@ -178,11 +192,17 @@ impl From<&[VectorElementType]> for VectorStruct {
 }
 
 impl<'a> From<NamedVectors<'a>> for VectorStruct {
+    // TODO(sparse): this is temporary conversion while `VectorStruct` does not support sparse vectors
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
-            VectorStruct::Single(v.into_default_vector().unwrap())
+            VectorStruct::Single(v.into_default_vector().unwrap().try_into().unwrap())
         } else {
-            VectorStruct::Multi(v.into_owned_map())
+            VectorStruct::Multi(
+                v.into_owned_map()
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into()))
+                    .collect(),
+            )
         }
     }
 }
