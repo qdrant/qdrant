@@ -89,9 +89,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             // If the chunk is not the first one, allocate it fully on first use
             if chunk_idx != 0 {
                 let desired_capacity = self.chunk_capacity * self.dim;
-                if chunk_data.capacity() == 0 {
-                    chunk_data.try_set_capacity_exact(desired_capacity)?;
-                }
+                chunk_data.try_set_capacity_exact(desired_capacity)?;
             }
             chunk_data.resize(idx + self.dim, T::default());
         }
