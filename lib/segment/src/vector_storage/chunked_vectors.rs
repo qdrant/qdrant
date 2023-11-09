@@ -91,7 +91,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
                 let desired_capacity = self.chunk_capacity * self.dim;
                 chunk_data.try_set_capacity_exact(desired_capacity)?;
             }
-            chunk_data.resize(idx + self.dim, T::default());
+            chunk_data.resize_with(idx + self.dim, T::default);
         }
 
         let data = &mut chunk_data[idx..idx + self.dim];
