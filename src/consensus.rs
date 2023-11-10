@@ -466,7 +466,8 @@ impl Consensus {
         if !self.node.has_ready() {
             // No updates to process
             let store = self.node.store();
-            if store.is_leader_established.check_ready() {
+            let pending_operations = store.persistent.read().unapplied_entities_count();
+            if pending_operations == 0 && store.is_leader_established.check_ready() {
                 // If leader is established and there is nothing else to do on this iteration,
                 // then we can check if there are any un-synchronized local state left.
                 store.sync_local_state()?;
