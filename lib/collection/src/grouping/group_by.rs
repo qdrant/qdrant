@@ -16,8 +16,8 @@ use crate::collection::Collection;
 use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionError, CollectionResult, CoreSearchRequest, PointGroup, QueryEnum,
-    RecommendGroupsRequest, RecommendRequest, SearchGroupsRequest, UsingVector,
+    BaseGroupRequest, CollectionError, CollectionResult, PointGroup, RecommendGroupsRequest,
+    RecommendRequest, SearchGroupsRequest, SearchRequest, UsingVector,
 };
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
@@ -27,19 +27,14 @@ const MAX_GROUP_FILLING_REQUESTS: usize = 5;
 
 #[derive(Clone, Debug)]
 pub enum SourceRequest {
-    Search(CoreSearchRequest),
+    Search(SearchRequest),
     Recommend(RecommendRequest),
 }
 
 impl SourceRequest {
     fn vector_field_name(&self) -> &str {
         match self {
-            SourceRequest::Search(request) => match &request.query {
-                QueryEnum::Nearest(x) => x.get_name(),
-                QueryEnum::RecommendBestScore(x) => x.get_name(),
-                QueryEnum::Discover(x) => x.get_name(),
-                QueryEnum::Context(x) => x.get_name(),
-            },
+            SourceRequest::Search(request) => request.vector.get_name(),
             SourceRequest::Recommend(request) => {
                 if let Some(UsingVector::Name(name)) = &request.using {
                     name
@@ -161,7 +156,7 @@ impl GroupRequest {
                 request.with_vector = None;
 
                 collection
-                    .search(request, read_consistency, shard_selection, timeout)
+                    .search(request.into(), read_consistency, shard_selection, timeout)
                     .await
             }
             SourceRequest::Recommend(mut request) => {
@@ -204,8 +199,8 @@ impl From<SearchGroupsRequest> for GroupRequest {
                 },
         } = request;
 
-        let search = CoreSearchRequest {
-            query: QueryEnum::Nearest(vector),
+        let search = SearchRequest {
+            vector,
             filter,
             params,
             limit: 0,
