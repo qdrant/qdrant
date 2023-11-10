@@ -50,13 +50,13 @@ pub async fn do_recover_from_snapshot(
     collection_name: &str,
     source: SnapshotRecover,
     wait: bool,
+    client: reqwest::Client,
 ) -> Result<bool, StorageError> {
     let dispatch = dispatcher.clone();
     let collection_name = collection_name.to_string();
-    let recovery =
-        tokio::spawn(
-            async move { _do_recover_from_snapshot(dispatch, &collection_name, source).await },
-        );
+    let recovery = tokio::spawn(async move {
+        _do_recover_from_snapshot(dispatch, &collection_name, source, &client).await
+    });
     if wait {
         Ok(recovery.await??)
     } else {
@@ -68,6 +68,7 @@ async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
+    client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover { location, priority } = source;
     let toc = dispatcher.toc();
@@ -84,7 +85,7 @@ async fn _do_recover_from_snapshot(
     );
 
     let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(location, download_dir.path()).await?;
+        download_snapshot(client, location, download_dir.path()).await?;
 
     log::debug!("Snapshot downloaded to {}", snapshot_path.display());
 

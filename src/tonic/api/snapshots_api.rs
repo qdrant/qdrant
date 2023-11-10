@@ -22,6 +22,7 @@ use tonic::{async_trait, Request, Response, Status};
 use super::{validate, validate_and_log};
 use crate::common;
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
+use crate::common::http_client::HttpClient;
 
 pub struct SnapshotsService {
     dispatcher: Arc<Dispatcher>,
@@ -134,14 +135,14 @@ impl Snapshots for SnapshotsService {
     }
 }
 
-#[derive(Clone)]
 pub struct ShardSnapshotsService {
     toc: Arc<TableOfContent>,
+    http_client: HttpClient,
 }
 
 impl ShardSnapshotsService {
-    pub fn new(toc: Arc<TableOfContent>) -> Self {
-        Self { toc }
+    pub fn new(toc: Arc<TableOfContent>, http_client: HttpClient) -> Self {
+        Self { toc, http_client }
     }
 }
 
@@ -231,6 +232,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             request.shard_id,
             request.snapshot_location.try_into()?,
             request.snapshot_priority.try_into()?,
+            self.http_client.clone(),
         )
         .await
         .map_err(error_to_status)?;

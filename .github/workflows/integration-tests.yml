@@ -89,6 +89,8 @@ jobs:
 
   test-tls-compose:
 
+    name: "Basic TLS/HTTPS tests"
+
     runs-on: ubuntu-latest
 
     steps:
@@ -107,9 +109,13 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
-      - name: Run integration tests
+      - name: Run basic TLS/HTTPS test
         run: ./test_tls.sh
         working-directory: ./tests/tls
+      - name: Run snapshot shard transfer TLS/HTTPS test
+        run: ./test_tls_snapshot_shard_transfer.sh
+        working-directory: ./tests/tls
+
 
   test-consistency:
 

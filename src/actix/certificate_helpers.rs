@@ -56,7 +56,7 @@ impl RotatingCertificateResolver {
         let mut key = self.key.write();
         if key.is_expired(ttl) {
             if let Err(err) = key.refresh(&self.tls_config) {
-                log::error!("Failed to refresh TLS certificate, keeping current: {err}");
+                log::error!("Failed to refresh server TLS certificate, keeping current: {err}");
             }
         }
 

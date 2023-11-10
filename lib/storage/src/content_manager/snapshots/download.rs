@@ -28,11 +28,15 @@ fn snapshot_name(url: &Url) -> String {
 /// Returns a `TempPath` that will delete the downloaded file once it is dropped.
 /// To persist the file, use `download_file(...).keep()`.
 #[must_use = "returns a TempPath, if dropped the downloaded file is deleted"]
-async fn download_file(url: &Url, path: &Path) -> Result<TempPath, StorageError> {
+async fn download_file(
+    client: &reqwest::Client,
+    url: &Url,
+    path: &Path,
+) -> Result<TempPath, StorageError> {
     let temp_path = TempPath::from_path(path);
     let mut file = File::create(path).await?;
 
-    let response = reqwest::get(url.clone()).await?;
+    let response = client.get(url.clone()).send().await?;
 
     if !response.status().is_success() {
         return Err(StorageError::bad_input(format!(
@@ -60,6 +64,7 @@ async fn download_file(url: &Url, path: &Path) -> Result<TempPath, StorageError>
 /// downloaded file is deleted automatically. To keep the file `keep()` may be used.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
 pub async fn download_snapshot(
+    client: &reqwest::Client,
     url: Url,
     snapshots_dir: &Path,
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
@@ -80,7 +85,7 @@ pub async fn download_snapshot(
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));
 
-            let temp_path = download_file(&url, &download_to).await?;
+            let temp_path = download_file(client, &url, &download_to).await?;
             Ok((download_to, Some(temp_path)))
         }
         _ => Err(StorageError::bad_request(format!(
