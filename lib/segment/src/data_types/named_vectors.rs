@@ -137,17 +137,16 @@ impl<'a> NamedVectors<'a> {
 
     pub fn preprocess<F>(&mut self, distance_map: F)
     where
-        F: Fn(&str) -> Option<Distance>,
+        F: Fn(&str) -> Distance,
     {
         for (name, vector) in self.map.iter_mut() {
-            if let Some(distance) = distance_map(name) {
-                match vector {
-                    CowValue::Dense(v) => {
-                        let preprocessed_vector = distance.preprocess_vector(v.to_vec());
-                        *vector = CowValue::Dense(Cow::Owned(preprocessed_vector))
-                    }
-                    CowValue::Sparse(_) => {}
+            let distance = distance_map(name);
+            match vector {
+                CowValue::Dense(v) => {
+                    let preprocessed_vector = distance.preprocess_vector(v.to_vec());
+                    *vector = CowValue::Dense(Cow::Owned(preprocessed_vector))
                 }
+                CowValue::Sparse(_) => {}
             }
         }
     }
