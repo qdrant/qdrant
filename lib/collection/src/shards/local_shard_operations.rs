@@ -14,7 +14,7 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, QueryEnum, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
+    CountResult, PointRequest, QueryEnum, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
@@ -48,8 +48,8 @@ impl LocalShard {
         let is_stopped = StoppingGuard::new();
 
         let search_request = SegmentsSearcher::search(
-            self.segments.clone(),
-            core_request.clone(),
+            Arc::clone(&self.segments),
+            Arc::clone(&core_request),
             search_runtime_handle,
             true,
             is_stopped.get_is_stopped(),
@@ -197,24 +197,6 @@ impl ShardOperation for LocalShard {
         Ok(self.local_shard_info().await)
     }
 
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
-    async fn search(
-        &self,
-        request: Arc<SearchRequestBatch>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.do_search(
-            Arc::new(request.as_ref().clone().into()),
-            search_runtime_handle,
-            timeout,
-        )
-        .await
-    }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,

@@ -14,7 +14,7 @@ use crate::shards::shard::ShardId;
 impl Collection {
     pub async fn search(
         &self,
-        request: SearchRequest,
+        request: CoreSearchRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
         timeout: Option<Duration>,
@@ -23,104 +23,15 @@ impl Collection {
             return Ok(vec![]);
         }
         // search is a special case of search_batch with a single batch
-        let request_batch = SearchRequestBatch {
+        let request_batch = CoreSearchRequestBatch {
             searches: vec![request],
         };
         let results = self
-            .do_search_batch(request_batch, read_consistency, shard_selection, timeout)
+            .do_core_search_batch(request_batch, read_consistency, shard_selection, timeout)
             .await?;
         Ok(results.into_iter().next().unwrap())
     }
 
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
-    pub async fn search_batch(
-        &self,
-        request: SearchRequestBatch,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // shortcuts batch if all requests with limit=0
-        if request.searches.iter().all(|s| s.limit == 0) {
-            return Ok(vec![]);
-        }
-        // A factor which determines if we need to use the 2-step search or not
-        // Should be adjusted based on usage statistics.
-        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
-
-        let is_payload_required = request.searches.iter().all(|s| {
-            s.with_payload
-                .clone()
-                .map(|p| p.is_required())
-                .unwrap_or_default()
-        });
-        let with_vectors = request.searches.iter().all(|s| {
-            s.with_vector
-                .as_ref()
-                .map(|wv| wv.is_some())
-                .unwrap_or(false)
-        });
-
-        let metadata_required = is_payload_required || with_vectors;
-
-        let sum_limits: usize = request.searches.iter().map(|s| s.limit).sum();
-        let sum_offsets: usize = request.searches.iter().map(|s| s.offset).sum();
-
-        // Number of records we need to retrieve to fill the search result.
-        let require_transfers = self.shards_holder.read().await.len() * (sum_limits + sum_offsets);
-        // Actually used number of records.
-        let used_transfers = sum_limits;
-
-        let is_required_transfer_large_enough =
-            require_transfers > used_transfers * PAYLOAD_TRANSFERS_FACTOR_THRESHOLD;
-
-        if metadata_required && is_required_transfer_large_enough {
-            // If there is a significant offset, we need to retrieve the whole result
-            // set without payload first and then retrieve the payload.
-            // It is required to do this because the payload might be too large to send over the
-            // network.
-            let mut without_payload_requests = Vec::with_capacity(request.searches.len());
-            for search in &request.searches {
-                let mut without_payload_request = search.clone();
-                without_payload_request.with_payload = None;
-                without_payload_request.with_vector = None;
-                without_payload_requests.push(without_payload_request);
-            }
-            let without_payload_batch = SearchRequestBatch {
-                searches: without_payload_requests,
-            };
-            let without_payload_results = self
-                .do_search_batch(
-                    without_payload_batch,
-                    read_consistency,
-                    shard_selection,
-                    timeout,
-                )
-                .await?;
-            let filled_results = without_payload_results
-                .into_iter()
-                .zip(request.clone().searches.into_iter())
-                .map(|(without_payload_result, req)| {
-                    self.fill_search_result_with_payload(
-                        without_payload_result,
-                        req.with_payload.clone(),
-                        req.with_vector.unwrap_or_default(),
-                        read_consistency,
-                        shard_selection,
-                    )
-                });
-            future::try_join_all(filled_results).await
-        } else {
-            let result = self
-                .do_search_batch(request, read_consistency, shard_selection, timeout)
-                .await?;
-            Ok(result)
-        }
-    }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
     pub async fn core_search_batch(
         &self,
         request: CoreSearchRequestBatch,
@@ -206,42 +117,6 @@ impl Collection {
         }
     }
 
-    // ! COPY-PASTE: `do_core_search_batch` is a copy-paste of `do_search_batch` with different request type
-    // ! please replicate any changes to both methods
-    async fn do_search_batch(
-        &self,
-        request: SearchRequestBatch,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let request = Arc::new(request);
-
-        // query all shards concurrently
-        let all_searches_res = {
-            let shard_holder = self.shards_holder.read().await;
-            let target_shards = shard_holder.target_shard(shard_selection)?;
-            let all_searches = target_shards.iter().map(|shard| {
-                shard.search(
-                    request.clone(),
-                    read_consistency,
-                    shard_selection.is_some(),
-                    timeout,
-                )
-            });
-            future::try_join_all(all_searches).await?
-        };
-
-        let request = Arc::into_inner(request)
-            .expect("We have already dropped all of the Arc clones at this point")
-            .into();
-
-        self.merge_from_shards(all_searches_res, request, shard_selection)
-            .await
-    }
-
-    // ! COPY-PASTE: `do_core_search_batch` is a copy-paste of `do_search_batch` with different request type
-    // ! please replicate any changes to both methods
     async fn do_core_search_batch(
         &self,
         request: CoreSearchRequestBatch,
@@ -257,7 +132,7 @@ impl Collection {
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards.iter().map(|shard| {
                 shard.core_search(
-                    request.clone(),
+                    Arc::clone(&request),
                     read_consistency,
                     shard_selection.is_some(),
                     timeout,
@@ -265,9 +140,6 @@ impl Collection {
             });
             future::try_join_all(all_searches).await?
         };
-
-        let request = Arc::into_inner(request)
-            .expect("We have already dropped all of the Arc clones at this point");
 
         self.merge_from_shards(all_searches_res, request, shard_selection)
             .await
@@ -326,7 +198,7 @@ impl Collection {
     async fn merge_from_shards(
         &self,
         mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
-        request: CoreSearchRequestBatch,
+        request: Arc<CoreSearchRequestBatch>,
         shard_selection: Option<u32>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();

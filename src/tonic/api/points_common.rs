@@ -24,8 +24,8 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequestBatch, DiscoverRequestBatch, PointRequest,
-    RecommendExample, RecommendRequestBatch, ScrollRequest, SearchRequest, SearchRequestBatch,
+    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, DiscoverRequestBatch,
+    PointRequest, QueryEnum, RecommendExample, RecommendRequestBatch, ScrollRequest,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -42,11 +42,10 @@ use storage::dispatcher::Dispatcher;
 use tonic::{Response, Status};
 
 use crate::common::points::{
-    do_clear_payload, do_core_search_batch_points, do_count_points, do_create_index,
-    do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
-    do_search_batch_points, do_search_points, do_set_payload, do_update_vectors, do_upsert_points,
-    CreateFieldIndex,
+    do_clear_payload, do_core_search_batch_points, do_core_search_points, do_count_points,
+    do_create_index, do_create_index_internal, do_delete_index, do_delete_index_internal,
+    do_delete_payload, do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload,
+    do_scroll_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
 
 fn extract_points_selector(
@@ -827,11 +826,13 @@ pub async fn search(
         timeout,
     } = search_points;
 
-    let search_request = SearchRequest {
-        vector: match vector_name {
-            None => vector.into(),
-            Some(name) => NamedVector { name, vector }.into(),
-        },
+    let vector_struct = match vector_name {
+        None => vector.into(),
+        Some(name) => NamedVector { name, vector }.into(),
+    };
+
+    let search_request = CoreSearchRequest {
+        query: QueryEnum::Nearest(vector_struct),
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
@@ -848,7 +849,7 @@ pub async fn search(
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
-    let scored_points = do_search_points(
+    let scored_points = do_core_search_points(
         toc,
         &collection_name,
         search_request,
@@ -870,30 +871,21 @@ pub async fn search(
     Ok(Response::new(response))
 }
 
-// ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
-// ! please replicate any changes to both methods
-pub async fn search_batch(
+pub async fn core_search_batch(
     toc: &TableOfContent,
     collection_name: String,
-    search_points: Vec<SearchPoints>,
+    request: CoreSearchRequestBatch,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
-    let searches: Result<Vec<_>, Status> =
-        search_points.into_iter().map(TryInto::try_into).collect();
-
-    let search_requests = SearchRequestBatch {
-        searches: searches?,
-    };
-
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
-    let scored_points = do_search_batch_points(
+    let scored_points = do_core_search_batch_points(
         toc,
         &collection_name,
-        search_requests,
+        request,
         read_consistency,
         shard_selection,
         timeout,
@@ -914,9 +906,7 @@ pub async fn search_batch(
     Ok(Response::new(response))
 }
 
-// ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
-// ! please replicate any changes to both methods
-pub async fn core_search_batch(
+pub async fn core_search_list(
     toc: &TableOfContent,
     collection_name: String,
     search_points: Vec<CoreSearchPoints>,
@@ -927,35 +917,19 @@ pub async fn core_search_batch(
     let searches: Result<Vec<_>, Status> =
         search_points.into_iter().map(TryInto::try_into).collect();
 
-    let search_requests = CoreSearchRequestBatch {
+    let request = CoreSearchRequestBatch {
         searches: searches?,
     };
 
-    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
-
-    let timing = Instant::now();
-    let scored_points = do_core_search_batch_points(
+    core_search_batch(
         toc,
-        &collection_name,
-        search_requests,
+        collection_name,
+        request,
         read_consistency,
         shard_selection,
         timeout,
     )
     .await
-    .map_err(error_to_status)?;
-
-    let response = SearchBatchResponse {
-        result: scored_points
-            .into_iter()
-            .map(|points| BatchResult {
-                result: points.into_iter().map(|p| p.into()).collect(),
-            })
-            .collect(),
-        time: timing.elapsed().as_secs_f64(),
-    };
-
-    Ok(Response::new(response))
 }
 
 pub async fn search_groups(
