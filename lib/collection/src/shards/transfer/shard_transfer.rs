@@ -788,7 +788,10 @@ where
 
             result = cancel::future::cancel_on_token(cancel.clone(), future).await;
 
-            // If `transfer_shard` returned error...
+            let is_ok = matches!(result, Ok(Ok(())));
+            let is_err = matches!(result, Ok(Err(_)));
+            let is_cancelled = result.is_err();
+
             if let Ok(Err(err)) = &result {
                 log::error!(
                     "Failed to transfer shard {collection_id}:{} -> {}: {err}",
@@ -797,16 +800,14 @@ where
                 );
             }
 
-            // If `transfer_shard` returned error or task was cancelled...
-            if matches!(result, Ok(Err(_)) | Err(_)) {
+            if is_err || is_cancelled {
                 // Revert queue proxy if we still have any to prepare for the next attempt
                 if let Some(shard) = shards_holder.read().await.get_shard(&transfer.shard_id) {
                     shard.revert_queue_proxy_local().await;
                 }
             }
 
-            // If `transfer_shard` returned success or task was cancelled...
-            if matches!(result, Ok(Ok(())) | Err(_)) {
+            if is_ok || is_cancelled {
                 break;
             }
         }
@@ -817,6 +818,7 @@ where
             Err(_) => (), // do nothing, if task was cancelled
         }
 
-        matches!(result, Ok(Ok(())))
+        let is_ok = matches!(result, Ok(Ok(())));
+        is_ok
     })
 }
