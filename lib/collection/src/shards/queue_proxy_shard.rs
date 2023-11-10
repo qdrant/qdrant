@@ -4,8 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use cancel::future::cancel_on_token;
-use cancel::CancellationToken;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -17,8 +15,8 @@ use super::transfer::shard_transfer::MAX_RETRY_COUNT;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult,
+    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest, CountResult,
+    PointRequest, Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -53,9 +51,13 @@ pub struct QueueProxyShard {
 }
 
 impl QueueProxyShard {
-    pub async fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
+    pub fn new(
+        wrapped_shard: LocalShard,
+        remote_shard: RemoteShard,
+        max_ack_version: Arc<AtomicU64>,
+    ) -> Self {
         Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard).await),
+            inner: Some(Inner::new(wrapped_shard, remote_shard, max_ack_version)),
         }
     }
 
@@ -79,10 +81,11 @@ impl QueueProxyShard {
     ///
     /// This method is cancel safe.
     ///
-    /// If cancelled - none, some or all operations of that batch may be transmitted to the remote.
+    /// If cancelled - none, some or all operations may be transmitted to the remote.
     ///
-    /// The maximum acknowledged WAL version likely won't be updated. In the worst case this might
-    /// cause double sending operations. This should be fine as operations are idempotent.
+    /// The internal field keeping track of the last transfer and maximum acknowledged WAL version
+    /// likely won't be updated. In the worst case this might cause double sending operations.
+    /// This should be fine as operations are idempotent.
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
         self.inner
             .as_ref()
@@ -120,35 +123,6 @@ impl QueueProxyShard {
     #[cfg(debug_assertions)]
     fn is_finalized(&self) -> bool {
         self.inner.is_none()
-    }
-
-    /// Finalize: transfer all updates to remote and unwrap the wrapped shard
-    ///
-    /// This method helps with safely destructing the queue proxy shard, ensuring that remaining
-    /// queue updates are transferred to the remote shard, and only unwrapping the local shard
-    /// on success. It also releases the max acknowledged WAL version.
-    ///
-    /// Because we have ownership (`self`) we have exclusive access to the internals. It guarantees
-    /// that we will not process new operations on the shard while finalization is happening.
-    ///
-    /// # Cancel safety
-    ///
-    /// This method is *not* cancel safe, it consumes `self`.
-    ///
-    /// If `cancel` is triggered - finalization may not actually complete in which case an error is
-    /// returned. None, some or all operations may be transmitted to the remote.
-    pub async fn finalize(
-        self,
-        cancel: CancellationToken,
-    ) -> Result<(LocalShard, RemoteShard), (CollectionError, Self)> {
-        // Transfer all updates, do not unwrap on failure but return error with self
-        match cancel_on_token(cancel, self.transfer_all_missed_updates()).await {
-            Ok(Ok(_)) => Ok(self.forget_updates_and_finalize()),
-            // Transmission error
-            Ok(Err(err)) => Err((err, self)),
-            // Cancellation error
-            Err(err) => Err((err.into(), self)),
-        }
     }
 
     /// Forget all updates and finalize.
@@ -301,14 +275,13 @@ struct Inner {
 }
 
 impl Inner {
-    pub async fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
+    pub fn new(
+        wrapped_shard: LocalShard,
+        remote_shard: RemoteShard,
+        max_ack_version: Arc<AtomicU64>,
+    ) -> Self {
         let last_idx = wrapped_shard.wal.lock().last_index();
-        let max_ack_version = wrapped_shard
-            .update_handler
-            .lock()
-            .await
-            .max_ack_version
-            .clone();
+
         let shard = Self {
             wrapped_shard,
             remote_shard,
@@ -331,8 +304,9 @@ impl Inner {
     ///
     /// If cancelled - none, some or all operations of that batch may be transmitted to the remote.
     ///
-    /// The maximum acknowledged WAL version likely won't be updated. In the worst case this might
-    /// cause double sending operations. This should be fine as operations are idempotent.
+    /// The internal field keeping track of the last transfer and maximum acknowledged WAL version
+    /// likely won't be updated. In the worst case this might cause double sending operations.
+    /// This should be fine as operations are idempotent.
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
         while !self.transfer_wal_batch().await? {}
 
@@ -352,7 +326,7 @@ impl Inner {
     ///
     /// This method is cancel safe.
     ///
-    /// If cancelled - none, some or all operations of that batch may be transmitted to the remote.
+    /// If cancelled - none, some or all operations may be transmitted to the remote.
     ///
     /// The internal field keeping track of the last transfer likely won't be updated. In the worst
     /// case this might cause double sending operations. This should be fine as operations are

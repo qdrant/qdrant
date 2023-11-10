@@ -50,6 +50,8 @@ impl CollectionsInternal for CollectionsInternalService {
         &self,
         request: Request<InitiateShardTransferRequest>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        // TODO: Ensure cancel safety!
+
         validate_and_log(request.get_ref());
         let timing = Instant::now();
         let InitiateShardTransferRequest {
@@ -57,6 +59,7 @@ impl CollectionsInternal for CollectionsInternalService {
             shard_id,
         } = request.into_inner();
 
+        // TODO: Ensure cancel safety!
         self.toc
             .initiate_receiving_shard(collection_name, shard_id)
             .await

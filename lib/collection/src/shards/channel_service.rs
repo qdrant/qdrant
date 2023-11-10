@@ -49,6 +49,10 @@ impl ChannelService {
     /// - any of the peers is not on the same term
     /// - waiting takes longer than the specified timeout
     /// - any of the peers cannot be reached
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn await_commit_on_all_peers(
         &self,
         this_peer_id: PeerId,
@@ -89,6 +93,10 @@ impl ChannelService {
     /// # Errors
     ///
     /// This errors if the given peer is on a different term. Also errors if the peer cannot be reached.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn await_commit_on_peer(
         &self,
         peer_id: PeerId,

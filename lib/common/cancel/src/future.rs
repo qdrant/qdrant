@@ -6,8 +6,7 @@ use super::*;
 ///
 /// This function is cancel safe.
 ///
-/// If cancelled, the provided future will still run to completion. It may return early by using
-/// the `CancellationToken`.
+/// If cancelled, the cancellation token provided to the `task` will be triggered automatically.
 pub async fn spawn_cancel_on_drop<Task, Fut>(task: Task) -> Result<Fut::Output, Error>
 where
     Task: FnOnce(CancellationToken) -> Fut,

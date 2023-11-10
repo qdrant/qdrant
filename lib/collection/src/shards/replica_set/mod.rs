@@ -353,6 +353,10 @@ impl ShardReplicaSet {
     /// Wait for a peer shard to get into `state`
     ///
     /// Uses a blocking thread internally.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn wait_for_state(
         &self,
         peer_id: PeerId,
@@ -369,10 +373,16 @@ impl ShardReplicaSet {
     /// Wait for a replica set state condition to be true.
     ///
     /// Uses a blocking thread internally.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<()>
     where
         F: Fn(&ReplicaSetState) -> bool + Send + 'static,
     {
+        // TODO: Propagate cancellation into `spawn_blocking` task!?
+
         let replica_state = self.replica_state.clone();
         let timed_out =
             !tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
@@ -444,6 +454,8 @@ impl ShardReplicaSet {
     }
 
     pub async fn remove_local(&self) -> CollectionResult<()> {
+        // TODO: Ensure cancel safety!
+
         self.replica_state.write(|rs| {
             rs.is_local = false;
             let this_peer_id = rs.this_peer_id;

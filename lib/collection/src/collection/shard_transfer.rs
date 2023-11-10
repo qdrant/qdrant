@@ -231,6 +231,8 @@ impl Collection {
         transfer_key: ShardTransferKey,
         shard_holder_guard: &ShardHolder,
     ) -> CollectionResult<()> {
+        // TODO: Ensure cancel safety!
+
         let _transfer_finished = self
             .transfer_tasks
             .lock()
@@ -272,6 +274,8 @@ impl Collection {
         &self,
         shard_id: ShardId,
     ) -> impl Future<Output = CollectionResult<()>> + 'static {
+        // TODO: Ensure cancel safety!
+
         let shards_holder = self.shards_holder.clone();
 
         async move {

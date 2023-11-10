@@ -788,6 +788,9 @@ impl ShardHolder {
             .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn get_shard_snapshot_path(
         &self,
         snapshots_path: &Path,
