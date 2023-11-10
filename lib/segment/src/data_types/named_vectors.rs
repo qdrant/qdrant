@@ -35,6 +35,13 @@ impl<'a> CowValue<'a> {
             CowValue::Sparse(v) => Vector::Sparse(v.into_owned()),
         }
     }
+
+    pub fn as_vec_ref(&self) -> VectorRef {
+        match self {
+            CowValue::Dense(v) => VectorRef::Dense(v.as_ref()),
+            CowValue::Sparse(v) => VectorRef::Sparse(v.as_ref()),
+        }
+    }
 }
 
 impl<'a> NamedVectors<'a> {
@@ -121,23 +128,11 @@ impl<'a> NamedVectors<'a> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, VectorRef<'_>)> {
-        self.map.iter().map(|(k, v)| {
-            (
-                k.as_ref(),
-                match v {
-                    CowValue::Dense(v) => VectorRef::Dense(v.as_ref()),
-                    CowValue::Sparse(v) => VectorRef::Sparse(v.as_ref()),
-                },
-            )
-        })
+        self.map.iter().map(|(k, v)| (k.as_ref(), v.as_vec_ref()))
     }
 
     pub fn get(&self, key: &str) -> Option<VectorRef<'_>> {
-        match self.map.get(key) {
-            Some(CowValue::Dense(v)) => Some(VectorRef::Dense(v.as_ref())),
-            Some(CowValue::Sparse(v)) => Some(VectorRef::Sparse(v.as_ref())),
-            None => None,
-        }
+        self.map.get(key).map(|v| v.as_vec_ref())
     }
 
     pub fn preprocess<F>(&mut self, distance_map: F)

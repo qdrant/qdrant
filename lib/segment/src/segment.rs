@@ -23,8 +23,8 @@ use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
-use crate::data_types::named_vectors::{CowValue, NamedVectors};
-use crate::data_types::vectors::{QueryVector, VectorElementType, VectorRef};
+use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
@@ -173,10 +173,7 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
-            let new_vector = match &new_vector {
-                CowValue::Dense(vec) => VectorRef::Dense(vec),
-                CowValue::Sparse(sparse) => VectorRef::Sparse(sparse),
-            };
+            let new_vector = new_vector.as_vec_ref();
             vector_data
                 .vector_storage
                 .borrow_mut()
