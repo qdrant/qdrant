@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
 use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfig;
@@ -20,6 +21,8 @@ impl Collection {
         self.apply_shard_transfers(state.transfers, this_peer_id, abort_transfer)
             .await?;
         self.apply_shard_info(state.shards, state.shards_key_mapping)
+            .await?;
+        self.apply_payload_index_schema(state.payload_index_schema)
             .await?;
         Ok(())
     }
@@ -103,5 +106,23 @@ impl Collection {
             .await
             .apply_shards_state(shard_ids, shards_key_mapping, extra_shards)
             .await
+    }
+
+    async fn apply_payload_index_schema(
+        &self,
+        payload_index_schema: PayloadIndexSchema,
+    ) -> CollectionResult<()> {
+        let state = self.state().await;
+
+        for field_name in state.payload_index_schema.schema.keys() {
+            if !payload_index_schema.schema.contains_key(field_name) {
+                self.drop_payload_index(field_name.clone()).await?;
+            }
+        }
+
+        for (field_name, field_schema) in payload_index_schema.schema {
+            self.create_payload_index(field_name, field_schema).await?;
+        }
+        Ok(())
     }
 }

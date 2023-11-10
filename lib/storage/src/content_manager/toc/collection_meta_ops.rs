@@ -85,6 +85,18 @@ impl TableOfContent {
                 log::debug!("Drop shard key {:?}", drop_shard_key);
                 self.drop_shard_key(drop_shard_key).await.map(|()| true)
             }
+            CollectionMetaOperations::CreatePayloadIndex(create_payload_index) => {
+                log::debug!("Create payload index {:?}", create_payload_index);
+                self.create_payload_index(create_payload_index)
+                    .await
+                    .map(|()| true)
+            }
+            CollectionMetaOperations::DropPayloadIndex(drop_payload_index) => {
+                log::debug!("Drop payload index {:?}", drop_payload_index);
+                self.drop_payload_index(drop_payload_index)
+                    .await
+                    .map(|()| true)
+            }
         }
     }
 
@@ -245,6 +257,7 @@ impl TableOfContent {
                     shards,
                     transfers,
                     shards_key_mapping: _,
+                    payload_index_schema: _,
                 } = collection.state().await;
                 let all_peers: HashSet<_> = self
                     .channel_service
@@ -388,6 +401,25 @@ impl TableOfContent {
         self.get_collection(&operation.collection_name)
             .await?
             .drop_shard_key(operation.shard_key)
+            .await?;
+        Ok(())
+    }
+
+    async fn create_payload_index(
+        &self,
+        operation: CreatePayloadIndex,
+    ) -> Result<(), StorageError> {
+        self.get_collection(&operation.collection_name)
+            .await?
+            .create_payload_index(operation.field_name, operation.field_schema)
+            .await?;
+        Ok(())
+    }
+
+    async fn drop_payload_index(&self, operation: DropPayloadIndex) -> Result<(), StorageError> {
+        self.get_collection(&operation.collection_name)
+            .await?
+            .drop_payload_index(operation.field_name)
             .await?;
         Ok(())
     }

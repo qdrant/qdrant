@@ -38,13 +38,15 @@ use segment::types::{
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::shard_key_selection::ShardKeySelectorInternal;
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use tonic::{Response, Status};
 
 use crate::common::points::{
     do_clear_payload, do_core_search_batch_points, do_count_points, do_create_index,
-    do_delete_index, do_delete_payload, do_delete_points, do_delete_vectors, do_get_points,
-    do_overwrite_payload, do_scroll_points, do_search_batch_points, do_search_points,
-    do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
+    do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
+    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
+    do_search_batch_points, do_search_points, do_set_payload, do_update_vectors, do_upsert_points,
+    CreateFieldIndex,
 };
 
 fn extract_points_selector(
@@ -640,20 +642,10 @@ pub async fn update_batch(
     }))
 }
 
-pub async fn create_field_index(
-    toc: &TableOfContent,
-    create_field_index_collection: CreateFieldIndexCollection,
-    shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
-    let CreateFieldIndexCollection {
-        collection_name,
-        wait,
-        field_name,
-        field_type,
-        field_index_params,
-        ordering,
-    } = create_field_index_collection;
-
+fn convert_field_type(
+    field_type: Option<i32>,
+    field_index_params: Option<PayloadIndexParams>,
+) -> Result<Option<PayloadFieldSchema>, Status> {
     let field_type_parsed = field_type
         .map(FieldType::from_i32)
         .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
@@ -686,6 +678,25 @@ pub async fn create_field_index(
         (None, None) => None,
     };
 
+    Ok(field_schema)
+}
+
+pub async fn create_field_index(
+    toc: &Dispatcher,
+    create_field_index_collection: CreateFieldIndexCollection,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let CreateFieldIndexCollection {
+        collection_name,
+        wait,
+        field_name,
+        field_type,
+        field_index_params,
+        ordering,
+    } = create_field_index_collection;
+
+    let field_schema = convert_field_type(field_type, field_index_params)?;
+
     let operation = CreateFieldIndex {
         field_name,
         field_schema,
@@ -707,8 +718,41 @@ pub async fn create_field_index(
     Ok(Response::new(response))
 }
 
-pub async fn delete_field_index(
+pub async fn create_field_index_internal(
     toc: &TableOfContent,
+    create_field_index_collection: CreateFieldIndexCollection,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let CreateFieldIndexCollection {
+        collection_name,
+        wait,
+        field_name,
+        field_type,
+        field_index_params,
+        ordering,
+    } = create_field_index_collection;
+
+    let field_schema = convert_field_type(field_type, field_index_params)?;
+
+    let timing = Instant::now();
+    let result = do_create_index_internal(
+        toc,
+        &collection_name,
+        field_name,
+        field_schema,
+        shard_selection,
+        wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn delete_field_index(
+    toc: &Dispatcher,
     delete_field_index_collection: DeleteFieldIndexCollection,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -721,6 +765,34 @@ pub async fn delete_field_index(
 
     let timing = Instant::now();
     let result = do_delete_index(
+        toc,
+        &collection_name,
+        field_name,
+        shard_selection,
+        wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn delete_field_index_internal(
+    toc: &TableOfContent,
+    delete_field_index_collection: DeleteFieldIndexCollection,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let DeleteFieldIndexCollection {
+        collection_name,
+        wait,
+        field_name,
+        ordering,
+    } = delete_field_index_collection;
+
+    let timing = Instant::now();
+    let result = do_delete_index_internal(
         toc,
         &collection_name,
         field_name,

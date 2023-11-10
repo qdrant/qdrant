@@ -19,16 +19,20 @@ use collection::operations::vector_ops::{
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
-use segment::types::{PayloadFieldSchema, ScoredPoint};
+use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint};
 use serde::{Deserialize, Serialize};
+use storage::content_manager::collection_meta_ops::{
+    CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex,
+};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::shard_key_selection::ShardKeySelectorInternal;
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CreateFieldIndex {
-    pub field_name: String,
+    pub field_name: PayloadKeyType,
     #[serde(alias = "field_type")]
     pub field_schema: Option<PayloadFieldSchema>,
 }
@@ -482,20 +486,22 @@ pub async fn do_batch_update_points(
     Ok(results)
 }
 
-pub async fn do_create_index(
+pub async fn do_create_index_internal(
     toc: &TableOfContent,
     collection_name: &str,
-    operation: CreateFieldIndex,
+    field_name: PayloadKeyType,
+    field_schema: Option<PayloadFieldSchema>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
-            field_name: operation.field_name,
-            field_schema: operation.field_schema,
+            field_name,
+            field_schema,
         }),
     );
+
     toc.update(
         collection_name,
         collection_operation,
@@ -507,7 +513,50 @@ pub async fn do_create_index(
     .await
 }
 
-pub async fn do_delete_index(
+pub async fn do_create_index(
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    operation: CreateFieldIndex,
+    shard_selection: Option<ShardId>,
+    wait: bool,
+    ordering: WriteOrdering,
+) -> Result<UpdateResult, StorageError> {
+    let Some(field_schema) = operation.field_schema else {
+        return Err(StorageError::bad_request(
+            "Can't auto-detect field type, please specify `field_schema` in the request",
+        ));
+    };
+
+    let consensus_op = CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
+        collection_name: collection_name.to_string(),
+        field_name: operation.field_name.clone(),
+        field_schema: field_schema.clone(),
+    });
+
+    // Default consensus timeout will be used
+    let wait_timeout = None; // ToDo: make it configurable
+
+    dispatcher
+        .submit_collection_meta_op(consensus_op, wait_timeout)
+        .await?;
+
+    // This function is required as long as we want to maintain interface compatibility
+    // for `wait` parameter and return type.
+    // The idea is to migrate from the point-like interface to consensus-like interface in the next few versions
+
+    do_create_index_internal(
+        dispatcher.toc(),
+        collection_name,
+        operation.field_name,
+        Some(field_schema),
+        shard_selection,
+        wait,
+        ordering,
+    )
+    .await
+}
+
+pub async fn do_delete_index_internal(
     toc: &TableOfContent,
     collection_name: &str,
     index_name: String,
@@ -525,6 +574,37 @@ pub async fn do_delete_index(
         wait,
         ordering,
         ShardKeySelectorInternal::All,
+    )
+    .await
+}
+
+pub async fn do_delete_index(
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    index_name: String,
+    shard_selection: Option<ShardId>,
+    wait: bool,
+    ordering: WriteOrdering,
+) -> Result<UpdateResult, StorageError> {
+    let consensus_op = CollectionMetaOperations::DropPayloadIndex(DropPayloadIndex {
+        collection_name: collection_name.to_string(),
+        field_name: index_name.clone(),
+    });
+
+    // Default consensus timeout will be used
+    let wait_timeout = None; // ToDo: make it configurable
+
+    dispatcher
+        .submit_collection_meta_op(consensus_op, wait_timeout)
+        .await?;
+
+    do_delete_index_internal(
+        dispatcher.toc(),
+        collection_name,
+        index_name,
+        shard_selection,
+        wait,
+        ordering,
     )
     .await
 }

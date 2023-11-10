@@ -5,6 +5,7 @@ use segment::types::ShardKey;
 use crate::collection::Collection;
 use crate::config::ShardingMethod;
 use crate::operations::types::CollectionError;
+use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId, ShardsPlacement};
 
@@ -91,12 +92,25 @@ impl Collection {
             .copied()
             .unwrap_or(0);
 
+        let payload_schema = self.payload_index_schema.read().schema.clone();
+
         for (idx, shard_replicas_placement) in placement.iter().enumerate() {
             let shard_id = max_shard_id + idx as ShardId + 1;
 
             let replica_set = self
                 .create_replica_set(shard_id, shard_replicas_placement)
                 .await?;
+
+            for (field_name, field_schema) in payload_schema.iter() {
+                let create_index_op = CollectionUpdateOperations::FieldIndexOperation(
+                    FieldIndexOperations::CreateIndex(CreateIndex {
+                        field_name: field_name.clone(),
+                        field_schema: Some(field_schema.clone()),
+                    }),
+                );
+
+                replica_set.update_local(create_index_op, true).await?;
+            }
 
             self.shards_holder.write().await.add_shard(
                 shard_id,

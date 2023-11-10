@@ -6626,7 +6626,6 @@
       "UpdateResult": {
         "type": "object",
         "required": [
-          "operation_id",
           "status"
         ],
         "properties": {
@@ -6634,7 +6633,8 @@
             "description": "Sequential number of the operation",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "status": {
             "$ref": "#/components/schemas/UpdateStatus"

@@ -145,7 +145,7 @@ pub fn init(
         let qdrant_service = QdrantService::default();
         let health_service = HealthService::default();
         let collections_service = CollectionsService::new(dispatcher.clone());
-        let points_service = PointsService::new(dispatcher.toc().clone());
+        let points_service = PointsService::new(dispatcher.clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
 
         // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET

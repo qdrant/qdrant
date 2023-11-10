@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::config::CollectionConfig;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -23,4 +24,6 @@ pub struct State {
     pub transfers: HashSet<ShardTransfer>,
     #[serde(default)]
     pub shards_key_mapping: ShardKeyMapping,
+    #[serde(default)]
+    pub payload_index_schema: PayloadIndexSchema,
 }
