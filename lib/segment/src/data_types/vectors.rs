@@ -194,7 +194,8 @@ impl From<&[VectorElementType]> for VectorStruct {
 impl<'a> From<NamedVectors<'a>> for VectorStruct {
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
-            VectorStruct::Single(v.into_default_vector().unwrap())
+            let vector: &[_] = v.get(DEFAULT_VECTOR_NAME).unwrap().try_into().unwrap();
+            VectorStruct::Single(vector.to_owned())
         } else {
             VectorStruct::Multi(
                 v.into_owned_map()

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::tiny_map;
-use super::vectors::{Vector, VectorElementType, VectorRef, DEFAULT_VECTOR_NAME};
+use super::vectors::{Vector, VectorElementType, VectorRef};
 use crate::types::Distance;
 
 type CowKey<'a> = Cow<'a, str>;
@@ -111,14 +111,6 @@ impl<'a> NamedVectors<'a> {
 
     pub fn keys(&self) -> impl Iterator<Item = &str> {
         self.map.iter().map(|(k, _)| k.as_ref())
-    }
-
-    // TODO(sparse) remove this function. There is only one usage and this fn is logically strange
-    pub fn into_default_vector(mut self) -> Option<Vec<VectorElementType>> {
-        self.map.get_mut(DEFAULT_VECTOR_NAME).map(|src| match src {
-            CowValue::Dense(v) => std::mem::take(v).into_owned(),
-            CowValue::Sparse(_v) => unreachable!(),
-        })
     }
 
     pub fn into_owned_map(self) -> HashMap<String, Vector> {
