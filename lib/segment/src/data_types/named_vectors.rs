@@ -68,32 +68,6 @@ impl<'a> NamedVectors<'a> {
         }
     }
 
-    pub fn from_sparse_map(map: HashMap<String, SparseVector>) -> Self {
-        Self {
-            map: map
-                .into_iter()
-                .map(|(k, v)| (CowKey::from(k), CowValue::Sparse(Cow::Owned(v))))
-                .collect(),
-        }
-    }
-
-    pub fn from_mixed_map(map: HashMap<String, Vector>) -> Self {
-        Self {
-            map: map
-                .into_iter()
-                .map(|(k, v)| {
-                    (
-                        CowKey::from(k),
-                        match v {
-                            Vector::Dense(v) => CowValue::Dense(Cow::Owned(v)),
-                            Vector::Sparse(v) => CowValue::Sparse(Cow::Owned(v)),
-                        },
-                    )
-                })
-                .collect(),
-        }
-    }
-
     pub fn from_map_ref(map: &'a HashMap<String, Vec<VectorElementType>>) -> Self {
         Self {
             map: map
