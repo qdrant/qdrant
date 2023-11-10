@@ -1,5 +1,6 @@
 import multiprocessing
 import pathlib
+from time import sleep
 
 from .fixtures import upsert_random_points, create_collection
 from .utils import *
@@ -15,6 +16,9 @@ def update_points_in_loop(peer_url, collection_name, offset=0):
     while True:
         upsert_random_points(peer_url, limit, collection_name, offset=offset)
         offset += limit
+
+        # Prevent inserting points faster than the queue proxy can transfer
+        sleep(0.01)
 
 
 def run_update_points_in_background(peer_url, collection_name, init_offset=0):
