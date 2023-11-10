@@ -204,27 +204,23 @@ where
             lookup_collection_name,
         );
 
-        match request.strategy {
-            None | Some(RecommendStrategy::AverageVector) => {
-                let search = recommend_by_avg_vector(
-                    request.clone(),
-                    positive_vectors,
-                    negative_vectors,
-                    vector_name,
-                    reference_vectors_ids,
-                );
-                core_searches.push(search);
-            }
-            Some(RecommendStrategy::BestScore) => {
-                let core_search = recommend_by_best_score(
-                    request,
-                    positive_vectors,
-                    negative_vectors,
-                    reference_vectors_ids,
-                );
-                core_searches.push(core_search);
-            }
+        let search = match request.strategy.unwrap_or_default() {
+            RecommendStrategy::AverageVector => recommend_by_avg_vector(
+                request.clone(),
+                positive_vectors,
+                negative_vectors,
+                vector_name,
+                reference_vectors_ids,
+            ),
+            RecommendStrategy::BestScore => recommend_by_best_score(
+                request,
+                positive_vectors,
+                negative_vectors,
+                reference_vectors_ids,
+            ),
         };
+
+        core_searches.push(search);
     }
 
     let core_search_batch_request = CoreSearchRequestBatch {
