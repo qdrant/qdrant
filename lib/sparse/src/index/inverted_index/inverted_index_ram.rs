@@ -130,7 +130,10 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        inverted_index_ram.upsert(4, SparseVector::new(vec![1, 2, 3], vec![40.0, 40.0, 40.0]));
+        inverted_index_ram.upsert(
+            4,
+            SparseVector::new(vec![1, 2, 3], vec![40.0, 40.0, 40.0]).unwrap(),
+        );
         for i in 1..4 {
             let posting_list = inverted_index_ram.get(&i).unwrap();
             let posting_list = posting_list.elements.as_slice();
@@ -153,7 +156,10 @@ mod tests {
         // 4 postings, 0th empty
         assert_eq!(inverted_index_ram.postings.len(), 4);
 
-        inverted_index_ram.upsert(4, SparseVector::new(vec![1, 2, 30], vec![40.0, 40.0, 40.0]));
+        inverted_index_ram.upsert(
+            4,
+            SparseVector::new(vec![1, 2, 30], vec![40.0, 40.0, 40.0]).unwrap(),
+        );
 
         // new dimension resized postings
         assert_eq!(inverted_index_ram.postings.len(), 31);
@@ -187,12 +193,18 @@ mod tests {
             .build();
 
         let mut inverted_index_ram_upserted = InvertedIndexRam::empty();
-        inverted_index_ram_upserted
-            .upsert(1, SparseVector::new(vec![1, 2, 3], vec![10.0, 10.0, 10.0]));
-        inverted_index_ram_upserted
-            .upsert(2, SparseVector::new(vec![1, 2, 3], vec![20.0, 20.0, 20.0]));
-        inverted_index_ram_upserted
-            .upsert(3, SparseVector::new(vec![1, 2, 3], vec![30.0, 30.0, 30.0]));
+        inverted_index_ram_upserted.upsert(
+            1,
+            SparseVector::new(vec![1, 2, 3], vec![10.0, 10.0, 10.0]).unwrap(),
+        );
+        inverted_index_ram_upserted.upsert(
+            2,
+            SparseVector::new(vec![1, 2, 3], vec![20.0, 20.0, 20.0]).unwrap(),
+        );
+        inverted_index_ram_upserted.upsert(
+            3,
+            SparseVector::new(vec![1, 2, 3], vec![30.0, 30.0, 30.0]).unwrap(),
+        );
 
         assert_eq!(
             inverted_index_ram_built.postings.len(),

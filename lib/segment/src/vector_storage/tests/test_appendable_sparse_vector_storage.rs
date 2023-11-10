@@ -15,12 +15,16 @@ use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points: Vec<SparseVector> = vec![
-        vec![(0, 1.0), (2, 1.0), (3, 1.0)].into(),
-        vec![(0, 1.0), (2, 1.0)].into(),
-        vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)].into(),
-        vec![(0, 1.0), (1, 1.0), (3, 1.0)].into(),
-        vec![(0, 1.0)].into(),
-    ];
+        vec![(0, 1.0), (2, 1.0), (3, 1.0)],
+        vec![(0, 1.0), (2, 1.0)],
+        vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)],
+        vec![(0, 1.0), (1, 1.0), (3, 1.0)],
+        vec![(0, 1.0)],
+    ]
+    .into_iter()
+    .map(|v| v.try_into().unwrap())
+    .collect();
+
     let delete_mask = [false, false, true, true, false];
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
@@ -59,7 +63,9 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     );
 
     // Check that deleted points are deleted through raw scorer
-    let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)].into();
+    let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)]
+        .try_into()
+        .unwrap();
     let query_vector: QueryVector = vector.into();
     let closest = new_raw_scorer(
         query_vector,
@@ -102,12 +108,16 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
 fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points: Vec<SparseVector> = vec![
-        vec![(0, 1.0), (2, 1.0), (3, 1.0)].into(),
-        vec![(0, 1.0), (2, 1.0)].into(),
-        vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)].into(),
-        vec![(0, 1.0), (1, 1.0), (3, 1.0)].into(),
-        vec![(0, 1.0)].into(),
-    ];
+        vec![(0, 1.0), (2, 1.0), (3, 1.0)],
+        vec![(0, 1.0), (2, 1.0)],
+        vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)],
+        vec![(0, 1.0), (1, 1.0), (3, 1.0)],
+        vec![(0, 1.0)],
+    ]
+    .into_iter()
+    .map(|v| v.try_into().unwrap())
+    .collect();
+
     let delete_mask = [false, false, true, true, false];
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
@@ -148,7 +158,9 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
     );
 
     // Check that deleted points are deleted through raw scorer
-    let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)].into();
+    let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)]
+        .try_into()
+        .unwrap();
     let query_vector: QueryVector = vector.into();
     let closest = new_raw_scorer(
         query_vector,

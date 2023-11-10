@@ -4792,6 +4792,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "validator",
 ]
 
 [[package]]
