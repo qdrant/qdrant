@@ -204,7 +204,8 @@ pub enum UpdateStatus {
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
     /// Sequential number of the operation
-    pub operation_id: SeqNumberType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<SeqNumberType>,
     /// Update status
     pub status: UpdateStatus,
 }

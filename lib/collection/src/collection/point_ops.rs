@@ -13,6 +13,28 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shards::shard::ShardId;
 
 impl Collection {
+    /// Apply collection update operation to all local shards.
+    /// Return None if there are no local shards
+    pub async fn update_all_local(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+    ) -> CollectionResult<Option<UpdateResult>> {
+        let _update_lock = self.updates_lock.read().await;
+        let shard_holder_guard = self.shards_holder.read().await;
+
+        let res: Vec<_> = shard_holder_guard
+            .all_shards()
+            .map(|shard| shard.update_local(operation.clone(), wait))
+            .collect();
+
+        let results: Vec<_> = future::try_join_all(res).await?;
+
+        let result = results.into_iter().flatten().next();
+
+        Ok(result)
+    }
+
     /// Handle collection updates from peers.
     ///
     /// Shard transfer aware.

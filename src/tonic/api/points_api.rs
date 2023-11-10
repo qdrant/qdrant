@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
     SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
-use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
@@ -27,12 +27,12 @@ use crate::tonic::api::points_common::{
 };
 
 pub struct PointsService {
-    toc: Arc<TableOfContent>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl PointsService {
-    pub fn new(toc: Arc<TableOfContent>) -> Self {
-        Self { toc }
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
+        Self { dispatcher }
     }
 }
 
@@ -43,7 +43,7 @@ impl Points for PointsService {
         request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        upsert(self.toc.as_ref(), request.into_inner(), None).await
+        upsert(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete(
@@ -51,12 +51,12 @@ impl Points for PointsService {
         request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete(self.toc.as_ref(), request.into_inner(), None).await
+        delete(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
-        get(self.toc.as_ref(), request.into_inner(), None).await
+        get(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn update_vectors(
@@ -64,7 +64,7 @@ impl Points for PointsService {
         request: Request<UpdatePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        update_vectors(self.toc.as_ref(), request.into_inner(), None).await
+        update_vectors(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete_vectors(
@@ -72,7 +72,7 @@ impl Points for PointsService {
         request: Request<DeletePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete_vectors(self.toc.as_ref(), request.into_inner(), None).await
+        delete_vectors(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn set_payload(
@@ -80,7 +80,7 @@ impl Points for PointsService {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        set_payload(self.toc.as_ref(), request.into_inner(), None).await
+        set_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn overwrite_payload(
@@ -88,7 +88,7 @@ impl Points for PointsService {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        overwrite_payload(self.toc.as_ref(), request.into_inner(), None).await
+        overwrite_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete_payload(
@@ -96,7 +96,7 @@ impl Points for PointsService {
         request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete_payload(self.toc.as_ref(), request.into_inner(), None).await
+        delete_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn clear_payload(
@@ -104,7 +104,7 @@ impl Points for PointsService {
         request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        clear_payload(self.toc.as_ref(), request.into_inner(), None).await
+        clear_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn update_batch(
@@ -112,7 +112,7 @@ impl Points for PointsService {
         request: Request<UpdateBatchPoints>,
     ) -> Result<Response<UpdateBatchResponse>, Status> {
         validate(request.get_ref())?;
-        update_batch(self.toc.as_ref(), request.into_inner(), None).await
+        update_batch(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn create_field_index(
@@ -120,7 +120,7 @@ impl Points for PointsService {
         request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        create_field_index(self.toc.as_ref(), request.into_inner(), None).await
+        create_field_index(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete_field_index(
@@ -128,7 +128,7 @@ impl Points for PointsService {
         request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete_field_index(self.toc.as_ref(), request.into_inner(), None).await
+        delete_field_index(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn search(
@@ -136,7 +136,7 @@ impl Points for PointsService {
         request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
-        search(self.toc.as_ref(), request.into_inner(), None).await
+        search(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn search_batch(
@@ -154,7 +154,7 @@ impl Points for PointsService {
         let timeout = timeout.map(Duration::from_secs);
 
         search_batch(
-            self.toc.as_ref(),
+            self.dispatcher.as_ref(),
             collection_name,
             search_points,
             read_consistency,
@@ -169,7 +169,7 @@ impl Points for PointsService {
         request: Request<SearchPointGroups>,
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
-        search_groups(self.toc.as_ref(), request.into_inner(), None).await
+        search_groups(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn scroll(
@@ -177,7 +177,7 @@ impl Points for PointsService {
         request: Request<ScrollPoints>,
     ) -> Result<Response<ScrollResponse>, Status> {
         validate(request.get_ref())?;
-        scroll(self.toc.as_ref(), request.into_inner(), None).await
+        scroll(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn recommend(
@@ -185,7 +185,7 @@ impl Points for PointsService {
         request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
-        recommend(self.toc.as_ref(), request.into_inner()).await
+        recommend(self.dispatcher.as_ref(), request.into_inner()).await
     }
 
     async fn recommend_batch(
@@ -200,7 +200,7 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
         recommend_batch(
-            self.toc.as_ref(),
+            self.dispatcher.as_ref(),
             collection_name,
             recommend_points,
             read_consistency,
@@ -214,7 +214,7 @@ impl Points for PointsService {
         request: Request<RecommendPointGroups>,
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
-        recommend_groups(self.toc.as_ref(), request.into_inner()).await
+        recommend_groups(self.dispatcher.as_ref(), request.into_inner()).await
     }
 
     async fn discover(
@@ -222,7 +222,7 @@ impl Points for PointsService {
         request: Request<DiscoverPoints>,
     ) -> Result<Response<DiscoverResponse>, Status> {
         validate(request.get_ref())?;
-        discover(self.toc.as_ref(), request.into_inner()).await
+        discover(self.dispatcher.as_ref(), request.into_inner()).await
     }
 
     async fn discover_batch(
@@ -237,7 +237,7 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
         discover_batch(
-            self.toc.as_ref(),
+            self.dispatcher.as_ref(),
             collection_name,
             discover_points,
             read_consistency,
@@ -251,6 +251,6 @@ impl Points for PointsService {
         request: Request<CountPoints>,
     ) -> Result<Response<CountResponse>, Status> {
         validate(request.get_ref())?;
-        count(self.toc.as_ref(), request.into_inner(), None).await
+        count(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 }

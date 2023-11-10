@@ -1,4 +1,5 @@
 mod collection_ops;
+pub mod payload_index_schema;
 mod point_ops;
 mod search;
 mod shard_transfer;
@@ -18,11 +19,13 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
@@ -40,6 +43,7 @@ pub struct Collection {
     pub(crate) shards_holder: Arc<LockedShardHolder>,
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
+    pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -116,10 +120,13 @@ impl Collection {
         CollectionVersion::save(path)?;
         collection_config.save(path)?;
 
+        let payload_index_schema = Self::load_payload_index_schema(path)?;
+
         Ok(Self {
             id: name.clone(),
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
+            payload_index_schema,
             shared_storage_config,
             this_peer_id,
             path: path.to_owned(),
@@ -203,10 +210,14 @@ impl Collection {
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
+        let payload_index_schema = Self::load_payload_index_schema(path)
+            .expect("Can't load or initialize payload index schema");
+
         Self {
             id: collection_id.clone(),
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
+            payload_index_schema,
             shared_storage_config,
             this_peer_id,
             path: path.to_owned(),
@@ -409,6 +420,7 @@ impl Collection {
                 .collect(),
             transfers,
             shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
+            payload_index_schema: self.payload_index_schema.read().clone(),
         }
     }
 

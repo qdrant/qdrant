@@ -472,7 +472,7 @@ message PointsOperationResponse {
 }
 
 message UpdateResult {
-  uint64 operation_id = 1; // Number of operation
+  optional uint64 operation_id = 1; // Number of operation
   UpdateStatus status = 2; // Operation status
 }
 

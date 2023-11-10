@@ -17,9 +17,9 @@ use tonic::{Request, Response, Status};
 use super::points_common::core_search_batch;
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload,
-    delete_vectors, get, overwrite_payload, recommend, scroll, search, search_batch, set_payload,
-    sync, update_vectors, upsert,
+    clear_payload, count, create_field_index_internal, delete, delete_field_index_internal,
+    delete_payload, delete_vectors, get, overwrite_payload, recommend, scroll, search,
+    search_batch, set_payload, sync, update_vectors, upsert,
 };
 
 /// This API is intended for P2P communication within a distributed deployment.
@@ -158,7 +158,8 @@ impl PointsInternal for PointsInternalService {
         let create_field_index_collection = create_field_index_collection
             .ok_or_else(|| Status::invalid_argument("CreateFieldIndexCollection is missing"))?;
 
-        create_field_index(self.toc.as_ref(), create_field_index_collection, shard_id).await
+        create_field_index_internal(self.toc.as_ref(), create_field_index_collection, shard_id)
+            .await
     }
 
     async fn delete_field_index(
@@ -174,7 +175,8 @@ impl PointsInternal for PointsInternalService {
         let delete_field_index_collection = delete_field_index_collection
             .ok_or_else(|| Status::invalid_argument("DeleteFieldIndexCollection is missing"))?;
 
-        delete_field_index(self.toc.as_ref(), delete_field_index_collection, shard_id).await
+        delete_field_index_internal(self.toc.as_ref(), delete_field_index_collection, shard_id)
+            .await
     }
 
     async fn search(

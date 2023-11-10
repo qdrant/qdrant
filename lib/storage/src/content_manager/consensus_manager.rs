@@ -630,9 +630,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ///
     /// * `operation` - operation to propose
     /// * `wait_timeout` - How long do we need to wait for the confirmation
-    /// * `with_confirmation` - If `true` - additional empty operation will be sent to the consensus thread.
-    ///   This is needed to ensure that the operation is committed and applied on majority of the nodes.
-    ///   We can not wait for all nodes confirmation, because it is not guaranteed that all nodes will be online.
     ///
     pub async fn propose_consensus_op_with_await(
         &self,

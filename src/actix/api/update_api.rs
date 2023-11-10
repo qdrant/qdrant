@@ -7,6 +7,7 @@ use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
@@ -247,7 +248,7 @@ async fn update_batch(
 }
 #[put("/collections/{name}/index")]
 async fn create_field_index(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<CreateFieldIndex>,
     params: Query<UpdateParam>,
@@ -258,7 +259,7 @@ async fn create_field_index(
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_create_index(
-        toc.get_ref(),
+        dispatcher.get_ref(),
         &collection.name,
         operation,
         None,
@@ -271,7 +272,7 @@ async fn create_field_index(
 
 #[delete("/collections/{name}/index/{field_name}")]
 async fn delete_field_index(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     field: Path<FieldPath>,
     params: Query<UpdateParam>,
@@ -281,7 +282,7 @@ async fn delete_field_index(
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_delete_index(
-        toc.get_ref(),
+        dispatcher.get_ref(),
         &collection.name,
         field.name.clone(),
         None,

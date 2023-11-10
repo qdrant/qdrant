@@ -136,12 +136,12 @@ impl ShardOperation for LocalShard {
         if let Some(receiver) = callback_receiver {
             let _res = receiver.await??;
             Ok(UpdateResult {
-                operation_id,
+                operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
             })
         } else {
             Ok(UpdateResult {
-                operation_id,
+                operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
             })
         }

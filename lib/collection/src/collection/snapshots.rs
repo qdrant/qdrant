@@ -101,6 +101,11 @@ impl Collection {
             .await
             .save_key_mapping_to_dir(&snapshot_temp_target_dir_path)?;
 
+        let payload_index_schema_tmp_path =
+            Self::payload_index_file(&snapshot_temp_target_dir_path);
+        self.payload_index_schema
+            .save_to(&payload_index_schema_tmp_path)?;
+
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
         let mut snapshot_temp_arc_file = tempfile::Builder::new()
             .prefix(&format!("{snapshot_name}-arc-"))
