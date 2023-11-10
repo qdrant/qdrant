@@ -69,7 +69,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         let key = key as usize;
         self.len = max(self.len, key + 1);
         self.chunks
-            .resize(div_ceil(self.len, self.chunk_capacity), vec![]);
+            .resize_with(div_ceil(self.len, self.chunk_capacity), Vec::new);
 
         let chunk_idx = key / self.chunk_capacity;
         let chunk_data = &mut self.chunks[chunk_idx];
@@ -91,7 +91,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
                 let desired_capacity = self.chunk_capacity * self.dim;
                 chunk_data.try_set_capacity_exact(desired_capacity)?;
             }
-            chunk_data.resize(idx + self.dim, T::default());
+            chunk_data.resize_with(idx + self.dim, T::default);
         }
 
         let data = &mut chunk_data[idx..idx + self.dim];
@@ -158,7 +158,7 @@ impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {
         let num_chunks = div_ceil(capacity, self.chunk_capacity);
         let last_chunk_idx = capacity / self.chunk_capacity;
         self.chunks.try_set_capacity_exact(num_chunks)?;
-        self.chunks.resize(num_chunks, vec![]);
+        self.chunks.resize_with(num_chunks, Vec::new);
         for chunk_idx in 0..num_chunks {
             if chunk_idx == last_chunk_idx {
                 let desired_capacity = (capacity % self.chunk_capacity) * self.dim;

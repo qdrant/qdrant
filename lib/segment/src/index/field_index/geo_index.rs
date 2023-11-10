@@ -116,7 +116,7 @@ impl MutableGeoMapIndex {
             let geo_point = GeoMapIndex::decode_db_value(value)?;
 
             if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize(idx as usize + 1, Vec::new())
+                self.point_to_values.resize_with(idx as usize + 1, Vec::new);
             }
 
             if self.point_to_values[idx as usize].is_empty() {
@@ -203,7 +203,7 @@ impl MutableGeoMapIndex {
 
         if self.point_to_values.len() <= idx as usize {
             // That's a smart reallocation
-            self.point_to_values.resize(idx as usize + 1, vec![]);
+            self.point_to_values.resize_with(idx as usize + 1, Vec::new);
         }
 
         self.point_to_values[idx as usize] = values.to_vec();

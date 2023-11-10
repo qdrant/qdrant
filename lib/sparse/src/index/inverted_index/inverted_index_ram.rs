@@ -69,7 +69,7 @@ impl InvertedIndexRam {
                 }
                 None => {
                     // resize postings vector
-                    self.postings.resize(dim_id + 1, PostingList::default());
+                    self.postings.resize_with(dim_id + 1, PostingList::default);
                     // initialize new posting for dimension
                     self.postings[dim_id] = PostingList::new_one(id, weight);
                 }
@@ -108,7 +108,7 @@ impl InvertedIndexBuilder {
         let last_key = *keys.last().unwrap_or(&0);
         // Allocate postings of max key size
         let mut postings = Vec::new();
-        postings.resize(last_key as usize + 1, PostingList::default());
+        postings.resize_with(last_key as usize + 1, PostingList::default);
 
         // Move postings from hashmap to postings vector
         for key in keys {

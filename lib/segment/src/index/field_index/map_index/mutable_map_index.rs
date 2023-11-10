@@ -49,7 +49,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
 
         self.values_count += values.len();
         if self.point_to_values.len() <= idx as usize {
-            self.point_to_values.resize(idx as usize + 1, Vec::new())
+            self.point_to_values.resize_with(idx as usize + 1, Vec::new)
         }
 
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
@@ -102,7 +102,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
             })?;
             let (value, idx) = MapIndex::decode_db_record(record)?;
             if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize(idx as usize + 1, Vec::new())
+                self.point_to_values.resize_with(idx as usize + 1, Vec::new)
             }
             if self.point_to_values[idx as usize].is_empty() {
                 self.indexed_points += 1;
