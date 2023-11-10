@@ -16,8 +16,7 @@ use crate::common::fetch_vectors::{convert_to_vectors, PointRef, ReferencedPoint
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, QueryEnum,
-    RecommendRequest, RecommendRequestBatch, RecommendStrategy, SearchRequest, SearchRequestBatch,
-    UsingVector,
+    RecommendRequest, RecommendRequestBatch, RecommendStrategy, UsingVector,
 };
 
 fn avg_vectors<'a>(
@@ -161,131 +160,76 @@ where
         .fetch_vectors(collection, read_consistency, collection_by_name)
         .await?;
 
-    let mut results = Vec::with_capacity(request_batch.searches.len());
+    let mut core_searches = Vec::with_capacity(request_batch.searches.len());
 
-    // At this point batches that include both types of requests are going to be executed
-    // sequentially in runs of requests of the same strategy
-    //
-    // [avg, avg, avg, score, score, score, avg]
-    // |------------>|------------------->|--->|
-    //      run1             run2          run3
-    //
-    // In the future we'll fix this by unify them into CoreSearchRequests and make a single batch
-    for (strategy, run) in batch_by_strategy(&request_batch.searches) {
-        let mut searches = Vec::new();
-        let mut core_searches = Vec::new();
-        match strategy {
-            RecommendStrategy::AverageVector => searches.reserve_exact(run.len()),
-            RecommendStrategy::BestScore => core_searches.reserve_exact(run.len()),
-        }
-
-        for request in run {
-            let vector_name = match &request.using {
-                None => DEFAULT_VECTOR_NAME,
-                Some(UsingVector::Name(name)) => name,
-            };
-
-            let lookup_vector_name = get_search_vector_name(request);
-
-            let reference_vectors_ids = request
-                .positive
-                .iter()
-                .chain(&request.negative)
-                .filter_map(|example| example.as_point_id())
-                .collect_vec();
-
-            let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
-
-            for &point_id in &reference_vectors_ids {
-                if !all_vectors_records_map.contains_key(&PointRef {
-                    collection_name: lookup_collection_name,
-                    point_id,
-                }) {
-                    return Err(CollectionError::PointNotFound {
-                        missed_point_id: point_id,
-                    });
-                }
-            }
-
-            let positive_vectors = convert_to_vectors(
-                request.positive.iter(),
-                &all_vectors_records_map,
-                &lookup_vector_name,
-                lookup_collection_name,
-            );
-
-            let negative_vectors = convert_to_vectors(
-                request.negative.iter(),
-                &all_vectors_records_map,
-                &lookup_vector_name,
-                lookup_collection_name,
-            );
-
-            match strategy {
-                RecommendStrategy::AverageVector => {
-                    let search = recommend_by_avg_vector(
-                        request.clone(),
-                        positive_vectors,
-                        negative_vectors,
-                        vector_name,
-                        reference_vectors_ids,
-                    );
-                    searches.push(search);
-                }
-                RecommendStrategy::BestScore => {
-                    let core_search = recommend_by_best_score(
-                        request,
-                        positive_vectors,
-                        negative_vectors,
-                        reference_vectors_ids,
-                    );
-                    core_searches.push(core_search);
-                }
-            };
-        }
-
-        let run_result = if !searches.is_empty() {
-            let search_batch_request = SearchRequestBatch { searches };
-            collection
-                .search_batch(search_batch_request, read_consistency, None, timeout)
-                .await?
-        } else {
-            let core_search_batch_request = CoreSearchRequestBatch {
-                searches: core_searches,
-            };
-            collection
-                .core_search_batch(core_search_batch_request, read_consistency, None, timeout)
-                .await?
+    for request in request_batch.searches.iter() {
+        let vector_name = match &request.using {
+            None => DEFAULT_VECTOR_NAME,
+            Some(UsingVector::Name(name)) => name,
         };
 
-        // Push run result to final results
-        run_result.into_iter().for_each(|x| results.push(x));
-    }
+        let lookup_vector_name = get_search_vector_name(request);
 
-    Ok(results)
-}
+        let reference_vectors_ids = request
+            .positive
+            .iter()
+            .chain(&request.negative)
+            .filter_map(|example| example.as_point_id())
+            .collect_vec();
 
-/// Groups the consecutive requests of the same strategy into separate batches
-fn batch_by_strategy(
-    requests: &[RecommendRequest],
-) -> impl Iterator<Item = (RecommendStrategy, Vec<&RecommendRequest>)> {
-    requests.iter().batching(|iter| {
-        match iter.next() {
-            None => None,
-            Some(req) => {
-                // start new batch
-                let strategy = req.strategy.unwrap_or_default();
-                let mut batch = vec![req];
+        let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
 
-                // continue until we see a different strategy
-                batch.extend(
-                    iter.take_while_ref(|req| req.strategy.unwrap_or_default() == strategy),
-                );
-
-                Some((strategy, batch))
+        for &point_id in &reference_vectors_ids {
+            if !all_vectors_records_map.contains_key(&PointRef {
+                collection_name: lookup_collection_name,
+                point_id,
+            }) {
+                return Err(CollectionError::PointNotFound {
+                    missed_point_id: point_id,
+                });
             }
         }
-    })
+
+        let positive_vectors = convert_to_vectors(
+            request.positive.iter(),
+            &all_vectors_records_map,
+            &lookup_vector_name,
+            lookup_collection_name,
+        );
+
+        let negative_vectors = convert_to_vectors(
+            request.negative.iter(),
+            &all_vectors_records_map,
+            &lookup_vector_name,
+            lookup_collection_name,
+        );
+
+        let search = match request.strategy.unwrap_or_default() {
+            RecommendStrategy::AverageVector => recommend_by_avg_vector(
+                request.clone(),
+                positive_vectors,
+                negative_vectors,
+                vector_name,
+                reference_vectors_ids,
+            ),
+            RecommendStrategy::BestScore => recommend_by_best_score(
+                request,
+                positive_vectors,
+                negative_vectors,
+                reference_vectors_ids,
+            ),
+        };
+
+        core_searches.push(search);
+    }
+
+    let core_search_batch_request = CoreSearchRequestBatch {
+        searches: core_searches,
+    };
+
+    collection
+        .core_search_batch(core_search_batch_request, read_consistency, None, timeout)
+        .await
 }
 
 fn recommend_by_avg_vector<'a>(
@@ -294,7 +238,7 @@ fn recommend_by_avg_vector<'a>(
     negative: impl Iterator<Item = &'a VectorType>,
     vector_name: &str,
     reference_vectors_ids: Vec<ExtendedPointId>,
-) -> SearchRequest {
+) -> CoreSearchRequest {
     let RecommendRequest {
         filter,
         with_payload,
@@ -321,12 +265,14 @@ fn recommend_by_avg_vector<'a>(
             .collect()
     };
 
-    SearchRequest {
-        vector: NamedVector {
-            name: vector_name.to_string(),
-            vector: search_vector,
-        }
-        .into(),
+    CoreSearchRequest {
+        query: QueryEnum::Nearest(
+            NamedVector {
+                name: vector_name.to_string(),
+                vector: search_vector,
+            }
+            .into(),
+        ),
         filter: Some(Filter {
             should: None,
             must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
@@ -377,54 +323,5 @@ fn recommend_by_best_score<'a>(
         with_payload: request.with_payload.clone(),
         with_vector: request.with_vector.clone(),
         score_threshold: request.score_threshold,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::operations::types::RecommendStrategy;
-
-    #[test]
-    fn test_batch_by_strategy() {
-        let requests = vec![
-            RecommendRequest {
-                strategy: Some(RecommendStrategy::AverageVector),
-                ..Default::default()
-            },
-            RecommendRequest {
-                strategy: None,
-                ..Default::default()
-            },
-            RecommendRequest {
-                strategy: Some(RecommendStrategy::BestScore),
-                ..Default::default()
-            },
-            RecommendRequest {
-                strategy: Some(RecommendStrategy::BestScore),
-                ..Default::default()
-            },
-            RecommendRequest {
-                strategy: Some(RecommendStrategy::BestScore),
-                ..Default::default()
-            },
-            RecommendRequest {
-                strategy: Some(RecommendStrategy::AverageVector),
-                ..Default::default()
-            },
-        ];
-
-        let batches: Vec<_> = batch_by_strategy(&requests)
-            .map(|(strategy, batch)| (strategy, batch.len()))
-            .collect();
-
-        assert_eq!(
-            batches,
-            vec![
-                (RecommendStrategy::AverageVector, 2),
-                (RecommendStrategy::BestScore, 3),
-                (RecommendStrategy::AverageVector, 1),
-            ]
-        );
     }
 }

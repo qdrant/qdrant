@@ -10,7 +10,7 @@ use tokio::runtime::Handle;
 
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult,
+    CountResult, PointRequest, Record, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::shard_trait::ShardOperation;
@@ -81,19 +81,6 @@ impl ShardOperation for DummyShard {
         self.dummy()
     }
 
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
-    async fn search(
-        &self,
-        _: Arc<SearchRequestBatch>,
-        _: &Handle,
-        _: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.dummy()
-    }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         _: Arc<CoreSearchRequestBatch>,

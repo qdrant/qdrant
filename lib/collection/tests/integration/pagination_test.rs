@@ -53,7 +53,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     };
 
     let reference_result = collection
-        .search(full_search_request, None, None, None)
+        .search(full_search_request.into(), None, None, None)
         .await
         .unwrap();
 
@@ -74,7 +74,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     };
 
     let page_1_result = collection
-        .search(page_1_request, None, None, None)
+        .search(page_1_request.into(), None, None, None)
         .await
         .unwrap();
 
@@ -96,7 +96,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     };
 
     let page_9_result = collection
-        .search(page_9_request, None, None, None)
+        .search(page_9_request.into(), None, None, None)
         .await
         .unwrap();
 

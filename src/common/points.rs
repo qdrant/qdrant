@@ -9,9 +9,9 @@ use collection::operations::point_ops::{
     WriteOrdering,
 };
 use collection::operations::types::{
-    CoreSearchRequestBatch, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
-    GroupsResult, PointRequest, RecommendGroupsRequest, Record, ScrollRequest, ScrollResult,
-    SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
+    CoreSearchRequest, CoreSearchRequestBatch, CountRequest, CountResult, DiscoverRequest,
+    DiscoverRequestBatch, GroupsResult, PointRequest, RecommendGroupsRequest, Record,
+    ScrollRequest, ScrollResult, SearchGroupsRequest, UpdateResult,
 };
 use collection::operations::vector_ops::{
     DeleteVectors, UpdateVectors, UpdateVectorsOp, VectorOperations,
@@ -609,40 +609,29 @@ pub async fn do_delete_index(
     .await
 }
 
-pub async fn do_search_points(
+pub async fn do_core_search_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: SearchRequest,
+    request: CoreSearchRequest,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.search(
+    let batch_res = do_core_search_batch_points(
+        toc,
         collection_name,
-        request,
+        CoreSearchRequestBatch {
+            searches: vec![request],
+        },
         read_consistency,
         shard_selection,
         timeout,
     )
-    .await
-}
-
-pub async fn do_search_batch_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: SearchRequestBatch,
-    read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
-    timeout: Option<Duration>,
-) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.search_batch(
-        collection_name,
-        request,
-        read_consistency,
-        shard_selection,
-        timeout,
-    )
-    .await
+    .await?;
+    batch_res
+        .into_iter()
+        .next()
+        .ok_or_else(|| StorageError::service_error("Empty search result"))
 }
 
 pub async fn do_core_search_batch_points(

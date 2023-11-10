@@ -16,7 +16,7 @@ use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest, CountResult,
-    PointRequest, Record, SearchRequestBatch, UpdateResult,
+    PointRequest, Record, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -196,21 +196,6 @@ impl ShardOperation for QueueProxyShard {
             .info()
             .await
     }
-
-    /// Forward read-only `search` to `wrapped_shard`
-    async fn search(
-        &self,
-        request: Arc<SearchRequestBatch>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.inner
-            .as_ref()
-            .expect("Queue proxy has been finalized")
-            .search(request, search_runtime_handle, timeout)
-            .await
-    }
-
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
@@ -438,22 +423,6 @@ impl ShardOperation for Inner {
     }
 
     /// Forward read-only `search` to `wrapped_shard`
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
-    async fn search(
-        &self,
-        request: Arc<SearchRequestBatch>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let local_shard = &self.wrapped_shard;
-        local_shard
-            .search(request, search_runtime_handle, timeout)
-            .await
-    }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,

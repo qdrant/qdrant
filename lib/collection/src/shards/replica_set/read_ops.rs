@@ -50,31 +50,6 @@ impl ShardReplicaSet {
         )
         .await
     }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
-    pub async fn search(
-        &self,
-        request: Arc<SearchRequestBatch>,
-        read_consistency: Option<ReadConsistency>,
-        local_only: bool,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.execute_and_resolve_read_operation(
-            |shard| {
-                let request = request.clone();
-                let search_runtime = self.search_runtime.clone();
-
-                async move { shard.search(request, &search_runtime, timeout).await }.boxed()
-            },
-            read_consistency,
-            local_only,
-        )
-        .await
-    }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
     pub async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
@@ -84,7 +59,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
-                let request = request.clone();
+                let request = Arc::clone(&request);
                 let search_runtime = self.search_runtime.clone();
 
                 async move { shard.core_search(request, &search_runtime, timeout).await }.boxed()

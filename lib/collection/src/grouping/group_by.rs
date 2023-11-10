@@ -156,7 +156,7 @@ impl GroupRequest {
                 request.with_vector = None;
 
                 collection
-                    .search(request, read_consistency, shard_selection, timeout)
+                    .search(request.into(), read_consistency, shard_selection, timeout)
                     .await
             }
             SourceRequest::Recommend(mut request) => {

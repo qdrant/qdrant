@@ -129,7 +129,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     };
 
     let result = collection
-        .search(full_search_request, None, None, None)
+        .search(full_search_request.into(), None, None, None)
         .await
         .unwrap();
 
@@ -157,7 +157,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     };
 
     let result = collection
-        .search(failed_search_request, None, None, None)
+        .search(failed_search_request.into(), None, None, None)
         .await;
 
     assert!(
@@ -181,7 +181,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     };
 
     let result = collection
-        .search(full_search_request, None, None, None)
+        .search(full_search_request.into(), None, None, None)
         .await
         .unwrap();
 

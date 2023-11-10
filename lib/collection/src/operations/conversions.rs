@@ -8,9 +8,12 @@ use api::grpc::conversions::{
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
+use api::grpc::qdrant::SearchPoints;
+use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    Named, NamedQuery, NamedVector, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVector, NamedVectorStruct, VectorStruct, VectorType,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -827,6 +830,46 @@ impl From<CountResult> for api::grpc::qdrant::CountResult {
         Self {
             count: value.count as u64,
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
+    type Error = Status;
+    fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
+        let SearchPoints {
+            collection_name: _,
+            vector,
+            filter,
+            limit,
+            with_payload,
+            params,
+            score_threshold,
+            offset,
+            vector_name,
+            with_vectors,
+            read_consistency: _,
+            timeout: _,
+        } = value;
+
+        let vector_struct = if let Some(vector_name) = vector_name {
+            NamedVectorStruct::Named(NamedVector {
+                name: vector_name,
+                vector,
+            })
+        } else {
+            NamedVectorStruct::Default(vector)
+        };
+
+        Ok(Self {
+            query: QueryEnum::Nearest(vector_struct),
+            filter: filter.map(TryInto::try_into).transpose()?,
+            params: params.map(Into::into),
+            limit: limit as usize,
+            offset: offset.map(|v| v as usize).unwrap_or_default(),
+            with_payload: with_payload.map(TryInto::try_into).transpose()?,
+            with_vector: with_vectors.map(Into::into),
+            score_threshold: score_threshold.map(|s| s as ScoreType),
+        })
     }
 }
 
