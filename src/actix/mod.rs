@@ -30,6 +30,7 @@ use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::api_key::{ApiKey, WhitelistItem};
+use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
@@ -56,6 +57,7 @@ pub fn init(
             .actix_telemetry_collector
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
+        let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let api_key = settings.service.api_key.clone();
         let static_folder = settings
             .service
@@ -127,6 +129,7 @@ pub fn init(
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
+                .app_data(http_client.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)

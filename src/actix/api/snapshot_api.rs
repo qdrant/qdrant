@@ -31,6 +31,7 @@ use crate::actix::helpers::{
 };
 use crate::common;
 use crate::common::collections::*;
+use crate::common::http_client::HttpClient;
 
 #[derive(Deserialize, Validate)]
 struct SnapshotPath {
@@ -146,6 +147,7 @@ async fn create_snapshot(
 #[post("/collections/{name}/snapshots/upload")]
 async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
+    http_client: web::Data<HttpClient>,
     collection: valid::Path<CollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
     params: valid::Query<SnapshotUploadingParam>,
@@ -160,6 +162,11 @@ async fn upload_snapshot(
             Err(err) => return process_response::<()>(Err(err), timing),
         };
 
+    let http_client = match http_client.client() {
+        Ok(http_client) => http_client,
+        Err(err) => return process_response::<()>(Err(err.into()), timing),
+    };
+
     let snapshot_recover = SnapshotRecover {
         location: snapshot_location,
         priority: params.priority,
@@ -170,8 +177,10 @@ async fn upload_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
+        http_client,
     )
     .await;
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -182,6 +191,7 @@ async fn upload_snapshot(
 #[put("/collections/{name}/snapshots/recover")]
 async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
+    http_client: web::Data<HttpClient>,
     collection: valid::Path<CollectionPath>,
     request: valid::Json<SnapshotRecover>,
     params: valid::Query<SnapshottingParam>,
@@ -190,13 +200,20 @@ async fn recover_from_snapshot(
     let snapshot_recover = request.into_inner();
     let wait = params.wait.unwrap_or(true);
 
+    let http_client = match http_client.client() {
+        Ok(http_client) => http_client,
+        Err(err) => return process_response::<()>(Err(err.into()), timing),
+    };
+
     let response = do_recover_from_snapshot(
         dispatcher.get_ref(),
         &collection.name,
         snapshot_recover,
         wait,
+        http_client,
     )
     .await;
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -308,19 +325,26 @@ async fn create_shard_snapshot(
 #[put("/collections/{collection}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
     toc: web::Data<TableOfContent>,
+    http_client: web::Data<HttpClient>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
-    let (collection, shard) = path.into_inner();
-    let future = common::snapshots::recover_shard_snapshot(
-        toc.into_inner(),
-        collection,
-        shard,
-        request.location,
-        request.priority.unwrap_or_default(),
-    )
-    .map_err(Into::into);
+    let future = async move {
+        let (collection, shard) = path.into_inner();
+
+        common::snapshots::recover_shard_snapshot(
+            toc.into_inner(),
+            collection,
+            shard,
+            request.location,
+            request.priority.unwrap_or_default(),
+            http_client.as_ref().clone(),
+        )
+        .await?;
+
+        Ok(())
+    };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }

@@ -38,6 +38,7 @@ use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 
 use crate::common::helpers;
+use crate::common::http_client::HttpClient;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
@@ -248,6 +249,8 @@ pub fn init_internal(
 
     use crate::tonic::api::raft_api::RaftService;
 
+    let http_client = HttpClient::from_settings(&settings)?;
+
     runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
@@ -257,7 +260,7 @@ pub fn init_internal(
                 QdrantInternalService::new(settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
-            let shard_snapshots_service = ShardSnapshotsService::new(toc.clone());
+            let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
             let raft_service = RaftService::new(to_consensus, consensus_state);
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);

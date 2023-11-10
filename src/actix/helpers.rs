@@ -9,6 +9,8 @@ use collection::operations::types::CollectionError;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
 
+use crate::common::http_client;
+
 pub fn collection_into_actix_error(err: CollectionError) -> Error {
     let storage_error: StorageError = err.into();
     storage_into_actix_error(storage_error)
@@ -200,6 +202,12 @@ impl From<StorageError> for HttpError {
 impl From<CollectionError> for HttpError {
     fn from(err: CollectionError) -> Self {
         StorageError::from(err).into()
+    }
+}
+
+impl From<http_client::Error> for HttpError {
+    fn from(err: http_client::Error) -> Self {
+        StorageError::service_error(format!("failed to initialize HTTP(S) client: {err}")).into()
     }
 }
 
