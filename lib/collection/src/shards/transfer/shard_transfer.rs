@@ -10,7 +10,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tempfile::TempPath;
 use tokio::time::sleep;
-use tokio_util::sync::CancellationToken;
 
 use super::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
@@ -77,7 +76,7 @@ pub enum ShardTransferMethod {
 
 /// # Cancel safety
 ///
-/// This function is *not* cancel safe.
+/// This function is cancel safe.
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
@@ -88,7 +87,6 @@ pub async fn transfer_shard(
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
-    cancel: CancellationToken,
 ) -> CollectionResult<()> {
     let shard_id = transfer_config.shard_id;
 
@@ -106,8 +104,9 @@ pub async fn transfer_shard(
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_stream_records(shard_holder.clone(), shard_id, remote_shard, cancel).await
+            transfer_stream_records(shard_holder.clone(), shard_id, remote_shard).await?;
         }
+
         // Transfer shard as snapshot
         ShardTransferMethod::Snapshot => {
             transfer_snapshot(
@@ -120,11 +119,12 @@ pub async fn transfer_shard(
                 snapshots_path,
                 collection_name,
                 temp_dir,
-                cancel,
             )
-            .await
+            .await?;
         }
     }
+
+    Ok(())
 }
 
 /// Orchestrate shard transfer by streaming records
@@ -134,20 +134,24 @@ pub async fn transfer_shard(
 ///
 /// This first transfers configured indices. Then it transfers all point records in batches.
 /// Updates to the local shard are forwarded to the remote concurrently.
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
 async fn transfer_stream_records(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    cancel: CancellationToken,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
+
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
     // Proxify local shard and create payload indexes on remote shard
     {
-        let shard_holder_guard = shard_holder.read().await;
-        let transferring_shard_opt = shard_holder_guard.get_shard(&shard_id);
-        let Some(replica_set) = transferring_shard_opt else {
+        let shard_holder = shard_holder.read().await;
+
+        let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
             return Err(CollectionError::service_error(format!(
                 "Shard {shard_id} cannot be proxied because it does not exist"
             )));
@@ -160,30 +164,27 @@ async fn transfer_stream_records(
 
     // Transfer contents batch by batch
     log::trace!("Transferring points to shard {shard_id} by streaming records");
-    let mut offset = None;
-    loop {
-        if cancel.is_cancelled() {
-            return Err(CollectionError::Cancelled {
-                description: "Transfer cancelled".to_string(),
-            });
-        }
-        let shard_holder_guard = shard_holder.read().await;
-        let transferring_shard_opt = shard_holder_guard.get_shard(&shard_id);
 
-        if let Some(replica_set) = transferring_shard_opt {
-            offset = replica_set
-                .transfer_batch(offset, TRANSFER_BATCH_SIZE)
-                .await?;
-            if offset.is_none() {
-                // That was the last batch, all look good
-                break;
-            }
-        } else {
+    let mut offset = None;
+
+    loop {
+        let shard_holder = shard_holder.read().await;
+
+        let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
             // Forward proxy gone?!
             // That would be a programming error.
             return Err(CollectionError::service_error(format!(
                 "Shard {shard_id} is not found"
             )));
+        };
+
+        offset = replica_set
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE)
+            .await?;
+
+        if offset.is_none() {
+            // That was the last batch, all look good
+            break;
         }
     }
 
@@ -249,11 +250,10 @@ async fn transfer_stream_records(
 ///
 /// # Cancel safety
 ///
-/// This method is *not* cancel safe.
+/// This function is cancel safe.
 ///
-/// If `cancel` is triggered - the remote shard may only be partially recovered/transferred and the
-/// local shard may be left in an unexpected state. This must be resolved manually in case of
-/// cancellation.
+/// If cancelled - the remote shard may only be partially recovered/transferred and the local shard
+/// may be left in an unexpected state. This must be resolved manually in case of cancellation.
 #[allow(clippy::too_many_arguments)]
 async fn transfer_snapshot(
     transfer_config: ShardTransfer,
@@ -265,9 +265,9 @@ async fn transfer_snapshot(
     snapshots_path: &Path,
     collection_name: &str,
     temp_dir: &Path,
-    cancel: CancellationToken,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
+
     log::debug!(
         "Starting shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
     );
@@ -282,18 +282,15 @@ async fn transfer_snapshot(
         )));
     };
 
-    error_if_cancelled(&cancel)?;
-
     // Queue proxy local shard
     replica_set
         .queue_proxify_local(remote_shard.clone())
         .await?;
+
     debug_assert!(
         replica_set.is_queue_proxy().await,
         "Local shard must be a queue proxy"
     );
-
-    error_if_cancelled(&cancel)?;
 
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
@@ -301,6 +298,7 @@ async fn transfer_snapshot(
         .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
         .await?;
 
+    // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
     let snapshot_temp_path = shard_holder_read
         .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
         .await
@@ -310,8 +308,6 @@ async fn transfer_snapshot(
                 "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
             ))
         })?;
-
-    error_if_cancelled(&cancel)?;
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
@@ -339,8 +335,6 @@ async fn transfer_snapshot(
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
     }
 
-    error_if_cancelled(&cancel)?;
-
     // Set shard state to Partial
     log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
     consensus
@@ -356,15 +350,9 @@ async fn transfer_snapshot(
             ))
         })?;
 
-    error_if_cancelled(&cancel)?;
-
     // Transfer queued updates to remote, transform into forward proxy
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
-    replica_set
-        .queue_proxy_into_forward_proxy(cancel.clone())
-        .await?;
-
-    error_if_cancelled(&cancel)?;
+    replica_set.queue_proxy_into_forward_proxy().await?;
 
     // Wait for Partial state in our replica set
     let partial_state = ReplicaState::Partial;
@@ -381,8 +369,6 @@ async fn transfer_snapshot(
                 "Shard being transferred did not reach {partial_state:?} state in time: {err}",
             ))
         })?;
-
-    error_if_cancelled(&cancel)?;
 
     // Synchronize all nodes
     await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
@@ -401,6 +387,10 @@ async fn transfer_snapshot(
 ///
 /// If awaiting on other nodes fails for any reason, this simply continues after the consensus
 /// timeout.
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
 async fn await_consensus_sync(
     consensus: &dyn ShardTransferConsensus,
     channel_service: &ChannelService,
@@ -428,19 +418,11 @@ async fn await_consensus_sync(
     }
 }
 
-/// Return an error if cancelled.
-#[must_use = "a returned error must be propagated down function calls"]
-fn error_if_cancelled(cancel: &CancellationToken) -> CollectionResult<()> {
-    if cancel.is_cancelled() {
-        Err(CollectionError::Cancelled {
-            description: "Transfer cancelled".to_string(),
-        })
-    } else {
-        Ok(())
-    }
-}
-
 /// Return local shard back from the forward proxy
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
 pub async fn revert_proxy_shard_to_local(
     shard_holder: &ShardHolder,
     shard_id: ShardId,
@@ -513,6 +495,8 @@ pub async fn handle_transferred_shard_proxy(
     to: PeerId,
     sync: bool,
 ) -> CollectionResult<bool> {
+    // TODO: Ensure cancel safety!
+
     let replica_set = match shard_holder.get_shard(&shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
@@ -525,6 +509,8 @@ pub async fn handle_transferred_shard_proxy(
         replica_set.un_proxify_local().await?;
     } else {
         // Remove local proxy
+        //
+        // TODO: Ensure cancel safety!
         replica_set.remove_local().await?;
     }
 
@@ -773,67 +759,66 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     spawn_async_cancellable(move |cancel| async move {
-        let mut tries = MAX_RETRY_COUNT;
-        let mut finished = false;
-        while !finished && tries > 0 {
-            let transfer_result = transfer_shard(
-                transfer.clone(),
-                shards_holder.clone(),
-                consensus.as_ref(),
-                collection_id.clone(),
-                &collection_name,
-                channel_service.clone(),
-                &snapshots_path,
-                &temp_dir,
-                cancel.clone(),
-            )
-            .await;
-            finished = match transfer_result {
-                Ok(()) => true,
-                Err(error) => {
-                    // Revert queue proxy if we still have any to clean up or prepare for the next attempt
-                    if let Some(replica_set) =
-                        shards_holder.read().await.get_shard(&transfer.shard_id)
-                    {
-                        replica_set.revert_queue_proxy_local().await;
-                    }
+        let mut result = Err(cancel::Error::Cancelled);
 
-                    if matches!(error, CollectionError::Cancelled { .. }) {
-                        return false;
-                    }
-                    log::error!(
-                        "Failed to transfer shard {} -> {}: {error}",
+        for attempt in 0..MAX_RETRY_COUNT {
+            let future = async {
+                if attempt > 0 {
+                    sleep(RETRY_DELAY * attempt as u32).await;
+
+                    log::warn!(
+                        "Retrying shard transfer {collection_id}:{} -> {} (retry {attempt})",
                         transfer.shard_id,
                         transfer.to,
                     );
-
-                    false
                 }
+
+                transfer_shard(
+                    transfer.clone(),
+                    shards_holder.clone(),
+                    consensus.as_ref(),
+                    collection_id.clone(),
+                    &collection_name,
+                    channel_service.clone(),
+                    &snapshots_path,
+                    &temp_dir,
+                )
+                .await
             };
-            if cancel.is_cancelled() {
-                return false;
-            }
-            if !finished {
-                tries -= 1;
-                log::warn!(
-                    "Retrying shard transfer {} -> {} (retry {})",
+
+            result = cancel::future::cancel_on_token(cancel.clone(), future).await;
+
+            let is_ok = matches!(result, Ok(Ok(())));
+            let is_err = matches!(result, Ok(Err(_)));
+            let is_cancelled = result.is_err();
+
+            if let Ok(Err(err)) = &result {
+                log::error!(
+                    "Failed to transfer shard {collection_id}:{} -> {}: {err}",
                     transfer.shard_id,
                     transfer.to,
-                    MAX_RETRY_COUNT - tries
                 );
-                let exp_timeout = RETRY_DELAY * (MAX_RETRY_COUNT - tries) as u32;
-                sleep(exp_timeout).await;
+            }
+
+            if is_err || is_cancelled {
+                // Revert queue proxy if we still have any to prepare for the next attempt
+                if let Some(shard) = shards_holder.read().await.get_shard(&transfer.shard_id) {
+                    shard.revert_queue_proxy_local().await;
+                }
+            }
+
+            if is_ok || is_cancelled {
+                break;
             }
         }
 
-        if finished {
-            // On the end of transfer, the new shard is active but most likely is under the optimization
-            // process. Requests to this node might be slow, but we rely on the assumption that
-            // there should be at least one other replica that is not under optimization.
-            on_finish.await;
-        } else {
-            on_error.await;
+        match &result {
+            Ok(Ok(())) => on_finish.await,
+            Ok(Err(_)) => on_error.await,
+            Err(_) => (), // do nothing, if task was cancelled
         }
-        finished
+
+        let is_ok = matches!(result, Ok(Ok(())));
+        is_ok
     })
 }

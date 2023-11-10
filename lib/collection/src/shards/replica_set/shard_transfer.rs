@@ -1,5 +1,5 @@
-use cancel::future::cancel_on_token;
-use cancel::CancellationToken;
+use std::ops::Deref as _;
+
 use segment::types::PointIdType;
 
 use super::ShardReplicaSet;
@@ -10,18 +10,23 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::Shard;
 
 impl ShardReplicaSet {
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
-        let mut local_write = self.local.write().await;
+        let mut local = self.local.write().await;
 
-        match &*local_write {
+        match local.deref() {
             // Expected state, continue
             Some(Shard::Local(_)) => {}
+
             // If a forward proxy to same remote, return early
             Some(Shard::ForwardProxy(proxy))
                 if proxy.remote_shard.peer_id == remote_shard.peer_id =>
             {
                 return Ok(())
             }
+
             // Unexpected states, error
             Some(Shard::ForwardProxy(proxy)) => {
                 return Err(CollectionError::service_error(format!(
@@ -56,23 +61,33 @@ impl ShardReplicaSet {
             }
         };
 
-        if let Some(Shard::Local(local)) = local_write.take() {
-            let proxy_shard = ForwardProxyShard::new(local, remote_shard);
-            let _ = local_write.insert(Shard::ForwardProxy(proxy_shard));
-        }
+        // Explicit `match` instead of `if-let` to catch `unreachable` condition if top `match` is
+        // changed
+        let local_shard = match local.take() {
+            Some(Shard::Local(local_shard)) => local_shard,
+            _ => unreachable!(),
+        };
+
+        let proxy_shard = ForwardProxyShard::new(local_shard, remote_shard);
+        let _ = local.insert(Shard::ForwardProxy(proxy_shard));
 
         Ok(())
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn queue_proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
-        let mut local_write = self.local.write().await;
+        let mut local = self.local.write().await;
 
-        match &*local_write {
+        match local.deref() {
             // Expected state, continue
             Some(Shard::Local(_)) => {}
+
             // If a forward proxy to same remote, continue and change into queue proxy
             Some(Shard::ForwardProxy(proxy))
                 if proxy.remote_shard.peer_id == remote_shard.peer_id => {}
+
             // Unexpected states, error
             Some(Shard::QueueProxy(_)) => {
                 return Err(CollectionError::service_error(format!(
@@ -107,17 +122,31 @@ impl ShardReplicaSet {
             }
         };
 
-        match local_write.take() {
-            Some(Shard::Local(local)) => {
-                let proxy_shard = QueueProxyShard::new(local, remote_shard).await;
-                let _ = local_write.insert(Shard::QueueProxy(proxy_shard));
-            }
-            Some(Shard::ForwardProxy(proxy)) => {
-                let proxy_shard = QueueProxyShard::new(proxy.wrapped_shard, remote_shard).await;
-                let _ = local_write.insert(Shard::QueueProxy(proxy_shard));
-            }
+        // Get `max_ack_version` without "taking" local shard (to maintain cancel safety)
+        let local_shard = match local.deref() {
+            Some(Shard::Local(local)) => local,
+            Some(Shard::ForwardProxy(proxy)) => &proxy.wrapped_shard,
             _ => unreachable!(),
-        }
+        };
+
+        let max_ack_version = local_shard
+            .update_handler
+            .lock()
+            .await
+            .max_ack_version
+            .clone();
+
+        // Proxify local shard
+        //
+        // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
+        let local_shard = match local.take() {
+            Some(Shard::Local(local)) => local,
+            Some(Shard::ForwardProxy(proxy)) => proxy.wrapped_shard,
+            _ => unreachable!(),
+        };
+
+        let proxy_shard = QueueProxyShard::new(local_shard, remote_shard, max_ack_version);
+        let _ = local.insert(Shard::QueueProxy(proxy_shard));
 
         Ok(())
     }
@@ -126,14 +155,15 @@ impl ShardReplicaSet {
     ///
     /// # Cancel safety
     ///
-    /// This method is *not* cancel safe.
+    /// This method is cancel safe.
     pub async fn un_proxify_local(&self) -> CollectionResult<()> {
-        let mut local_write = self.local.write().await;
+        let mut local = self.local.write().await;
 
-        match &*local_write {
+        match local.deref() {
             // Expected states, continue
-            Some(Shard::ForwardProxy(_) | Shard::QueueProxy(_)) => {}
             Some(Shard::Local(_)) => return Ok(()),
+            Some(Shard::ForwardProxy(_) | Shard::QueueProxy(_)) => {}
+
             // Unexpected states, error
             Some(shard @ (Shard::Proxy(_) | Shard::Dummy(_))) => {
                 return Err(CollectionError::service_error(format!(
@@ -142,6 +172,7 @@ impl ShardReplicaSet {
                     shard.variant_name(),
                 )));
             }
+
             None => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot un-proxify local shard {} on peer {} because it is not active",
@@ -151,39 +182,58 @@ impl ShardReplicaSet {
             }
         };
 
-        // Unproxify local shard of above types
-        match local_write.take() {
-            Some(Shard::ForwardProxy(proxy)) => {
-                let local_shard = proxy.wrapped_shard;
-                let _ = local_write.insert(Shard::Local(local_shard));
-                Ok(())
-            }
+        // Perform async finalization without "taking" local shard (to maintain cancel safety)
+        //
+        // Explicit `match` instead of `if-let` on `Shard::QueueProxy` to catch `unreachable`
+        // condition if top `match` is changed
+        let result = match local.deref() {
+            Some(Shard::ForwardProxy(_)) => Ok(()),
+
             Some(Shard::QueueProxy(proxy)) => {
                 // We should not unproxify a queue proxy shard directly because it can fail if it
                 // fails to send all updates to the remote shard.
                 // Instead we should transform it into a forward proxy shard before unproxify is
                 // called to handle errors at an earlier time.
+                // Also, we're holding a write lock here which could block other accessors for a
+                // long time if transferring updates takes a long time.
                 // See `Self::queue_proxy_into_forward_proxy()` for more details.
+
                 log::warn!(
                     "Directly unproxifying queue proxy shard, this should not happen normally"
                 );
 
-                // Finalize, insert local shard back and return finalize result
-                let result = proxy.finalize(CancellationToken::new()).await;
-                let (result, local_shard) = match result {
-                    Ok((local_shard, _)) => (Ok(()), local_shard),
-                    Err((err, queue_proxy)) => {
-                        log::error!("Failed to un-proxify local shard because transferring remaining queue items to remote failed: {err}");
-                        let (wrapped_shard, _remote_shard) =
-                            queue_proxy.forget_updates_and_finalize();
-                        (Err(err), wrapped_shard)
-                    }
-                };
-                let _ = local_write.insert(Shard::Local(local_shard));
+                let result = proxy.transfer_all_missed_updates().await;
+
+                if let Err(err) = &result {
+                    log::error!(
+                        "Failed to un-proxify local shard because transferring remaining queue \
+                         items to remote failed: {err}"
+                    );
+                }
+
                 result
             }
+
             _ => unreachable!(),
-        }
+        };
+
+        // Un-proxify local shard
+        //
+        // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
+        let local_shard = match local.take() {
+            Some(Shard::ForwardProxy(proxy)) => proxy.wrapped_shard,
+
+            Some(Shard::QueueProxy(proxy)) => {
+                let (local_shard, _) = proxy.forget_updates_and_finalize();
+                local_shard
+            }
+
+            _ => unreachable!(),
+        };
+
+        let _ = local.insert(Shard::Local(local_shard));
+
+        result
     }
 
     /// Revert usage of a `QueueProxy` shard and forget all updates, then un-proxify to local
@@ -205,57 +255,71 @@ impl ShardReplicaSet {
     ///
     /// This method is cancel safe.
     ///
-    /// If `cancel` is triggered - the queue proxy may not be reverted to a local proxy.
+    /// If cancelled - the queue proxy may not be reverted to a local proxy.
     pub async fn revert_queue_proxy_local(&self) {
-        let mut local_write = self.local.write().await;
+        let mut local = self.local.write().await;
 
         // Take out queue proxy shard or return
-        if !matches!(*local_write, Some(Shard::QueueProxy(_))) {
+        if !matches!(local.deref(), Some(Shard::QueueProxy(_))) {
             return;
-        };
-        let Some(Shard::QueueProxy(queue_proxy)) = local_write.take() else {
-            unreachable!();
         };
 
         log::debug!("Forgetting queue proxy updates and reverting to local shard");
+
+        // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
+        let Some(Shard::QueueProxy(queue_proxy)) = local.take() else {
+            unreachable!();
+        };
+
         let (local_shard, _) = queue_proxy.forget_updates_and_finalize();
-        let _ = local_write.insert(Shard::Local(local_shard));
+        let _ = local.insert(Shard::Local(local_shard));
     }
 
     /// Custom operation for transferring data from one shard to another during transfer
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn transfer_batch(
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
     ) -> CollectionResult<Option<PointIdType>> {
-        let read_local = self.local.read().await;
-        if let Some(Shard::ForwardProxy(proxy)) = &*read_local {
-            proxy
-                .transfer_batch(offset, batch_size, &self.search_runtime)
-                .await
-        } else {
-            Err(CollectionError::service_error(format!(
+        let local = self.local.read().await;
+
+        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
                 "Cannot transfer batch from shard {} because it is not proxified",
                 self.shard_id
-            )))
-        }
+            )));
+        };
+
+        proxy
+            .transfer_batch(offset, batch_size, &self.search_runtime)
+            .await
     }
 
     /// Custom operation for transferring indexes from one shard to another during transfer
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn transfer_indexes(&self) -> CollectionResult<()> {
-        let read_local = self.local.read().await;
-        if let Some(Shard::ForwardProxy(proxy)) = &*read_local {
-            log::trace!(
-                "Transferring indexes to shard {}",
-                proxy.remote_shard.peer_id,
-            );
-            proxy.transfer_indexes().await
-        } else {
-            Err(CollectionError::service_error(format!(
+        let local = self.local.read().await;
+
+        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
                 "Cannot transfer indexes from shard {} because it is not proxified",
                 self.shard_id,
-            )))
-        }
+            )));
+        };
+
+        log::trace!(
+            "Transferring indexes to shard {}",
+            proxy.remote_shard.peer_id,
+        );
+
+        proxy.transfer_indexes().await
     }
 
     /// Send all queue proxy updates to remote and transform into forward proxy
@@ -282,49 +346,43 @@ impl ShardReplicaSet {
     ///
     /// # Cancel safety
     ///
-    /// This method is *not* cancel safe.
+    /// This function is cancel safe.
     ///
-    /// If `cancel` is triggered - transforming the queue proxy into a forward proxy may not
-    /// actually complete in which case an error is returned. None, some or all queued operations
-    /// may be transmitted to the remote.
-    pub async fn queue_proxy_into_forward_proxy(
-        &self,
-        cancel: CancellationToken,
-    ) -> CollectionResult<()> {
-        // First pass: transfer all missed updates with shared read lock, cancellable
+    /// If cancelled - transforming the queue proxy into a forward proxy may not actually complete.
+    /// None, some or all queued operations may be transmitted to the remote.
+    pub async fn queue_proxy_into_forward_proxy(&self) -> CollectionResult<()> {
+        // First pass: transfer all missed updates with shared read lock
         {
-            let local_read = self.local.read().await;
-            let Some(Shard::QueueProxy(proxy)) = &*local_read else {
+            let local = self.local.read().await;
+
+            let Some(Shard::QueueProxy(proxy)) = local.deref() else {
                 return Ok(());
             };
-            cancel_on_token(cancel.clone(), proxy.transfer_all_missed_updates()).await??;
+
+            proxy.transfer_all_missed_updates().await?;
         }
 
-        // Second pass: transfer new updates, safely finalize and transform, not cancellable
-        let mut local_write = self.local.write().await;
-        if !matches!(*local_write, Some(Shard::QueueProxy(_))) {
+        // Second pass: transfer new updates
+        let mut local = self.local.write().await;
+
+        let Some(Shard::QueueProxy(proxy)) = local.deref() else {
             return Ok(());
-        }
-        let Some(Shard::QueueProxy(queue_proxy)) = local_write.take() else {
+        };
+
+        proxy.transfer_all_missed_updates().await?;
+
+        // Transform `QueueProxyShard` into `ForwardProxyShard`
+        log::trace!("Transferred all queue proxy operations, transforming into forward proxy now");
+
+        // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
+        let Some(Shard::QueueProxy(queue_proxy)) = local.take() else {
             unreachable!();
         };
-        match queue_proxy.finalize(cancel).await {
-            // When finalization is successful, transform into forward proxy
-            Ok((local_shard, remote_shard)) => {
-                log::trace!(
-                    "Transferred all queue proxy operations, transforming into forward proxy now"
-                );
-                let forward_proxy = ForwardProxyShard::new(local_shard, remote_shard);
-                let _ = local_write.insert(Shard::ForwardProxy(forward_proxy));
-                Ok(())
-            }
-            // When finalization fails, put the queue proxy back
-            Err((err, queue_proxy)) => {
-                let _ = local_write.insert(Shard::QueueProxy(queue_proxy));
-                Err(CollectionError::service_error(format!(
-                    "Failed to finalize queue proxy and transform into forward proxy: {err}"
-                )))
-            }
-        }
+
+        let (local_shard, remote_shard) = queue_proxy.forget_updates_and_finalize();
+        let forward_proxy = ForwardProxyShard::new(local_shard, remote_shard);
+        let _ = local.insert(Shard::ForwardProxy(forward_proxy));
+
+        Ok(())
     }
 }

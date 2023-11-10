@@ -57,51 +57,64 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// `Partial` to accept updates, we therefore assert the state on the remote explicitly rather
     /// than asserting locally. If it fails, it will be retried for up to
     /// `CONSENSUS_CONFIRM_RETRIES` times.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn snapshot_recovered_switch_to_partial_confirm_remote(
         &self,
         transfer_config: &ShardTransfer,
         collection_name: &str,
         remote_shard: &RemoteShard,
     ) -> CollectionResult<()> {
-        for remaining_attempts in (0..CONSENSUS_CONFIRM_RETRIES).rev() {
-            // Propose consensus operation
-            let proposal = self
-                .snapshot_recovered_switch_to_partial(transfer_config, collection_name.to_string());
-            match proposal {
-                Ok(()) => {}
-                Err(err) if remaining_attempts > 0 => {
-                    log::error!("Failed to propose snapshot recovered operation to consensus, retrying: {err}");
-                    sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
-                    continue;
-                }
-                Err(err) => return Err(err),
+        let mut result = Err(CollectionError::service_error(
+            "`snapshot_recovered_switch_to_partial_confirm_remote` exit without attempting any work, \
+             this is a programming error"
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
             }
 
-            // Confirm remote has reached Partial state
-            let partial_state = ReplicaState::Partial;
-            log::trace!("Wait for remote shard to reach {partial_state:?} state");
-            let confirm = remote_shard
+            result = self
+                .snapshot_recovered_switch_to_partial(transfer_config, collection_name.to_string());
+
+            if let Err(err) = &result {
+                log::error!("Failed to propose snapshot recovered operation to consensus: {err}");
+                continue;
+            }
+
+            log::trace!("Wait for remote shard to reach `Partial` state");
+
+            result = remote_shard
                 .wait_for_shard_state(
                     collection_name,
                     transfer_config.shard_id,
-                    partial_state,
+                    ReplicaState::Partial,
                     CONSENSUS_CONFIRM_TIMEOUT,
                 )
-                .await;
-            match confirm {
-                Ok(_) => return Ok(()),
-                Err(err) if remaining_attempts > 0 => {
-                    log::error!("Failed to confirm snapshot recovered operation on consensus, retrying: {err}");
-                    sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+                .await
+                .map(|_| ());
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm snapshot recovered operation on consensus: {err}"
+                    );
                     continue;
                 }
-                Err(err) => return Err(CollectionError::service_error(format!(
-                    "Failed to confirm snapshot recovered operation on consensus after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-                ))),
             }
         }
 
-        unreachable!();
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to confirm snapshot recovered operation on consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: \
+                 {err}"
+            ))
+        })
     }
 
     /// Wait for all other peers to reach the current consensus
@@ -115,6 +128,10 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// - any of the peers is not on the same term
     /// - waiting takes longer than the specified timeout
     /// - any of the peers cannot be reached
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn await_consensus_sync(
         &self,
         this_peer_id: PeerId,

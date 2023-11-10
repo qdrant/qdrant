@@ -46,9 +46,14 @@ impl ForwardProxyShard {
     }
 
     /// Create payload indexes in the remote shard same as in the wrapped shard.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn transfer_indexes(&self) -> CollectionResult<()> {
         let _update_lock = self.update_lock.lock().await;
         for (index_key, index_type) in self.wrapped_shard.info().await?.payload_schema {
+            // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
             self.remote_shard
                 .update(
                     CollectionUpdateOperations::FieldIndexOperation(
@@ -66,6 +71,10 @@ impl ForwardProxyShard {
 
     /// Move batch of points to the remote shard.
     /// Returns an offset of the next batch to be transferred.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn transfer_batch(
         &self,
         offset: Option<PointIdType>,
@@ -112,6 +121,8 @@ impl ForwardProxyShard {
 
         // We only need to wait for the last batch.
         let wait = next_page_offset.is_none();
+
+        // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
         self.remote_shard
             .update(insert_points_operation, wait)
             .await?;
