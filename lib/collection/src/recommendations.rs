@@ -171,9 +171,7 @@ where
     //
     // In the future we'll fix this by unify them into CoreSearchRequests and make a single batch
     for (strategy, run) in batch_by_strategy(&request_batch.searches) {
-        let mut core_searches = Vec::new();
-
-        core_searches.reserve_exact(run.len());
+        let mut core_searches = Vec::with_capacity(run.len());
 
         for request in run {
             let vector_name = match &request.using {
