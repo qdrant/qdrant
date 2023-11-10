@@ -143,21 +143,7 @@ pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
     NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
 }
 
-pub fn default_sparse_vector(vec: SparseVector) -> NamedVectors<'static> {
-    let mut result = NamedVectors::default();
-    result.insert(DEFAULT_VECTOR_NAME.to_owned(), vec.into());
-    result
-}
-
 pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
-    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
-}
-
-pub fn only_default_sparse_vector(vec: &SparseVector) -> NamedVectors {
-    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
-}
-
-pub fn only_default_mixed_vector(vec: &Vector) -> NamedVectors {
     NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
 }
 
