@@ -48,8 +48,8 @@ impl LocalShard {
         let is_stopped = StoppingGuard::new();
 
         let search_request = SegmentsSearcher::search(
-            self.segments.clone(),
-            core_request.clone(),
+            Arc::clone(&self.segments),
+            Arc::clone(&core_request),
             search_runtime_handle,
             true,
             is_stopped.get_is_stopped(),

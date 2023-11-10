@@ -59,7 +59,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
-                let request = request.clone();
+                let request = Arc::clone(&request);
                 let search_runtime = self.search_runtime.clone();
 
                 async move { shard.core_search(request, &search_runtime, timeout).await }.boxed()
