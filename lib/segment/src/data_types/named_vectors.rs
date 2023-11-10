@@ -116,15 +116,7 @@ impl<'a> NamedVectors<'a> {
     pub fn into_owned_map(self) -> HashMap<String, Vector> {
         self.map
             .into_iter()
-            .map(|(k, v)| {
-                (
-                    k.into_owned(),
-                    match v {
-                        CowValue::Dense(src) => Vector::Dense(src.into_owned()),
-                        CowValue::Sparse(src) => Vector::Sparse(src.into_owned()),
-                    },
-                )
-            })
+            .map(|(k, v)| (k.into_owned(), v.to_owned()))
             .collect()
     }
 
