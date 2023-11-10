@@ -806,7 +806,7 @@ where
             }
 
             // If `transfer_shard` returned success or task was cancelled...
-            if !matches!(result, Ok(Err(_))) {
+            if matches!(result, Ok(Ok(())) | Err(_)) {
                 break;
             }
         }
