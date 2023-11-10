@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
 
@@ -74,10 +73,9 @@ impl Validate for SparseVector {
                 ValidationError::new("must be the same length as indices"),
             );
         }
-        if self.indices.len() != self.indices.iter().unique().count() {
+        if self.indices.windows(2).any(|w| w[0] == w[1]) {
             errors.add("indices", ValidationError::new("must be unique"));
         }
-
         if self.indices.windows(2).any(|w| w[0] > w[1]) {
             errors.add("indices", ValidationError::new("must be sorted"));
         }
@@ -120,5 +118,23 @@ mod tests {
         let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
         let v2 = SparseVector::new(vec![2, 3, 4, 5], vec![2.0, 3.0, 4.0, 5.0]).unwrap();
         assert_eq!(v1.score(&v2), 13.0);
+    }
+
+    #[test]
+    fn validation_test() {
+        let empty_indices = SparseVector::new(vec![], vec![1.0, 2.0, 3.0]);
+        assert!(empty_indices.is_err());
+
+        let empty_values = SparseVector::new(vec![1, 2, 3], vec![]);
+        assert!(empty_values.is_err());
+
+        let different_length = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0]);
+        assert!(different_length.is_err());
+
+        let not_sorted = SparseVector::new(vec![1, 3, 2], vec![1.0, 2.0, 3.0]);
+        assert!(not_sorted.is_err());
+
+        let not_unique = SparseVector::new(vec![1, 2, 2], vec![1.0, 2.0, 3.0]);
+        assert!(not_unique.is_err());
     }
 }
