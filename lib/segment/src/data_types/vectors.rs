@@ -192,10 +192,9 @@ impl From<&[VectorElementType]> for VectorStruct {
 }
 
 impl<'a> From<NamedVectors<'a>> for VectorStruct {
-    // TODO(sparse): this is temporary conversion while `VectorStruct` does not support sparse vectors
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
-            VectorStruct::Single(v.into_default_vector().unwrap().try_into().unwrap())
+            VectorStruct::Single(v.into_default_vector().unwrap())
         } else {
             VectorStruct::Multi(
                 v.into_owned_map()

@@ -165,10 +165,11 @@ impl<'a> NamedVectors<'a> {
         self.map.iter().map(|(k, _)| k.as_ref())
     }
 
-    pub fn into_default_vector(mut self) -> Option<Vector> {
+    // TODO(sparse) remove this function. There is only one usage and this fn is logically strange
+    pub fn into_default_vector(mut self) -> Option<Vec<VectorElementType>> {
         self.map.get_mut(DEFAULT_VECTOR_NAME).map(|src| match src {
-            CowValue::Dense(src) => Vector::Dense(std::mem::take(src).into_owned()),
-            CowValue::Sparse(src) => Vector::Sparse(std::mem::take(src).into_owned()),
+            CowValue::Dense(v) => std::mem::take(v).into_owned(),
+            CowValue::Sparse(_v) => unreachable!(),
         })
     }
 
