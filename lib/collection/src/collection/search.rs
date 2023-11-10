@@ -132,7 +132,7 @@ impl Collection {
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards.iter().map(|shard| {
                 shard.core_search(
-                    request.clone(),
+                    Arc::clone(&request),
                     read_consistency,
                     shard_selection.is_some(),
                     timeout,
@@ -140,9 +140,6 @@ impl Collection {
             });
             future::try_join_all(all_searches).await?
         };
-
-        let request = Arc::into_inner(request)
-            .expect("We have already dropped all of the Arc clones at this point");
 
         self.merge_from_shards(all_searches_res, request, shard_selection)
             .await
@@ -201,7 +198,7 @@ impl Collection {
     async fn merge_from_shards(
         &self,
         mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
-        request: CoreSearchRequestBatch,
+        request: Arc<CoreSearchRequestBatch>,
         shard_selection: Option<u32>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
