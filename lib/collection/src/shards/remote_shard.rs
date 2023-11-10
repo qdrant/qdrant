@@ -11,8 +11,7 @@ use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
     InitiateShardTransferRequest, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
-    ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, ShardSnapshotLocation,
-    WaitForShardStateRequest,
+    ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -39,8 +38,7 @@ use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    CountRequest, CountResult, PointRequest, Record, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    CountRequest, CountResult, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
@@ -579,70 +577,6 @@ impl ShardOperation for RemoteShard {
         let result: Result<CollectionInfo, Status> = get_collection_response.try_into();
         result.map_err(|e| e.into())
     }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
-    async fn search(
-        &self,
-        batch_request: Arc<SearchRequestBatch>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
-        timer.set_success(false);
-
-        let search_points = batch_request
-            .searches
-            .iter()
-            .map(|s| CollectionSearchRequest((self.collection_id.clone(), s)).into())
-            .collect();
-
-        let request = &SearchBatchPointsInternal {
-            collection_name: self.collection_id.clone(),
-            search_points,
-            shard_id: Some(self.id),
-            timeout: timeout.map(|t| t.as_secs()),
-        };
-
-        let search_batch_response = self
-            .with_points_client(|mut client| async move {
-                let mut request = tonic::Request::new(request.clone());
-
-                if let Some(timeout) = timeout {
-                    request.set_timeout(timeout);
-                }
-
-                client.search_batch(request).await
-            })
-            .await?
-            .into_inner();
-
-        let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_batch_response
-            .result
-            .into_iter()
-            .zip(batch_request.searches.iter())
-            .map(|(batch_result, request)| {
-                let is_payload_required = request
-                    .with_payload
-                    .as_ref()
-                    .map_or(false, |with_payload| with_payload.is_required());
-
-                batch_result
-                    .result
-                    .into_iter()
-                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
-                    .collect()
-            })
-            .collect();
-        let result = result.map_err(|e| e.into());
-        if result.is_ok() {
-            timer.set_success(true);
-        }
-        result
-    }
-
-    // ! COPY-PASTE: `core_search` is a copy-paste of `search` with different request type
-    // ! please replicate any changes to both methods
     async fn core_search(
         &self,
         batch_request: Arc<CoreSearchRequestBatch>,

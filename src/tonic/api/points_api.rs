@@ -12,6 +12,7 @@ use api::grpc::qdrant::{
     SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
+use collection::operations::types::{CoreSearchRequest, CoreSearchRequestBatch};
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -21,9 +22,9 @@ use super::points_common::{
 };
 use super::validate;
 use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    overwrite_payload, recommend, recommend_batch, scroll, search, search_batch, set_payload,
-    upsert,
+    clear_payload, core_search_batch, count, create_field_index, delete, delete_field_index,
+    delete_payload, get, overwrite_payload, recommend, recommend_batch, scroll, search,
+    set_payload, upsert,
 };
 
 pub struct PointsService {
@@ -153,10 +154,19 @@ impl Points for PointsService {
 
         let timeout = timeout.map(Duration::from_secs);
 
-        search_batch(
+        let core_search_points: Result<Vec<_>, _> = search_points
+            .into_iter()
+            .map(CoreSearchRequest::try_from)
+            .collect();
+
+        let request = CoreSearchRequestBatch {
+            searches: core_search_points?,
+        };
+
+        core_search_batch(
             self.dispatcher.as_ref(),
             collection_name,
-            search_points,
+            request,
             read_consistency,
             None,
             timeout,

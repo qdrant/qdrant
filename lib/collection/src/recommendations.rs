@@ -16,8 +16,7 @@ use crate::common::fetch_vectors::{convert_to_vectors, PointRef, ReferencedPoint
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, QueryEnum,
-    RecommendRequest, RecommendRequestBatch, RecommendStrategy, SearchRequest, SearchRequestBatch,
-    UsingVector,
+    RecommendRequest, RecommendRequestBatch, RecommendStrategy, UsingVector,
 };
 
 fn avg_vectors<'a>(
@@ -172,12 +171,9 @@ where
     //
     // In the future we'll fix this by unify them into CoreSearchRequests and make a single batch
     for (strategy, run) in batch_by_strategy(&request_batch.searches) {
-        let mut searches = Vec::new();
         let mut core_searches = Vec::new();
-        match strategy {
-            RecommendStrategy::AverageVector => searches.reserve_exact(run.len()),
-            RecommendStrategy::BestScore => core_searches.reserve_exact(run.len()),
-        }
+
+        core_searches.reserve_exact(run.len());
 
         for request in run {
             let vector_name = match &request.using {
@@ -230,7 +226,7 @@ where
                         vector_name,
                         reference_vectors_ids,
                     );
-                    searches.push(search);
+                    core_searches.push(search);
                 }
                 RecommendStrategy::BestScore => {
                     let core_search = recommend_by_best_score(
@@ -244,19 +240,13 @@ where
             };
         }
 
-        let run_result = if !searches.is_empty() {
-            let search_batch_request = SearchRequestBatch { searches };
-            collection
-                .search_batch(search_batch_request, read_consistency, None, timeout)
-                .await?
-        } else {
-            let core_search_batch_request = CoreSearchRequestBatch {
-                searches: core_searches,
-            };
-            collection
-                .core_search_batch(core_search_batch_request, read_consistency, None, timeout)
-                .await?
+        let core_search_batch_request = CoreSearchRequestBatch {
+            searches: core_searches,
         };
+
+        let run_result = collection
+            .core_search_batch(core_search_batch_request, read_consistency, None, timeout)
+            .await?;
 
         // Push run result to final results
         run_result.into_iter().for_each(|x| results.push(x));
@@ -294,7 +284,7 @@ fn recommend_by_avg_vector<'a>(
     negative: impl Iterator<Item = &'a VectorType>,
     vector_name: &str,
     reference_vectors_ids: Vec<ExtendedPointId>,
-) -> SearchRequest {
+) -> CoreSearchRequest {
     let RecommendRequest {
         filter,
         with_payload,
@@ -321,12 +311,14 @@ fn recommend_by_avg_vector<'a>(
             .collect()
     };
 
-    SearchRequest {
-        vector: NamedVector {
-            name: vector_name.to_string(),
-            vector: search_vector,
-        }
-        .into(),
+    CoreSearchRequest {
+        query: QueryEnum::Nearest(
+            NamedVector {
+                name: vector_name.to_string(),
+                vector: search_vector,
+            }
+            .into(),
+        ),
         filter: Some(Filter {
             should: None,
             must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),

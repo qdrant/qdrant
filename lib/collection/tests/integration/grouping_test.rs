@@ -33,16 +33,19 @@ mod group_by {
     async fn setup(docs: u64, chunks: u64) -> Resources {
         let mut rng = rand::thread_rng();
 
-        let source = SourceRequest::Search(SearchRequest {
-            vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-            filter: None,
-            params: None,
-            limit: 4,
-            offset: 0,
-            with_payload: None,
-            with_vector: None,
-            score_threshold: None,
-        });
+        let source = SourceRequest::Search(
+            SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }
+            .into(),
+        );
 
         let request = GroupRequest::with_limit_from_request(source, "docId".to_string(), 3);
 
@@ -199,16 +202,19 @@ mod group_by {
         .unwrap();
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
-                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-                filter: Some(filter.clone()),
-                params: None,
-                limit: 4,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-            }),
+            SourceRequest::Search(
+                SearchRequest {
+                    vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                    filter: Some(filter.clone()),
+                    params: None,
+                    limit: 4,
+                    offset: 0,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                }
+                .into(),
+            ),
             "docId".to_string(),
             3,
         );
@@ -235,16 +241,19 @@ mod group_by {
         let resources = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
-                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-                filter: None,
-                params: None,
-                limit: 4,
-                offset: 0,
-                with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: Some(WithVector::Bool(true)),
-                score_threshold: None,
-            }),
+            SourceRequest::Search(
+                SearchRequest {
+                    vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                    filter: None,
+                    params: None,
+                    limit: 4,
+                    offset: 0,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: Some(WithVector::Bool(true)),
+                    score_threshold: None,
+                }
+                .into(),
+            ),
             "docId".to_string(),
             3,
         );
@@ -282,16 +291,19 @@ mod group_by {
         } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
-                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-                filter: None,
-                params: None,
-                limit: 4,
-                offset: 0,
-                with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: Some(WithVector::Bool(true)),
-                score_threshold: None,
-            }),
+            SourceRequest::Search(
+                SearchRequest {
+                    vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                    filter: None,
+                    params: None,
+                    limit: 4,
+                    offset: 0,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: Some(WithVector::Bool(true)),
+                    score_threshold: None,
+                }
+                .into(),
+            ),
             "other_stuff".to_string(),
             3,
         );
@@ -327,16 +339,19 @@ mod group_by {
         } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
-                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-                filter: None,
-                params: None,
-                limit: 4,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-            }),
+            SourceRequest::Search(
+                SearchRequest {
+                    vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                    filter: None,
+                    params: None,
+                    limit: 4,
+                    offset: 0,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                }
+                .into(),
+            ),
             "docId".to_string(),
             0,
         );
@@ -368,16 +383,19 @@ mod group_by {
         } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
-                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-                filter: None,
-                params: None,
-                limit: 0,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-            }),
+            SourceRequest::Search(
+                SearchRequest {
+                    vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                    filter: None,
+                    params: None,
+                    limit: 0,
+                    offset: 0,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                }
+                .into(),
+            ),
             "docId".to_string(),
             3,
         );
@@ -409,16 +427,19 @@ mod group_by {
         } = setup(1000, 5).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
-                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-                filter: None,
-                params: None,
-                limit: 500,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-            }),
+            SourceRequest::Search(
+                SearchRequest {
+                    vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                    filter: None,
+                    params: None,
+                    limit: 500,
+                    offset: 0,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                }
+                .into(),
+            ),
             "docId".to_string(),
             3,
         );
@@ -454,16 +475,19 @@ mod group_by {
         } = setup(10, 500).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
-                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-                filter: None,
-                params: None,
-                limit: 3,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-            }),
+            SourceRequest::Search(
+                SearchRequest {
+                    vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                    filter: None,
+                    params: None,
+                    limit: 3,
+                    offset: 0,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                }
+                .into(),
+            ),
             "docId".to_string(),
             400,
         );
@@ -512,16 +536,19 @@ mod group_by_builder {
     async fn setup(docs: u64, chunks_per_doc: u64) -> Resources {
         let mut rng = rand::thread_rng();
 
-        let source_request = SourceRequest::Search(SearchRequest {
-            vector: vec![0.5, 0.5, 0.5, 0.5].into(),
-            filter: None,
-            params: None,
-            limit: 4,
-            offset: 0,
-            with_payload: None,
-            with_vector: None,
-            score_threshold: None,
-        });
+        let source_request = SourceRequest::Search(
+            SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }
+            .into(),
+        );
 
         let request = GroupRequest::with_limit_from_request(source_request, "docId".to_string(), 3);
 

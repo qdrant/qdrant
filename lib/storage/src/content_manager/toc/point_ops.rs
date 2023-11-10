@@ -75,62 +75,20 @@ impl TableOfContent {
         .map_err(|err| err.into())
     }
 
-    /// Search for the closest points using vector similarity with given restrictions defined
-    /// in the request
-    ///
-    /// # Arguments
-    ///
-    /// * `collection_name` - in what collection do we search
-    /// * `request` - [`SearchRequest`]
-    /// * `shard_selection` - which local shard to use
-    /// # Result
-    ///
-    /// Points with search score
-    pub async fn search(
-        &self,
-        collection_name: &str,
-        request: SearchRequest,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
-        timeout: Option<Duration>,
-    ) -> Result<Vec<ScoredPoint>, StorageError> {
-        let collection = self.get_collection(collection_name).await?;
-        collection
-            .search(request, read_consistency, shard_selection, timeout)
-            .await
-            .map_err(|err| err.into())
-    }
-
     /// Search in a batching fashion for the closest points using vector similarity with given restrictions defined
     /// in the request
     ///
     /// # Arguments
     ///
     /// * `collection_name` - in what collection do we search
-    /// * `request` - [`SearchRequestBatch`]
+    /// * `request` - [`CoreSearchRequestBatch`]
     /// * `shard_selection` - which local shard to use
+    /// * `timeout` - how long to wait for the response
+    /// * `read_consistency` - consistency level
+    ///
     /// # Result
     ///
     /// Points with search score
-    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
-    // ! please replicate any changes to both methods
-    pub async fn search_batch(
-        &self,
-        collection_name: &str,
-        request: SearchRequestBatch,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
-        timeout: Option<Duration>,
-    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        let collection = self.get_collection(collection_name).await?;
-        collection
-            .search_batch(request, read_consistency, shard_selection, timeout)
-            .await
-            .map_err(|err| err.into())
-    }
-
-    // ! COPY-PASTE: `core_search_batch` is a copy-paste of `search_batch` with different request type
-    // ! please replicate any changes to both methods
     pub async fn core_search_batch(
         &self,
         collection_name: &str,

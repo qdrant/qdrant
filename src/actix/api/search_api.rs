@@ -7,7 +7,9 @@ use storage::content_manager::toc::TableOfContent;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::helpers::process_response;
-use crate::common::points::{do_search_batch_points, do_search_point_groups, do_search_points};
+use crate::common::points::{
+    do_core_search_batch_points, do_core_search_points, do_search_point_groups,
+};
 
 #[post("/collections/{name}/points/search")]
 async fn search_points(
@@ -18,10 +20,10 @@ async fn search_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = do_search_points(
+    let response = do_core_search_points(
         toc.get_ref(),
         &collection.name,
-        request.into_inner(),
+        request.into_inner().into(),
         params.consistency,
         None,
         params.timeout(),
@@ -40,10 +42,12 @@ async fn batch_search_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = do_search_batch_points(
+    let request = request.into_inner();
+
+    let response = do_core_search_batch_points(
         toc.get_ref(),
         &collection.name,
-        request.into_inner(),
+        request.into(),
         params.consistency,
         None,
         params.timeout(),

@@ -8,7 +8,7 @@ use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct,
 };
-use collection::operations::types::{SearchRequest, SearchRequestBatch, VectorParams};
+use collection::operations::types::{CoreSearchRequestBatch, SearchRequest, VectorParams};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
@@ -144,9 +144,9 @@ fn batch_search_bench(c: &mut Criterion) {
                             score_threshold: None,
                         };
                         let result = shard
-                            .search(
-                                Arc::new(SearchRequestBatch {
-                                    searches: vec![search_query],
+                            .core_search(
+                                Arc::new(CoreSearchRequestBatch {
+                                    searches: vec![search_query.into()],
                                 }),
                                 search_runtime_handle,
                                 None,
@@ -176,12 +176,12 @@ fn batch_search_bench(c: &mut Criterion) {
                             with_vector: None,
                             score_threshold: None,
                         };
-                        searches.push(search_query);
+                        searches.push(search_query.into());
                     }
 
-                    let search_query = SearchRequestBatch { searches };
+                    let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .search(Arc::new(search_query), search_runtime_handle, None)
+                        .core_search(Arc::new(search_query), search_runtime_handle, None)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
