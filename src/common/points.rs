@@ -540,6 +540,10 @@ pub async fn do_create_index(
         .submit_collection_meta_op(consensus_op, wait_timeout)
         .await?;
 
+    // This function is required as long as we want to maintain interface compatibility
+    // for `wait` parameter and return type.
+    // The idea is to migrate from the point-like interface to consensus-like interface in the next few versions
+
     do_create_index_internal(
         dispatcher.toc(),
         collection_name,

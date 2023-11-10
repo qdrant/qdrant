@@ -112,6 +112,14 @@ impl Collection {
         &self,
         payload_index_schema: PayloadIndexSchema,
     ) -> CollectionResult<()> {
+        let state = self.state().await;
+
+        for field_name in state.payload_index_schema.schema.keys() {
+            if !payload_index_schema.schema.contains_key(field_name) {
+                self.drop_payload_index(field_name.clone()).await?;
+            }
+        }
+
         for (field_name, field_schema) in payload_index_schema.schema {
             self.create_payload_index(field_name, field_schema).await?;
         }
