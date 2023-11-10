@@ -61,10 +61,10 @@ impl<'a> FilteredScorer<'a> {
         };
         if limit == 0 {
             self.points_buffer
-                .resize(filtered_point_ids.len(), ScoredPointOffset::default());
+                .resize_with(filtered_point_ids.len(), ScoredPointOffset::default);
         } else {
             self.points_buffer
-                .resize(limit, ScoredPointOffset::default());
+                .resize_with(limit, ScoredPointOffset::default);
         }
         let count = self
             .raw_scorer

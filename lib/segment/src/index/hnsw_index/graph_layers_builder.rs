@@ -110,15 +110,15 @@ impl GraphLayersBuilder {
         use_heuristic: bool,
         reserve: bool,
     ) -> Self {
-        let mut links_layers: Vec<LockedLayersContainer> = vec![];
-
-        for _i in 0..num_vectors {
-            let mut links = Vec::new();
-            if reserve {
-                links.reserve(m0);
-            }
-            links_layers.push(vec![RwLock::new(links)]);
-        }
+        let links_layers = std::iter::repeat_with(|| {
+            vec![RwLock::new(if reserve {
+                Vec::with_capacity(m0)
+            } else {
+                vec![]
+            })]
+        })
+        .take(num_vectors)
+        .collect();
 
         let ready_list = RwLock::new(BitVec::repeat(false, num_vectors));
 

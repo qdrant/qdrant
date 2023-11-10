@@ -68,7 +68,7 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         values: impl IntoIterator<Item = T>,
     ) -> OperationResult<()> {
         if self.point_to_values.len() <= idx as usize {
-            self.point_to_values.resize(idx as usize + 1, Vec::new())
+            self.point_to_values.resize_with(idx as usize + 1, Vec::new)
         }
         let values: Vec<T> = values.into_iter().collect();
         for value in &values {
@@ -96,7 +96,7 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
             }
 
             if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize(idx as usize + 1, Vec::new())
+                self.point_to_values.resize_with(idx as usize + 1, Vec::new)
             }
 
             self.point_to_values[idx as usize].push(value);
