@@ -91,7 +91,7 @@ pub fn check_named_vectors(
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     for (vector_name, vector_data) in vectors.iter() {
-        check_vector(vector_name, &vector_data.to_vec().into(), segment_config)?;
+        check_vector(vector_name, &vector_data.into(), segment_config)?;
     }
     Ok(())
 }

@@ -94,8 +94,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     let mut points = Vec::new();
     for i in 0..1000 {
         let mut vectors = NamedVectors::default();
-        vectors.insert(VEC_NAME1.to_string(), vec![i as f32, 0.0, 0.0, 0.0]);
-        vectors.insert(VEC_NAME2.to_string(), vec![0.0, i as f32, 0.0, 0.0]);
+        vectors.insert(VEC_NAME1.to_string(), vec![i as f32, 0.0, 0.0, 0.0].into());
+        vectors.insert(VEC_NAME2.to_string(), vec![0.0, i as f32, 0.0, 0.0].into());
 
         points.push(PointStruct {
             id: i.into(),

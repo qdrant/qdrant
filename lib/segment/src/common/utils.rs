@@ -432,7 +432,7 @@ pub fn transpose_map_into_named_vector(
     for (key, values) in map {
         result.resize_with(values.len(), NamedVectors::default);
         for (i, value) in values.into_iter().enumerate() {
-            result[i].insert(key.clone(), value);
+            result[i].insert(key.clone(), value.into());
         }
     }
     result
