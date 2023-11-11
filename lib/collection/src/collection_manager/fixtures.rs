@@ -74,8 +74,8 @@ pub fn random_multi_vec_segment(
         let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let mut vectors = NamedVectors::default();
-        vectors.insert("vector1".to_owned(), random_vector1);
-        vectors.insert("vector2".to_owned(), random_vector2);
+        vectors.insert("vector1".to_owned(), random_vector1.into());
+        vectors.insert("vector2".to_owned(), random_vector2.into());
 
         let point_id: PointIdType = id_gen.unique();
         let payload_value = rnd.gen_range(1..1_000);

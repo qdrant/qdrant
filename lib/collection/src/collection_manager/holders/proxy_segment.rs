@@ -440,7 +440,7 @@ impl SegmentEntry for ProxySegment {
             .keys()
         {
             if let Some(vector) = self.vector(vector_name, point_id)? {
-                result.insert(vector_name.clone(), vector);
+                result.insert(vector_name.clone(), vector.into());
             }
         }
         Ok(result)

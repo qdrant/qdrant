@@ -5,7 +5,9 @@ use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{only_default_vector, BatchVectorStruct, VectorStruct};
+use segment::data_types::vectors::{
+    only_default_vector, BatchVectorStruct, Vector, VectorStruct, VectorType,
+};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -378,7 +380,9 @@ impl SplitByShard for Batch {
                         let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
-                            let vector = vector.into_owned();
+                            let vector: Vector = vector.to_owned();
+                            // TODO(sparse) remove this unwrap after sparse vectors are supported in `Batch`
+                            let vector: VectorType = vector.try_into().unwrap();
                             batch_vectors.entry(name).or_default().push(vector);
                         }
                         batch.payloads.as_mut().unwrap().push(payload);
@@ -416,7 +420,9 @@ impl SplitByShard for Batch {
                         let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
-                            let vector = vector.into_owned();
+                            let vector: Vector = vector.to_owned();
+                            // TODO(sparse) remove this unwrap after sparse vectors are supported in `Batch`
+                            let vector: VectorType = vector.try_into().unwrap();
                             batch_vectors.entry(name).or_default().push(vector);
                         }
                     }

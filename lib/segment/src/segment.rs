@@ -137,7 +137,7 @@ impl Segment {
             match vector {
                 Some(vector) => {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.insert_vector(internal_id, vector.into())?;
+                    vector_storage.insert_vector(internal_id, vector)?;
                     let mut vector_index = vector_data.vector_index.borrow_mut();
                     vector_index.update_vector(internal_id)?;
                 }
@@ -173,10 +173,11 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
+            let new_vector = new_vector.as_vec_ref();
             vector_data
                 .vector_storage
                 .borrow_mut()
-                .insert_vector(internal_id, new_vector.as_ref().into())?;
+                .insert_vector(internal_id, new_vector)?;
             vector_data
                 .vector_index
                 .borrow_mut()
@@ -211,7 +212,7 @@ impl Segment {
                     vector_index.update_vector(new_index)?;
                 }
                 Some(vec) => {
-                    vector_storage.insert_vector(new_index, vec.into())?;
+                    vector_storage.insert_vector(new_index, vec)?;
                     vector_index.update_vector(new_index)?;
                 }
             }
@@ -432,7 +433,7 @@ impl Segment {
                 let vector_storage = vector_data.vector_storage.borrow();
                 // TODO(sparse) remove unwrap after NamedVectors changes
                 let vector: &[_] = vector_storage.get_vector(point_offset).try_into().unwrap();
-                vectors.insert(vector_name.clone(), vector.to_vec());
+                vectors.insert(vector_name.clone(), vector.to_vec().into());
             }
         }
         Ok(vectors)
@@ -592,7 +593,7 @@ impl Segment {
                             if let Some(vector) =
                                 self.vector_by_offset(vector_name, point_offset)?
                             {
-                                result.insert(vector_name.clone(), vector);
+                                result.insert(vector_name.clone(), vector.into());
                             }
                         }
                         Some(result.into())
@@ -998,7 +999,7 @@ impl SegmentEntry for Segment {
         let mut result = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
             if let Some(vec) = self.vector(vector_name, point_id)? {
-                result.insert(vector_name.clone(), vec);
+                result.insert(vector_name.clone(), vec.into());
             }
         }
         Ok(result)
@@ -2190,12 +2191,12 @@ mod tests {
         ];
         let wrong_vectors_multi = vec![
             // Incorrect dimensionality
-            NamedVectors::from_ref("a", &[]),
-            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0]),
-            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0, 1.0, 0.0]),
-            NamedVectors::from_ref("b", &[]),
-            NamedVectors::from_ref("b", &[0.5]),
-            NamedVectors::from_ref("b", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from_ref("a", [].as_slice().into()),
+            NamedVectors::from_ref("a", [0.0, 1.0, 0.0].as_slice().into()),
+            NamedVectors::from_ref("a", [0.0, 1.0, 0.0, 1.0, 0.0].as_slice().into()),
+            NamedVectors::from_ref("b", [].as_slice().into()),
+            NamedVectors::from_ref("b", [0.5].as_slice().into()),
+            NamedVectors::from_ref("b", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
             NamedVectors::from([
                 ("a".into(), vec![0.1, 0.2, 0.3]),
                 ("b".into(), vec![1.0, 0.9]),
@@ -2205,8 +2206,8 @@ mod tests {
                 ("b".into(), vec![1.0, 0.9, 0.0]),
             ]),
             // Incorrect names
-            NamedVectors::from_ref("aa", &[0.0, 0.1, 0.2, 0.3]),
-            NamedVectors::from_ref("bb", &[0.0, 0.1]),
+            NamedVectors::from_ref("aa", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
+            NamedVectors::from_ref("bb", [0.0, 0.1].as_slice().into()),
             NamedVectors::from([
                 ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
                 ("b".into(), vec![1.0, 0.9]),
