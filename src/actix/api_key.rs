@@ -9,6 +9,17 @@ use futures_util::future::LocalBoxFuture;
 use crate::common::auth::AuthKeys;
 use crate::common::strings::ct_eq;
 
+const READ_ONLY_POST_PATTERNS: [&str; 8] = [
+    "/collections/{name}/points",
+    "/collections/{name}/points/count",
+    "/collections/{name}/points/search",
+    "/collections/{name}/points/search/batch",
+    "/collections/{name}/points/recommend",
+    "/collections/{name}/points/recommend/groups",
+    "/collections/{name}/points/recommend/batch",
+    "/collections/{name}/points/scroll",
+];
+
 pub struct ApiKey {
     auth_keys: Option<AuthKeys>,
     skip_prefixes: Vec<String>,
@@ -97,17 +108,6 @@ where
 }
 
 fn is_read_only(req: &ServiceRequest) -> bool {
-    static READ_ONLY_POST_PATTERNS: [&str; 8] = [
-        "/collections/{name}/points",
-        "/collections/{name}/points/count",
-        "/collections/{name}/points/search",
-        "/collections/{name}/points/search/batch",
-        "/collections/{name}/points/recommend",
-        "/collections/{name}/points/recommend/groups",
-        "/collections/{name}/points/recommend/batch",
-        "/collections/{name}/points/scroll",
-    ];
-
     match *req.method() {
         Method::GET => true,
         Method::POST => req
