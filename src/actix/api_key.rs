@@ -85,7 +85,7 @@ where
         if let Some(key) = req.headers().get("api-key") {
             if let Ok(key) = key.to_str() {
                 let is_allowed = if let Some(ref auth_keys) = self.auth_keys {
-                    auth_keys.can_write(key) || is_read_only(&req) && auth_keys.can_read(key)
+                    auth_keys.can_write(key) || (is_read_only(&req) && auth_keys.can_read(key))
                 } else {
                     // This code path should not be reached
                     log::warn!(

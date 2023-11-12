@@ -54,7 +54,7 @@ where
         if let Some(key) = request.headers().get("api-key") {
             if let Ok(key) = key.to_str() {
                 let is_allowed = self.auth_keys.can_write(key)
-                    || is_read_only(&request) && self.auth_keys.can_read(key);
+                    || (is_read_only(&request) && self.auth_keys.can_read(key));
                 if is_allowed {
                     return Box::pin(self.service.call(request));
                 }
