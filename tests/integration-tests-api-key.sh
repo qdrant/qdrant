@@ -13,12 +13,11 @@ export QDRANT__SERVICE__READ_ONLY_API_KEY="my-ro-secret"
 
 ./target/debug/qdrant &
 
+#Capture PID of the process
+PID=$!
+
 # Sleep to make sure the process has started (workaround for empty pidof)
 sleep 5
-
-## Capture PID of the run
-PID=$(pidof "./target/debug/qdrant")
-echo $PID
 
 function clear_after_tests()
 {
