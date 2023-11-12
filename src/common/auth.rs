@@ -31,15 +31,10 @@ impl AuthKeys {
     /// Check if a key is allowed to read
     #[inline]
     pub fn can_read(&self, key: &str) -> bool {
-        self.read_write
-            .as_ref()
-            .map(|rw_key| ct_eq(rw_key, key))
-            .unwrap_or_default()
-            || self
-                .read_only
-                .as_ref()
-                .map(|ro_key| ct_eq(ro_key, key))
-                .unwrap_or_default()
+        self.read_only
+          .as_ref()
+          .map(|ro_key| ct_eq(ro_key, key))
+          .unwrap_or_else(|| self.can_write(key))
     }
 
     /// Check if a key is allowed to write
