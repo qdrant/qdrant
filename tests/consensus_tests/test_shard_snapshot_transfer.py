@@ -31,11 +31,13 @@ def run_update_points_in_background(peer_url, collection_name, init_offset=0, th
     return p
 
 
-# Transfer shards from one node to another while applying updates in parallel
-# Updates are throttled to prevent sending updates faster than the queue proxy can handle
+# Transfer shards from one node to another while applying throttled updates in parallel
+#
+# Updates are throttled to prevent sending updates faster than the queue proxy
+# can handle. The transfer must therefore finish in 30 seconds without issues.
 #
 # Test that data on the both sides is consistent
-def test_shard_snapshot_transfer_throttle_updates(tmp_path: pathlib.Path):
+def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
@@ -85,13 +87,10 @@ def test_shard_snapshot_transfer_throttle_updates(tmp_path: pathlib.Path):
     upload_process_3.kill()
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
-
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
-
     assert number_local_shards == 2
 
-    # Retrieve points count from both shards
-
+    # Point counts must be consistent across nodes
     counts = []
     for uri in peer_api_uris:
         r = requests.post(
@@ -101,12 +100,14 @@ def test_shard_snapshot_transfer_throttle_updates(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
-
     assert counts[0] == counts[1] == counts[2]
 
 
 # Transfer shards from one node to another while applying updates in parallel
-# A fast burst of updates is sent in the first 5 seconds, likely faster than the queue proxy can handle, after that the update stream is throttled
+#
+# A fast burst of updates is sent in the first 5 seconds, the queue proxy will
+# not be able to keep up with this. After that, updates are throttled. The
+# transfer must still finish in 30 seconds without issues.
 #
 # Test that data on the both sides is consistent
 def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
@@ -159,13 +160,10 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     upload_process_3.kill()
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
-
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
-
     assert number_local_shards == 2
 
-    # Retrieve points count from both shards
-
+    # Point counts must be consistent across nodes
     counts = []
     for uri in peer_api_uris:
         r = requests.post(
@@ -175,5 +173,4 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
-
     assert counts[0] == counts[1] == counts[2]
