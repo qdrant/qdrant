@@ -57,7 +57,7 @@ impl PostingList {
     /// Worst case is adding a new element at the end of the list with a very large weight.
     /// This forces to propagate it as potential max_next_weight to all the previous elements.
     pub fn upsert(&mut self, posting_element: PostingElement) {
-        // find insertion point in sorted posting list
+        // find insertion point in sorted posting list (most expensive operation for large posting list)
         let index = self
             .elements
             .binary_search_by_key(&posting_element.record_id, |e| e.record_id);

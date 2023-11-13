@@ -116,3 +116,7 @@ harness = false
 [[bench]]
 name = "sparse_index_search"
 harness = false
+
+[[bench]]
+name = "sparse_index_build"
+harness = false
