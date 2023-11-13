@@ -10,11 +10,11 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
-use crate::shards::transfer::shard_transfer::{
-    self, ShardTransfer, ShardTransferKey, ShardTransferMethod,
-};
+use crate::shards::transfer;
 use crate::shards::transfer::transfer_tasks_pool::TaskResult;
-use crate::shards::transfer::ShardTransferConsensus;
+use crate::shards::transfer::{
+    ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
+};
 
 impl Collection {
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
@@ -132,7 +132,7 @@ impl Collection {
         let collection_id = self.id.clone();
         let channel_service = self.channel_service.clone();
 
-        let transfer_task = shard_transfer::spawn_transfer_task(
+        let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
             transfer.clone(),
             consensus,
@@ -167,7 +167,7 @@ impl Collection {
         // Unwrap forward proxy into local shard, or replace it with remote shard
         // depending on the `sync` flag.
         if self.this_peer_id == transfer.from {
-            let proxy_promoted = shard_transfer::handle_transferred_shard_proxy(
+            let proxy_promoted = transfer::driver::handle_transferred_shard_proxy(
                 &shards_holder_guard,
                 transfer.shard_id,
                 transfer.to,
@@ -181,7 +181,7 @@ impl Collection {
         // Promote partial shard to active shard
         if self.this_peer_id == transfer.to {
             let shard_promoted =
-                shard_transfer::finalize_partial_shard(&shards_holder_guard, transfer.shard_id)
+                transfer::driver::finalize_partial_shard(&shards_holder_guard, transfer.shard_id)
                     .await?;
             log::debug!(
                 "shard_promoted: {}, shard_id: {}, peer_id: {}",
@@ -194,7 +194,7 @@ impl Collection {
         // Should happen on a third-party side
         // Change direction of the remote shards or add a new remote shard
         if self.this_peer_id != transfer.from {
-            let remote_shard_rerouted = shard_transfer::change_remote_shard_route(
+            let remote_shard_rerouted = transfer::driver::change_remote_shard_route(
                 &shards_holder_guard,
                 transfer.shard_id,
                 transfer.from,
@@ -260,8 +260,11 @@ impl Collection {
         }
 
         if self.this_peer_id == transfer_key.from {
-            shard_transfer::revert_proxy_shard_to_local(shard_holder_guard, transfer_key.shard_id)
-                .await?;
+            transfer::driver::revert_proxy_shard_to_local(
+                shard_holder_guard,
+                transfer_key.shard_id,
+            )
+            .await?;
         }
 
         let _finish_was_registered = shard_holder_guard.register_finish_transfer(&transfer_key)?;

@@ -5,8 +5,7 @@ use common::defaults;
 use tempfile::TempPath;
 use tokio::time::sleep;
 
-use super::shard_transfer::ShardTransfer;
-use super::ShardTransferConsensus;
+use super::{ShardTransfer, ShardTransferConsensus};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;

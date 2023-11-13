@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
 
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::transfer::shard_transfer::ShardTransferMethod;
+use crate::shards::transfer::ShardTransferMethod;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(untagged, rename_all = "snake_case")]

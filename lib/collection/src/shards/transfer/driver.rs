@@ -1,19 +1,15 @@
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use super::snapshot::transfer_snapshot;
 use super::stream_records::transfer_stream_records;
-use super::ShardTransferConsensus;
+use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
@@ -23,54 +19,6 @@ use crate::shards::CollectionId;
 
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 pub(crate) const MAX_RETRY_COUNT: usize = 3;
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ShardTransfer {
-    pub shard_id: ShardId,
-    pub from: PeerId,
-    pub to: PeerId,
-    /// If this flag is true, this is a replication related transfer of shard from 1 peer to another
-    /// Shard on original peer will not be deleted in this case
-    pub sync: bool,
-    /// Method to transfer shard with. `None` to choose automatically.
-    #[serde(default)]
-    pub method: Option<ShardTransferMethod>,
-}
-
-/// Unique identifier of a transfer, agnostic of transfer method
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ShardTransferKey {
-    pub shard_id: ShardId,
-    pub from: PeerId,
-    pub to: PeerId,
-}
-
-impl ShardTransferKey {
-    pub fn check(&self, transfer: &ShardTransfer) -> bool {
-        self.shard_id == transfer.shard_id && self.from == transfer.from && self.to == transfer.to
-    }
-}
-
-impl ShardTransfer {
-    pub fn key(&self) -> ShardTransferKey {
-        ShardTransferKey {
-            shard_id: self.shard_id,
-            from: self.from,
-            to: self.to,
-        }
-    }
-}
-
-/// Methods for transferring a shard from one node to another.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ShardTransferMethod {
-    /// Stream all shard records in batches until the whole shard is transferred.
-    #[default]
-    StreamRecords,
-    /// Snapshot the shard, transfer and restore it on the receiver.
-    Snapshot,
-}
 
 /// # Cancel safety
 ///
@@ -222,4 +170,86 @@ pub async fn handle_transferred_shard_proxy(
     }
 
     Ok(true)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_transfer_task<T, F>(
+    shards_holder: Arc<LockedShardHolder>,
+    transfer: ShardTransfer,
+    consensus: Box<dyn ShardTransferConsensus>,
+    collection_id: CollectionId,
+    channel_service: ChannelService,
+    snapshots_path: PathBuf,
+    collection_name: String,
+    temp_dir: PathBuf,
+    on_finish: T,
+    on_error: F,
+) -> CancellableAsyncTaskHandle<bool>
+where
+    T: Future<Output = ()> + Send + 'static,
+    F: Future<Output = ()> + Send + 'static,
+{
+    spawn_async_cancellable(move |cancel| async move {
+        let mut result = Err(cancel::Error::Cancelled);
+
+        for attempt in 0..MAX_RETRY_COUNT {
+            let future = async {
+                if attempt > 0 {
+                    sleep(RETRY_DELAY * attempt as u32).await;
+
+                    log::warn!(
+                        "Retrying shard transfer {collection_id}:{} -> {} (retry {attempt})",
+                        transfer.shard_id,
+                        transfer.to,
+                    );
+                }
+
+                transfer_shard(
+                    transfer.clone(),
+                    shards_holder.clone(),
+                    consensus.as_ref(),
+                    collection_id.clone(),
+                    &collection_name,
+                    channel_service.clone(),
+                    &snapshots_path,
+                    &temp_dir,
+                )
+                .await
+            };
+
+            result = cancel::future::cancel_on_token(cancel.clone(), future).await;
+
+            let is_ok = matches!(result, Ok(Ok(())));
+            let is_err = matches!(result, Ok(Err(_)));
+            let is_cancelled = result.is_err();
+
+            if let Ok(Err(err)) = &result {
+                log::error!(
+                    "Failed to transfer shard {collection_id}:{} -> {}: {err}",
+                    transfer.shard_id,
+                    transfer.to,
+                );
+            }
+
+            if is_err || is_cancelled {
+                // Revert queue proxy if we still have any to prepare for the next attempt
+                if let Some(shard) = shards_holder.read().await.get_shard(&transfer.shard_id) {
+                    shard.revert_queue_proxy_local().await;
+                }
+            }
+
+            if is_ok || is_cancelled {
+                break;
+            }
+        }
+
+        match &result {
+            Ok(Ok(())) => on_finish.await,
+            Ok(Err(_)) => on_error.await,
+            Err(_) => (), // do nothing, if task was cancelled
+        }
+
+        let is_ok = matches!(result, Ok(Ok(())));
+        is_ok
+    })
 }
