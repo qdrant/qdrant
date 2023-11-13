@@ -1801,13 +1801,12 @@ dependencies = [
 
 [[package]]
 name = "fs4"
-version = "0.6.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ea55201cc351fdb478217c0fb641b59813da9b4efe4c414a9d8f989a657d149"
+checksum = "29f9df8a11882c4e3335eb2d18a0137c505d9ca927470b0cac9c6f0ae07d28f7"
 dependencies = [
- "libc",
- "rustix 0.35.13",
- "winapi",
+ "rustix 0.38.3",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -2921,6 +2920,15 @@ name = "memmap2"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "memmap2"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deaba38d7abf1d4cca21cc89e932e542ba2b9258664d2a9ef0e61512039c9375"
 dependencies = [
  "libc",
 ]
@@ -5590,7 +5598,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=a32f6a38acf7ffd761df83b0790eaefeb107cd60#a32f6a38acf7ffd761df83b0790eaefeb107cd60"
+source = "git+https://github.com/qdrant/wal.git?rev=f62d2844ba0bb2b1f1aeb9a4766cdbd46f29d594#f62d2844ba0bb2b1f1aeb9a4766cdbd46f29d594"
 dependencies = [
  "byteorder",
  "crc",
@@ -5599,10 +5607,10 @@ dependencies = [
  "env_logger",
  "fs4",
  "log",
- "memmap2 0.7.1",
+ "memmap2 0.9.0",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.38.3",
+ "rustix 0.35.13",
  "serde",
 ]
 
