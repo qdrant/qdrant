@@ -125,7 +125,14 @@ test = false
 bench = false
 
 [workspace]
-members = ["lib/*", "lib/common/*"]
+members = [
+    "lib/api",
+    "lib/collection",
+    "lib/common/*",
+    "lib/segment",
+    "lib/sparse",
+    "lib/storage",
+]
 exclude = ["benches/search-points"]
 
 [profile.release]

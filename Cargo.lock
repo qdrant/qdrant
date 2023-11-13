@@ -1109,10 +1109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-workspace-stub"
-version = "0.0.0"
-
-[[package]]
 name = "config"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
