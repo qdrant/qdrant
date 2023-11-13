@@ -13,6 +13,8 @@ use super::CollectionId;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 pub mod shard_transfer;
+pub mod snapshot;
+pub mod stream_records;
 pub mod transfer_tasks_pool;
 
 /// Number of retries for confirming a consensus operation.
