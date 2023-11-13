@@ -12,6 +12,7 @@ use super::shard::PeerId;
 use super::CollectionId;
 use crate::operations::types::{CollectionError, CollectionResult};
 
+pub mod helpers;
 pub mod shard_transfer;
 pub mod snapshot;
 pub mod stream_records;
