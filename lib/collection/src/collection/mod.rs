@@ -53,6 +53,7 @@ pub struct Collection {
     request_shard_transfer_cb: RequestShardTransfer,
     #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: ChangePeerState,
+    abort_shard_transfer_cb: replica_set::AbortShardTransfer,
     init_time: Duration,
     // One-way boolean flag that is set to true when the collection is fully initialized
     // i.e. all shards are activated for the first time.
@@ -85,6 +86,7 @@ impl Collection {
         channel_service: ChannelService,
         on_replica_failure: ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
+        abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
     ) -> Result<Self, CollectionError> {
@@ -103,6 +105,7 @@ impl Collection {
                 is_local,
                 peers,
                 on_replica_failure.clone(),
+                abort_shard_transfer.clone(),
                 path,
                 shared_collection_config.clone(),
                 shared_storage_config.clone(),
@@ -136,6 +139,7 @@ impl Collection {
             transfer_tasks: Mutex::new(TransferTasksPool::new(name.clone())),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
+            abort_shard_transfer_cb: abort_shard_transfer,
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
@@ -154,6 +158,7 @@ impl Collection {
         channel_service: ChannelService,
         on_replica_failure: replica_set::ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
+        abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
     ) -> Self {
@@ -203,6 +208,7 @@ impl Collection {
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 on_replica_failure.clone(),
+                abort_shard_transfer.clone(),
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
@@ -227,6 +233,7 @@ impl Collection {
             transfer_tasks: Mutex::new(TransferTasksPool::new(collection_id.clone())),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
+            abort_shard_transfer_cb: abort_shard_transfer,
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
@@ -443,8 +450,9 @@ impl Collection {
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
+        let get_shard_transfer = |key| shard_holder.get_transfer(&key);
         for replica_set in shard_holder.all_shards() {
-            replica_set.sync_local_state().await?;
+            replica_set.sync_local_state(get_shard_transfer).await?;
         }
 
         // Check for un-reported finished transfers

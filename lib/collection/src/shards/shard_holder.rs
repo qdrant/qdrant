@@ -9,6 +9,7 @@ use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
+use super::replica_set::AbortShardTransfer;
 use crate::common::file_utils::move_file;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
@@ -403,6 +404,7 @@ impl ShardHolder {
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
+        abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
@@ -445,6 +447,7 @@ impl ShardHolder {
                     shared_storage_config.clone(),
                     channel_service.clone(),
                     on_peer_failure.clone(),
+                    abort_shard_transfer.clone(),
                     this_peer_id,
                     update_runtime.clone(),
                     search_runtime.clone(),
@@ -604,14 +607,14 @@ impl ShardHolder {
         })
     }
 
-    pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
+    pub fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
         self.shard_transfers
             .read()
             .iter()
             .any(|transfer| transfer_key.check(transfer))
     }
 
-    pub async fn get_transfer(&self, transfer_key: &ShardTransferKey) -> Option<ShardTransfer> {
+    pub fn get_transfer(&self, transfer_key: &ShardTransferKey) -> Option<ShardTransfer> {
         self.shard_transfers
             .read()
             .iter()
