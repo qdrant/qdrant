@@ -21,6 +21,7 @@ use segment::vector_storage::VectorStorage;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 100_000;
@@ -80,7 +81,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     });
 
     // build once to reuse in mmap conversion benchmark
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
         id_tracker,
         vector_storage.clone(),
         wrapped_payload_index,
@@ -88,17 +89,18 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     )
     .unwrap();
 
+    sparse_vector_index.build_index(&stopped).unwrap();
+
     // intent: measure mmap conversion time
     group.bench_function("convert-mmap-index", |b| {
         b.iter(|| {
             let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-
-            let _mmap_inverted_index = InvertedIndexMmap::convert_and_save(
+            let mmap_inverted_index = InvertedIndexMmap::convert_and_save(
                 &sparse_vector_index.inverted_index,
                 &mmap_index_dir,
             )
             .unwrap();
-            // TODO(sparse) assert indexed vector count
+            assert_eq!(mmap_inverted_index.vector_count(), NUM_VECTORS);
         })
     });
 
