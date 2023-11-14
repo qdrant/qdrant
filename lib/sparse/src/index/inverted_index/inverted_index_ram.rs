@@ -16,7 +16,7 @@ pub struct InvertedIndexRam {
     pub postings: Vec<PostingList>,
     /// Number of unique indexed vectors
     /// pre-computed on build and upsert to avoid having to traverse the posting lists.
-    pub indexed_vector_count: usize,
+    pub vector_count: usize,
 }
 
 impl InvertedIndex for InvertedIndexRam {
@@ -48,8 +48,8 @@ impl InvertedIndex for InvertedIndexRam {
         Ok(ram_index)
     }
 
-    fn indexed_vector_count(&self) -> usize {
-        self.indexed_vector_count
+    fn vector_count(&self) -> usize {
+        self.vector_count
     }
 }
 
@@ -58,7 +58,7 @@ impl InvertedIndexRam {
     pub fn empty() -> InvertedIndexRam {
         InvertedIndexRam {
             postings: Vec::new(),
-            indexed_vector_count: 0,
+            vector_count: 0,
         }
     }
 
@@ -88,8 +88,8 @@ impl InvertedIndexRam {
         // update indexed vector count by guessing whether we already have seen this point id
         // given that there are no holes in the internal ids and that we are not deleting from the index
         // we can just use the id as a proxy the count
-        if self.indexed_vector_count() < id as usize {
-            self.indexed_vector_count += 1;
+        if self.vector_count() < id as usize {
+            self.vector_count += 1;
         }
     }
 }
@@ -138,11 +138,11 @@ impl InvertedIndexBuilder {
             .flat_map(|posting_list| posting_list.elements.iter())
             .map(|posting| posting.record_id)
             .collect();
-        let indexed_vector_count = unique_ids.len();
+        let vector_count = unique_ids.len();
 
         InvertedIndexRam {
             postings,
-            indexed_vector_count,
+            vector_count,
         }
     }
 }
@@ -158,7 +158,7 @@ mod tests {
             .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
-        assert_eq!(inverted_index_ram.indexed_vector_count, 3);
+        assert_eq!(inverted_index_ram.vector_count, 3);
 
         inverted_index_ram.upsert(
             4,
@@ -183,7 +183,7 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        assert_eq!(inverted_index_ram.indexed_vector_count, 3);
+        assert_eq!(inverted_index_ram.vector_count, 3);
 
         // 4 postings, 0th empty
         assert_eq!(inverted_index_ram.postings.len(), 4);
@@ -224,7 +224,7 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        assert_eq!(inverted_index_ram_built.indexed_vector_count, 3);
+        assert_eq!(inverted_index_ram_built.vector_count, 3);
 
         let mut inverted_index_ram_upserted = InvertedIndexRam::empty();
         inverted_index_ram_upserted.upsert(

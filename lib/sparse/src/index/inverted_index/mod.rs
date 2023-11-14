@@ -34,5 +34,5 @@ pub trait InvertedIndex {
         Self: Sized;
 
     /// Number of indexed vectors
-    fn indexed_vector_count(&self) -> usize;
+    fn vector_count(&self) -> usize;
 }

@@ -197,7 +197,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
         // the underlying upsert operation does not guarantee that the indexed vector count is correct
         // so we set the indexed vector count to the number of points we have seen
-        ram_index.indexed_vector_count = index_point_count;
+        ram_index.vector_count = index_point_count;
         // TODO(sparse) this operation loads the entire index into memory which can cause OOM on large storage
         self.inverted_index = TInvertedIndex::from_ram_index(ram_index, &self.path)?;
         Ok(())
@@ -213,7 +213,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn indexed_vector_count(&self) -> usize {
-        self.inverted_index.indexed_vector_count()
+        self.inverted_index.vector_count()
     }
 
     fn update_vector(&mut self, id: PointOffsetType) -> OperationResult<()> {
