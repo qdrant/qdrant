@@ -2894,15 +2894,6 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "memmap2"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "deaba38d7abf1d4cca21cc89e932e542ba2b9258664d2a9ef0e61512039c9375"
@@ -2924,7 +2915,7 @@ name = "memory"
 version = "0.0.0"
 dependencies = [
  "log",
- "memmap2 0.7.1",
+ "memmap2 0.9.0",
  "parking_lot",
  "serde",
 ]
@@ -4477,7 +4468,7 @@ dependencies = [
  "io-uring",
  "itertools 0.11.0",
  "log",
- "memmap2 0.7.1",
+ "memmap2 0.9.0",
  "memory",
  "num-derive",
  "num-traits",
@@ -4752,7 +4743,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "io",
- "memmap2 0.7.1",
+ "memmap2 0.9.0",
  "memory",
  "ordered-float 4.1.1",
  "rand 0.8.5",
