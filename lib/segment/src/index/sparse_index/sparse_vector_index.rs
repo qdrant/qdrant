@@ -30,7 +30,6 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     path: PathBuf,
     pub inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
-    max_point_id: PointOffsetType, // used to compute the number of indexed vectors
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -45,7 +44,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         create_dir_all(path)?;
 
         let searches_telemetry = SparseSearchesTelemetry::new();
-        let max_point_id = 0;
         let inverted_index = TInvertedIndex::open(path)?;
         let path = path.to_path_buf();
         let index = Self {
@@ -55,7 +53,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             inverted_index,
             searches_telemetry,
-            max_point_id,
         };
         Ok(index)
     }
@@ -198,7 +195,9 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             ram_index.upsert(id, vector.to_owned());
             index_point_count += 1;
         }
-        self.max_point_id = index_point_count.saturating_sub(1) as PointOffsetType;
+        // the underlying upsert operation does not guarantee that the indexed vector count is correct
+        // so we set the indexed vector count to the number of points we have seen
+        ram_index.vector_count = index_point_count;
         // TODO(sparse) this operation loads the entire index into memory which can cause OOM on large storage
         self.inverted_index = TInvertedIndex::from_ram_index(ram_index, &self.path)?;
         Ok(())
@@ -214,15 +213,12 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn indexed_vector_count(&self) -> usize {
-        // internal ids start at 0
-        self.max_point_id as usize + 1
+        self.inverted_index.vector_count()
     }
 
     fn update_vector(&mut self, id: PointOffsetType) -> OperationResult<()> {
         let vector_storage = self.vector_storage.borrow();
         let vector: &SparseVector = vector_storage.get_vector(id).try_into()?;
-        // there are no holes in the internal ids, so we can just use the id as the count
-        self.max_point_id = self.max_point_id.max(id);
         self.inverted_index.upsert(id, vector.clone());
         Ok(())
     }

@@ -24,7 +24,8 @@ const INDEX_CONFIG_FILE_NAME: &str = "index_config.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct InvertedIndexFileHeader {
-    pub posting_count: usize,
+    pub posting_count: usize, // number oof posting lists
+    vector_count: usize,      // number of unique vectors indexed
 }
 
 /// Inverted flatten index from dimension id to posting list
@@ -69,6 +70,10 @@ impl InvertedIndex for InvertedIndexMmap {
     ) -> std::io::Result<Self> {
         Self::convert_and_save(&ram_index, path)
     }
+
+    fn vector_count(&self) -> usize {
+        self.file_header.vector_count
+    }
 }
 
 impl InvertedIndexMmap {
@@ -112,10 +117,15 @@ impl InvertedIndexMmap {
         Self::save_posting_headers(&mut mmap, inverted_index_ram, total_posting_headers_size);
         Self::save_posting_elements(&mut mmap, inverted_index_ram, total_posting_headers_size);
 
+        // save header properties
         let posting_count = inverted_index_ram.postings.len();
+        let indexed_vector_count = inverted_index_ram.vector_count();
 
         // finalize data with index file.
-        let file_header = InvertedIndexFileHeader { posting_count };
+        let file_header = InvertedIndexFileHeader {
+            posting_count,
+            vector_count: indexed_vector_count,
+        };
         let config_file_path = Self::index_config_file_path(path.as_ref());
         atomic_save_json(&config_file_path, &file_header)?;
 
@@ -249,6 +259,9 @@ mod tests {
             compare_indexes(&inverted_index_ram, &inverted_index_mmap);
         }
         let inverted_index_mmap = InvertedIndexMmap::load(&tmp_dir_path).unwrap();
+        // posting_count: 0th entry is always empty + 1st + 2nd + 3rd + 4th empty + 5th
+        assert_eq!(inverted_index_mmap.file_header.posting_count, 6);
+        assert_eq!(inverted_index_mmap.file_header.vector_count, 9);
 
         compare_indexes(&inverted_index_ram, &inverted_index_mmap);
 
