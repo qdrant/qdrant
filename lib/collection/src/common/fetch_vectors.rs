@@ -128,6 +128,10 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
         Self::default()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.ids_per_collection.is_empty() && self.vector_names_per_collection.is_empty()
+    }
+
     pub fn add_from_iter(
         &mut self,
         point_ids: impl Iterator<Item = PointIdType>,
@@ -286,6 +290,9 @@ where
             Ok(())
         },
         |shard_selector, referenced_points, requests| {
+            if referenced_points.is_empty() {
+                return Ok(());
+            }
             let fetch = referenced_points.fetch_vectors(
                 collection,
                 read_consistency,

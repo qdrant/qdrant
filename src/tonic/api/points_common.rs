@@ -1117,7 +1117,7 @@ pub async fn recommend_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     timeout: Option<Duration>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
-    let mut requests = Vec::new();
+    let mut requests = Vec::with_capacity(recommend_points.len());
 
     for mut request in recommend_points {
         let shard_selector =
@@ -1226,7 +1226,7 @@ pub async fn discover_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     timeout: Option<Duration>,
 ) -> Result<Response<DiscoverBatchResponse>, Status> {
-    let mut requests = Vec::new();
+    let mut requests = Vec::with_capacity(discover_points.len());
 
     for discovery_request in discover_points {
         let (internal_request, _collection_name, _consistency, _timeout, shard_key_selector) =

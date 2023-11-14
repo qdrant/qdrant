@@ -414,7 +414,7 @@ message CountPoints {
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
   optional bool exact = 3; // If `true` - return exact count, if `false` - return approximate count
   optional ReadConsistency read_consistency = 4; // Options for specifying read consistency guarantees
-    optional ShardKeySelector shard_key_selector = 5; // Specify in which shards to look for the points, if not specified - look in all shards
+  optional ShardKeySelector shard_key_selector = 5; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message PointsUpdateOperation {

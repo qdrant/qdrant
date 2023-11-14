@@ -706,6 +706,10 @@ pub async fn do_search_batch_points(
             Ok(())
         },
         |shard_selector, core_requests, res| {
+            if core_requests.is_empty() {
+                return Ok(());
+            }
+
             let core_batch = CoreSearchRequestBatch {
                 searches: core_requests,
             };

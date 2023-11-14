@@ -204,6 +204,10 @@ where
             })
         },
         |shard_selector, core_searches, requests| {
+            if core_searches.is_empty() {
+                return Ok(());
+            }
+
             let core_search_batch_request = CoreSearchRequestBatch {
                 searches: core_searches,
             };

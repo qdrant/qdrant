@@ -9,6 +9,48 @@ use crate::operations::types::CollectionResult;
 /// * `accumulate_global` - called for each subgroup accumulated by `accumulate_local`
 ///
 /// The function returns the result of the last call of `accumulate_global` function.
+///
+///
+/// Example usage (simplified):
+///
+/// requests = [
+///     Recommend(positive=[1], shard_key="cats"),
+///     Recommend(positive=[2], shard_key="cats"),
+///     Recommend(positive=[3], shard_key="dogs"),
+///     Recommend(positive=[3], shard_key="dogs"),
+/// ]
+///
+/// We want to:
+///     1. Group requests by shard_key into Acc1 (vector of requests)
+///     2. Execute each group of requests and push the result into Acc2 (vector of results)
+///
+/// How to do that:
+///
+/// ```rust,ignore
+/// batch_requests::<
+///     Recommend,             // Type of request
+///     String,                // Type of shard_key
+///     Vec<Recommend>,        // Type of local accumulator
+///     Vec<Vec<ScoredPoint>>, // Type of global accumulator,
+///     _,  // Automatically infer type for function accumulate_local
+///     _,  // Automatically infer type for function accumulate_global
+/// >(
+///     requests,
+///     |request| &request.shard_key,
+///     |request, local_accumulator| { // Accumulate requests
+///         local_accumulator.push(request);
+///         // Note: we can have more complex logic here
+///         // E.g. extracting IDs from requests and de-duplicating them
+///         Ok(())
+///     },
+///     |shard_key, local_accumulator, global_accumulator| { // Execute requests and accumulate results
+///        let result = execute_recommendations(local_accumulator, shard_key);
+///        global_accumulator.push(result);
+///        Ok(())
+///     }
+/// )
+/// ```
+///
 pub fn batch_requests<Req, Key: PartialEq + Clone, Acc1: Default, Acc2: Default, F, G>(
     requests: impl IntoIterator<Item = Req>,
     get_key: impl Fn(&Req) -> &Key,
