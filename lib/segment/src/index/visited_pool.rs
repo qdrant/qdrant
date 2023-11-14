@@ -113,7 +113,7 @@ pub struct VisitedPool {
 impl VisitedPool {
     pub fn new() -> Self {
         VisitedPool {
-            pool: RwLock::new(vec![]),
+            pool: RwLock::new(Vec::with_capacity(*POOL_KEEP_LIMIT)),
         }
     }
 
