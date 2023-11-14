@@ -26,22 +26,23 @@ const MAX_SPARSE_DIM: usize = 2048;
 /// Number of vectors to index in tests
 const NUM_VECTORS: usize = 1000;
 
-#[test]
-fn sparse_vector_index_ram_no_filter_search() {
+/// Default full scan threshold in tests
+/// very low value to force usage of index
+const LOW_FULL_SCAN_THRESHOLD: usize = 1;
+
+/// Expects the filter to match ALL points in order to compare the results with/without filter
+fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize) {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
     let sparse_vector_index = fixture_sparse_index_ram(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
-        payload_dir.path(),
-        storage_dir.path(),
-        index_dir.path(),
+        full_scan_threshold,
+        data_dir.path(),
         &stopped,
     );
 
@@ -91,6 +92,18 @@ fn sparse_vector_index_ram_no_filter_search() {
     }
 }
 
+#[test]
+fn sparse_vector_index_ram_filter_search() {
+    // very low full scan threshold to force usage of inverted index
+    compare_sparse_vectors_search_with_without_filter(LOW_FULL_SCAN_THRESHOLD);
+}
+
+#[test]
+fn sparse_vector_index_fallback_plain_search() {
+    // very high full scan threshold to force fallback to plain search
+    compare_sparse_vectors_search_with_without_filter(NUM_VECTORS + 1);
+}
+
 /// Checks that the sparse vector index is consistent with the underlying storage
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage.borrow();
@@ -127,17 +140,13 @@ fn sparse_vector_index_consistent_with_storage() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
-
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let sparse_vector_ram_index = fixture_sparse_index_ram(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
-        payload_dir.path(),
-        storage_dir.path(),
-        index_dir.path(),
+        LOW_FULL_SCAN_THRESHOLD,
+        data_dir.path(),
         &stopped,
     );
 
@@ -154,7 +163,9 @@ fn sparse_vector_index_consistent_with_storage() {
     drop(mmap_inverted_index);
 
     // load index from memmap file
+    let sparse_index_config = sparse_vector_ram_index.config;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
+        sparse_index_config,
         sparse_vector_ram_index.id_tracker.clone(),
         sparse_vector_ram_index.vector_storage.clone(),
         sparse_vector_ram_index.payload_index.clone(),
@@ -173,11 +184,9 @@ fn sparse_vector_index_consistent_with_storage() {
 
 #[test]
 fn sparse_vector_index_load_missing_mmap() {
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
-        fixture_open_sparse_index(index_dir.path(), payload_dir.path(), storage_dir.path(), 0);
+        fixture_open_sparse_index(data_dir.path(), 0, 10_000);
     // fails to open index if mmap file is missing
     assert!(sparse_vector_index.is_err())
 }
@@ -188,17 +197,14 @@ fn sparse_vector_index_ram_deleted_points_search() {
     let top = 10;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
     let mut sparse_vector_index = fixture_sparse_index_ram(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
-        payload_dir.path(),
-        storage_dir.path(),
-        index_dir.path(),
+        LOW_FULL_SCAN_THRESHOLD,
+        data_dir.path(),
         &stopped,
     );
 
@@ -284,18 +290,15 @@ fn sparse_vector_index_ram_filtered_search() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
     // setup index
     let sparse_vector_index = fixture_sparse_index_ram(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
-        payload_dir.path(),
-        storage_dir.path(),
-        index_dir.path(),
+        LOW_FULL_SCAN_THRESHOLD,
+        data_dir.path(),
         &stopped,
     );
 
@@ -372,18 +375,14 @@ fn sparse_vector_index_plain_search() {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
-
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     // setup index
     let sparse_vector_index = fixture_sparse_index_ram(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
-        payload_dir.path(),
-        storage_dir.path(),
-        index_dir.path(),
+        LOW_FULL_SCAN_THRESHOLD,
+        data_dir.path(),
         &stopped,
     );
 

@@ -42,6 +42,21 @@ impl SparseVector {
         }
         score
     }
+
+    /// Check if this vector overlaps with another vector.
+    /// Warning: Expects both vectors to be sorted by indices.
+    pub fn overlaps(&self, other: &SparseVector) -> bool {
+        let mut i = 0;
+        let mut j = 0;
+        while i < self.indices.len() && j < other.indices.len() {
+            match self.indices[i].cmp(&other.indices[j]) {
+                std::cmp::Ordering::Less => i += 1,
+                std::cmp::Ordering::Greater => j += 1,
+                std::cmp::Ordering::Equal => return true,
+            }
+        }
+        false
+    }
 }
 impl TryFrom<Vec<(i32, f64)>> for SparseVector {
     type Error = ValidationErrors;
@@ -136,5 +151,24 @@ mod tests {
 
         let not_unique = SparseVector::new(vec![1, 2, 2], vec![1.0, 2.0, 3.0]);
         assert!(not_unique.is_err());
+    }
+
+    #[test]
+    fn overlaps_test() {
+        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
+        assert!(v1.overlaps(&v2));
+
+        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = SparseVector::new(vec![4, 5, 6], vec![2.0, 3.0, 4.0]).unwrap();
+        assert!(!v1.overlaps(&v2));
+
+        let v1 = SparseVector::new(vec![2, 3], vec![2.0, 3.0]).unwrap();
+        let v2 = SparseVector::new(vec![3, 4, 5], vec![2.0, 3.0, 4.0]).unwrap();
+        assert!(v1.overlaps(&v2));
+
+        let v1 = SparseVector::new(vec![3, 4, 5], vec![2.0, 3.0, 4.0]).unwrap();
+        let v2 = SparseVector::new(vec![2, 3], vec![2.0, 3.0]).unwrap();
+        assert!(v1.overlaps(&v2));
     }
 }
