@@ -36,7 +36,7 @@ stacktrace = ["rstack-self"]
 serde_urlencoded = "0.7"
 sealed_test = "1.0.0"
 
-tempfile = "3.8.0"
+tempfile = "3.8.1"
 rusty-hook = "^0.11.2"
 
 
