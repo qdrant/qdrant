@@ -92,7 +92,7 @@ impl Collection {
 
         let mut results = {
             let shards_holder = self.shards_holder.read().await;
-            let shard_to_op = shards_holder.split_by_shard(operation, &shard_keys_selection);
+            let shard_to_op = shards_holder.split_by_shard(operation, &shard_keys_selection)?;
 
             if shard_to_op.is_empty() {
                 return Err(CollectionError::bad_request(
