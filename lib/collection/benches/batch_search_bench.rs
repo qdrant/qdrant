@@ -8,7 +8,7 @@ use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct,
 };
-use collection::operations::types::{CoreSearchRequestBatch, SearchRequest, VectorParams};
+use collection::operations::types::{CoreSearchRequestBatch, SearchRequestInternal, VectorParams};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
@@ -133,7 +133,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     let mut rng = thread_rng();
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        let search_query = SearchRequest {
+                        let search_query = SearchRequestInternal {
                             vector: query.into(),
                             filter: filter.clone(),
                             params: None,
@@ -166,7 +166,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        let search_query = SearchRequest {
+                        let search_query = SearchRequestInternal {
                             vector: query.into(),
                             filter: filter.clone(),
                             params: None,

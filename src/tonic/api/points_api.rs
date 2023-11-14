@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
     SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
-use collection::operations::types::{CoreSearchRequest, CoreSearchRequestBatch};
+use collection::operations::types::CoreSearchRequest;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -22,9 +22,9 @@ use super::points_common::{
 };
 use super::validate;
 use crate::tonic::api::points_common::{
-    clear_payload, core_search_batch, count, create_field_index, delete, delete_field_index,
-    delete_payload, get, overwrite_payload, recommend, recommend_batch, scroll, search,
-    set_payload, upsert,
+    clear_payload, convert_shard_selector_for_read, core_search_batch, count, create_field_index,
+    delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
+    scroll, search, set_payload, upsert,
 };
 
 pub struct PointsService {
@@ -154,21 +154,22 @@ impl Points for PointsService {
 
         let timeout = timeout.map(Duration::from_secs);
 
-        let core_search_points: Result<Vec<_>, _> = search_points
-            .into_iter()
-            .map(CoreSearchRequest::try_from)
-            .collect();
+        let mut requests = Vec::new();
 
-        let request = CoreSearchRequestBatch {
-            searches: core_search_points?,
-        };
+        for mut search_point in search_points {
+            let shard_key = search_point.shard_key_selector.take();
+
+            let shard_selector = convert_shard_selector_for_read(None, shard_key);
+            let core_search_request = CoreSearchRequest::try_from(search_point)?;
+
+            requests.push((core_search_request, shard_selector));
+        }
 
         core_search_batch(
             self.dispatcher.as_ref(),
             collection_name,
-            request,
+            requests,
             read_consistency,
-            None,
             timeout,
         )
         .await

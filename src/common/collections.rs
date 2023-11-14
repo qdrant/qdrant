@@ -6,6 +6,7 @@ use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicateShardOperation,
 };
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
@@ -29,7 +30,13 @@ pub async fn do_get_collection(
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
     let collection = toc.get_collection(name).await?;
-    Ok(collection.info(shard_selection).await?)
+
+    let shard_selection = match shard_selection {
+        None => ShardSelectorInternal::All,
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+    };
+
+    Ok(collection.info(&shard_selection).await?)
 }
 
 pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {

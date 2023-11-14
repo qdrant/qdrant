@@ -3,6 +3,7 @@ use collection::lookup::types::PseudoId;
 use collection::lookup::{lookup_ids, WithLookup};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::{Batch, WriteOrdering};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
@@ -105,12 +106,17 @@ async fn happy_lookup_ids() {
     request.with_payload = Some(true.into());
     request.with_vectors = Some(true.into());
 
+    let shard_selection = match shard_selection {
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+        None => ShardSelectorInternal::All,
+    };
+
     let result = lookup_ids(
         request.clone(),
         values.clone(),
         collection_by_name,
         read_consistency,
-        shard_selection,
+        &shard_selection,
     )
     .await;
 
@@ -180,6 +186,11 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         shard_selection,
     } = setup().await;
 
+    let shard_selection = match shard_selection {
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+        None => ShardSelectorInternal::All,
+    };
+
     let collection = collection.read().await;
 
     let collection_by_name = |_: String| async { Some(collection) };
@@ -193,7 +204,7 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         values,
         collection_by_name,
         read_consistency,
-        shard_selection,
+        &shard_selection,
     )
     .await;
 
@@ -213,6 +224,11 @@ async fn err_when_collection_by_name_returns_none() {
         ..
     } = setup().await;
 
+    let shard_selection = match shard_selection {
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+        None => ShardSelectorInternal::All,
+    };
+
     let collection_by_name = |_: String| async { None };
 
     let result = lookup_ids(
@@ -220,7 +236,7 @@ async fn err_when_collection_by_name_returns_none() {
         vec![],
         collection_by_name,
         read_consistency,
-        shard_selection,
+        &shard_selection,
     )
     .await;
 

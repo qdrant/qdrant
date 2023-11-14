@@ -80,6 +80,7 @@ message GetPoints {
   WithPayloadSelector with_payload = 4; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 5; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
+  optional ShardKeySelector shard_key_selector = 7; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message UpdatePointVectors {
@@ -256,6 +257,7 @@ message SearchPoints {
   optional WithVectorsSelector with_vectors = 11; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
   optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 14; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message SearchBatchPoints {
@@ -287,6 +289,7 @@ message SearchPointGroups {
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
   optional WithLookup with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
   optional uint64 timeout = 14; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 15; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message ScrollPoints {
@@ -298,6 +301,7 @@ message ScrollPoints {
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 7; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
+  optional ShardKeySelector shard_key_selector = 9; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 // How to use positive and negative vectors to find the results, default is `AverageVector`:
@@ -315,6 +319,7 @@ enum RecommendStrategy {
 message LookupLocation {
   string collection_name = 1;
   optional string vector_name = 2; // Which vector to use for search, if not specified - use default vector
+  optional ShardKeySelector shard_key_selector = 3; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message RecommendPoints {
@@ -336,6 +341,7 @@ message RecommendPoints {
   repeated Vector positive_vectors = 17; // Look for vectors closest to those
   repeated Vector negative_vectors = 18; // Try to avoid vectors like this
   optional uint64 timeout = 19; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 20; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message RecommendBatchPoints {
@@ -365,6 +371,7 @@ message RecommendPointGroups {
   repeated Vector positive_vectors = 18; // Look for vectors closest to those
   repeated Vector negative_vectors = 19; // Try to avoid vectors like this
   optional uint64 timeout = 20; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 21; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message VectorExample {
@@ -393,6 +400,7 @@ message DiscoverPoints {
   optional LookupLocation lookup_from = 11; // Name of the collection to use for points lookup, if not specified - use current collection
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
   optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 14; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message DiscoverBatchPoints {
@@ -406,6 +414,8 @@ message CountPoints {
   string collection_name = 1; // name of the collection
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
   optional bool exact = 3; // If `true` - return exact count, if `false` - return approximate count
+  optional ReadConsistency read_consistency = 4; // Options for specifying read consistency guarantees
+  optional ShardKeySelector shard_key_selector = 5; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message PointsUpdateOperation {

@@ -65,6 +65,6 @@ def test_just_key():
     assert not response.ok
     assert response.status_code == 422
     error = response.json()["status"]["error"]
-    assert error.__contains__(
-        "Validation error in JSON body: [filter.must[0].__all__: Validation error: At least one field condition must "
-        "be specified [{}]]")
+    print(error)
+    assert "Validation error in JSON body" in error
+    assert "At least one field condition must be specified" in error

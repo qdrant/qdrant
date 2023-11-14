@@ -7,8 +7,10 @@ use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CollectionError, PointRequest, RecommendRequest, SearchRequest, VectorParams, VectorsConfig,
+    CollectionError, PointRequestInternal, RecommendRequestInternal, SearchRequestInternal,
+    VectorParams, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
@@ -113,7 +115,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     let query_vector = vec![6.0, 0.0, 0.0, 0.0];
 
-    let full_search_request = SearchRequest {
+    let full_search_request = SearchRequestInternal {
         vector: NamedVector {
             name: VEC_NAME1.to_string(),
             vector: query_vector,
@@ -129,7 +131,12 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     };
 
     let result = collection
-        .search(full_search_request.into(), None, None, None)
+        .search(
+            full_search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await
         .unwrap();
 
@@ -145,7 +152,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     let query_vector = vec![0.0, 2.0, 0.0, 0.0];
 
-    let failed_search_request = SearchRequest {
+    let failed_search_request = SearchRequestInternal {
         vector: query_vector.clone().into(),
         filter: None,
         limit: 10,
@@ -157,7 +164,12 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     };
 
     let result = collection
-        .search(failed_search_request.into(), None, None, None)
+        .search(
+            failed_search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await;
 
     assert!(
@@ -165,7 +177,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         "{result:?}"
     );
 
-    let full_search_request = SearchRequest {
+    let full_search_request = SearchRequestInternal {
         vector: NamedVector {
             name: VEC_NAME2.to_string(),
             vector: query_vector,
@@ -181,7 +193,12 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     };
 
     let result = collection
-        .search(full_search_request.into(), None, None, None)
+        .search(
+            full_search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await
         .unwrap();
 
@@ -197,13 +214,13 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     let retrieve = collection
         .retrieve(
-            PointRequest {
+            PointRequestInternal {
                 ids: vec![6.into()],
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();
@@ -218,7 +235,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     }
 
     let recommend_result = recommend_by(
-        RecommendRequest {
+        RecommendRequestInternal {
             positive: vec![6.into()],
             with_payload: Some(WithPayloadInterface::Bool(false)),
             with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
@@ -228,6 +245,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
         None,
+        ShardSelectorInternal::All,
         None,
     )
     .await;
@@ -242,7 +260,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     }
 
     let recommend_result = recommend_by(
-        RecommendRequest {
+        RecommendRequestInternal {
             positive: vec![6.into()],
             with_payload: Some(WithPayloadInterface::Bool(false)),
             with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
@@ -253,6 +271,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
         None,
+        ShardSelectorInternal::All,
         None,
     )
     .await

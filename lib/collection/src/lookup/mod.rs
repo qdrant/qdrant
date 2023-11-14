@@ -12,8 +12,8 @@ use types::PseudoId;
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{CollectionError, CollectionResult, PointRequest, Record};
-use crate::shards::shard::ShardId;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
+use crate::operations::types::{CollectionError, CollectionResult, PointRequestInternal, Record};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WithLookup {
@@ -40,7 +40,7 @@ pub async fn lookup_ids<'a, F, Fut>(
     values: Vec<PseudoId>,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: &ShardSelectorInternal,
 ) -> CollectionResult<HashMap<PseudoId, Record>>
 where
     F: FnOnce(String) -> Fut,
@@ -61,7 +61,7 @@ where
         return Ok(HashMap::new());
     }
 
-    let point_request = PointRequest {
+    let point_request = PointRequestInternal {
         ids,
         with_payload: request.with_payload,
         with_vector: request.with_vectors.unwrap_or_default(),

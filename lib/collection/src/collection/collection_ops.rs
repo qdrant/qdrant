@@ -6,10 +6,11 @@ use segment::types::QuantizationConfig;
 
 use super::Collection;
 use crate::operations::config_diff::*;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::{Change, ReplicaState};
-use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard::PeerId;
 
 impl Collection {
     /// Updates collection params:
@@ -198,14 +199,16 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
+    pub async fn info(
+        &self,
+        shard_selection: &ShardSelectorInternal,
+    ) -> CollectionResult<CollectionInfo> {
         let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.target_shard(shard_selection)?;
-
+        let shards = shards_holder.select_shards(shard_selection)?;
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`
-            .map(|shard| shard.info(shard_selection.is_some()))
+            .map(|shard| shard.info(shard_selection.is_shard_id()))
             .collect();
 
         let mut info = match requests.try_next().await? {
@@ -237,7 +240,7 @@ impl Collection {
         let shard_count = shards_holder.len();
         let mut local_shards = Vec::new();
         let mut remote_shards = Vec::new();
-        let count_request = Arc::new(CountRequest {
+        let count_request = Arc::new(CountRequestInternal {
             filter: None,
             exact: false, // Don't need exact count of unique ids here, only size estimation
         });

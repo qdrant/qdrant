@@ -623,7 +623,7 @@ mod tests {
     use crate::collection_manager::fixtures::{
         build_test_holder, optimize_segment, random_segment,
     };
-    use crate::operations::types::{CoreSearchRequest, SearchRequest};
+    use crate::operations::types::{CoreSearchRequest, SearchRequestInternal};
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
     #[test]
@@ -717,7 +717,7 @@ mod tests {
         let mut rnd = rand::thread_rng();
 
         for _ in 0..100 {
-            let req1 = SearchRequest {
+            let req1 = SearchRequestInternal {
                 vector: random_vector(&mut rnd, 4).into(),
                 limit: 150, // more than LOWER_SEARCH_LIMIT_SAMPLING
                 offset: 0,
@@ -727,7 +727,7 @@ mod tests {
                 params: None,
                 score_threshold: None,
             };
-            let req2 = SearchRequest {
+            let req2 = SearchRequestInternal {
                 vector: random_vector(&mut rnd, 4).into(),
                 limit: 50, // less than LOWER_SEARCH_LIMIT_SAMPLING
                 offset: 0,

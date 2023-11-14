@@ -1594,6 +1594,8 @@ The JSON representation for `Value` is a JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
 | exact | [bool](#bool) | optional | If `true` - return exact count, if `false` - return approximate count |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -1783,6 +1785,7 @@ The JSON representation for `Value` is a JSON value.
 | lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -1936,6 +1939,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -2045,6 +2049,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  |  |
 | vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -2566,6 +2571,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | positive_vectors | [Vector](#qdrant-Vector) | repeated | Look for vectors closest to those |
 | negative_vectors | [Vector](#qdrant-Vector) | repeated | Try to avoid vectors like this |
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -2597,6 +2603,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | positive_vectors | [Vector](#qdrant-Vector) | repeated | Look for vectors closest to those |
 | negative_vectors | [Vector](#qdrant-Vector) | repeated | Try to avoid vectors like this |
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -2734,6 +2741,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -2847,6 +2855,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 
@@ -2873,6 +2882,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 

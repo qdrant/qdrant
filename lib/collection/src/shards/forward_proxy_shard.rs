@@ -13,8 +13,8 @@ use tokio::sync::Mutex;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, Record, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
@@ -218,14 +218,14 @@ impl ShardOperation for ForwardProxyShard {
             .await
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard.count(request).await
     }
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {

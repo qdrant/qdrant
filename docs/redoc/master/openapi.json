@@ -5735,6 +5735,17 @@
           "ids"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "ids": {
             "description": "Look for points with ids",
             "type": "array",
@@ -5757,6 +5768,31 @@
             "$ref": "#/components/schemas/WithVector"
           }
         }
+      },
+      "ShardKeySelector": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ShardKey"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardKey"
+            }
+          }
+        ]
+      },
+      "ShardKey": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        ]
       },
       "ExtendedPointId": {
         "description": "Type, used for specifying point ID in user interface",
@@ -5921,18 +5957,6 @@
           }
         ]
       },
-      "ShardKey": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          }
-        ]
-      },
       "SearchRequest": {
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
         "type": "object",
@@ -5941,6 +5965,17 @@
           "vector"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "vector": {
             "$ref": "#/components/schemas/NamedVectorStruct"
           },
@@ -6656,6 +6691,17 @@
           "limit"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "positive": {
             "description": "Look for vectors closest to those",
             "default": [],
@@ -6818,6 +6864,17 @@
             "default": null,
             "type": "string",
             "nullable": true
+          },
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6825,6 +6882,17 @@
         "description": "Scroll request - paginate over all points which matches given condition",
         "type": "object",
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "offset": {
             "description": "Start ID to read points from.",
             "anyOf": [
@@ -7427,19 +7495,6 @@
           }
         }
       },
-      "ShardKeySelector": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/ShardKey"
-          },
-          {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ShardKey"
-            }
-          }
-        ]
-      },
       "FilterSelector": {
         "type": "object",
         "required": [
@@ -7926,6 +7981,17 @@
         "description": "Count Request Counts the number of points which satisfy the given filter. If filter is not provided, the count of all points in the collection will be returned.",
         "type": "object",
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
             "anyOf": [
@@ -9608,6 +9674,17 @@
           "vector"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "vector": {
             "$ref": "#/components/schemas/NamedVectorStruct"
           },
@@ -9746,6 +9823,17 @@
           "limit"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "positive": {
             "description": "Look for vectors closest to those",
             "default": [],
@@ -10063,6 +10151,17 @@
           "limit"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "target": {
             "description": "Look for vectors closest to this.\n\nWhen using the target (with or without context), the integer part of the score represents the rank with respect to the context, while the decimal part of the score relates to the distance to the target.",
             "anyOf": [

@@ -4,6 +4,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
@@ -15,17 +16,6 @@ use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::helpers::process_response;
 
-async fn do_recommend_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: RecommendRequest,
-    read_consistency: Option<ReadConsistency>,
-    timeout: Option<Duration>,
-) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.recommend(collection_name, request, read_consistency, timeout)
-        .await
-}
-
 #[post("/collections/{name}/points/recommend")]
 async fn recommend_points(
     toc: web::Data<TableOfContent>,
@@ -35,14 +25,25 @@ async fn recommend_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = do_recommend_points(
-        toc.get_ref(),
-        &collection.name,
-        request.into_inner(),
-        params.consistency,
-        params.timeout(),
-    )
-    .await;
+    let RecommendRequest {
+        recommend_request,
+        shard_key,
+    } = request.into_inner();
+
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
+
+    let response = toc
+        .recommend(
+            &collection.name,
+            recommend_request,
+            params.consistency,
+            shard_selection,
+            params.timeout(),
+        )
+        .await;
 
     process_response(response, timing)
 }
@@ -54,7 +55,20 @@ async fn do_recommend_batch_points(
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.recommend_batch(collection_name, request, read_consistency, timeout)
+    let requests = request
+        .searches
+        .into_iter()
+        .map(|req| {
+            let shard_selector = match req.shard_key {
+                None => ShardSelectorInternal::All,
+                Some(shard_key) => ShardSelectorInternal::from(shard_key),
+            };
+
+            (req.recommend_request, shard_selector)
+        })
+        .collect();
+
+    toc.recommend_batch(collection_name, requests, read_consistency, timeout)
         .await
 }
 
@@ -88,11 +102,22 @@ async fn recommend_point_groups(
 ) -> impl Responder {
     let timing = Instant::now();
 
+    let RecommendGroupsRequest {
+        recommend_group_request,
+        shard_key,
+    } = request.into_inner();
+
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
+
     let response = crate::common::points::do_recommend_point_groups(
         toc.get_ref(),
         &collection.name,
-        request.into_inner(),
+        recommend_group_request,
         params.consistency,
+        shard_selection,
         params.timeout(),
     )
     .await;

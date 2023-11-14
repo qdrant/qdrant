@@ -2983,6 +2983,9 @@ pub struct GetPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "6")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3351,6 +3354,9 @@ pub struct SearchPoints {
     #[prost(uint64, optional, tag = "13")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "14")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3441,6 +3447,9 @@ pub struct SearchPointGroups {
     #[prost(uint64, optional, tag = "14")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "15")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3470,6 +3479,9 @@ pub struct ScrollPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "8")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "9")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3480,6 +3492,9 @@ pub struct LookupLocation {
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "2")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "3")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3541,6 +3556,9 @@ pub struct RecommendPoints {
     #[prost(uint64, optional, tag = "19")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "20")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3631,6 +3649,9 @@ pub struct RecommendPointGroups {
     #[prost(uint64, optional, tag = "20")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "21")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3709,6 +3730,9 @@ pub struct DiscoverPoints {
     #[prost(uint64, optional, tag = "13")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "14")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3746,6 +3770,12 @@ pub struct CountPoints {
     /// If `true` - return exact count, if `false` - return approximate count
     #[prost(bool, optional, tag = "3")]
     pub exact: ::core::option::Option<bool>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "4")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

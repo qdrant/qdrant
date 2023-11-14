@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 use crate::common::file_utils::move_file;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
@@ -285,6 +286,59 @@ impl ShardHolder {
             .filter(|transfer| transfer.from == *peer_id || transfer.to == *peer_id)
             .cloned()
             .collect()
+    }
+
+    fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
+        match self.key_mapping.read().get(shard_key).cloned() {
+            None => Err(CollectionError::bad_request(format!(
+                "Shard key {shard_key} not found"
+            ))),
+            Some(ids) => Ok(ids),
+        }
+    }
+
+    pub fn select_shards(
+        &self,
+        shard_selector: &ShardSelectorInternal,
+    ) -> CollectionResult<Vec<&ShardReplicaSet>> {
+        let mut res = Vec::new();
+
+        match shard_selector {
+            ShardSelectorInternal::Empty => {
+                debug_assert!(false, "Do not expect empty shard selector")
+            }
+            ShardSelectorInternal::All => {
+                res.extend(self.all_shards());
+            }
+            ShardSelectorInternal::ShardKey(shard_key) => {
+                for shard_id in self.get_shard_ids_by_key(shard_key)? {
+                    if let Some(replica_set) = self.shards.get(&shard_id) {
+                        res.push(replica_set);
+                    } else {
+                        debug_assert!(false, "Shard id {shard_id} not found")
+                    }
+                }
+            }
+            ShardSelectorInternal::ShardKeys(shard_keys) => {
+                for shard_key in shard_keys {
+                    for shard_id in self.get_shard_ids_by_key(shard_key)? {
+                        if let Some(replica_set) = self.shards.get(&shard_id) {
+                            res.push(replica_set);
+                        } else {
+                            debug_assert!(false, "Shard id {shard_id} not found")
+                        }
+                    }
+                }
+            }
+            ShardSelectorInternal::ShardId(shard_id) => {
+                if let Some(replica_set) = self.shards.get(shard_id) {
+                    res.push(replica_set);
+                } else {
+                    return Err(shard_not_found_error(*shard_id));
+                }
+            }
+        }
+        Ok(res)
     }
 
     pub fn target_shard(

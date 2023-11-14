@@ -10,7 +10,6 @@ use api::grpc::transport_channel_pool::RequestError;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
-use itertools::Itertools;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -42,6 +41,7 @@ use super::config_diff;
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -210,10 +210,21 @@ pub struct UpdateResult {
     pub status: UpdateStatus,
 }
 
-/// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub scroll_request: ScrollRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+/// Scroll request - paginate over all points which matches given condition
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ScrollRequestInternal {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
@@ -229,9 +240,9 @@ pub struct ScrollRequest {
     pub with_vector: WithVector,
 }
 
-impl Default for ScrollRequest {
+impl Default for ScrollRequestInternal {
     fn default() -> Self {
-        ScrollRequest {
+        ScrollRequestInternal {
             offset: None,
             limit: Some(10),
             filter: None,
@@ -251,12 +262,23 @@ pub struct ScrollResult {
     pub next_page_offset: Option<PointIdType>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub search_request: SearchRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct SearchRequest {
+pub struct SearchRequestInternal {
     /// Look for vectors closest to this
     pub vector: NamedVectorStruct,
     /// Look only for points which satisfies this conditions
@@ -358,6 +380,16 @@ pub struct CoreSearchRequestBatch {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SearchGroupsRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub search_group_request: SearchGroupsRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct SearchGroupsRequestInternal {
     /// Look for vectors closest to this
     pub vector: NamedVectorStruct,
 
@@ -388,8 +420,18 @@ pub struct SearchGroupsRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
 pub struct PointRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub point_request: PointRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct PointRequestInternal {
     /// Look for points with ids
     pub ids: Vec<PointIdType>,
     /// Select which payload to return with the response. Default: All
@@ -461,6 +503,21 @@ pub struct LookupLocation {
     /// If not provided, the default vector field will be used.
     #[serde(default)]
     pub vector: Option<String>,
+
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct RecommendRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub recommend_request: RecommendRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 /// Recommendation request.
@@ -472,7 +529,7 @@ pub struct LookupLocation {
 /// is up to the `strategy` chosen.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct RecommendRequest {
+pub struct RecommendRequestInternal {
     /// Look for vectors closest to those
     #[serde(default)]
     pub positive: Vec<RecommendExample>,
@@ -534,7 +591,18 @@ pub struct RecommendRequestBatch {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct RecommendGroupsRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub recommend_group_request: RecommendGroupsRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct RecommendGroupsRequestInternal {
     /// Look for vectors closest to those
     #[serde(default)]
     pub positive: Vec<RecommendExample>,
@@ -593,9 +661,19 @@ impl ContextExamplePair {
     }
 }
 
-/// Use context and a target to find the most similar points, constrained by the context.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct DiscoverRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub discover_request: DiscoverRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+/// Use context and a target to find the most similar points, constrained by the context.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct DiscoverRequestInternal {
     /// Look for vectors closest to this.
     ///
     /// When using the target (with or without context), the integer part of the score represents
@@ -675,12 +753,23 @@ pub struct GroupsResult {
     pub groups: Vec<PointGroup>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct CountRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub count_request: CountRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
 /// Count Request
 /// Counts the number of points which satisfy the given filter.
 /// If filter is not provided, the count of all points in the collection will be returned.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
-pub struct CountRequest {
+pub struct CountRequestInternal {
     /// Look only for points which satisfies this conditions
     #[validate]
     pub filter: Option<Filter>,
@@ -1448,16 +1537,8 @@ pub struct BaseGroupRequest {
     pub with_lookup: Option<WithLookupInterface>,
 }
 
-impl From<SearchRequestBatch> for CoreSearchRequestBatch {
-    fn from(batch: SearchRequestBatch) -> Self {
-        CoreSearchRequestBatch {
-            searches: batch.searches.into_iter().map_into().collect(),
-        }
-    }
-}
-
-impl From<SearchRequest> for CoreSearchRequest {
-    fn from(request: SearchRequest) -> Self {
+impl From<SearchRequestInternal> for CoreSearchRequest {
+    fn from(request: SearchRequestInternal) -> Self {
         Self {
             query: QueryEnum::Nearest(request.vector),
             filter: request.filter,

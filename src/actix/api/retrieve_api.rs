@@ -2,7 +2,8 @@ use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::types::{PointRequest, Record, ScrollRequest, ScrollResult};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
 use storage::content_manager::errors::StorageError;
@@ -27,25 +28,17 @@ async fn do_get_point(
     point_id: PointIdType,
     read_consistency: Option<ReadConsistency>,
 ) -> Result<Option<Record>, StorageError> {
-    let request = PointRequest {
+    let request = PointRequestInternal {
         ids: vec![point_id],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true.into(),
     };
 
-    toc.retrieve(collection_name, request, read_consistency, None)
+    let shard_selection = ShardSelectorInternal::All;
+
+    toc.retrieve(collection_name, request, read_consistency, shard_selection)
         .await
         .map(|points| points.into_iter().next())
-}
-
-async fn scroll_get_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: ScrollRequest,
-    read_consistency: Option<ReadConsistency>,
-) -> Result<ScrollResult, StorageError> {
-    toc.scroll(collection_name, request, read_consistency, None)
-        .await
 }
 
 #[get("/collections/{name}/points/{id}")]
@@ -99,12 +92,22 @@ async fn get_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
+    let PointRequest {
+        point_request,
+        shard_key,
+    } = request.into_inner();
+
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
+    };
+
     let response = do_get_points(
         toc.get_ref(),
         &collection.name,
-        request.into_inner(),
+        point_request,
         params.consistency,
-        None,
+        shard_selection,
     )
     .await;
     process_response(response, timing)
@@ -119,12 +122,24 @@ async fn scroll_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = scroll_get_points(
-        toc.get_ref(),
-        &collection.name,
-        request.into_inner(),
-        params.consistency,
-    )
-    .await;
+    let ScrollRequest {
+        scroll_request,
+        shard_key,
+    } = request.into_inner();
+
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
+    };
+
+    let response = toc
+        .scroll(
+            &collection.name,
+            scroll_request,
+            params.consistency,
+            shard_selection,
+        )
+        .await;
+
     process_response(response, timing)
 }

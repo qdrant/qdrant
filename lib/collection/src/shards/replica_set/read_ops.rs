@@ -72,14 +72,16 @@ impl ShardReplicaSet {
 
     pub async fn count(
         &self,
-        request: Arc<CountRequest>,
+        request: Arc<CountRequestInternal>,
+        read_consistency: Option<ReadConsistency>,
         local_only: bool,
     ) -> CollectionResult<CountResult> {
-        self.execute_read_operation(
+        self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();
                 async move { shard.count(request).await }.boxed()
             },
+            read_consistency,
             local_only,
         )
         .await
@@ -87,7 +89,7 @@ impl ShardReplicaSet {
 
     pub async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         read_consistency: Option<ReadConsistency>,
@@ -120,7 +122,7 @@ impl ShardReplicaSet {
 
     pub async fn count_local(
         &self,
-        request: Arc<CountRequest>,
+        request: Arc<CountRequestInternal>,
     ) -> CollectionResult<Option<CountResult>> {
         let local = self.local.read().await;
         match &*local {

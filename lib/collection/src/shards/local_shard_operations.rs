@@ -13,8 +13,9 @@ use tokio::sync::oneshot;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest,
-    CountResult, PointRequest, QueryEnum, Record, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, QueryEnum, Record, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
@@ -207,7 +208,7 @@ impl ShardOperation for LocalShard {
             .await
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let total_count = if request.exact {
             let all_points = self.read_filtered(request.filter.as_ref())?;
             all_points.len()
@@ -219,7 +220,7 @@ impl ShardOperation for LocalShard {
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {

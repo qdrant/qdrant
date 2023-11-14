@@ -23,9 +23,9 @@ use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
 use super::types::{
-    BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequest, GroupsResult,
-    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequest, RecommendStrategy,
-    SearchGroupsRequest, VectorParamsDiff, VectorsConfigDiff,
+    BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
+    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
+    SearchGroupsRequestInternal, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -46,10 +46,12 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
 use crate::operations::shard_key_selector::ShardKeySelector;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
-    LocalShardInfo, LookupLocation, OptimizersStatus, RecommendRequest, Record, RemoteShardInfo,
-    SearchRequest, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    LocalShardInfo, LookupLocation, OptimizersStatus, RecommendRequestInternal, Record,
+    RemoteShardInfo, SearchRequestInternal, ShardTransferInfo, UpdateResult, UpdateStatus,
+    VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
@@ -138,14 +140,16 @@ pub fn try_record_from_grpc(
     })
 }
 
+#[allow(clippy::type_complexity)]
 pub fn try_discover_request_from_grpc(
     value: api::grpc::qdrant::DiscoverPoints,
 ) -> Result<
     (
-        DiscoverRequest,
+        DiscoverRequestInternal,
         String,
         Option<ReadConsistency>,
         Option<Duration>,
+        Option<api::grpc::qdrant::ShardKeySelector>,
     ),
     Status,
 > {
@@ -163,6 +167,7 @@ pub fn try_discover_request_from_grpc(
         lookup_from,
         read_consistency,
         timeout,
+        shard_key_selector,
     } = value;
 
     let target = target.map(TryInto::try_into).transpose()?;
@@ -185,7 +190,7 @@ pub fn try_discover_request_from_grpc(
         })
         .try_collect()?;
 
-    let request = DiscoverRequest {
+    let request = DiscoverRequestInternal {
         target,
         context: Some(context_pairs),
         filter: filter.map(|f| f.try_into()).transpose()?,
@@ -206,7 +211,13 @@ pub fn try_discover_request_from_grpc(
 
     let timeout = timeout.map(Duration::from_secs);
 
-    Ok((request, collection_name, read_consistency, timeout))
+    Ok((
+        request,
+        collection_name,
+        read_consistency,
+        timeout,
+        shard_key_selector,
+    ))
 }
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
@@ -849,6 +860,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             with_vectors,
             read_consistency: _,
             timeout: _,
+            shard_key_selector: _,
         } = value;
 
         let vector_struct = if let Some(vector_name) = vector_name {
@@ -894,6 +906,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
             },
             read_consistency: None,
             timeout: None,
+            shard_key_selector: None,
         }
     }
 }
@@ -1092,11 +1105,11 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
+impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
-        Ok(SearchRequest {
+        Ok(SearchRequestInternal {
             vector: match value.vector_name {
                 Some(vector_name) => NamedVector {
                     name: vector_name,
@@ -1121,7 +1134,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
+impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestInternal {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::SearchPointGroups) -> Result<Self, Self::Error> {
@@ -1138,9 +1151,10 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
             collection_name: String::new(),
             read_consistency: None,
             timeout: None,
+            shard_key_selector: None,
         };
 
-        let SearchRequest {
+        let SearchRequestInternal {
             vector,
             filter,
             params,
@@ -1151,7 +1165,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
             score_threshold,
         } = search_points.try_into()?;
 
-        Ok(SearchGroupsRequest {
+        Ok(SearchGroupsRequestInternal {
             vector,
             filter,
             params,
@@ -1183,6 +1197,7 @@ impl From<api::grpc::qdrant::LookupLocation> for LookupLocation {
         Self {
             collection: value.collection_name,
             vector: value.vector_name,
+            shard_key: value.shard_key_selector.map(ShardKeySelector::from),
         }
     }
 }
@@ -1276,7 +1291,7 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
+impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::RecommendPoints) -> Result<Self, Self::Error> {
@@ -1298,7 +1313,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
         let negative_vectors = value.negative_vectors.into_iter().map(Into::into).collect();
         let negative = [negative_ids, negative_vectors].concat();
 
-        Ok(RecommendRequest {
+        Ok(RecommendRequestInternal {
             positive,
             negative,
             strategy: value.strategy.map(|s| s.try_into()).transpose()?,
@@ -1320,7 +1335,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest {
+impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequestInternal {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::RecommendPointGroups) -> Result<Self, Self::Error> {
@@ -1342,9 +1357,10 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             positive_vectors: value.positive_vectors,
             negative_vectors: value.negative_vectors,
             timeout: None, // Passed as query param
+            shard_key_selector: None,
         };
 
-        let RecommendRequest {
+        let RecommendRequestInternal {
             positive,
             negative,
             strategy,
@@ -1359,7 +1375,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             offset: _,
         } = recommend_points.try_into()?;
 
-        Ok(RecommendGroupsRequest {
+        Ok(RecommendGroupsRequestInternal {
             positive,
             negative,
             strategy,
@@ -1552,6 +1568,22 @@ impl From<api::grpc::qdrant::ShardKeySelector> for ShardKeySelector {
             ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
         } else {
             ShardKeySelector::ShardKeys(shard_keys)
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
+    fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
+        let shard_keys: Vec<_> = value
+            .shard_keys
+            .into_iter()
+            .filter_map(convert_shard_key_from_grpc)
+            .collect();
+
+        if shard_keys.len() == 1 {
+            ShardSelectorInternal::ShardKey(shard_keys.into_iter().next().unwrap())
+        } else {
+            ShardSelectorInternal::ShardKeys(shard_keys)
         }
     }
 }
