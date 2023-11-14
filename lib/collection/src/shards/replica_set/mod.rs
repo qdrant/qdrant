@@ -667,6 +667,8 @@ impl ShardReplicaSet {
         F: Fn(ShardTransferKey) -> Option<ShardTransfer>,
     {
         for &failed_peer in self.locally_disabled_peers.read().iter() {
+            self.notify_peer_failure(failed_peer);
+
             let key = ShardTransferKey {
                 shard_id: self.shard_id,
                 from: failed_peer,
@@ -674,10 +676,14 @@ impl ShardReplicaSet {
             };
 
             if let Some(transfer) = get_shard_transfer(key) {
-                self.abort_shard_transfer(transfer, "TODO"); // TODO!
+                self.abort_shard_transfer(
+                    transfer,
+                    &format!(
+                        "{failed_peer}/{}:{} replica failed",
+                        self.collection_id, self.shard_id
+                    ),
+                );
             }
-
-            self.notify_peer_failure(failed_peer);
         }
         Ok(())
     }
