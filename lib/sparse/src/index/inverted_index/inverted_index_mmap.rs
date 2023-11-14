@@ -119,12 +119,12 @@ impl InvertedIndexMmap {
 
         // save header properties
         let posting_count = inverted_index_ram.postings.len();
-        let indexed_vector_count = inverted_index_ram.vector_count();
+        let vector_count = inverted_index_ram.vector_count();
 
         // finalize data with index file.
         let file_header = InvertedIndexFileHeader {
             posting_count,
-            vector_count: indexed_vector_count,
+            vector_count,
         };
         let config_file_path = Self::index_config_file_path(path.as_ref());
         atomic_save_json(&config_file_path, &file_header)?;
