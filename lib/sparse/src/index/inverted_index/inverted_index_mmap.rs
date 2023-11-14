@@ -19,8 +19,8 @@ use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::{PostingElement, PostingListIterator};
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
-const INDEX_FILE_NAME: &str = "index.data";
-const INDEX_CONFIG_FILE_NAME: &str = "index_config.json";
+const INDEX_FILE_NAME: &str = "inverted_index.data";
+const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct InvertedIndexFileHeader {

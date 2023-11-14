@@ -4,8 +4,9 @@ use rand::Rng;
 
 use crate::common::sparse_vector::SparseVector;
 
-const VALUE_RANGE: Range<f64> = -100.0..100.0;
-// Realistic max sizing based on experiences with Splade
+// TODO(sparse) support negative values
+const VALUE_RANGE: Range<f64> = 0.0..100.0;
+// Realistic sizing based on experiences with Splade
 const MAX_VALUES_PER_VECTOR: usize = 300;
 
 /// Generates a non empty sparse vector

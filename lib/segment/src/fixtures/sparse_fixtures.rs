@@ -12,6 +12,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndex;
@@ -22,11 +23,15 @@ use crate::vector_storage::VectorStorage;
 
 /// Helper to open a test sparse vector index
 pub fn fixture_open_sparse_index<I: InvertedIndex>(
-    index_dir: &Path,
-    payload_dir: &Path,
-    storage_dir: &Path,
+    data_dir: &Path,
     num_vectors: usize, // used to size the id tracker
+    full_scan_threshold: usize,
 ) -> OperationResult<SparseVectorIndex<I>> {
+    // directories
+    let index_dir = &data_dir.join("index");
+    let payload_dir = &data_dir.join("payload");
+    let storage_dir = &data_dir.join("storage");
+
     // setup
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_vectors)));
     let payload_storage = InMemoryPayloadStorage::default();
@@ -42,7 +47,9 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     let db = open_db(storage_dir, &[DB_VECTOR_CF]).unwrap();
     let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot)?;
 
+    let sparse_index_config = SparseIndexConfig::new(full_scan_threshold);
     let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
+        sparse_index_config,
         id_tracker,
         vector_storage.clone(),
         wrapped_payload_index,
@@ -57,13 +64,12 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
     rnd: &mut R,
     num_vectors: usize,
     max_dim: usize,
-    payload_dir: &Path,
-    storage_dir: &Path,
-    index_dir: &Path,
+    full_scan_threshold: usize,
+    data_dir: &Path,
     stopped: &AtomicBool,
 ) -> SparseVectorIndex<InvertedIndexRam> {
     let mut sparse_vector_index =
-        fixture_open_sparse_index(index_dir, payload_dir, storage_dir, num_vectors).unwrap();
+        fixture_open_sparse_index(data_dir, num_vectors, full_scan_threshold).unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
 
     // add points to storage

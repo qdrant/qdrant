@@ -18,6 +18,7 @@ use tempfile::Builder;
 const NUM_VECTORS: usize = 50_000;
 const MAX_SPARSE_DIM: usize = 30_000;
 const TOP: usize = 10;
+const FULL_SCAN_THRESHOLD: usize = 1; // low value to trigger index usage by default
 
 fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("sparse-vector-search-group");
@@ -25,17 +26,13 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let stopped = AtomicBool::new(false);
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
-
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let sparse_vector_index = fixture_sparse_index_ram(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
-        payload_dir.path(),
-        storage_dir.path(),
-        index_dir.path(),
+        FULL_SCAN_THRESHOLD,
+        data_dir.path(),
         &stopped,
     );
 
@@ -61,6 +58,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     eprintln!("sparse_vector size = {:#?}", sparse_vector.values.len());
     let query_vector = sparse_vector.into();
 
+    // intent: bench `search` without filter
     group.bench_function("inverted-index", |b| {
         b.iter(|| {
             let results = sparse_vector_index
@@ -77,6 +75,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         field_value.to_owned().into(),
     )));
 
+    // intent: bench `search` when the filtered payload key is not indexed
     group.bench_function("inverted-index-filtered-plain", |b| {
         b.iter(|| {
             let results = sparse_vector_index
@@ -87,6 +86,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         })
     });
 
+    // intent: bench `search_plain` when the filtered payload key is not indexed
     group.bench_function("plain-storage", |b| {
         b.iter(|| {
             let results = sparse_vector_index
@@ -106,6 +106,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
 
     drop(payload_index);
 
+    // intent: bench `search` when the filterer payload key is indexed
     group.bench_function("inverted-index-filtered-payload-index", |b| {
         b.iter(|| {
             let results = sparse_vector_index
@@ -116,6 +117,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         })
     });
 
+    // intent: bench `search_plain` when the filterer payload key is indexed
     group.bench_function("payload-index", |b| {
         b.iter(|| {
             let results = sparse_vector_index
