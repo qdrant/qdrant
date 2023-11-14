@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -85,12 +86,9 @@ impl InvertedIndexRam {
                 }
             }
         }
-        // update indexed vector count by guessing whether we already have seen this point id
         // given that there are no holes in the internal ids and that we are not deleting from the index
         // we can just use the id as a proxy the count
-        if self.vector_count() < id as usize {
-            self.vector_count += 1;
-        }
+        self.vector_count = max(self.vector_count, id as usize);
     }
 }
 
