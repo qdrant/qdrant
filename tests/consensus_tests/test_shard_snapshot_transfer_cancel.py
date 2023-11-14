@@ -20,7 +20,7 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
         offset += limit
 
         if throttle:
-            sleep(0.01)
+            sleep(0.1)
         if duration is not None and (time.time() - start) > duration:
             break
 

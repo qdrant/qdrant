@@ -20,7 +20,7 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
         offset += limit
 
         if throttle:
-            sleep(0.01)
+            sleep(0.1)
         if duration is not None and (time.time() - start) > duration:
             break
 
@@ -50,7 +50,7 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
     )
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 100)
+    upsert_random_points(peer_api_uris[0], 10000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, throttle=True)
@@ -123,7 +123,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     )
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 100)
+    upsert_random_points(peer_api_uris[0], 10000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, duration=5)
