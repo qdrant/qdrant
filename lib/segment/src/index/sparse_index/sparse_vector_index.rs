@@ -50,7 +50,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         // load config
         let config_path = SparseIndexConfig::get_config_path(path);
         let config = if config_path.exists() {
-            SparseIndexConfig::load(path)?
+            SparseIndexConfig::load(&config_path)?
         } else {
             // use provided config if no config file exists
             config
