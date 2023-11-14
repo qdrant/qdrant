@@ -59,7 +59,7 @@ futures = "0.3.28"
 futures-util = "0.3.27"
 clap = { version = "4.4.8", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
-uuid = { version = "1.4", features = ["v4", "serde"] }
+uuid = { version = "1.5", features = ["v4", "serde"] }
 sys-info = "0.9.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "f62d2844ba0bb2b1f1aeb9a4766cdbd46f29d594" }
 
