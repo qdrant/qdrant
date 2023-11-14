@@ -10,6 +10,7 @@ use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,
@@ -193,9 +194,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                                 points,
                                 vector_names,
                                 read_consistency,
-                                // Having a shard selector for the other collection lookup might be
-                                // interesting to have, but it also might be an overkill.
-                                &ShardSelectorInternal::All,
+                                &shard_selector,
                             ))
                         }
                         None => {
@@ -270,14 +269,14 @@ where
 {
     let fetch_requests = batch_requests::<
         &(Req, ShardSelectorInternal),
-        ShardSelectorInternal,
+        Option<ShardKeySelector>,
         ReferencedPoints,
         Vec<_>,
         _,
         _,
     >(
         requests,
-        |(_request, shard)| shard,
+        |(request, _)| request.get_lookup_shard_key(),
         |(request, _), referenced_points| {
             let collection_name = request.get_lookup_collection();
             let vector_name = request.get_search_vector_name();
@@ -290,6 +289,11 @@ where
             Ok(())
         },
         |shard_selector, referenced_points, requests| {
+            let shard_selector = match shard_selector {
+                None => ShardSelectorInternal::All,
+                Some(shard_key_selector) => ShardSelectorInternal::from(shard_key_selector),
+            };
+
             if referenced_points.is_empty() {
                 return Ok(());
             }

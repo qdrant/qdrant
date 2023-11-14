@@ -319,6 +319,7 @@ enum RecommendStrategy {
 message LookupLocation {
   string collection_name = 1;
   optional string vector_name = 2; // Which vector to use for search, if not specified - use default vector
+  optional ShardKeySelector shard_key_selector = 3; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message RecommendPoints {

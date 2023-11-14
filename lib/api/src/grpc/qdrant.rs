@@ -3492,6 +3492,9 @@ pub struct LookupLocation {
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "2")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "3")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

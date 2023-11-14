@@ -6864,6 +6864,17 @@
             "default": null,
             "type": "string",
             "nullable": true
+          },
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

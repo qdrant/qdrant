@@ -503,6 +503,10 @@ pub struct LookupLocation {
     /// If not provided, the default vector field will be used.
     #[serde(default)]
     pub vector: Option<String>,
+
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]

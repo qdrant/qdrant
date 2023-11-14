@@ -1197,6 +1197,7 @@ impl From<api::grpc::qdrant::LookupLocation> for LookupLocation {
         Self {
             collection: value.collection_name,
             vector: value.vector_name,
+            shard_key: value.shard_key_selector.map(ShardKeySelector::from),
         }
     }
 }

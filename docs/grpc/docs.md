@@ -2049,6 +2049,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  |  |
 | vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 
 
 

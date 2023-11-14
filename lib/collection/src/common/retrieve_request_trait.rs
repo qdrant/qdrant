@@ -1,7 +1,10 @@
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::PointIdType;
 
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::{DiscoverRequestInternal, RecommendRequestInternal, UsingVector};
+
+const EMPTY_SHARD_KEY_SELECTOR: Option<ShardKeySelector> = None;
 
 pub trait RetrieveRequest {
     fn get_lookup_collection(&self) -> Option<&String>;
@@ -9,6 +12,8 @@ pub trait RetrieveRequest {
     fn get_referenced_point_ids(&self) -> Vec<PointIdType>;
 
     fn get_search_vector_name(&self) -> String;
+
+    fn get_lookup_shard_key(&self) -> &Option<ShardKeySelector>;
 }
 
 impl RetrieveRequest for RecommendRequestInternal {
@@ -35,6 +40,13 @@ impl RetrieveRequest for RecommendRequestInternal {
                 Some(vector_name) => vector_name.clone(),
             },
         }
+    }
+
+    fn get_lookup_shard_key(&self) -> &Option<ShardKeySelector> {
+        self.lookup_from
+            .as_ref()
+            .map(|x| &x.shard_key)
+            .unwrap_or(&EMPTY_SHARD_KEY_SELECTOR)
     }
 }
 
@@ -80,5 +92,12 @@ impl RetrieveRequest for DiscoverRequestInternal {
                 Some(vector_name) => vector_name.clone(),
             },
         }
+    }
+
+    fn get_lookup_shard_key(&self) -> &Option<ShardKeySelector> {
+        self.lookup_from
+            .as_ref()
+            .map(|x| &x.shard_key)
+            .unwrap_or(&EMPTY_SHARD_KEY_SELECTOR)
     }
 }
