@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::max;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
@@ -11,7 +12,12 @@ use crate::index::posting_list::{PostingElement, PostingList, PostingListIterato
 /// Inverted flatten index from dimension id to posting list
 #[derive(Debug, Clone, PartialEq)]
 pub struct InvertedIndexRam {
+    /// Posting lists for each dimension flattened (dimension id -> posting list)
+    /// Gaps are filled with empty posting lists
     pub postings: Vec<PostingList>,
+    /// Number of unique indexed vectors
+    /// pre-computed on build and upsert to avoid having to traverse the posting lists.
+    pub vector_count: usize,
 }
 
 impl InvertedIndex for InvertedIndexRam {
@@ -42,6 +48,10 @@ impl InvertedIndex for InvertedIndexRam {
     ) -> std::io::Result<Self> {
         Ok(ram_index)
     }
+
+    fn vector_count(&self) -> usize {
+        self.vector_count
+    }
 }
 
 impl InvertedIndexRam {
@@ -49,6 +59,7 @@ impl InvertedIndexRam {
     pub fn empty() -> InvertedIndexRam {
         InvertedIndexRam {
             postings: Vec::new(),
+            vector_count: 0,
         }
     }
 
@@ -68,16 +79,20 @@ impl InvertedIndexRam {
                     posting.upsert(posting_element);
                 }
                 None => {
-                    // resize postings vector
+                    // resize postings vector (fill gaps with empty posting lists)
                     self.postings.resize_with(dim_id + 1, PostingList::default);
                     // initialize new posting for dimension
                     self.postings[dim_id] = PostingList::new_one(id, weight);
                 }
             }
         }
+        // given that there are no holes in the internal ids and that we are not deleting from the index
+        // we can just use the id as a proxy the count
+        self.vector_count = max(self.vector_count, id as usize);
     }
 }
 
+/// Builder used in tests to validate `upsert` implementation
 pub struct InvertedIndexBuilder {
     postings: HashMap<DimId, PostingList>,
 }
@@ -114,7 +129,19 @@ impl InvertedIndexBuilder {
         for key in keys {
             postings[key as usize] = self.postings.remove(&key).unwrap();
         }
-        InvertedIndexRam { postings }
+
+        // Count unique ids
+        let unique_ids: HashSet<PointOffsetType> = postings
+            .iter()
+            .flat_map(|posting_list| posting_list.elements.iter())
+            .map(|posting| posting.record_id)
+            .collect();
+        let vector_count = unique_ids.len();
+
+        InvertedIndexRam {
+            postings,
+            vector_count,
+        }
     }
 }
 
@@ -129,6 +156,7 @@ mod tests {
             .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
+        assert_eq!(inverted_index_ram.vector_count, 3);
 
         inverted_index_ram.upsert(
             4,
@@ -152,6 +180,8 @@ mod tests {
             .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
+
+        assert_eq!(inverted_index_ram.vector_count, 3);
 
         // 4 postings, 0th empty
         assert_eq!(inverted_index_ram.postings.len(), 4);
@@ -191,6 +221,8 @@ mod tests {
             .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
+
+        assert_eq!(inverted_index_ram_built.vector_count, 3);
 
         let mut inverted_index_ram_upserted = InvertedIndexRam::empty();
         inverted_index_ram_upserted.upsert(

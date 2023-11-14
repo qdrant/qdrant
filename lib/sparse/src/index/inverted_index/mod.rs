@@ -32,4 +32,7 @@ pub trait InvertedIndex {
     ) -> std::io::Result<Self>
     where
         Self: Sized;
+
+    /// Number of indexed vectors
+    fn vector_count(&self) -> usize;
 }

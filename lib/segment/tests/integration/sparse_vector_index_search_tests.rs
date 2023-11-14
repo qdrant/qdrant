@@ -162,6 +162,11 @@ fn sparse_vector_index_consistent_with_storage() {
     )
     .unwrap();
 
+    assert_eq!(
+        sparse_vector_mmap_index.indexed_vector_count(),
+        sparse_vector_ram_index.indexed_vector_count()
+    );
+
     // check consistency with underlying mmap inverted index
     check_index_storage_consistency(&sparse_vector_mmap_index);
 }
