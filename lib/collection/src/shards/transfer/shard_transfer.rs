@@ -248,6 +248,81 @@ async fn transfer_stream_records(
 /// - The shard transfer is finished
 /// - The remote shard state is set to `Active` through consensus
 ///
+/// # Diagram
+///
+/// Here's a rough sequence diagram for the shard snasphot transfer process with the consensus,
+/// sender and receiver actors:
+///
+/// ┌───────────┐           ┌───────────┐             ┌───────────┐
+/// │ Consensus │           │  Sender   │             │ Receiver  │
+/// └───────────┘           └───────────┘             └───────────┘
+///       |                       |                         |
+///       |  start transfer       |                         |
+/// ────►┌─┬──────────────────────|────────────────────────►|──┐
+///      │ │                      |                         |  │ shard state:
+///      │ │ start transfer       |  init transfer          |  │ Dead→PartialSnapshot
+///      └─┴────────────────────►┬─┬──────────────────────►┌─┐◄┘
+///       |                      │X│                       │ │
+///       |                      │X│                       │ ├─┐
+///       |                      │X│ ready                 │ │ │ init local shard
+///       |                      │X├───────────────────────┴─┘◄┘
+///       |                      │ │                        |
+///       |                      │ ├─┐                      |
+///       |                      │ │ │ qproxy + snapshot    |
+///       |                      │ │◄┘                      |
+///       |                      │ │                        |
+///       |                      │ │ recover shard by URL   |
+///       |                      │X├───────────────────────┬─┐
+///       |                      │X│                       │ │
+///       |                      │X│                       │ │
+///       |                ┌─┐◄─·│X│·──────────────────────┤ │
+///       |                │ │   │X│ download snapshot     │ │
+///       |                └─┴──·│X│·─────────────────────►│ ├─┐
+///       |                      │X│                       │ │ │ apply snapshot
+///       |                      │X│ done recovery         │ │ │ delete snapshot
+///       |                      │X│◄──────────────────────┴─┘◄┘
+///       |  snapshot recovered  │ │                        |
+///      ┌─┐◄────────────────────┤ │                        |
+///      │ │                     │ │                        |
+///      │ │                   ┌─┤X│                        |
+///      │ │    wait consensus │ │X│                        |
+///      │ │          or retry │ │X│                        |
+///      │ │                   │ │X│                        |
+///      │ │ continue transfer │ │X│                        |
+///      │ ├──────────────────·│ │X│·─────────────────────►┌─┬─┐
+///      │ │ continue transfer │ │X│                       │ │ │ shard state:
+///      └─┴───────────────────┤►│X├─┐                     │ │ │ PartialSnapshot→Partial
+///       |                    │ │X│ │ shard state:        └─┘◄┘
+///       |                    │ │X│ │ PartialSnpst→Partial |
+///       |                    └►│X│◄┘                      |
+///       |                      │ │                        |
+///       |                      │ │ transfer queue ops     |
+///       |                    ┌►│X├──────────────────────►┌─┬─┐
+///       |       send batches │ │X│                       │ │ │ apply operations
+///       |                    └─┤X│◄──────────────────────┴─┘◄┘
+///       |                      │ │                        |
+///       |                      │ ├─┐                      |
+///       |                      │ │ │ qproxy→fwd proxy     |
+///       |                      │ │◄┘                      |
+///       |                      │ │                        |
+///       |                      │ │ sync all nodes         |
+///       |                      │X├──────────────────────►┌─┬─┐
+///       |                      │X│                       │ │ │ wait consensus
+///       |                      │X│ node synced           │ │ │ commit+term
+///       |                      │X│◄──────────────────────┴─┘◄┘
+///       |                      │ │                        |
+///       |                      │ ├─┐                      |
+///       |  finish transfer     │ │ │ unproxify            |
+///      ┌─┐◄────────────────────┴─┘◄┘                      |
+///      │ │ transfer finished    |                         |
+///      │ ├──────────────────────|───────────────────────►┌─┬─┐
+///      │ │ transfer finished    |                        │ │ │ shard state:
+///      └─┴────────────────────►┌─┬─┐                     │ │ │ Partial→Active
+///       |                      │ │ │ shard state:        └─┘◄┘
+///       |                      │ │ │ Partial→Active       |
+///       |                      └─┘◄┘                      |
+///       |                       |                         |
+///
 /// # Cancel safety
 ///
 /// This function is cancel safe.
