@@ -490,7 +490,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "tonic",
+ "tonic 0.9.2",
  "tonic-build",
  "tower",
  "tracing",
@@ -1100,7 +1100,7 @@ dependencies = [
  "tinyvec",
  "tokio",
  "tokio-util",
- "tonic",
+ "tonic 0.9.2",
  "tower",
  "tracing",
  "url",
@@ -1176,7 +1176,7 @@ checksum = "c2895653b4d9f1538a83970077cb01dfc77a4810524e51a110944688e916b18e"
 dependencies = [
  "prost 0.11.9",
  "prost-types 0.11.9",
- "tonic",
+ "tonic 0.9.2",
  "tracing-core",
 ]
 
@@ -1199,7 +1199,7 @@ dependencies = [
  "thread_local",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.9.2",
  "tracing",
  "tracing-core",
  "tracing-subscriber",
@@ -3770,7 +3770,7 @@ dependencies = [
  "thiserror",
  "tikv-jemallocator",
  "tokio",
- "tonic",
+ "tonic 0.9.2",
  "tonic-reflection",
  "tower",
  "tower-layer",
@@ -4825,7 +4825,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "tonic",
+ "tonic 0.9.2",
  "tracing",
  "url",
  "uuid",
@@ -5207,6 +5207,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
+dependencies = [
+ "async-trait",
+ "base64 0.21.0",
+ "bytes",
+ "http",
+ "http-body",
+ "percent-encoding",
+ "pin-project",
+ "prost 0.12.0",
+ "tokio",
+ "tokio-stream",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "tonic-build"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5221,15 +5242,15 @@ dependencies = [
 
 [[package]]
 name = "tonic-reflection"
-version = "0.9.2"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0543d7092032041fbeac1f2c84304537553421a11a623c2301b12ef0264862c7"
+checksum = "3fa37c513df1339d197f4ba21d28c918b9ef1ac1768265f11ecb6b7f1cba1b76"
 dependencies = [
- "prost 0.11.9",
- "prost-types 0.11.9",
+ "prost 0.12.0",
+ "prost-types 0.12.0",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.10.2",
 ]
 
 [[package]]
@@ -5573,7 +5594,7 @@ dependencies = [
  "memmap2 0.9.0",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.19",
+ "rustix 0.38.21",
  "serde",
 ]
 
