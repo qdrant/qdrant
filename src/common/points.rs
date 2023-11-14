@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use collection::common::batching::batch_requests;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{
     DeletePayload, DeletePayloadOp, PayloadOps, SetPayload, SetPayloadOp,
@@ -8,10 +9,13 @@ use collection::operations::point_ops::{
     FilterSelector, PointIdsList, PointInsertOperations, PointOperations, PointsSelector,
     WriteOrdering,
 };
+use collection::operations::shard_key_selector::ShardKeySelector;
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CoreSearchRequest, CoreSearchRequestBatch, CountRequest, CountResult, DiscoverRequest,
-    DiscoverRequestBatch, GroupsResult, PointRequest, RecommendGroupsRequest, Record,
-    ScrollRequest, ScrollResult, SearchGroupsRequest, UpdateResult,
+    CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
+    DiscoverRequestBatch, DiscoverRequestInternal, GroupsResult, PointRequestInternal,
+    RecommendGroupsRequestInternal, Record, ScrollRequestInternal, ScrollResult,
+    SearchGroupsRequestInternal, UpdateResult,
 };
 use collection::operations::vector_ops::{
     DeleteVectors, UpdateVectors, UpdateVectorsOp, VectorOperations,
@@ -25,7 +29,6 @@ use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex,
 };
 use storage::content_manager::errors::StorageError;
-use storage::content_manager::shard_key_selection::ShardKeySelectorInternal;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
@@ -119,6 +122,37 @@ impl Validate for UpdateOperation {
     }
 }
 
+/// Converts a pair of parameters into a shard selector
+/// suitable for update operations.
+///
+/// The key difference from selector for search operations is that
+/// empty shard selector in case of update means default shard,
+/// while empty shard selector in case of search means all shards.
+///
+/// Parameters:
+/// - shard_selection: selection of the exact shard ID, always have priority over shard_key
+/// - shard_key: selection of the shard key, can be a single key or a list of keys
+///
+/// Returns:
+/// - ShardSelectorInternal - resolved shard selector
+fn get_shard_selector_for_update(
+    shard_selection: Option<ShardId>,
+    shard_key: Option<ShardKeySelector>,
+) -> ShardSelectorInternal {
+    match (shard_selection, shard_key) {
+        (Some(shard_selection), None) => ShardSelectorInternal::ShardId(shard_selection),
+        (Some(shard_selection), Some(_)) => {
+            debug_assert!(
+                false,
+                "Shard selection and shard key are mutually exclusive"
+            );
+            ShardSelectorInternal::ShardId(shard_selection)
+        }
+        (None, Some(shard_key)) => ShardSelectorInternal::from(shard_key),
+        (None, None) => ShardSelectorInternal::Empty,
+    }
+}
+
 pub async fn do_upsert_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -130,13 +164,15 @@ pub async fn do_upsert_points(
     let (shard_key, operation) = operation.decompose();
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
+
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        shard_key.into(),
+        shard_selector,
     )
     .await
 }
@@ -149,24 +185,23 @@ pub async fn do_delete_points(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let (point_operation, shard_key_selector) = match points {
-        PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => (
-            PointOperations::DeletePoints { ids: points },
-            ShardKeySelectorInternal::from(shard_key),
-        ),
-        PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => (
-            PointOperations::DeletePointsByFilter(filter),
-            ShardKeySelectorInternal::from(shard_key),
-        ),
+    let (point_operation, shard_key) = match points {
+        PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
+            (PointOperations::DeletePoints { ids: points }, shard_key)
+        }
+        PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => {
+            (PointOperations::DeletePointsByFilter(filter), shard_key)
+        }
     };
     let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        shard_key_selector,
+        shard_selector,
     )
     .await
 }
@@ -181,18 +216,18 @@ pub async fn do_update_vectors(
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
-    let shard_key_selector = ShardKeySelectorInternal::from(shard_key);
-
     let collection_operation = CollectionUpdateOperations::VectorOperation(
         VectorOperations::UpdateVectors(UpdateVectorsOp { points }),
     );
+
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        shard_key_selector,
+        shard_selector,
     )
     .await
 }
@@ -212,11 +247,11 @@ pub async fn do_delete_vectors(
         shard_key,
     } = operation;
 
-    let shard_key_selector = ShardKeySelectorInternal::from(shard_key);
-
     let vector_names: Vec<_> = vector.into_iter().collect();
 
     let mut result = None;
+
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     if let Some(filter) = filter {
         let vectors_operation =
@@ -226,10 +261,9 @@ pub async fn do_delete_vectors(
             toc.update(
                 collection_name,
                 collection_operation,
-                shard_selection,
                 wait,
                 ordering,
-                shard_key_selector.clone(),
+                shard_selector.clone(),
             )
             .await?,
         );
@@ -242,10 +276,9 @@ pub async fn do_delete_vectors(
             toc.update(
                 collection_name,
                 collection_operation,
-                shard_selection,
                 wait,
                 ordering,
-                shard_key_selector,
+                shard_selector,
             )
             .await?,
         );
@@ -275,13 +308,15 @@ pub async fn do_set_payload(
             points,
             filter,
         }));
+
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        shard_key.into(),
+        shard_selector,
     )
     .await
 }
@@ -307,13 +342,15 @@ pub async fn do_overwrite_payload(
             points,
             filter,
         }));
+
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        shard_key.into(),
+        shard_selector,
     )
     .await
 }
@@ -339,13 +376,15 @@ pub async fn do_delete_payload(
             points,
             filter,
         }));
+
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        shard_key.into(),
+        shard_selector,
     )
     .await
 }
@@ -358,25 +397,25 @@ pub async fn do_clear_payload(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let (point_operation, shard_key_selector) = match points {
-        PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => (
-            PayloadOps::ClearPayload { points },
-            ShardKeySelectorInternal::from(shard_key),
-        ),
-        PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => (
-            PayloadOps::ClearPayloadByFilter(filter),
-            ShardKeySelectorInternal::from(shard_key),
-        ),
+    let (point_operation, shard_key) = match points {
+        PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
+            (PayloadOps::ClearPayload { points }, shard_key)
+        }
+        PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => {
+            (PayloadOps::ClearPayloadByFilter(filter), shard_key)
+        }
     };
 
     let collection_operation = CollectionUpdateOperations::PayloadOperation(point_operation);
+
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        shard_key_selector,
+        shard_selector,
     )
     .await
 }
@@ -502,13 +541,18 @@ pub async fn do_create_index_internal(
         }),
     );
 
+    let shard_selector = if let Some(shard_selection) = shard_selection {
+        ShardSelectorInternal::ShardId(shard_selection)
+    } else {
+        ShardSelectorInternal::All
+    };
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        ShardKeySelectorInternal::All,
+        shard_selector,
     )
     .await
 }
@@ -567,13 +611,19 @@ pub async fn do_delete_index_internal(
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
     );
+
+    let shard_selector = if let Some(shard_selection) = shard_selection {
+        ShardSelectorInternal::ShardId(shard_selection)
+    } else {
+        ShardSelectorInternal::All
+    };
+
     toc.update(
         collection_name,
         collection_operation,
-        shard_selection,
         wait,
         ordering,
-        ShardKeySelectorInternal::All,
+        shard_selector,
     )
     .await
 }
@@ -614,7 +664,7 @@ pub async fn do_core_search_points(
     collection_name: &str,
     request: CoreSearchRequest,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
@@ -634,12 +684,59 @@ pub async fn do_core_search_points(
         .ok_or_else(|| StorageError::service_error("Empty search result"))
 }
 
+pub async fn do_search_batch_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
+    read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
+) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    let requests = batch_requests::<
+        (CoreSearchRequest, ShardSelectorInternal),
+        ShardSelectorInternal,
+        Vec<CoreSearchRequest>,
+        Vec<_>,
+        _,
+        _,
+    >(
+        requests,
+        |(_, shard_selector)| shard_selector,
+        |(request, _), core_reqs| {
+            core_reqs.push(request);
+            Ok(())
+        },
+        |shard_selector, core_requests, res| {
+            if core_requests.is_empty() {
+                return Ok(());
+            }
+
+            let core_batch = CoreSearchRequestBatch {
+                searches: core_requests,
+            };
+
+            let req = toc.core_search_batch(
+                collection_name,
+                core_batch,
+                read_consistency,
+                shard_selector,
+                timeout,
+            );
+            res.push(req);
+            Ok(())
+        },
+    )?;
+
+    let results = futures::future::try_join_all(requests).await?;
+    let flatten_results: Vec<Vec<_>> = results.into_iter().flatten().collect();
+    Ok(flatten_results)
+}
+
 pub async fn do_core_search_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: CoreSearchRequestBatch,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
@@ -655,9 +752,9 @@ pub async fn do_core_search_batch_points(
 pub async fn do_search_point_groups(
     toc: &TableOfContent,
     collection_name: &str,
-    request: SearchGroupsRequest,
+    request: SearchGroupsRequestInternal,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
@@ -673,15 +770,16 @@ pub async fn do_search_point_groups(
 pub async fn do_recommend_point_groups(
     toc: &TableOfContent,
     collection_name: &str,
-    request: RecommendGroupsRequest,
+    request: RecommendGroupsRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
         request.into(),
         read_consistency,
-        None,
+        shard_selection,
         timeout,
     )
     .await
@@ -690,12 +788,19 @@ pub async fn do_recommend_point_groups(
 pub async fn do_discover_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: DiscoverRequest,
+    request: DiscoverRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.discover(collection_name, request, read_consistency, timeout)
-        .await
+    toc.discover(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selector,
+        timeout,
+    )
+    .await
 }
 
 pub async fn do_discover_batch_points(
@@ -705,25 +810,40 @@ pub async fn do_discover_batch_points(
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.discover_batch(collection_name, request, read_consistency, timeout)
+    let requests = request
+        .searches
+        .into_iter()
+        .map(|req| {
+            let shard_selector = match req.shard_key {
+                None => ShardSelectorInternal::All,
+                Some(shard_key) => ShardSelectorInternal::from(shard_key),
+            };
+
+            (req.discover_request, shard_selector)
+        })
+        .collect();
+
+    toc.discover_batch(collection_name, requests, read_consistency, timeout)
         .await
 }
 
 pub async fn do_count_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: CountRequest,
-    shard_selection: Option<ShardId>,
+    request: CountRequestInternal,
+    read_consistency: Option<ReadConsistency>,
+    shard_selection: ShardSelectorInternal,
 ) -> Result<CountResult, StorageError> {
-    toc.count(collection_name, request, shard_selection).await
+    toc.count(collection_name, request, read_consistency, shard_selection)
+        .await
 }
 
 pub async fn do_get_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: PointRequest,
+    request: PointRequestInternal,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: ShardSelectorInternal,
 ) -> Result<Vec<Record>, StorageError> {
     toc.retrieve(collection_name, request, read_consistency, shard_selection)
         .await
@@ -732,9 +852,9 @@ pub async fn do_get_points(
 pub async fn do_scroll_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: ScrollRequest,
+    request: ScrollRequestInternal,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: ShardSelectorInternal,
 ) -> Result<ScrollResult, StorageError> {
     toc.scroll(collection_name, request, read_consistency, shard_selection)
         .await

@@ -6,8 +6,9 @@ use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::shared_storage_config::SharedStorageConfig;
-use collection::operations::types::{NodeType, SearchRequest, VectorParams, VectorsConfig};
+use collection::operations::types::{NodeType, SearchRequestInternal, VectorParams, VectorsConfig};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -138,7 +139,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
 
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
 
-    let full_search_request = SearchRequest {
+    let full_search_request = SearchRequestInternal {
         vector: query_vector.clone().into(),
         filter: None,
         limit: 100,
@@ -150,12 +151,22 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     };
 
     let reference_result = collection
-        .search(full_search_request.clone().into(), None, None, None)
+        .search(
+            full_search_request.clone().into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await
         .unwrap();
 
     let recovered_result = recovered_collection
-        .search(full_search_request.into(), None, None, None)
+        .search(
+            full_search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await
         .unwrap();
 

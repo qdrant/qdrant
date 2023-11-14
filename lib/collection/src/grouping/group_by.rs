@@ -15,20 +15,21 @@ use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionError, CollectionResult, PointGroup, RecommendGroupsRequest,
-    RecommendRequest, SearchGroupsRequest, SearchRequest, UsingVector,
+    BaseGroupRequest, CollectionError, CollectionResult, PointGroup,
+    RecommendGroupsRequestInternal, RecommendRequestInternal, SearchGroupsRequestInternal,
+    SearchRequestInternal, UsingVector,
 };
 use crate::recommendations::recommend_by;
-use crate::shards::shard::ShardId;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
 const MAX_GROUP_FILLING_REQUESTS: usize = 5;
 
 #[derive(Clone, Debug)]
 pub enum SourceRequest {
-    Search(SearchRequest),
-    Recommend(RecommendRequest),
+    Search(SearchRequestInternal),
+    Recommend(RecommendRequestInternal),
 }
 
 impl SourceRequest {
@@ -132,7 +133,7 @@ impl GroupRequest {
         // only used for recommend
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>>
     where
@@ -156,7 +157,7 @@ impl GroupRequest {
                 request.with_vector = None;
 
                 collection
-                    .search(request.into(), read_consistency, shard_selection, timeout)
+                    .search(request.into(), read_consistency, &shard_selection, timeout)
                     .await
             }
             SourceRequest::Recommend(mut request) => {
@@ -173,6 +174,7 @@ impl GroupRequest {
                     collection,
                     collection_by_name,
                     read_consistency,
+                    shard_selection,
                     timeout,
                 )
                 .await
@@ -181,9 +183,9 @@ impl GroupRequest {
     }
 }
 
-impl From<SearchGroupsRequest> for GroupRequest {
-    fn from(request: SearchGroupsRequest) -> Self {
-        let SearchGroupsRequest {
+impl From<SearchGroupsRequestInternal> for GroupRequest {
+    fn from(request: SearchGroupsRequestInternal) -> Self {
+        let SearchGroupsRequestInternal {
             vector,
             filter,
             params,
@@ -199,7 +201,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
                 },
         } = request;
 
-        let search = SearchRequest {
+        let search = SearchRequestInternal {
             vector,
             filter,
             params,
@@ -220,9 +222,9 @@ impl From<SearchGroupsRequest> for GroupRequest {
     }
 }
 
-impl From<RecommendGroupsRequest> for GroupRequest {
-    fn from(request: RecommendGroupsRequest) -> Self {
-        let RecommendGroupsRequest {
+impl From<RecommendGroupsRequestInternal> for GroupRequest {
+    fn from(request: RecommendGroupsRequestInternal) -> Self {
+        let RecommendGroupsRequestInternal {
             positive,
             negative,
             strategy,
@@ -242,7 +244,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
                 },
         } = request;
 
-        let recommend = RecommendRequest {
+        let recommend = RecommendRequestInternal {
             positive,
             negative,
             strategy,
@@ -274,7 +276,7 @@ pub async fn group_by<'a, F, Fut>(
     // Obligatory for recommend
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>>
 where
@@ -328,7 +330,7 @@ where
                 collection,
                 collection_by_name.clone(),
                 read_consistency,
-                shard_selection,
+                shard_selection.clone(),
                 timeout,
             )
             .await?;
@@ -377,7 +379,7 @@ where
                     collection,
                     collection_by_name.clone(),
                     read_consistency,
-                    shard_selection,
+                    shard_selection.clone(),
                     timeout,
                 )
                 .await?;
@@ -411,7 +413,7 @@ where
             request.source.with_payload(),
             request.source.with_vector().unwrap_or_default(),
             read_consistency,
-            None,
+            &shard_selection,
         )
         .await?
         .into_iter()

@@ -8,6 +8,7 @@ use validator::Validate as _;
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::shard::ShardId;
@@ -137,11 +138,11 @@ impl Collection {
 
     pub async fn scroll_by(
         &self,
-        request: ScrollRequest,
+        request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<ScrollResult> {
-        let default_request = ScrollRequest::default();
+        let default_request = ScrollRequestInternal::default();
 
         let offset = request.offset;
         let limit = request
@@ -163,7 +164,7 @@ impl Collection {
         let limit = limit + 1;
         let retrieved_points: Vec<_> = {
             let shards_holder = self.shards_holder.read().await;
-            let target_shards = shards_holder.target_shard(shard_selection)?;
+            let target_shards = shards_holder.select_shards(shard_selection)?;
             let scroll_futures = target_shards.into_iter().map(|shard| {
                 shard.scroll_by(
                     offset,
@@ -172,7 +173,7 @@ impl Collection {
                     &with_vector,
                     request.filter.as_ref(),
                     read_consistency,
-                    shard_selection.is_some(),
+                    shard_selection.is_shard_id(),
                 )
             });
 
@@ -200,17 +201,24 @@ impl Collection {
 
     pub async fn count(
         &self,
-        request: CountRequest,
-        shard_selection: Option<ShardId>,
+        request: CountRequestInternal,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<CountResult> {
         let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.target_shard(shard_selection)?;
+        let shards = shards_holder.select_shards(shard_selection)?;
 
         let request = Arc::new(request);
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
-            .map(|shard| shard.count(request.clone(), shard_selection.is_some()))
+            .map(|shard| {
+                shard.count(
+                    request.clone(),
+                    read_consistency,
+                    shard_selection.is_shard_id(),
+                )
+            })
             .collect();
 
         let mut count = 0;
@@ -224,9 +232,9 @@ impl Collection {
 
     pub async fn retrieve(
         &self,
-        request: PointRequest,
+        request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
             .with_payload
@@ -236,14 +244,14 @@ impl Collection {
         let request = Arc::new(request);
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
-            let target_shards = shard_holder.target_shard(shard_selection)?;
+            let target_shards = shard_holder.select_shards(shard_selection)?;
             let retrieve_futures = target_shards.into_iter().map(|shard| {
                 shard.retrieve(
                     request.clone(),
                     &with_payload,
                     &request.with_vector,
                     read_consistency,
-                    shard_selection.is_some(),
+                    shard_selection.is_shard_id(),
                 )
             });
             future::try_join_all(retrieve_futures).await?

@@ -23,29 +23,28 @@ use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
 };
 use collection::operations::shard_key_selector::ShardKeySelector;
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, DiscoverRequestBatch,
-    PointRequest, QueryEnum, RecommendExample, RecommendRequestBatch, ScrollRequest,
+    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
+    QueryEnum, RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
-use itertools::Itertools;
 use segment::data_types::vectors::NamedVector;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
 use storage::content_manager::conversions::error_to_status;
-use storage::content_manager::shard_key_selection::ShardKeySelectorInternal;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tonic::{Response, Status};
 
 use crate::common::points::{
-    do_clear_payload, do_core_search_batch_points, do_core_search_points, do_count_points,
-    do_create_index, do_create_index_internal, do_delete_index, do_delete_index_internal,
-    do_delete_payload, do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload,
-    do_scroll_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
+    do_clear_payload, do_core_search_points, do_count_points, do_create_index,
+    do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
+    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
+    do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
 
 fn extract_points_selector(
@@ -70,6 +69,24 @@ pub fn points_operation_response(
     PointsOperationResponse {
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
+    }
+}
+
+pub(crate) fn convert_shard_selector_for_read(
+    shard_id_selector: Option<ShardId>,
+    shard_key_selector: Option<api::grpc::qdrant::ShardKeySelector>,
+) -> ShardSelectorInternal {
+    match (shard_id_selector, shard_key_selector) {
+        (Some(shard_id), None) => ShardSelectorInternal::ShardId(shard_id),
+        (None, Some(shard_key_selector)) => ShardSelectorInternal::from(shard_key_selector),
+        (None, None) => ShardSelectorInternal::All,
+        (Some(shard_id), Some(_)) => {
+            debug_assert!(
+                false,
+                "Shard selection and shard key selector are mutually exclusive"
+            );
+            ShardSelectorInternal::ShardId(shard_id)
+        }
     }
 }
 
@@ -137,14 +154,21 @@ pub async fn sync(
     };
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
+
+    let shard_selector = if let Some(shard_selection) = shard_selection {
+        ShardSelectorInternal::ShardId(shard_selection)
+    } else {
+        debug_assert!(false, "Sync operation is supposed to select shard directly");
+        ShardSelectorInternal::Empty
+    };
+
     let result = toc
         .update(
             &collection_name,
             collection_operation,
-            shard_selection,
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
-            ShardKeySelectorInternal::Empty, // Sync operation is supposed to select shard directly
+            shard_selector,
         )
         .await
         .map_err(error_to_status)?;
@@ -824,12 +848,15 @@ pub async fn search(
         with_vectors,
         read_consistency,
         timeout,
+        shard_key_selector,
     } = search_points;
 
     let vector_struct = match vector_name {
         None => vector.into(),
         Some(name) => NamedVector { name, vector }.into(),
     };
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let search_request = CoreSearchRequest {
         query: QueryEnum::Nearest(vector_struct),
@@ -854,7 +881,7 @@ pub async fn search(
         &collection_name,
         search_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -874,24 +901,18 @@ pub async fn search(
 pub async fn core_search_batch(
     toc: &TableOfContent,
     collection_name: String,
-    request: CoreSearchRequestBatch,
+    requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistencyGrpc>,
-    shard_selection: Option<ShardId>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
-    let scored_points = do_core_search_batch_points(
-        toc,
-        &collection_name,
-        request,
-        read_consistency,
-        shard_selection,
-        timeout,
-    )
-    .await
-    .map_err(error_to_status)?;
+
+    let scored_points =
+        do_search_batch_points(toc, &collection_name, requests, read_consistency, timeout)
+            .await
+            .map_err(error_to_status)?;
 
     let response = SearchBatchResponse {
         result: scored_points
@@ -921,15 +942,42 @@ pub async fn core_search_list(
         searches: searches?,
     };
 
-    core_search_batch(
-        toc,
-        collection_name,
-        request,
-        read_consistency,
-        shard_selection,
-        timeout,
-    )
-    .await
+    let timing = Instant::now();
+
+    // As this function is handling an internal request,
+    // we can assume that shard_key is already resolved
+    let shard_selection = match shard_selection {
+        None => {
+            debug_assert!(false, "Shard selection is expected for internal request");
+            ShardSelectorInternal::All
+        }
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+    };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let scored_points = toc
+        .core_search_batch(
+            &collection_name,
+            request,
+            read_consistency,
+            shard_selection,
+            timeout,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+    let response = SearchBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
 }
 
 pub async fn search_groups(
@@ -943,10 +991,13 @@ pub async fn search_groups(
         collection_name,
         read_consistency,
         timeout,
+        shard_key_selector,
         ..
     } = search_point_groups;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_search_point_groups(
@@ -954,7 +1005,7 @@ pub async fn search_groups(
         &collection_name,
         search_groups_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -991,6 +1042,7 @@ pub async fn recommend(
         lookup_from,
         read_consistency,
         timeout,
+        shard_key_selector,
     } = recommend_points;
 
     let timeout = timeout.map(Duration::from_secs);
@@ -1012,7 +1064,7 @@ pub async fn recommend(
         .collect();
     let negative = [negative_ids, negative_vectors].concat();
 
-    let request = collection::operations::types::RecommendRequest {
+    let request = collection::operations::types::RecommendRequestInternal {
         positive,
         negative,
         strategy: strategy.map(|s| s.try_into()).transpose()?,
@@ -1033,9 +1085,17 @@ pub async fn recommend(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+
     let timing = Instant::now();
     let recommended_points = toc
-        .recommend(&collection_name, request, read_consistency, timeout)
+        .recommend(
+            &collection_name,
+            request,
+            read_consistency,
+            shard_selector,
+            timeout,
+        )
         .await
         .map_err(error_to_status)?;
 
@@ -1057,19 +1117,21 @@ pub async fn recommend_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     timeout: Option<Duration>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
-    let searches: Result<Vec<_>, Status> = recommend_points
-        .into_iter()
-        .map(|recommend_point| recommend_point.try_into())
-        .collect();
-    let recommend_batch = RecommendRequestBatch {
-        searches: searches?,
-    };
+    let mut requests = Vec::with_capacity(recommend_points.len());
+
+    for mut request in recommend_points {
+        let shard_selector =
+            convert_shard_selector_for_read(None, request.shard_key_selector.take());
+        let internal_request: collection::operations::types::RecommendRequestInternal =
+            request.try_into()?;
+        requests.push((internal_request, shard_selector));
+    }
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
     let scored_points = toc
-        .recommend_batch(&collection_name, recommend_batch, read_consistency, timeout)
+        .recommend_batch(&collection_name, requests, read_consistency, timeout)
         .await
         .map_err(error_to_status)?;
 
@@ -1096,10 +1158,13 @@ pub async fn recommend_groups(
         collection_name,
         read_consistency,
         timeout,
+        shard_key_selector,
         ..
     } = recommend_point_groups;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_recommend_point_groups(
@@ -1107,6 +1172,7 @@ pub async fn recommend_groups(
         &collection_name,
         recommend_groups_request,
         read_consistency,
+        shard_selector,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -1124,12 +1190,21 @@ pub async fn discover(
     toc: &TableOfContent,
     discover_points: DiscoverPoints,
 ) -> Result<Response<DiscoverResponse>, Status> {
-    let (request, collection_name, read_consistency, timeout) =
+    let (request, collection_name, read_consistency, timeout, shard_key_selector) =
         try_discover_request_from_grpc(discover_points)?;
 
     let timing = Instant::now();
+
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+
     let discovered_points = toc
-        .discover(&collection_name, request, read_consistency, timeout)
+        .discover(
+            &collection_name,
+            request,
+            read_consistency,
+            shard_selector,
+            timeout,
+        )
         .await
         .map_err(error_to_status)?;
 
@@ -1151,18 +1226,20 @@ pub async fn discover_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     timeout: Option<Duration>,
 ) -> Result<Response<DiscoverBatchResponse>, Status> {
-    let searches = discover_points
-        .into_iter()
-        .map(|discover_points| Ok::<_, Status>(try_discover_request_from_grpc(discover_points)?.0))
-        .try_collect()?;
+    let mut requests = Vec::with_capacity(discover_points.len());
 
-    let discover_batch = DiscoverRequestBatch { searches };
+    for discovery_request in discover_points {
+        let (internal_request, _collection_name, _consistency, _timeout, shard_key_selector) =
+            try_discover_request_from_grpc(discovery_request)?;
+        let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+        requests.push((internal_request, shard_selector));
+    }
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
     let scored_points = toc
-        .discover_batch(&collection_name, discover_batch, read_consistency, timeout)
+        .discover_batch(&collection_name, requests, read_consistency, timeout)
         .await
         .map_err(error_to_status)?;
 
@@ -1191,9 +1268,10 @@ pub async fn scroll(
         with_payload,
         with_vectors,
         read_consistency,
+        shard_key_selector,
     } = scroll_points;
 
-    let scroll_request = ScrollRequest {
+    let scroll_request = ScrollRequestInternal {
         offset: offset.map(|o| o.try_into()).transpose()?,
         limit: limit.map(|l| l as usize),
         filter: filter.map(|f| f.try_into()).transpose()?,
@@ -1205,13 +1283,15 @@ pub async fn scroll(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
     let timing = Instant::now();
     let scrolled_points = do_scroll_points(
         toc,
         &collection_name,
         scroll_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
     )
     .await
     .map_err(error_to_status)?;
@@ -1238,17 +1318,29 @@ pub async fn count(
         collection_name,
         filter,
         exact,
+        read_consistency,
+        shard_key_selector,
     } = count_points;
 
-    let count_request = collection::operations::types::CountRequest {
+    let count_request = collection::operations::types::CountRequestInternal {
         filter: filter.map(|f| f.try_into()).transpose()?,
         exact: exact.unwrap_or_else(default_exact_count),
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
     let timing = Instant::now();
-    let count_result = do_count_points(toc, &collection_name, count_request, shard_selection)
-        .await
-        .map_err(error_to_status)?;
+    let count_result = do_count_points(
+        toc,
+        &collection_name,
+        count_request,
+        read_consistency,
+        shard_selector,
+    )
+    .await
+    .map_err(error_to_status)?;
 
     let response = CountResponse {
         result: Some(count_result.into()),
@@ -1269,9 +1361,10 @@ pub async fn get(
         with_payload,
         with_vectors,
         read_consistency,
+        shard_key_selector,
     } = get_points;
 
-    let point_request = PointRequest {
+    let point_request = PointRequestInternal {
         ids: ids
             .into_iter()
             .map(|p| p.try_into())
@@ -1284,6 +1377,8 @@ pub async fn get(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
     let timing = Instant::now();
 
     let records = do_get_points(
@@ -1291,7 +1386,7 @@ pub async fn get(
         &collection_name,
         point_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
     )
     .await
     .map_err(error_to_status)?;
