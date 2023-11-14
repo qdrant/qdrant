@@ -12,7 +12,7 @@ use crate::operations::types::{NodeType, VectorParams, VectorsConfig};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
-use crate::shards::replica_set::ChangePeerState;
+use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
@@ -31,6 +31,10 @@ pub fn dummy_on_replica_failure() -> ChangePeerState {
 
 pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
     Arc::new(move |_transfer| {})
+}
+
+pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+    Arc::new(|_transfer, _reason| {})
 }
 
 fn init_logger() {
@@ -95,6 +99,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )
@@ -134,6 +139,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )

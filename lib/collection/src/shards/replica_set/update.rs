@@ -349,7 +349,7 @@ mod tests {
     use crate::config::*;
     use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::optimizers_builder::OptimizersConfig;
-    use crate::shards::replica_set::ChangePeerState;
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
 
     #[tokio::test]
     async fn test_highest_replica_peer_id() {
@@ -420,6 +420,7 @@ mod tests {
             false,
             remotes,
             dummy_on_replica_failure(),
+            dummy_abort_shard_transfer(),
             collection_dir.path(),
             shared_config,
             Default::default(),
@@ -433,5 +434,9 @@ mod tests {
 
     fn dummy_on_replica_failure() -> ChangePeerState {
         Arc::new(move |_peer_id, _shard_id| {})
+    }
+
+    fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+        Arc::new(|_shard_transfer, _reason| {})
     }
 }
