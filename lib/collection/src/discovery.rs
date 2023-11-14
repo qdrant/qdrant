@@ -193,8 +193,6 @@ where
         ShardSelectorInternal,
         Vec<CoreSearchRequest>,
         Vec<_>,
-        _,
-        _,
     >(
         request_batch,
         |(_req, shard)| shard,

@@ -272,8 +272,6 @@ where
         Option<ShardKeySelector>,
         ReferencedPoints,
         Vec<_>,
-        _,
-        _,
     >(
         requests,
         |(request, _)| request.get_lookup_shard_key(),

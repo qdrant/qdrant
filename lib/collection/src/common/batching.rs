@@ -32,8 +32,6 @@ use crate::operations::types::CollectionResult;
 ///     String,                // Type of shard_key
 ///     Vec<Recommend>,        // Type of local accumulator
 ///     Vec<Vec<ScoredPoint>>, // Type of global accumulator,
-///     _,  // Automatically infer type for function accumulate_local
-///     _,  // Automatically infer type for function accumulate_global
 /// >(
 ///     requests,
 ///     |request| &request.shard_key,
@@ -50,17 +48,12 @@ use crate::operations::types::CollectionResult;
 ///     }
 /// )
 /// ```
-///
-pub fn batch_requests<Req, Key: PartialEq + Clone, Acc1: Default, Acc2: Default, F, G>(
+pub fn batch_requests<Req, Key: PartialEq + Clone, Acc1: Default, Acc2: Default>(
     requests: impl IntoIterator<Item = Req>,
     get_key: impl Fn(&Req) -> &Key,
-    mut accumulate_local: F,
-    mut accumulate_global: G,
-) -> CollectionResult<Acc2>
-where
-    F: FnMut(Req, &mut Acc1) -> CollectionResult<()>,
-    G: FnMut(Key, Acc1, &mut Acc2) -> CollectionResult<()>,
-{
+    mut accumulate_local: impl FnMut(Req, &mut Acc1) -> CollectionResult<()>,
+    mut accumulate_global: impl FnMut(Key, Acc1, &mut Acc2) -> CollectionResult<()>,
+) -> CollectionResult<Acc2> {
     let mut requests_iterator = requests.into_iter();
 
     let mut request = requests_iterator.next().unwrap();

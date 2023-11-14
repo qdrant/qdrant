@@ -696,8 +696,6 @@ pub async fn do_search_batch_points(
         ShardSelectorInternal,
         Vec<CoreSearchRequest>,
         Vec<_>,
-        _,
-        _,
     >(
         requests,
         |(_, shard_selector)| shard_selector,
