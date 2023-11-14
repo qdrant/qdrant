@@ -1,7 +1,8 @@
 use collection::operations::point_ops::{
     Batch, PointInsertOperationsInternal, PointOperations, WriteOrdering,
 };
-use collection::operations::types::ScrollRequest;
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::types::ScrollRequestInternal;
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
@@ -49,7 +50,14 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         &collection_path.join("snapshots"),
     )
     .await;
-    assert_eq!(collection.info(None).await.unwrap().vectors_count, 2);
+    assert_eq!(
+        collection
+            .info(&ShardSelectorInternal::All)
+            .await
+            .unwrap()
+            .vectors_count,
+        2
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -84,7 +92,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
 
     let res = collection
         .scroll_by(
-            ScrollRequest {
+            ScrollRequestInternal {
                 offset: None,
                 limit: Some(10),
                 filter: None,
@@ -92,7 +100,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
                 with_vector: true.into(),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();
@@ -155,7 +163,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     // Test res with filter payload
     let res_with_custom_payload = collection
         .scroll_by(
-            ScrollRequest {
+            ScrollRequestInternal {
                 offset: None,
                 limit: Some(10),
                 filter: None,
@@ -163,7 +171,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_vector: true.into(),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();
@@ -189,7 +197,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     // Test res with filter payload dict
     let res_with_custom_payload = collection
         .scroll_by(
-            ScrollRequest {
+            ScrollRequestInternal {
                 offset: None,
                 limit: Some(10),
                 filter: None,
@@ -197,7 +205,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_vector: false.into(),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();

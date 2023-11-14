@@ -9,8 +9,8 @@ use crate::collection::Collection;
 use crate::lookup::lookup_ids;
 use crate::lookup::types::PseudoId;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult, PointGroup};
-use crate::shards::shard::ShardId;
 
 /// Builds on top of the group_by function to add lookup and possibly other features
 pub struct GroupBy<'a, F, Fut>
@@ -23,7 +23,7 @@ where
     /// `Fn` to get a collection having its name. Obligatory for recommend and lookup
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
+    shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 }
 
@@ -39,7 +39,7 @@ where
             collection,
             collection_by_name,
             read_consistency: None,
-            shard_selection: None,
+            shard_selection: ShardSelectorInternal::All,
             timeout: None,
         }
     }
@@ -49,7 +49,7 @@ where
         self
     }
 
-    pub fn set_shard_selection(mut self, shard_selection: Option<ShardId>) -> Self {
+    pub fn set_shard_selection(mut self, shard_selection: ShardSelectorInternal) -> Self {
         self.shard_selection = shard_selection;
         self
     }
@@ -75,17 +75,19 @@ where
 
     /// Does the actual grouping
     async fn run(self) -> CollectionResult<Vec<PointGroup>> {
+        let with_lookup = self.group_by.with_lookup.clone();
+
         let mut groups = group_by(
-            self.group_by.clone(),
+            self.group_by,
             self.collection,
             self.collection_by_name.clone(),
             self.read_consistency,
-            self.shard_selection,
+            self.shard_selection.clone(),
             self.timeout,
         )
         .await?;
 
-        if let Some(lookup) = self.group_by.with_lookup {
+        if let Some(lookup) = with_lookup {
             let mut lookups = {
                 let pseudo_ids = groups
                     .iter()
@@ -98,7 +100,7 @@ where
                     pseudo_ids,
                     self.collection_by_name,
                     self.read_consistency,
-                    self.shard_selection,
+                    &self.shard_selection,
                 )
                 .await?
             };

@@ -2998,6 +2998,24 @@ pub enum ShardKey {
     Number(u64),
 }
 
+impl From<String> for ShardKey {
+    fn from(s: String) -> Self {
+        ShardKey::Keyword(s)
+    }
+}
+
+impl From<&str> for ShardKey {
+    fn from(s: &str) -> Self {
+        ShardKey::Keyword(s.to_owned())
+    }
+}
+
+impl From<u64> for ShardKey {
+    fn from(n: u64) -> Self {
+        ShardKey::Number(n)
+    }
+}
+
 impl Display for ShardKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

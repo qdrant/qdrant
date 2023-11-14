@@ -5,16 +5,15 @@ use collection::grouping::group_by::GroupRequest;
 use collection::grouping::GroupBy;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::*;
 use collection::operations::CollectionUpdateOperations;
-use collection::shards::shard::ShardId;
 use collection::{discovery, recommendations};
 use futures::future::try_join_all;
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
 use crate::content_manager::errors::StorageError;
-use crate::content_manager::shard_key_selection::ShardKeySelectorInternal;
 
 impl TableOfContent {
     /// Recommend points using positive and negative example from the request
@@ -22,7 +21,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - for what collection do we recommend
-    /// * `request` - [`RecommendRequest`]
+    /// * `request` - [`RecommendRequestInternal`]
     ///
     /// # Result
     ///
@@ -30,8 +29,9 @@ impl TableOfContent {
     pub async fn recommend(
         &self,
         collection_name: &str,
-        request: RecommendRequest,
+        request: RecommendRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        shard_selector: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
@@ -40,6 +40,7 @@ impl TableOfContent {
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
+            shard_selector,
             timeout,
         )
         .await
@@ -59,13 +60,13 @@ impl TableOfContent {
     pub async fn recommend_batch(
         &self,
         collection_name: &str,
-        request: RecommendRequestBatch,
+        requests: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_batch_by(
-            request,
+            requests,
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
@@ -94,7 +95,7 @@ impl TableOfContent {
         collection_name: &str,
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
@@ -109,7 +110,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - in what collection do we count
-    /// * `request` - [`CountRequest`]
+    /// * `request` - [`CountRequestInternal`]
     /// * `shard_selection` - which local shard to use
     ///
     /// # Result
@@ -119,12 +120,13 @@ impl TableOfContent {
     pub async fn count(
         &self,
         collection_name: &str,
-        request: CountRequest,
-        shard_selection: Option<ShardId>,
+        request: CountRequestInternal,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: ShardSelectorInternal,
     ) -> Result<CountResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .count(request, shard_selection)
+            .count(request, read_consistency, &shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -134,7 +136,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - select from this collection
-    /// * `request` - [`PointRequest`]
+    /// * `request` - [`PointRequestInternal`]
     /// * `shard_selection` - which local shard to use
     ///
     /// # Result
@@ -143,13 +145,13 @@ impl TableOfContent {
     pub async fn retrieve(
         &self,
         collection_name: &str,
-        request: PointRequest,
+        request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: ShardSelectorInternal,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(request, read_consistency, shard_selection)
+            .retrieve(request, read_consistency, &shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -159,7 +161,7 @@ impl TableOfContent {
         collection_name: &str,
         request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
@@ -181,8 +183,9 @@ impl TableOfContent {
     pub async fn discover(
         &self,
         collection_name: &str,
-        request: DiscoverRequest,
+        request: DiscoverRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        shard_selector: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
@@ -191,6 +194,7 @@ impl TableOfContent {
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
+            shard_selector,
             timeout,
         )
         .await
@@ -200,13 +204,14 @@ impl TableOfContent {
     pub async fn discover_batch(
         &self,
         collection_name: &str,
-        request: DiscoverRequestBatch,
+        requests: Vec<(DiscoverRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
+
         discovery::discover_batch(
-            request,
+            requests,
             &collection,
             |name| self.get_collection_opt(name),
             read_consistency,
@@ -221,7 +226,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - which collection to use
-    /// * `request` - [`ScrollRequest`]
+    /// * `request` - [`ScrollRequestInternal`]
     /// * `shard_selection` - which local shard to use
     ///
     /// # Result
@@ -230,13 +235,13 @@ impl TableOfContent {
     pub async fn scroll(
         &self,
         collection_name: &str,
-        request: ScrollRequest,
+        request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: ShardSelectorInternal,
     ) -> Result<ScrollResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .scroll_by(request, read_consistency, shard_selection)
+            .scroll_by(request, read_consistency, &shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -268,10 +273,9 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         operation: CollectionUpdateOperations,
-        shard_selection: Option<ShardId>,
         wait: bool,
         ordering: WriteOrdering,
-        shard_keys_selector: ShardKeySelectorInternal,
+        shard_selector: ShardSelectorInternal,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 
@@ -299,56 +303,51 @@ impl TableOfContent {
         // │ Updating node     │ <- update_from_peer
         // └───────────────────┘
 
-        let result = match shard_selection {
-            Some(shard_selection) => {
-                collection
-                    .update_from_peer(operation, shard_selection, wait, ordering)
-                    .await
-            }
-            None => {
-                let _rate_limit = match &self.update_rate_limiter {
-                    None => None,
-                    Some(rate_limiter) => Some(rate_limiter.acquire().await),
-                };
-                if operation.is_write_operation() {
-                    self.check_write_lock()?;
+        let _rate_limit = match &self.update_rate_limiter {
+            None => None,
+            Some(rate_limiter) => {
+                // We only want to rate limit the first node in the chain
+                if !shard_selector.is_shard_id() {
+                    Some(rate_limiter.acquire().await)
+                } else {
+                    None
                 }
-                let res = match shard_keys_selector {
-                    ShardKeySelectorInternal::Empty => {
-                        collection
-                            .update_from_client(operation, wait, ordering, None)
-                            .await?
-                    }
-                    ShardKeySelectorInternal::All => {
-                        let shard_keys = collection.get_shard_keys().await;
-                        if shard_keys.is_empty() {
-                            collection
-                                .update_from_client(operation, wait, ordering, None)
-                                .await?
-                        } else {
-                            Self::_update_shard_keys(
-                                &collection,
-                                shard_keys,
-                                operation,
-                                wait,
-                                ordering,
-                            )
-                            .await?
-                        }
-                    }
-                    ShardKeySelectorInternal::ShardKey(shard_key) => {
-                        collection
-                            .update_from_client(operation, wait, ordering, Some(shard_key))
-                            .await?
-                    }
-                    ShardKeySelectorInternal::ShardKeys(shard_keys) => {
-                        Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering)
-                            .await?
-                    }
-                };
-                Ok(res)
             }
         };
-        result.map_err(|err| err.into())
+        if operation.is_write_operation() {
+            self.check_write_lock()?;
+        }
+        let res = match shard_selector {
+            ShardSelectorInternal::Empty => {
+                collection
+                    .update_from_client(operation, wait, ordering, None)
+                    .await?
+            }
+            ShardSelectorInternal::All => {
+                let shard_keys = collection.get_shard_keys().await;
+                if shard_keys.is_empty() {
+                    collection
+                        .update_from_client(operation, wait, ordering, None)
+                        .await?
+                } else {
+                    Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering)
+                        .await?
+                }
+            }
+            ShardSelectorInternal::ShardKey(shard_key) => {
+                collection
+                    .update_from_client(operation, wait, ordering, Some(shard_key))
+                    .await?
+            }
+            ShardSelectorInternal::ShardKeys(shard_keys) => {
+                Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering).await?
+            }
+            ShardSelectorInternal::ShardId(shard_selection) => {
+                collection
+                    .update_from_peer(operation, shard_selection, wait, ordering)
+                    .await?
+            }
+        };
+        Ok(res)
     }
 }

@@ -15,8 +15,8 @@ use super::transfer::shard_transfer::MAX_RETRY_COUNT;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest, CountResult,
-    PointRequest, Record, UpdateResult,
+    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequestInternal, CountResult,
+    PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -210,7 +210,7 @@ impl ShardOperation for QueueProxyShard {
     }
 
     /// Forward read-only `count` to `wrapped_shard`
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         self.inner
             .as_ref()
             .expect("Queue proxy has been finalized")
@@ -221,7 +221,7 @@ impl ShardOperation for QueueProxyShard {
     /// Forward read-only `retrieve` to `wrapped_shard`
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
@@ -436,7 +436,7 @@ impl ShardOperation for Inner {
     }
 
     /// Forward read-only `count` to `wrapped_shard`
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard.count(request).await
     }
@@ -444,7 +444,7 @@ impl ShardOperation for Inner {
     /// Forward read-only `retrieve` to `wrapped_shard`
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {

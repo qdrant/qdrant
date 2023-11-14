@@ -3,8 +3,10 @@ use std::fs::File;
 
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{Batch, PointOperations, PointStruct, WriteOrdering};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
+    CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
+    SearchRequestInternal, UpdateStatus,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
@@ -59,7 +61,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         Err(err) => panic!("operation failed: {err:?}"),
     }
 
-    let search_request = SearchRequest {
+    let search_request = SearchRequestInternal {
         vector: vec![1.0, 1.0, 1.0, 1.0].into(),
         with_payload: None,
         with_vector: None,
@@ -71,7 +73,12 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
     };
 
     let search_res = collection
-        .search(search_request.into(), None, None, None)
+        .search(
+            search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await;
 
     match search_res {
@@ -118,7 +125,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         Err(err) => panic!("operation failed: {err:?}"),
     }
 
-    let search_request = SearchRequest {
+    let search_request = SearchRequestInternal {
         vector: vec![1.0, 0.0, 1.0, 1.0].into(),
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: Some(true.into()),
@@ -130,7 +137,12 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     };
 
     let search_res = collection
-        .search(search_request.into(), None, None, None)
+        .search(
+            search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await;
 
     match search_res {
@@ -146,7 +158,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         Err(err) => panic!("search failed: {err:?}"),
     }
 
-    let count_request = CountRequest {
+    let count_request = CountRequestInternal {
         filter: Some(Filter::new_must(Condition::Field(FieldCondition {
             key: "k".to_string(),
             r#match: Some(serde_json::from_str(r#"{ "value": "v2" }"#).unwrap()),
@@ -159,7 +171,10 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         exact: true,
     };
 
-    let count_res = collection.count(count_request, None).await.unwrap();
+    let count_res = collection
+        .count(count_request, None, &ShardSelectorInternal::All)
+        .await
+        .unwrap();
     assert_eq!(count_res.count, 1);
 }
 
@@ -221,13 +236,13 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         &collection_path.join("snapshots"),
     )
     .await;
-    let request = PointRequest {
+    let request = PointRequestInternal {
         ids: vec![1.into(), 2.into()],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true.into(),
     };
     let retrieved = loaded_collection
-        .retrieve(request, None, None)
+        .retrieve(request, None, &ShardSelectorInternal::All)
         .await
         .unwrap();
 
@@ -328,7 +343,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
     let result = recommend_by(
-        RecommendRequest {
+        RecommendRequestInternal {
             positive: vec![0.into()],
             negative: vec![8.into()],
             limit: 5,
@@ -337,6 +352,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         &collection,
         |_name| async { unreachable!("Should not be called in this test") },
         None,
+        ShardSelectorInternal::All,
         None,
     )
     .await
@@ -387,7 +403,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
 
     let result = collection
         .scroll_by(
-            ScrollRequest {
+            ScrollRequestInternal {
                 offset: None,
                 limit: Some(2),
                 filter: None,
@@ -395,7 +411,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 with_vector: false.into(),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();
@@ -470,7 +486,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 
     let result = collection
         .scroll_by(
-            ScrollRequest {
+            ScrollRequestInternal {
                 offset: None,
                 limit: Some(10),
                 filter: None,
@@ -478,7 +494,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 with_vector: false.into(),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();

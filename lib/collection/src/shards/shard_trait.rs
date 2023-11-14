@@ -8,8 +8,8 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequest, CountResult,
-    PointRequest, Record, UpdateResult,
+    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequestInternal, CountResult,
+    PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 
@@ -41,11 +41,11 @@ pub trait ShardOperation {
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult>;
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult>;
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;

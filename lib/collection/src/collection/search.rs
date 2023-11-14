@@ -8,15 +8,15 @@ use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, 
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
-use crate::shards::shard::ShardId;
 
 impl Collection {
     pub async fn search(
         &self,
         request: CoreSearchRequest,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
@@ -36,7 +36,7 @@ impl Collection {
         &self,
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // shortcuts batch if all requests with limit=0
@@ -92,7 +92,7 @@ impl Collection {
                 .do_core_search_batch(
                     without_payload_batch,
                     read_consistency,
-                    shard_selection,
+                    &shard_selection,
                     timeout,
                 )
                 .await?;
@@ -105,13 +105,13 @@ impl Collection {
                         req.with_payload.clone(),
                         req.with_vector.unwrap_or_default(),
                         read_consistency,
-                        shard_selection,
+                        &shard_selection,
                     )
                 });
             future::try_join_all(filled_results).await
         } else {
             let result = self
-                .do_core_search_batch(request, read_consistency, shard_selection, timeout)
+                .do_core_search_batch(request, read_consistency, &shard_selection, timeout)
                 .await?;
             Ok(result)
         }
@@ -121,7 +121,7 @@ impl Collection {
         &self,
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
@@ -129,19 +129,19 @@ impl Collection {
         // query all shards concurrently
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
-            let target_shards = shard_holder.target_shard(shard_selection)?;
+            let target_shards = shard_holder.select_shards(shard_selection)?;
             let all_searches = target_shards.iter().map(|shard| {
                 shard.core_search(
                     Arc::clone(&request),
                     read_consistency,
-                    shard_selection.is_some(),
+                    shard_selection.is_shard_id(),
                     timeout,
                 )
             });
             future::try_join_all(all_searches).await?
         };
 
-        self.merge_from_shards(all_searches_res, request, shard_selection)
+        self.merge_from_shards(all_searches_res, request, !shard_selection.is_shard_id())
             .await
     }
 
@@ -151,7 +151,7 @@ impl Collection {
         with_payload: Option<WithPayloadInterface>,
         with_vector: WithVector,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
+        shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
@@ -167,7 +167,7 @@ impl Collection {
                 .collect());
         };
 
-        let retrieve_request = PointRequest {
+        let retrieve_request = PointRequestInternal {
             ids: search_result.iter().map(|x| x.id).collect(),
             with_payload,
             with_vector,
@@ -199,7 +199,7 @@ impl Collection {
         &self,
         mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
         request: Arc<CoreSearchRequestBatch>,
-        shard_selection: Option<u32>,
+        is_client_request: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
@@ -238,7 +238,7 @@ impl Collection {
                 };
                 // Remove `offset` from top result only for client requests
                 // to avoid applying `offset` twice in distributed mode.
-                if shard_selection.is_none() && request.offset > 0 {
+                if is_client_request && request.offset > 0 {
                     if top_res.len() >= request.offset {
                         // Panics if the end point > length of the vector.
                         top_res.drain(..request.offset);

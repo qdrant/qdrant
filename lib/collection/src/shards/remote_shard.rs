@@ -38,7 +38,8 @@ use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    CountRequest, CountResult, PointRequest, Record, SearchRequest, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, SearchRequestInternal,
+    UpdateResult,
 };
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
@@ -503,7 +504,7 @@ impl RemoteShard {
 }
 
 // New-type to own the type in the crate for conversions via From
-pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequest));
+pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequestInternal));
 pub struct CollectionCoreSearchRequest<'a>(pub(crate) (CollectionId, &'a CoreSearchRequest));
 
 #[async_trait]
@@ -537,6 +538,7 @@ impl ShardOperation for RemoteShard {
             with_payload: Some(with_payload_interface.clone().into()),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
+            shard_key_selector: None,
         };
         let request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
@@ -635,11 +637,13 @@ impl ShardOperation for RemoteShard {
         result
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
             filter: request.filter.clone().map(|f| f.into()),
             exact: Some(request.exact),
+            read_consistency: None,
+            shard_key_selector: None,
         };
 
         let request = &CountPointsInternal {
@@ -664,7 +668,7 @@ impl ShardOperation for RemoteShard {
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
@@ -674,6 +678,7 @@ impl ShardOperation for RemoteShard {
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
+            shard_key_selector: None,
         };
         let request = &GetPointsInternal {
             get_points: Some(get_points),
