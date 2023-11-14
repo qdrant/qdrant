@@ -452,6 +452,11 @@ impl Collection {
         let shard_holder = self.shards_holder.read().await;
         let get_shard_transfer = |key| shard_holder.get_transfer(&key);
         for replica_set in shard_holder.all_shards() {
+            // TODO:
+            //   Aborting shard transfer here doesn't *really* work, if we keep requesting new
+            //   transfer in `Collection::request_shard_transfer` (at the bottom).
+            //
+            //  Shard transfer should be initiated by the *sender*.
             replica_set.sync_local_state(get_shard_transfer).await?;
         }
 
@@ -542,6 +547,12 @@ impl Collection {
                     this_peer_id,
                     replica_id
                 );
+
+                // TODO:
+                //   Aborting shard transfer in `ShardReplicaSet::sync_local_state` (at the top)
+                //   doesn't *really* work, if we keep requesting new transfer here.
+                //
+                //  Shard transfer should be initiated by the *sender*.
                 self.request_shard_transfer(transfer);
                 break;
             }
