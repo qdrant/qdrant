@@ -27,6 +27,7 @@ use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
 use crate::actix::api::service_api::config_service_api;
+use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::api_key::{ApiKey, WhitelistItem};
@@ -144,6 +145,7 @@ pub fn init(
                 .configure(config_search_api)
                 .configure(config_recommend_api)
                 .configure(config_discovery_api)
+                .configure(config_shards_api)
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)
