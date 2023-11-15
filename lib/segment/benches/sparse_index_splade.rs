@@ -170,7 +170,7 @@ criterion_group! {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = sparse_vector_index_build_benchmark,
+    targets = sparse_vector_index_splade_benchmark,
 }
 
 criterion_main!(benches);
