@@ -20,7 +20,7 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
         offset += limit
 
         if throttle:
-            sleep(0.01)
+            sleep(0.1)
         if duration is not None and (time.time() - start) > duration:
             break
 
@@ -133,7 +133,7 @@ def test_shard_snapshot_transfer_cancel_during_updates(tmp_path: pathlib.Path):
     )
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 100)
+    upsert_random_points(peer_api_uris[0], 10000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100)
@@ -162,10 +162,10 @@ def test_shard_snapshot_transfer_cancel_during_updates(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # With unthrottled updates the transfer will never complete in 5 seconds
+    # With unthrottled updates the transfer should never complete in 0.2 seconds
     # because the queue proxy cannot keep up with transferring all of these to
     # the remote
-    sleep(5)
+    sleep(0.2)
 
     upload_process_1.kill()
     upload_process_2.kill()
