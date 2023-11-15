@@ -829,4 +829,40 @@ mod tests {
             assert_eq!(new_min, Some(i + 1));
         }
     }
+
+    #[test]
+    fn promote_longest_test() {
+        let is_stopped = AtomicBool::new(false);
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            3,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            2
+        );
+
+        search_context.promote_longest_posting_lists_to_the_front();
+
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            3
+        );
+    }
 }
