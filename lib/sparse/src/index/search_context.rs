@@ -171,7 +171,7 @@ impl<'a> SearchContext<'a> {
             self.result_queue.push(candidate);
 
             // we potentially have enough results to prune low performing posting lists
-            // TODO(sparse) pruning is expensive, we should only do it when it makes sense
+            // TODO(sparse) pruning is expensive, we should only do it when it makes sense (detect hot keys at runtime)
             if self.result_queue.len() == self.top {
                 // current min score
                 let min_score = self.result_queue.top().unwrap().score;
@@ -211,8 +211,12 @@ impl<'a> SearchContext<'a> {
                         Ordering::Greater => {
                             // next_min_id is > element.record_id there is a chance to prune up to `next_min_id`
                             let posting_query_offset = longest_posting_iterator.query_weight_offset;
+                            // check against the max possible score using the `max_next_weight`
+                            // we can under prune as we should actually check the best score up to `next_min_id` - 1 only
+                            // instead of the max possible score but it is not possible to know the best score up to `next_min_id` - 1
+                            let max_weight_from_list = element.weight.max(element.max_next_weight);
                             let max_score_contribution =
-                                element.weight * self.query.values[posting_query_offset];
+                                max_weight_from_list * self.query.values[posting_query_offset];
                             if max_score_contribution <= min_score {
                                 // prune to next_min_id
                                 let longest_posting_iterator =
@@ -697,8 +701,11 @@ mod tests {
     #[test]
     fn pruning_multi_to_end_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(4, 10.0), (6, 20.0), (7, 30.0)]))
+            .add(
+                1,
+                PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0), (4, 10.0)]),
+            )
+            .add(2, PostingList::from(vec![(6, 20.0), (7, 30.0)]))
             .add(3, PostingList::from(vec![(5, 10.0), (6, 20.0), (7, 30.0)]))
             .build();
 
@@ -721,6 +728,49 @@ mod tests {
                 .posting_list_iterator
                 .len_to_end(),
             0
+        );
+    }
+
+    #[test]
+    fn pruning_multi_under_prune_test() {
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(
+                1,
+                PostingList::from(vec![
+                    (1, 10.0),
+                    (2, 20.0),
+                    (3, 20.0),
+                    (4, 10.0),
+                    (6, 20.0),
+                    (7, 40.0),
+                ]),
+            )
+            .add(2, PostingList::from(vec![(6, 20.0), (7, 30.0)]))
+            .add(3, PostingList::from(vec![(5, 10.0), (6, 20.0), (7, 30.0)]))
+            .build();
+
+        let is_stopped = AtomicBool::new(false);
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            1,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
+        // we should actually check the best score up to `6` - 1 only instead of the max possible score (40.0)
+        assert!(!search_context.prune_longest_posting_list(30.0));
+
+        assert!(search_context.prune_longest_posting_list(40.0));
+        // the longest posting list was pruned to the end
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            2 // 6, 7
         );
     }
 
