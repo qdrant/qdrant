@@ -5,13 +5,15 @@ use std::time::Duration;
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
+use api::grpc::qdrant::qdrant_client::QdrantClient;
 use api::grpc::qdrant::shard_snapshot_location::Location;
 use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    InitiateShardTransferRequest, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
-    ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation, WaitForShardStateRequest,
+    HealthCheckRequest, InitiateShardTransferRequest, RecoverShardSnapshotRequest,
+    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation,
+    WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -156,6 +158,21 @@ impl RemoteShard {
                 timeout,
                 retries,
             )
+            .await
+            .map_err(|err| err.into())
+    }
+
+    async fn with_qdrant_client<T, Fut: Future<Output = Result<T, Status>>>(
+        &self,
+        f: impl Fn(QdrantClient<InterceptedService<Channel, AddTimeout>>) -> Fut,
+    ) -> CollectionResult<T> {
+        let current_address = self.current_address()?;
+        self.channel_service
+            .channel_pool
+            .with_channel(&current_address, |channel| {
+                let client = QdrantClient::new(channel);
+                f(client)
+            })
             .await
             .map_err(|err| err.into())
     }
@@ -500,6 +517,17 @@ impl RemoteShard {
             .await?
             .into_inner();
         Ok(res)
+    }
+
+    pub async fn health_check(&self) -> CollectionResult<()> {
+        let _ = self
+            .with_qdrant_client(|mut client| async move {
+                client.health_check(HealthCheckRequest {}).await
+            })
+            .await?
+            .into_inner();
+
+        Ok(())
     }
 }
 
