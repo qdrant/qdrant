@@ -134,7 +134,7 @@ impl Validate for crate::grpc::qdrant::CreateShardKey {
                 "replication_factor",
                 ValidationError::new("Replication factor must be greater than 0"),
             );
-            return Err(errors)
+            return Err(errors);
         }
 
         if self.shards_number == Some(0) {
@@ -143,7 +143,7 @@ impl Validate for crate::grpc::qdrant::CreateShardKey {
                 "shards_number",
                 ValidationError::new("Shards number must be greater than 0"),
             );
-            return Err(errors)
+            return Err(errors);
         }
 
         Ok(())
@@ -155,7 +155,6 @@ impl Validate for crate::grpc::qdrant::DeleteShardKey {
         Ok(())
     }
 }
-
 
 impl Validate for crate::grpc::qdrant::condition::ConditionOneOf {
     fn validate(&self) -> Result<(), ValidationErrors> {
