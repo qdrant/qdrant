@@ -19,7 +19,7 @@ pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_dim_size: usiz
             break;
         }
         // high probability of skipping a dimension to make the vectors more sparse
-        let no_skip = rnd_gen.gen_bool(0.01);
+        let no_skip = rnd_gen.gen_bool(0.1);
         if no_skip {
             tuples.push((i as i32, rnd_gen.gen_range(VALUE_RANGE)));
         }
