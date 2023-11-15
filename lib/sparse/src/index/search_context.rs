@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -81,18 +82,14 @@ impl<'a> SearchContext<'a> {
     /// b,  21, 34, 60, 200
     /// b,  30, 34, 60, 230
     fn advance(&mut self) -> Option<ScoredPointOffset> {
-        let min_record_id = Self::next_min(&self.postings_iterators)?;
+        let min_record_id = Self::next_min_id(&self.postings_iterators)?;
         let mut score = 0.0;
 
         // Iterate second time to advance posting iterators
         for posting_iterator in self.postings_iterators.iter_mut() {
-            if let Some(record_id) = posting_iterator
-                .posting_list_iterator
-                .peek()
-                .map(|element| element.record_id)
-            {
+            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
                 // accumulate score for the current record id
-                if record_id == min_record_id {
+                if element.record_id == min_record_id {
                     let element = posting_iterator.posting_list_iterator.next().unwrap();
                     score +=
                         element.weight * self.query.values[posting_iterator.query_weight_offset];
@@ -109,14 +106,20 @@ impl<'a> SearchContext<'a> {
     /// Returns the next min record id from all posting list iterators
     ///
     /// returns None if all posting list iterators are exhausted
-    fn next_min(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
+    fn next_min_id(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
         let mut min_record_id = None;
 
-        // Iterate first time to find min record id at the head of the posting lists
+        // Iterate to find min record id at the head of the posting lists
         for posting_iterator in to_inspect.iter() {
             if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
-                if Some(next_element.record_id) < min_record_id || min_record_id.is_none() {
-                    min_record_id = Some(next_element.record_id);
+                match min_record_id {
+                    None => min_record_id = Some(next_element.record_id), // first record with matching id
+                    Some(min_id_seen) => {
+                        // update min record id if smaller
+                        if next_element.record_id < min_id_seen {
+                            min_record_id = Some(next_element.record_id);
+                        }
+                    }
                 }
             }
         }
@@ -125,13 +128,26 @@ impl<'a> SearchContext<'a> {
     }
 
     /// Make sure the longest posting list is at the head of the posting list iterators
-    fn sort_posting_lists_by_len(&mut self) {
-        // decreasing order
-        self.postings_iterators.sort_unstable_by(|a, b| {
-            b.posting_list_iterator
-                .len_to_end()
-                .cmp(&a.posting_list_iterator.len_to_end())
-        });
+    fn promote_longest_posting_lists_to_the_front(&mut self) {
+        // find index of longest posting list
+        let posting_index = self
+            .postings_iterators
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.posting_list_iterator
+                    .len_to_end()
+                    .cmp(&b.posting_list_iterator.len_to_end())
+            })
+            .map(|(index, _)| index);
+
+        if let Some(posting_index) = posting_index {
+            // make sure it is not already at the head
+            if posting_index != 0 {
+                // swap longest posting list to the head
+                self.postings_iterators.swap(0, posting_index);
+            }
+        }
     }
 
     /// Search for the top k results that satisfy the filter condition
@@ -155,13 +171,15 @@ impl<'a> SearchContext<'a> {
             self.result_queue.push(candidate);
 
             // we potentially have enough results to prune low performing posting lists
+            // TODO(sparse) pruning is expensive, we should only do it when it makes sense (detect hot keys at runtime)
             if self.result_queue.len() == self.top {
                 // current min score
                 let min_score = self.result_queue.top().unwrap().score;
 
-                // sort posting lists by length to try to prune the longest one
-                self.sort_posting_lists_by_len();
+                // make sure the first posting list is the longest for pruning
+                self.promote_longest_posting_lists_to_the_front();
 
+                // prune posting list that cannot possibly contribute to the top results
                 self.prune_longest_posting_list(min_score);
             }
         }
@@ -174,35 +192,62 @@ impl<'a> SearchContext<'a> {
     /// Assumes longest posting list is at the head of the posting list iterators
     /// Returns true if the longest posting list was pruned
     pub fn prune_longest_posting_list(&mut self, min_score: f32) -> bool {
-        // compute skip target before acquiring mutable reference to posting list iterator
-        let skip_to = if self.postings_iterators.len() == 1 {
-            // if there is only one posting list iterator, we can skip to the end
-            None
-        } else {
-            // otherwise, we skip to the next min elements in the remaining posting list
-            Self::next_min(&self.postings_iterators[1..])
-        };
-
-        let posting_iterator = &mut self.postings_iterators[0];
-        let posting_query_offset = posting_iterator.query_weight_offset;
-        if let Some(element) = posting_iterator.posting_list_iterator.peek() {
-            let max_weight_from_list = element.weight.max(element.max_next_weight);
-            let max_score_contribution =
-                max_weight_from_list * self.query.values[posting_query_offset];
-            if max_score_contribution < min_score {
-                return match skip_to {
-                    None => {
-                        posting_iterator.posting_list_iterator.skip_to_end();
-                        true
+        // peek first element of longest posting list
+        let longest_posting_iterator = &self.postings_iterators[0];
+        if let Some(element) = longest_posting_iterator.posting_list_iterator.peek() {
+            let next_min_id_in_others = Self::next_min_id(&self.postings_iterators[1..]);
+            match next_min_id_in_others {
+                Some(next_min_id) => {
+                    match next_min_id.cmp(&element.record_id) {
+                        Ordering::Equal => {
+                            // if the next min id in the other posting lists is the same as the current one,
+                            // we can't prune the current element as it needs to be scored properly across posting lists
+                            return false;
+                        }
+                        Ordering::Less => {
+                            // we can't prune as there the other posting lists contains smaller smaller ids that need to scored first
+                            return false;
+                        }
+                        Ordering::Greater => {
+                            // next_min_id is > element.record_id there is a chance to prune up to `next_min_id`
+                            let posting_query_offset = longest_posting_iterator.query_weight_offset;
+                            // check against the max possible score using the `max_next_weight`
+                            // we can under prune as we should actually check the best score up to `next_min_id` - 1 only
+                            // instead of the max possible score but it is not possible to know the best score up to `next_min_id` - 1
+                            let max_weight_from_list = element.weight.max(element.max_next_weight);
+                            let max_score_contribution =
+                                max_weight_from_list * self.query.values[posting_query_offset];
+                            if max_score_contribution <= min_score {
+                                // prune to next_min_id
+                                let longest_posting_iterator =
+                                    &mut self.postings_iterators[0].posting_list_iterator;
+                                let position_before_pruning =
+                                    longest_posting_iterator.current_index;
+                                longest_posting_iterator.skip_to(next_min_id);
+                                let position_after_pruning = longest_posting_iterator.current_index;
+                                // check if pruning took place
+                                return position_before_pruning != position_after_pruning;
+                            }
+                        }
                     }
-                    Some(skip_to) => {
-                        let moved = posting_iterator.posting_list_iterator.skip_to(skip_to);
-                        moved.is_some()
+                }
+                None => {
+                    // the current posting list is the only one left, we can potentially skip it to the end
+                    let posting_query_offset = longest_posting_iterator.query_weight_offset;
+                    // check against the max possible score using the `max_next_weight`
+                    let max_weight_from_list = element.weight.max(element.max_next_weight);
+                    let max_score_contribution =
+                        max_weight_from_list * self.query.values[posting_query_offset];
+                    if max_score_contribution <= min_score {
+                        // prune to the end!
+                        let longest_posting_iterator = &mut self.postings_iterators[0];
+                        longest_posting_iterator.posting_list_iterator.skip_to_end();
+                        return true;
                     }
-                };
+                }
             }
         }
-        // no pruning occurred
+        // no pruning took place
         false
     }
 }
@@ -625,6 +670,135 @@ mod tests {
         _prune_test(&inverted_index_mmap);
     }
 
+    #[test]
+    fn pruning_single_to_end_test() {
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+
+        let is_stopped = AtomicBool::new(false);
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            1,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        // assuming we have gathered enough results and want to prune the longest posting list
+        assert!(search_context.prune_longest_posting_list(30.0));
+        // the longest posting list was pruned to the end
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            0
+        );
+    }
+
+    #[test]
+    fn pruning_multi_to_end_test() {
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(
+                1,
+                PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0), (4, 10.0)]),
+            )
+            .add(2, PostingList::from(vec![(6, 20.0), (7, 30.0)]))
+            .add(3, PostingList::from(vec![(5, 10.0), (6, 20.0), (7, 30.0)]))
+            .build();
+
+        let is_stopped = AtomicBool::new(false);
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            1,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        // assuming we have gathered enough results and want to prune the longest posting list
+        assert!(search_context.prune_longest_posting_list(30.0));
+        // the longest posting list was pruned to the end
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            0
+        );
+    }
+
+    #[test]
+    fn pruning_multi_under_prune_test() {
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(
+                1,
+                PostingList::from(vec![
+                    (1, 10.0),
+                    (2, 20.0),
+                    (3, 20.0),
+                    (4, 10.0),
+                    (6, 20.0),
+                    (7, 40.0),
+                ]),
+            )
+            .add(2, PostingList::from(vec![(6, 20.0), (7, 30.0)]))
+            .add(3, PostingList::from(vec![(5, 10.0), (6, 20.0), (7, 30.0)]))
+            .build();
+
+        let is_stopped = AtomicBool::new(false);
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            1,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
+        // we should actually check the best score up to `6` - 1 only instead of the max possible score (40.0)
+        assert!(!search_context.prune_longest_posting_list(30.0));
+
+        assert!(search_context.prune_longest_posting_list(40.0));
+        // the longest posting list was pruned to the end
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            2 // 6, 7
+        );
+    }
+
+    #[test]
+    #[ignore] // TODO(sparse) make this test pass
+    fn pruning_does_not_skip_negative_score_test() {
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(
+                1,
+                PostingList::from(vec![(1, 1.0), (2, 2.0), (3, 3.0), (4, 1.0), (5, -40.0)]),
+            )
+            .build();
+
+        let is_stopped = AtomicBool::new(false);
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![-1.0, 1.0, 1.0],
+            },
+            1,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        // no pruning because -1.0 * -40.0 > 30.0
+        assert!(!search_context.prune_longest_posting_list(30.0));
+    }
+
     /// Generates a random inverted index with `num_vectors` vectors
     fn random_inverted_index<R: Rng + ?Sized>(
         rnd_gen: &mut R,
@@ -660,7 +834,7 @@ mod tests {
         let mut all_next_min_observed = HashSet::new();
 
         while let Some(next_min) =
-            SearchContext::next_min(search_context.postings_iterators.as_slice())
+            SearchContext::next_min_id(search_context.postings_iterators.as_slice())
         {
             all_next_min_observed.insert(next_min);
             let next_candidate_id = search_context.advance().map(|s| s.idx);
@@ -689,19 +863,56 @@ mod tests {
         );
 
         // initial state
-        let min = SearchContext::next_min(search_context.postings_iterators.as_slice());
+        let min = SearchContext::next_min_id(search_context.postings_iterators.as_slice());
         // no side effect
         assert_eq!(min, Some(1));
         assert_eq!(min, Some(1));
 
         // Complete scan over all vectors because the query vector contains all dimensions in the index.
         for i in 1..num_vectors {
-            let before_min = SearchContext::next_min(search_context.postings_iterators.as_slice());
+            let before_min =
+                SearchContext::next_min_id(search_context.postings_iterators.as_slice());
             assert_eq!(before_min, Some(i));
             let next = search_context.advance().map(|s| s.idx);
             assert_eq!(next, Some(i));
-            let new_min = SearchContext::next_min(search_context.postings_iterators.as_slice());
+            let new_min = SearchContext::next_min_id(search_context.postings_iterators.as_slice());
             assert_eq!(new_min, Some(i + 1));
         }
+    }
+
+    #[test]
+    fn promote_longest_test() {
+        let is_stopped = AtomicBool::new(false);
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            3,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            2
+        );
+
+        search_context.promote_longest_posting_lists_to_the_front();
+
+        assert_eq!(
+            search_context.postings_iterators[0]
+                .posting_list_iterator
+                .len_to_end(),
+            3
+        );
     }
 }
