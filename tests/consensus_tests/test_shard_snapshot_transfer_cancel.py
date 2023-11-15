@@ -162,11 +162,6 @@ def test_shard_snapshot_transfer_cancel_during_updates(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # With unthrottled updates the transfer should never complete in 0.2 seconds
-    # because the queue proxy cannot keep up with transferring all of these to
-    # the remote
-    sleep(0.2)
-
     upload_process_1.kill()
     upload_process_2.kill()
     upload_process_3.kill()
