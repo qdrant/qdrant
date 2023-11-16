@@ -141,6 +141,16 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
 
     assert len(new_search_result) == len(search_result)
     for i in range(len(new_search_result)):
+        # Allow point versions to be off by 1
+        # A possible difference of 1 is a side effect of having two operations
+        # for creating payload indexes as introduced in <https://github.com/qdrant/qdrant/pull/2938>.
+        # That is to migrate from segment level to collection level payload
+        # schemas. If we eventually remove the segment level payload schema, we
+        # can do exact version matches here again.
+        assert abs(search_result[i]["version"] - new_search_result[i]["version"]) <= 1
+        search_result[i].pop("version")
+        new_search_result[i].pop("version")
+
         assert new_search_result[i] == search_result[i]
 
     new_collection_info = get_collection_info(new_url, COLLECTION_NAME)
