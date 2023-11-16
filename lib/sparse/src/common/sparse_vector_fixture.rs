@@ -4,8 +4,7 @@ use rand::Rng;
 
 use crate::common::sparse_vector::SparseVector;
 
-// TODO(sparse) support negative values
-const VALUE_RANGE: Range<f64> = 0.0..100.0;
+const VALUE_RANGE: Range<f64> = -100.0..100.0;
 // Realistic sizing based on experiences with Splade
 const MAX_VALUES_PER_VECTOR: usize = 300;
 
