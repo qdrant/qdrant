@@ -1,9 +1,7 @@
 import pathlib
 
-import requests
 from .fixtures import create_collection, upsert_random_points, random_vector, search
 from .utils import *
-from .assertions import assert_http_ok
 
 N_PEERS = 3
 N_SHARDS = 3
@@ -67,6 +65,9 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris)
 
     create_payload_index(peer_api_uris[0], COLLECTION_NAME, "city", "keyword")
+
+    wait_for_same_commit(peer_api_uris=peer_api_uris)
+
     upsert_random_points(peer_api_uris[0], 100)
 
     query_city = "London"
