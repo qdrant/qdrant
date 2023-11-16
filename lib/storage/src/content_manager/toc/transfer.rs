@@ -1,6 +1,5 @@
 use std::sync::Weak;
 
-use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
 use collection::shards::transfer::shard_transfer::ShardTransfer;
 use collection::shards::transfer::ShardTransferConsensus;
@@ -33,7 +32,6 @@ impl ShardTransferDispatcher {
     }
 }
 
-#[async_trait]
 impl ShardTransferConsensus for ShardTransferDispatcher {
     fn consensus_commit_term(&self) -> (u64, u64) {
         let state = self.consensus_state.hard_state();
