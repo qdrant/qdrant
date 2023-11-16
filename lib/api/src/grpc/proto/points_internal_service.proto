@@ -110,11 +110,11 @@ message ContextPair {
 
 message DiscoveryQuery {
   Vector target = 1;
-  repeated ContextPair context_pairs = 2;
+  repeated ContextPair context = 2;
 }
 
 message ContextQuery { 
-  repeated ContextPair context_pairs = 1; 
+  repeated ContextPair context = 1; 
 }
 
 message QueryEnum {
