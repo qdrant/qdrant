@@ -39,10 +39,13 @@ where
         quantized_storage: &'a TEncodedVectors,
         distance: Distance,
     ) -> Self {
-        let original_query = raw_query.transform(|v| distance.preprocess_vector(v));
+        let original_query = raw_query
+            .transform(|v| Ok(distance.preprocess_vector(v)))
+            .unwrap();
         let query = original_query
             .clone()
-            .transform(|v: VectorType| quantized_storage.encode_query(&v));
+            .transform(|v: VectorType| Ok(quantized_storage.encode_query(&v)))
+            .unwrap();
 
         Self {
             original_query,

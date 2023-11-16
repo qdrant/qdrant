@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    NamedQuery, NamedVector, VectorElementType, DEFAULT_VECTOR_NAME,
+    NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef, VectorType,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -25,19 +26,23 @@ use crate::operations::types::{
     RecommendRequestInternal, RecommendStrategy, UsingVector,
 };
 
-fn avg_vectors<'a>(
-    vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-) -> Vec<VectorElementType> {
+// TODO(sparse): support avg for sparse vectors
+fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> Vector {
     let mut count: usize = 0;
-    let mut avg_vector: Vec<VectorElementType> = vec![];
+    let mut avg_vector: VectorType = Default::default();
     for vector in vectors {
-        count += 1;
-        for i in 0..vector.len() {
-            if i >= avg_vector.len() {
-                avg_vector.push(vector[i])
-            } else {
-                avg_vector[i] += vector[i];
+        match vector {
+            VectorRef::Dense(vector) => {
+                count += 1;
+                for i in 0..vector.len() {
+                    if i >= avg_vector.len() {
+                        avg_vector.push(vector[i])
+                    } else {
+                        avg_vector[i] += vector[i];
+                    }
+                }
             }
+            VectorRef::Sparse(_) => unimplemented!(), // TODO(sparse)
         }
     }
 
@@ -45,7 +50,21 @@ fn avg_vectors<'a>(
         *item /= count as VectorElementType;
     }
 
-    avg_vector
+    avg_vector.into()
+}
+
+fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Vector {
+    match (positive, negative) {
+        (Vector::Dense(positive), Vector::Dense(negative)) => {
+            let vector: VectorType = positive
+                .iter()
+                .zip(negative.iter())
+                .map(|(pos, neg)| pos + pos - neg)
+                .collect();
+            vector.into()
+        }
+        _ => unimplemented!(), // TODO(sparse)
+    }
 }
 
 pub async fn recommend_by<'a, F, Fut>(
@@ -262,22 +281,14 @@ fn recommend_by_avg_vector(
         avg_positive
     } else {
         let avg_negative = avg_vectors(negative.into_iter());
-
-        avg_positive
-            .iter()
-            .zip(avg_negative.iter())
-            .map(|(pos, neg)| pos + pos - neg)
-            .collect()
+        merge_positive_and_negative_avg(avg_positive, avg_negative)
     };
 
     CoreSearchRequest {
-        query: QueryEnum::Nearest(
-            NamedVector {
-                name: vector_name,
-                vector: search_vector,
-            }
-            .into(),
-        ),
+        query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+            search_vector.clone(),
+            vector_name,
+        )),
         filter: Some(Filter {
             should: None,
             must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
