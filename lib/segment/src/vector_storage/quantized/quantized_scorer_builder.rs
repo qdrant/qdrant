@@ -71,23 +71,24 @@ impl<'a> QuantizedScorerBuilder<'a> {
         match query {
             QueryVector::Nearest(vector) => {
                 let query_scorer =
-                    QuantizedQueryScorer::new(vector.into(), quantized_storage, *distance);
+                    QuantizedQueryScorer::new(vector.try_into()?, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Recommend(reco_query) => {
-                let reco_query: RecoQuery<VectorType> = reco_query.transform_into();
+                let reco_query: RecoQuery<VectorType> = reco_query.transform_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(reco_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<VectorType> = discovery_query.transform_into();
+                let discovery_query: DiscoveryQuery<VectorType> =
+                    discovery_query.transform_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(discovery_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Context(context_query) => {
-                let context_query: ContextQuery<VectorType> = context_query.transform_into();
+                let context_query: ContextQuery<VectorType> = context_query.transform_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::new(context_query, quantized_storage, *distance);
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)

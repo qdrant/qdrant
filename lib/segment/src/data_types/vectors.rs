@@ -72,11 +72,13 @@ impl From<NamedVectorStruct> for Vector {
     }
 }
 
-impl From<Vector> for VectorType {
-    fn from(value: Vector) -> Self {
+impl TryFrom<Vector> for VectorType {
+    type Error = OperationError;
+
+    fn try_from(value: Vector) -> Result<Self, Self::Error> {
         match value {
-            Vector::Dense(v) => v,
-            Vector::Sparse(_) => panic!("Can't convert sparse vector to dense"), // TODO(sparse)
+            Vector::Dense(v) => Ok(v),
+            Vector::Sparse(_) => Err(OperationError::WrongSparse),
         }
     }
 }
@@ -139,6 +141,27 @@ pub const DEFAULT_VECTOR_NAME: &str = "";
 /// Type for dense vector
 pub type VectorType = Vec<VectorElementType>;
 
+impl<'a> VectorRef<'a> {
+    // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
+    pub fn to_owned(self) -> Vector {
+        match self {
+            VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
+            VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            VectorRef::Dense(v) => v.len(),
+            VectorRef::Sparse(v) => v.indices.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
     NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
 }
@@ -186,7 +209,8 @@ impl<'a> From<NamedVectors<'a>> for VectorStruct {
             VectorStruct::Multi(
                 v.into_owned_map()
                     .into_iter()
-                    .map(|(k, v)| (k, v.into()))
+                    // TODO(sparse) remove unwrap after sparse integration into `VectorStruct`
+                    .map(|(k, v)| (k, v.try_into().unwrap()))
                     .collect(),
             )
         }
@@ -279,12 +303,23 @@ impl Named for NamedVectorStruct {
 }
 
 impl NamedVectorStruct {
+    pub fn new_from_vector(vector: Vector, name: String) -> Self {
+        match vector {
+            Vector::Dense(vector) => NamedVectorStruct::Named(NamedVector { name, vector }),
+            Vector::Sparse(_vector) => {
+                // TODO(sparse): add after sparse integration into `NamedVectorStruct`
+                todo!()
+            }
+        }
+    }
+
     pub fn get_vector(&self) -> &VectorType {
         match self {
             NamedVectorStruct::Default(v) => v,
             NamedVectorStruct::Named(v) => &v.vector,
         }
     }
+
     pub fn to_vector(self) -> VectorType {
         match self {
             NamedVectorStruct::Default(v) => v,

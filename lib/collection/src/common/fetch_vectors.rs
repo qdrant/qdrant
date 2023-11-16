@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use futures::future::try_join_all;
 use futures::Future;
-use segment::data_types::vectors::VectorType;
+use segment::data_types::vectors::{Vector, VectorRef};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tokio::sync::RwLockReadGuard;
 
@@ -229,14 +229,14 @@ pub fn convert_to_vectors_owned(
     all_vectors_records_map: &ReferencedVectors,
     vector_name: &str,
     collection_name: Option<&String>,
-) -> Vec<VectorType> {
+) -> Vec<Vector> {
     examples
         .into_iter()
         .filter_map(|example| match example {
-            RecommendExample::Vector(vector) => Some(vector),
+            RecommendExample::Vector(vector) => Some(vector.into()),
             RecommendExample::PointId(vid) => {
                 let rec = all_vectors_records_map.get(&collection_name, vid).unwrap();
-                rec.get_vector_by_name(vector_name).cloned()
+                rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
         })
         .collect()
@@ -247,9 +247,9 @@ pub fn convert_to_vectors<'a>(
     all_vectors_records_map: &'a ReferencedVectors,
     vector_name: &'a str,
     collection_name: Option<&'a String>,
-) -> impl Iterator<Item = &'a VectorType> + 'a {
+) -> impl Iterator<Item = VectorRef<'a>> + 'a {
     examples.filter_map(move |example| match example {
-        RecommendExample::Vector(vector) => Some(vector),
+        RecommendExample::Vector(vector) => Some(vector.into()),
         RecommendExample::PointId(vid) => {
             let rec = all_vectors_records_map.get(&collection_name, *vid).unwrap();
             rec.get_vector_by_name(vector_name)

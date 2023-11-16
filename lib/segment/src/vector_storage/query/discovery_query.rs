@@ -2,9 +2,11 @@ use std::iter;
 
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
+use itertools::Itertools;
 
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector};
 
 type RankType = i32;
@@ -47,17 +49,17 @@ impl<T> DiscoveryQuery<T> {
 }
 
 impl<T, U> TransformInto<DiscoveryQuery<U>, T, U> for DiscoveryQuery<T> {
-    fn transform<F>(self, mut f: F) -> DiscoveryQuery<U>
+    fn transform<F>(self, mut f: F) -> OperationResult<DiscoveryQuery<U>>
     where
-        F: FnMut(T) -> U,
+        F: FnMut(T) -> OperationResult<U>,
     {
-        DiscoveryQuery::new(
-            f(self.target),
+        Ok(DiscoveryQuery::new(
+            f(self.target)?,
             self.pairs
                 .into_iter()
                 .map(|pair| pair.transform(&mut f))
-                .collect(),
-        )
+                .try_collect()?,
+        ))
     }
 }
 
