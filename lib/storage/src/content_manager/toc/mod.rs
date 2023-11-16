@@ -639,4 +639,8 @@ impl TableOfContent {
     pub fn with_shard_transfer_dispatcher(&self, dispatcher: ShardTransferDispatcher) {
         self.shard_transfer_dispatcher.lock().replace(dispatcher);
     }
+
+    pub fn get_channel_service(&self) -> &ChannelService {
+        &self.channel_service
+    }
 }

@@ -4,10 +4,14 @@ use std::time::{Duration, Instant};
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
     AliasDescription, ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
-    CollectionOperationResponse, CreateCollection, DeleteCollection, GetCollectionInfoRequest,
+    CollectionOperationResponse, CreateCollection, CreateShardKeyRequest, CreateShardKeyResponse,
+    DeleteCollection, DeleteShardKeyRequest, DeleteShardKeyResponse, GetCollectionInfoRequest,
     GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
     ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
     UpdateCollection, UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
+};
+use collection::operations::cluster_ops::{
+    ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::dispatcher::Dispatcher;
@@ -196,12 +200,11 @@ impl Collections for CollectionsService {
             ..
         } = request.into_inner();
         let result = do_update_collection_cluster(
-            self.dispatcher.toc(),
+            self.dispatcher.as_ref(),
             collection_name,
             operation
                 .ok_or(Status::new(tonic::Code::InvalidArgument, "empty operation"))?
                 .try_into()?,
-            self.dispatcher.as_ref(),
             timeout.map(std::time::Duration::from_secs),
         )
         .await
@@ -209,6 +212,75 @@ impl Collections for CollectionsService {
         Ok(Response::new(UpdateCollectionClusterSetupResponse {
             result,
         }))
+    }
+
+    async fn create_shard_key(
+        &self,
+        request: Request<CreateShardKeyRequest>,
+    ) -> Result<Response<CreateShardKeyResponse>, Status> {
+        let CreateShardKeyRequest {
+            collection_name,
+            request,
+            timeout,
+        } = request.into_inner();
+
+        let Some(request) = request else {
+            return Err(Status::new(tonic::Code::InvalidArgument, "empty request"));
+        };
+
+        let timeout = timeout.map(std::time::Duration::from_secs);
+
+        let operation = ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
+            create_sharding_key: request.try_into()?,
+        });
+
+        let result = do_update_collection_cluster(
+            self.dispatcher.as_ref(),
+            collection_name,
+            operation,
+            timeout,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        self.dispatcher
+            .await_consensus_sync(timeout)
+            .await
+            .map_err(error_to_status)?;
+
+        Ok(Response::new(CreateShardKeyResponse { result }))
+    }
+
+    async fn delete_shard_key(
+        &self,
+        request: Request<DeleteShardKeyRequest>,
+    ) -> Result<Response<DeleteShardKeyResponse>, Status> {
+        let DeleteShardKeyRequest {
+            collection_name,
+            request,
+            timeout,
+        } = request.into_inner();
+
+        let Some(request) = request else {
+            return Err(Status::new(tonic::Code::InvalidArgument, "empty request"));
+        };
+
+        let timeout = timeout.map(std::time::Duration::from_secs);
+
+        let operation = ClusterOperations::DropShardingKey(DropShardingKeyOperation {
+            drop_sharding_key: request.try_into()?,
+        });
+
+        let result = do_update_collection_cluster(
+            self.dispatcher.as_ref(),
+            collection_name,
+            operation,
+            timeout,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+        Ok(Response::new(DeleteShardKeyResponse { result }))
     }
 }
 

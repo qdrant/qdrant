@@ -84,13 +84,7 @@ impl Collection {
             )));
         }
 
-        let max_shard_id = state
-            .shards_key_mapping
-            .values()
-            .flat_map(|shard_ids| shard_ids.iter())
-            .max()
-            .copied()
-            .unwrap_or(0);
+        let max_shard_id = state.max_shard_id();
 
         let payload_schema = self.payload_index_schema.read().schema.clone();
 

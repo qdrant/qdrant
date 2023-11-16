@@ -149,10 +149,9 @@ pub async fn do_get_collection_cluster(
 }
 
 pub async fn do_update_collection_cluster(
-    toc: &TableOfContent,
+    dispatcher: &Dispatcher,
     collection_name: String,
     operation: ClusterOperations,
-    dispatcher: &Dispatcher,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
     if dispatcher.consensus_state().is_none() {
@@ -188,7 +187,7 @@ pub async fn do_update_collection_cluster(
         Ok(())
     };
 
-    let collection = toc.get_collection(&collection_name).await?;
+    let collection = dispatcher.get_collection(&collection_name).await?;
 
     match operation {
         ClusterOperations::MoveShard(MoveShardOperation { move_shard }) => {
