@@ -16,8 +16,8 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    Named, NamedQuery, NamedVectorStruct, QueryVector, VectorElementType, VectorStruct, VectorType,
-    DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType, VectorRef,
+    VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
@@ -26,7 +26,6 @@ use segment::types::{
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
-use segment::vector_storage::query::TransformInto;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
@@ -318,9 +317,9 @@ pub struct SearchRequestBatch {
 #[derive(Debug, Clone)]
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
-    RecommendBestScore(NamedQuery<RecoQuery<VectorType>>),
-    Discover(NamedQuery<DiscoveryQuery<VectorType>>),
-    Context(NamedQuery<ContextQuery<VectorType>>),
+    RecommendBestScore(NamedQuery<RecoQuery<Vector>>),
+    Discover(NamedQuery<DiscoveryQuery<Vector>>),
+    Context(NamedQuery<ContextQuery<Vector>>),
 }
 
 impl QueryEnum {
@@ -340,8 +339,8 @@ impl From<Vec<VectorElementType>> for QueryEnum {
     }
 }
 
-impl From<NamedQuery<DiscoveryQuery<VectorType>>> for QueryEnum {
-    fn from(query: NamedQuery<DiscoveryQuery<VectorType>>) -> Self {
+impl From<NamedQuery<DiscoveryQuery<Vector>>> for QueryEnum {
+    fn from(query: NamedQuery<DiscoveryQuery<Vector>>) -> Self {
         QueryEnum::Discover(query)
     }
 }
@@ -1148,10 +1147,12 @@ impl Record {
         }
     }
 
-    pub fn get_vector_by_name(&self, name: &str) -> Option<&VectorType> {
+    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
         match &self.vector {
-            Some(VectorStruct::Single(vector)) => (name == DEFAULT_VECTOR_NAME).then_some(vector),
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name),
+            Some(VectorStruct::Single(vector)) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
+            }
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(|v| v.into()),
             None => None,
         }
     }
@@ -1556,11 +1557,9 @@ impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
             QueryEnum::Nearest(named) => QueryVector::Nearest(named.into()),
-            QueryEnum::RecommendBestScore(named) => {
-                QueryVector::Recommend(named.query.transform_into())
-            }
-            QueryEnum::Discover(named) => QueryVector::Discovery(named.query.transform_into()),
-            QueryEnum::Context(named) => QueryVector::Context(named.query.transform_into()),
+            QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query),
+            QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
+            QueryEnum::Context(named) => QueryVector::Context(named.query),
         }
     }
 }

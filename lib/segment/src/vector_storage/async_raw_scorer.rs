@@ -26,9 +26,9 @@ pub fn new<'a>(
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    Ok(AsyncRawScorerBuilder::new(query, storage, point_deleted)?
+    AsyncRawScorerBuilder::new(query, storage, point_deleted)?
         .with_is_stopped(is_stopped)
-        .build())
+        .build()
 }
 
 pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer> {
@@ -240,7 +240,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         Ok(builder)
     }
 
-    pub fn build(self) -> Box<dyn RawScorer + 'a> {
+    pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.distance {
             Distance::Cosine => self._build_with_metric::<CosineMetric>(),
             Distance::Euclid => self._build_with_metric::<EuclidMetric>(),
@@ -253,7 +253,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         self
     }
 
-    fn _build_with_metric<TMetric: Metric + 'a>(self) -> Box<dyn RawScorer + 'a> {
+    fn _build_with_metric<TMetric: Metric + 'a>(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let Self {
             points_count,
             query,
@@ -270,54 +270,55 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     Vector::Dense(dense_vector) => {
                         let query_scorer =
                             MetricQueryScorer::<TMetric, _>::new(dense_vector, storage);
-                        Box::new(AsyncRawScorerImpl::new(
+                        Ok(Box::new(AsyncRawScorerImpl::new(
                             points_count,
                             query_scorer,
                             storage.get_mmap_vectors(),
                             point_deleted,
                             vec_deleted,
                             is_stopped.unwrap_or(&DEFAULT_STOPPED),
-                        ))
+                        )))
                     }
                     Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO(sparse)
                 }
             }
             QueryVector::Recommend(reco_query) => {
-                let reco_query: RecoQuery<VectorType> = reco_query.transform_into();
+                let reco_query: RecoQuery<VectorType> = reco_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(reco_query, storage);
-                Box::new(AsyncRawScorerImpl::new(
+                Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,
                     query_scorer,
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
                     is_stopped.unwrap_or(&DEFAULT_STOPPED),
-                ))
+                )))
             }
             QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<VectorType> = discovery_query.transform_into();
+                let discovery_query: DiscoveryQuery<VectorType> =
+                    discovery_query.transform_into()?;
                 let query_scorer =
                     CustomQueryScorer::<TMetric, _, _>::new(discovery_query, storage);
-                Box::new(AsyncRawScorerImpl::new(
+                Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,
                     query_scorer,
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
                     is_stopped.unwrap_or(&DEFAULT_STOPPED),
-                ))
+                )))
             }
             QueryVector::Context(context_query) => {
-                let context_query: ContextQuery<VectorType> = context_query.transform_into();
+                let context_query: ContextQuery<VectorType> = context_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(context_query, storage);
-                Box::new(AsyncRawScorerImpl::new(
+                Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,
                     query_scorer,
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
                     is_stopped.unwrap_or(&DEFAULT_STOPPED),
-                ))
+                )))
             }
         }
     }

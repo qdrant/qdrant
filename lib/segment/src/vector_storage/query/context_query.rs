@@ -1,8 +1,10 @@
 use std::iter;
 
 use common::types::ScoreType;
+use itertools::Itertools;
 
 use super::{Query, TransformInto};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector};
 
 #[derive(Debug, Clone)]
@@ -16,14 +18,14 @@ impl<T> ContextPair<T> {
         iter::once(&self.positive).chain(iter::once(&self.negative))
     }
 
-    pub fn transform<F, U>(self, mut f: F) -> ContextPair<U>
+    pub fn transform<F, U>(self, mut f: F) -> OperationResult<ContextPair<U>>
     where
-        F: FnMut(T) -> U,
+        F: FnMut(T) -> OperationResult<U>,
     {
-        ContextPair {
-            positive: f(self.positive),
-            negative: f(self.negative),
-        }
+        Ok(ContextPair {
+            positive: f(self.positive)?,
+            negative: f(self.negative)?,
+        })
     }
 
     /// In the first stage of discovery search, the objective is to get the best entry point
@@ -80,16 +82,16 @@ impl<T> ContextQuery<T> {
 }
 
 impl<T, U> TransformInto<ContextQuery<U>, T, U> for ContextQuery<T> {
-    fn transform<F>(self, mut f: F) -> ContextQuery<U>
+    fn transform<F>(self, mut f: F) -> OperationResult<ContextQuery<U>>
     where
-        F: FnMut(T) -> U,
+        F: FnMut(T) -> OperationResult<U>,
     {
-        ContextQuery::new(
+        Ok(ContextQuery::new(
             self.pairs
                 .into_iter()
                 .map(|pair| pair.transform(&mut f))
-                .collect(),
-        )
+                .try_collect()?,
+        ))
     }
 }
 

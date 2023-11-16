@@ -27,7 +27,9 @@ impl<
     > CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
     pub fn new(query: TQuery, vector_storage: &'a TVectorStorage) -> Self {
-        let query = query.transform(|vector| TMetric::preprocess(vector));
+        let query = query
+            .transform(|vector| Ok(TMetric::preprocess(vector)))
+            .unwrap();
 
         Self {
             query,

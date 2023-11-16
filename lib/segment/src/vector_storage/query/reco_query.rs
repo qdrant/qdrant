@@ -1,7 +1,9 @@
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
+use itertools::Itertools;
 
 use super::{Query, TransformInto};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector};
 
 #[derive(Debug, Clone)]
@@ -24,14 +26,14 @@ impl<T> RecoQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoQuery<U>, T, U> for RecoQuery<T> {
-    fn transform<F>(self, mut f: F) -> RecoQuery<U>
+    fn transform<F>(self, mut f: F) -> OperationResult<RecoQuery<U>>
     where
-        F: FnMut(T) -> U,
+        F: FnMut(T) -> OperationResult<U>,
     {
-        RecoQuery::new(
-            self.positives.into_iter().map(&mut f).collect(),
-            self.negatives.into_iter().map(&mut f).collect(),
-        )
+        Ok(RecoQuery::new(
+            self.positives.into_iter().map(&mut f).try_collect()?,
+            self.negatives.into_iter().map(&mut f).try_collect()?,
+        ))
     }
 }
 

@@ -50,7 +50,7 @@ fn discovery_into_core_search(
         lookup_collection_name,
     )
     .next()
-    .cloned();
+    .map(|v| v.to_owned());
 
     let context_pairs = request
         .context
@@ -63,7 +63,7 @@ fn discovery_into_core_search(
                 &lookup_vector_name,
                 lookup_collection_name,
             )
-            .cloned();
+            .map(|v| v.to_owned());
 
             ContextPair {
                 // SAFETY: we know there are two elements in the iterator
