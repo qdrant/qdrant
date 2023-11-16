@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use futures::{future, TryStreamExt as _};
+use futures::{future, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools as _;
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
@@ -165,16 +165,27 @@ impl Collection {
         let retrieved_points: Vec<_> = {
             let shards_holder = self.shards_holder.read().await;
             let target_shards = shards_holder.select_shards(shard_selection)?;
-            let scroll_futures = target_shards.into_iter().map(|shard| {
-                shard.scroll_by(
-                    offset,
-                    limit,
-                    &with_payload_interface,
-                    &with_vector,
-                    request.filter.as_ref(),
-                    read_consistency,
-                    shard_selection.is_shard_id(),
-                )
+            let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
+                let shard_key = shard_key.cloned();
+                shard
+                    .scroll_by(
+                        offset,
+                        limit,
+                        &with_payload_interface,
+                        &with_vector,
+                        request.filter.as_ref(),
+                        read_consistency,
+                        shard_selection.is_shard_id(),
+                    )
+                    .and_then(move |mut records| async move {
+                        if shard_key.is_none() {
+                            return Ok(records);
+                        }
+                        for point in &mut records {
+                            point.shard_key = shard_key.clone();
+                        }
+                        Ok(records)
+                    })
             });
 
             future::try_join_all(scroll_futures).await?
@@ -212,7 +223,7 @@ impl Collection {
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
-            .map(|shard| {
+            .map(|(shard, _shard_key)| {
                 shard.count(
                     request.clone(),
                     read_consistency,
@@ -245,14 +256,25 @@ impl Collection {
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.select_shards(shard_selection)?;
-            let retrieve_futures = target_shards.into_iter().map(|shard| {
-                shard.retrieve(
-                    request.clone(),
-                    &with_payload,
-                    &request.with_vector,
-                    read_consistency,
-                    shard_selection.is_shard_id(),
-                )
+            let retrieve_futures = target_shards.into_iter().map(|(shard, shard_key)| {
+                let shard_key = shard_key.cloned();
+                shard
+                    .retrieve(
+                        request.clone(),
+                        &with_payload,
+                        &request.with_vector,
+                        read_consistency,
+                        shard_selection.is_shard_id(),
+                    )
+                    .and_then(move |mut records| async move {
+                        if shard_key.is_none() {
+                            return Ok(records);
+                        }
+                        for point in &mut records {
+                            point.shard_key = shard_key.clone();
+                        }
+                        Ok(records)
+                    })
             });
             future::try_join_all(retrieve_futures).await?
         };

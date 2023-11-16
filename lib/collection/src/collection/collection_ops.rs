@@ -208,7 +208,7 @@ impl Collection {
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`
-            .map(|shard| shard.info(shard_selection.is_shard_id()))
+            .map(|(shard, _shard_key)| shard.info(shard_selection.is_shard_id()))
             .collect();
 
         let mut info = match requests.try_next().await? {

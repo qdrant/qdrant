@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future;
+use futures::{future, TryFutureExt};
 use segment::spaces::tools;
 use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, WithVector};
 
@@ -130,13 +130,26 @@ impl Collection {
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.select_shards(shard_selection)?;
-            let all_searches = target_shards.iter().map(|shard| {
-                shard.core_search(
-                    Arc::clone(&request),
-                    read_consistency,
-                    shard_selection.is_shard_id(),
-                    timeout,
-                )
+            let all_searches = target_shards.iter().map(|(shard, shard_key)| {
+                let shard_key = shard_key.cloned();
+                shard
+                    .core_search(
+                        Arc::clone(&request),
+                        read_consistency,
+                        shard_selection.is_shard_id(),
+                        timeout,
+                    )
+                    .and_then(move |mut records| async move {
+                        if shard_key.is_none() {
+                            return Ok(records);
+                        }
+                        for batch in &mut records {
+                            for point in batch {
+                                point.shard_key = shard_key.clone();
+                            }
+                        }
+                        Ok(records)
+                    })
             });
             future::try_join_all(all_searches).await?
         };
