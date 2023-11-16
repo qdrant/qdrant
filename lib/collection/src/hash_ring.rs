@@ -55,6 +55,20 @@ impl<T: Hash + Copy> HashRing<T> {
             HashRing::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            HashRing::Raw(ring) => ring.len(),
+            HashRing::Fair { ring, .. } => ring.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            HashRing::Raw(ring) => ring.is_empty(),
+            HashRing::Fair { ring, .. } => ring.is_empty(),
+        }
+    }
 }
 
 #[cfg(test)]

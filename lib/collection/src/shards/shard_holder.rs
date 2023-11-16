@@ -207,10 +207,24 @@ impl ShardHolder {
         &self,
         operation: O,
         shard_keys_selection: &Option<ShardKey>,
-    ) -> Vec<(&ShardReplicaSet, O)> {
+    ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
         let Some(hashring) = self.rings.get(shard_keys_selection) else {
-            return vec![];
+            if let Some(shard_key) = shard_keys_selection {
+                return Err(CollectionError::bad_input(format!(
+                    "Shard key {shard_key} not found"
+                )));
+            } else {
+                return Err(CollectionError::bad_input(
+                    "Shard key not specified".to_string(),
+                ));
+            }
         };
+
+        if hashring.is_empty() {
+            return Err(CollectionError::bad_input(
+                "No shards found for shard key".to_string(),
+            ));
+        }
 
         let operation_to_shard = operation.split_by_shard(hashring);
         let shard_ops: Vec<_> = match operation_to_shard {
@@ -237,7 +251,7 @@ impl ShardHolder {
                 }
             }
         };
-        shard_ops
+        Ok(shard_ops)
     }
 
     pub fn register_start_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<bool> {
