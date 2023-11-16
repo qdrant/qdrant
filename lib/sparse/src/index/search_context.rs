@@ -20,6 +20,7 @@ pub struct SearchContext<'a> {
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
+    use_pruning: bool,
 }
 
 impl<'a> SearchContext<'a> {
@@ -40,13 +41,17 @@ impl<'a> SearchContext<'a> {
             }
         }
         let result_queue = FixedLengthPriorityQueue::new(top);
-
+        // Query vectors with negative values can NOT use the pruning mechanism which relies on the pre-computed `max_next_weight`.
+        // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
+        // This is a limitation of the current pruning implementation.
+        let use_pruning = query.values.iter().all(|v| *v >= 0.0);
         SearchContext {
             postings_iterators,
             query,
             top,
             is_stopped,
             result_queue,
+            use_pruning,
         }
     }
 
@@ -172,7 +177,7 @@ impl<'a> SearchContext<'a> {
 
             // we potentially have enough results to prune low performing posting lists
             // TODO(sparse) pruning is expensive, we should only do it when it makes sense (detect hot keys at runtime)
-            if self.result_queue.len() == self.top {
+            if self.use_pruning && self.result_queue.len() == self.top {
                 // current min score
                 let min_score = self.result_queue.top().unwrap().score;
 
@@ -775,7 +780,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO(sparse) make this test pass
     fn pruning_does_not_skip_negative_score_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
             .add(
@@ -790,13 +794,54 @@ mod tests {
                 indices: vec![1, 2, 3],
                 values: vec![-1.0, 1.0, 1.0],
             },
-            1,
+            2,
             &inverted_index_ram,
             &is_stopped,
         );
 
-        // no pruning because -1.0 * -40.0 > 30.0
-        assert!(!search_context.prune_longest_posting_list(30.0));
+        // pruning is automatically deactivated because the query vector contains negative values
+        assert!(!search_context.use_pruning);
+        assert_eq!(
+            search_context.search(&match_all),
+            vec![
+                ScoredPointOffset {
+                    score: 40.0,
+                    idx: 5
+                },
+                ScoredPointOffset {
+                    score: -1.0,
+                    idx: 1
+                },
+            ]
+        );
+
+        // try again with pruning to show the problem
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![-1.0, 1.0, 1.0],
+            },
+            2,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+        search_context.use_pruning = true;
+        assert!(search_context.use_pruning);
+
+        // the last value has been pruned although it could have contributed a high score -1 * -40 = 40
+        assert_eq!(
+            search_context.search(&match_all),
+            vec![
+                ScoredPointOffset {
+                    score: -1.0,
+                    idx: 1
+                },
+                ScoredPointOffset {
+                    score: -2.0,
+                    idx: 2
+                }
+            ]
+        );
     }
 
     /// Generates a random inverted index with `num_vectors` vectors
