@@ -41,6 +41,9 @@ pub struct ShardHolder {
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     rings: HashMap<Option<ShardKey>, HashRing<ShardId>>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
+    // Duplicates the information from `key_mapping` for faster access
+    // Do not require locking
+    shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -50,12 +53,22 @@ impl ShardHolder {
         let mut rings = HashMap::new();
         rings.insert(None, HashRing::fair(HASH_RING_SHARD_SCALE));
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
-        let key_mapping = SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
+        let key_mapping: SaveOnDisk<ShardKeyMapping> =
+            SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
+        let mut shard_id_to_key_mapping = HashMap::new();
+
+        for (shard_key, shard_ids) in key_mapping.read().iter() {
+            for shard_id in shard_ids {
+                shard_id_to_key_mapping.insert(*shard_id, shard_key.clone());
+            }
+        }
+
         Ok(Self {
             shards: HashMap::new(),
             shard_transfers,
             rings,
             key_mapping,
+            shard_id_to_key_mapping,
         })
     }
 
@@ -65,12 +78,8 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn get_shard_id_to_key_mapping(&self) -> HashMap<ShardId, ShardKey> {
-        self.key_mapping
-            .read()
-            .iter()
-            .flat_map(|(key, shard_ids)| shard_ids.iter().map(|shard_id| (*shard_id, key.clone())))
-            .collect()
+    pub fn get_shard_id_to_key_mapping(&self) -> &HashMap<ShardId, ShardKey> {
+        &self.shard_id_to_key_mapping
     }
 
     pub fn get_shard_key_to_ids_mapping(&self) -> ShardKeyMapping {
@@ -109,10 +118,11 @@ impl ShardHolder {
                     return None;
                 }
                 let mut copy_of_mapping = key_mapping.clone();
-                let shard_ids = copy_of_mapping.entry(shard_key).or_default();
+                let shard_ids = copy_of_mapping.entry(shard_key.clone()).or_default();
                 shard_ids.insert(shard_id);
                 Some(copy_of_mapping)
             })?;
+            self.shard_id_to_key_mapping.insert(shard_id, shard_key);
         }
         Ok(())
     }
@@ -137,6 +147,7 @@ impl ShardHolder {
         self.rings.remove(&Some(shard_key.clone()));
         for shard_id in remove_shard_ids {
             self.drop_and_remove_shard(shard_id).await?;
+            self.shard_id_to_key_mapping.remove(&shard_id);
         }
         Ok(())
     }
@@ -311,10 +322,10 @@ impl ShardHolder {
         }
     }
 
-    pub fn select_shards(
-        &self,
-        shard_selector: &ShardSelectorInternal,
-    ) -> CollectionResult<Vec<&ShardReplicaSet>> {
+    pub fn select_shards<'a>(
+        &'a self,
+        shard_selector: &'a ShardSelectorInternal,
+    ) -> CollectionResult<Vec<(&ShardReplicaSet, Option<&ShardKey>)>> {
         let mut res = Vec::new();
 
         match shard_selector {
@@ -322,12 +333,15 @@ impl ShardHolder {
                 debug_assert!(false, "Do not expect empty shard selector")
             }
             ShardSelectorInternal::All => {
-                res.extend(self.all_shards());
+                for (shard_id, shard) in self.shards.iter() {
+                    let shard_key = self.shard_id_to_key_mapping.get(shard_id);
+                    res.push((shard, shard_key));
+                }
             }
             ShardSelectorInternal::ShardKey(shard_key) => {
                 for shard_id in self.get_shard_ids_by_key(shard_key)? {
                     if let Some(replica_set) = self.shards.get(&shard_id) {
-                        res.push(replica_set);
+                        res.push((replica_set, Some(shard_key)));
                     } else {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
@@ -337,7 +351,7 @@ impl ShardHolder {
                 for shard_key in shard_keys {
                     for shard_id in self.get_shard_ids_by_key(shard_key)? {
                         if let Some(replica_set) = self.shards.get(&shard_id) {
-                            res.push(replica_set);
+                            res.push((replica_set, Some(shard_key)));
                         } else {
                             debug_assert!(false, "Shard id {shard_id} not found")
                         }
@@ -346,7 +360,7 @@ impl ShardHolder {
             }
             ShardSelectorInternal::ShardId(shard_id) => {
                 if let Some(replica_set) = self.shards.get(shard_id) {
-                    res.push(replica_set);
+                    res.push((replica_set, self.shard_id_to_key_mapping.get(shard_id)));
                 } else {
                     return Err(shard_not_found_error(*shard_id));
                 }
@@ -414,7 +428,7 @@ impl ShardHolder {
                     .cloned()
                     .sorted()
                     .collect::<Vec<_>>();
-                (ids_list, shard_id_to_key_mapping)
+                (ids_list, shard_id_to_key_mapping.clone())
             }
         };
 
