@@ -457,7 +457,7 @@ impl Collection {
         };
 
         for replica_set in shard_holder.all_shards() {
-            replica_set.sync_local_state(get_shard_transfers).await?;
+            replica_set.sync_local_state(get_shard_transfers)?;
         }
 
         // Check for un-reported finished transfers
