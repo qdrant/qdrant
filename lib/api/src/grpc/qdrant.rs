@@ -845,6 +845,31 @@ pub struct Replica {
     #[prost(uint64, tag = "2")]
     pub peer_id: u64,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateShardKey {
+    /// User-defined shard key
+    #[prost(message, optional, tag = "1")]
+    pub shard_key: ::core::option::Option<ShardKey>,
+    /// Number of shards to create per shard key
+    #[prost(uint32, optional, tag = "2")]
+    pub shards_number: ::core::option::Option<u32>,
+    /// Number of replicas of each shard to create
+    #[prost(uint32, optional, tag = "3")]
+    pub replication_factor: ::core::option::Option<u32>,
+    /// List of peer ids, allowed to create shards. If empty - all peers are allowed
+    #[prost(uint64, repeated, tag = "4")]
+    pub placement: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardKey {
+    /// Shard key to delete
+    #[prost(message, optional, tag = "1")]
+    pub shard_key: ::core::option::Option<ShardKey>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -859,7 +884,7 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
-        tags = "2, 3, 4, 5"
+        tags = "2, 3, 4, 5, 7, 8"
     )]
     #[validate]
     pub operation: ::core::option::Option<
@@ -880,12 +905,58 @@ pub mod update_collection_cluster_setup_request {
         AbortTransfer(super::MoveShard),
         #[prost(message, tag = "5")]
         DropReplica(super::Replica),
+        #[prost(message, tag = "7")]
+        CreateShardKey(super::CreateShardKey),
+        #[prost(message, tag = "8")]
+        DeleteShardKey(super::DeleteShardKey),
     }
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionClusterSetupResponse {
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateShardKeyRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Request to create shard key
+    #[prost(message, optional, tag = "2")]
+    pub request: ::core::option::Option<CreateShardKey>,
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag = "3")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardKeyRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Request to delete shard key
+    #[prost(message, optional, tag = "2")]
+    pub request: ::core::option::Option<DeleteShardKey>,
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag = "3")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateShardKeyResponse {
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardKeyResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
 }
@@ -1548,6 +1619,60 @@ pub mod collections_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        ///
+        /// Create shard key
+        pub async fn create_shard_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateShardKeyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/CreateShardKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "CreateShardKey"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Delete shard key
+        pub async fn delete_shard_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardKeyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/DeleteShardKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "DeleteShardKey"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1645,6 +1770,24 @@ pub mod collections_server {
             request: tonic::Request<super::UpdateCollectionClusterSetupRequest>,
         ) -> std::result::Result<
             tonic::Response<super::UpdateCollectionClusterSetupResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Create shard key
+        async fn create_shard_key(
+            &self,
+            request: tonic::Request<super::CreateShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateShardKeyResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Delete shard key
+        async fn delete_shard_key(
+            &self,
+            request: tonic::Request<super::DeleteShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardKeyResponse>,
             tonic::Status,
         >;
     }
@@ -2181,6 +2324,98 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = UpdateCollectionClusterSetupSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/CreateShardKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateShardKeySvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::CreateShardKeyRequest>
+                    for CreateShardKeySvc<T> {
+                        type Response = super::CreateShardKeyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateShardKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::create_shard_key(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateShardKeySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/DeleteShardKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteShardKeySvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::DeleteShardKeyRequest>
+                    for DeleteShardKeySvc<T> {
+                        type Response = super::DeleteShardKeyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteShardKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::delete_shard_key(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteShardKeySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

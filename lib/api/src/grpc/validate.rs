@@ -114,6 +114,8 @@ impl Validate for crate::grpc::qdrant::update_collection_cluster_setup_request::
             Operation::ReplicateShard(op) => op.validate(),
             Operation::AbortTransfer(op) => op.validate(),
             Operation::DropReplica(op) => op.validate(),
+            Operation::CreateShardKey(op) => op.validate(),
+            Operation::DeleteShardKey(op) => op.validate(),
         }
     }
 }
@@ -121,6 +123,36 @@ impl Validate for crate::grpc::qdrant::update_collection_cluster_setup_request::
 impl Validate for crate::grpc::qdrant::MoveShard {
     fn validate(&self) -> Result<(), ValidationErrors> {
         validate_move_shard_different_peers(self.from_peer_id, self.to_peer_id)
+    }
+}
+
+impl Validate for crate::grpc::qdrant::CreateShardKey {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        if self.replication_factor == Some(0) {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "replication_factor",
+                ValidationError::new("Replication factor must be greater than 0"),
+            );
+            return Err(errors);
+        }
+
+        if self.shards_number == Some(0) {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "shards_number",
+                ValidationError::new("Shards number must be greater than 0"),
+            );
+            return Err(errors);
+        }
+
+        Ok(())
+    }
+}
+
+impl Validate for crate::grpc::qdrant::DeleteShardKey {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        Ok(())
     }
 }
 

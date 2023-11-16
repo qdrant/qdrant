@@ -27,3 +27,14 @@ pub struct State {
     #[serde(default)]
     pub payload_index_schema: PayloadIndexSchema,
 }
+
+impl State {
+    pub fn max_shard_id(&self) -> ShardId {
+        self.shards_key_mapping
+            .values()
+            .flat_map(|shard_ids| shard_ids.iter())
+            .max()
+            .copied()
+            .unwrap_or(0)
+    }
+}

@@ -7,8 +7,10 @@ use api::grpc::conversions::{
     from_grpc_dist, payload_to_proto, proto_to_payloads,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
-use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
-use api::grpc::qdrant::SearchPoints;
+use api::grpc::qdrant::update_collection_cluster_setup_request::{
+    Operation as ClusterOperationsPb, Operation,
+};
+use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
@@ -33,7 +35,8 @@ use crate::config::{
 use crate::lookup::types::WithLookupInterface;
 use crate::lookup::WithLookup;
 use crate::operations::cluster_ops::{
-    AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShard, MoveShardOperation,
+    AbortTransferOperation, ClusterOperations, CreateShardingKey, CreateShardingKeyOperation,
+    DropReplicaOperation, DropShardingKey, DropShardingKeyOperation, MoveShard, MoveShardOperation,
     Replica, ReplicateShardOperation,
 };
 use crate::operations::config_diff::{
@@ -1555,6 +1558,52 @@ impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
     }
 }
 
+impl TryFrom<api::grpc::qdrant::CreateShardKey> for CreateShardingKey {
+    type Error = Status;
+
+    fn try_from(op: CreateShardKey) -> Result<Self, Self::Error> {
+        let res = CreateShardingKey {
+            shard_key: op
+                .shard_key
+                .and_then(convert_shard_key_from_grpc)
+                .ok_or(Status::invalid_argument("Shard key is not specified"))?,
+            shards_number: op
+                .shards_number
+                .map(NonZeroU32::try_from)
+                .transpose()
+                .map_err(|err| {
+                    Status::invalid_argument(format!("Replication factor cannot be zero: {}", err))
+                })?,
+            replication_factor: op
+                .shards_number
+                .map(NonZeroU32::try_from)
+                .transpose()
+                .map_err(|err| {
+                    Status::invalid_argument(format!("Replication factor cannot be zero: {}", err))
+                })?,
+            placement: if op.placement.is_empty() {
+                None
+            } else {
+                Some(op.placement)
+            },
+        };
+        Ok(res)
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::DeleteShardKey> for DropShardingKey {
+    type Error = Status;
+
+    fn try_from(op: api::grpc::qdrant::DeleteShardKey) -> Result<Self, Self::Error> {
+        Ok(DropShardingKey {
+            shard_key: op
+                .shard_key
+                .and_then(convert_shard_key_from_grpc)
+                .ok_or(Status::invalid_argument("Shard key is not specified"))?,
+        })
+    }
+}
+
 impl TryFrom<ClusterOperationsPb> for ClusterOperations {
     type Error = Status;
 
@@ -1581,6 +1630,16 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                         shard_id: op.shard_id,
                         peer_id: op.peer_id,
                     },
+                })
+            }
+            Operation::CreateShardKey(op) => {
+                ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
+                    create_sharding_key: op.try_into()?,
+                })
+            }
+            Operation::DeleteShardKey(op) => {
+                ClusterOperations::DropShardingKey(DropShardingKeyOperation {
+                    drop_sharding_key: op.try_into()?,
                 })
             }
         })

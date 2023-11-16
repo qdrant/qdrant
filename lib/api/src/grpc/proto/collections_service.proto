@@ -46,4 +46,12 @@ service Collections {
   Update cluster setup for a collection
   */
   rpc UpdateCollectionClusterSetup (UpdateCollectionClusterSetupRequest) returns (UpdateCollectionClusterSetupResponse) {}
+  /*
+  Create shard key
+  */
+  rpc CreateShardKey (CreateShardKeyRequest) returns (CreateShardKeyResponse) {}
+  /*
+  Delete shard key
+  */
+  rpc DeleteShardKey (DeleteShardKeyRequest) returns (DeleteShardKeyResponse) {}
 }

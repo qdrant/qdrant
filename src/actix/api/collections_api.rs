@@ -151,7 +151,6 @@ async fn get_cluster_info(
 
 #[post("/collections/{name}/cluster")]
 async fn update_collection_cluster(
-    toc: web::Data<TableOfContent>,
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<ClusterOperations>,
@@ -160,10 +159,9 @@ async fn update_collection_cluster(
     let timing = Instant::now();
     let wait_timeout = query.timeout();
     let response = do_update_collection_cluster(
-        toc.get_ref(),
+        &dispatcher.into_inner(),
         collection.name.clone(),
         operation.0,
-        &dispatcher.into_inner(),
         wait_timeout,
     )
     .await;

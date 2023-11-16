@@ -1,5 +1,179 @@
 {
   "paths": {
+    "/collections/{collection_name}/shards": {
+      "put": {
+        "tags": [
+          "collections",
+          "cluster"
+        ],
+        "summary": "Create shard key",
+        "operationId": "create_shard_key",
+        "requestBody": {
+          "description": "Shard key configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShardingKey"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to create shards for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/shards/delete": {
+      "post": {
+        "tags": [
+          "collections",
+          "cluster"
+        ],
+        "summary": "Delete shard key",
+        "operationId": "delete_shard_key",
+        "requestBody": {
+          "description": "Select shard key to delete",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DropShardingKey"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to create shards for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/telemetry": {
       "get": {
         "summary": "Collect telemetry data",

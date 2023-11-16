@@ -19,8 +19,14 @@
     - [CollectionParamsDiff](#qdrant-CollectionParamsDiff)
     - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
+    - [CreateShardKey](#qdrant-CreateShardKey)
+    - [CreateShardKeyRequest](#qdrant-CreateShardKeyRequest)
+    - [CreateShardKeyResponse](#qdrant-CreateShardKeyResponse)
     - [DeleteAlias](#qdrant-DeleteAlias)
     - [DeleteCollection](#qdrant-DeleteCollection)
+    - [DeleteShardKey](#qdrant-DeleteShardKey)
+    - [DeleteShardKeyRequest](#qdrant-DeleteShardKeyRequest)
+    - [DeleteShardKeyResponse](#qdrant-DeleteShardKeyResponse)
     - [Disabled](#qdrant-Disabled)
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
@@ -499,6 +505,56 @@
 
 
 
+<a name="qdrant-CreateShardKey"></a>
+
+### CreateShardKey
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_key | [ShardKey](#qdrant-ShardKey) |  | User-defined shard key |
+| shards_number | [uint32](#uint32) | optional | Number of shards to create per shard key |
+| replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard to create |
+| placement | [uint64](#uint64) | repeated | List of peer ids, allowed to create shards. If empty - all peers are allowed |
+
+
+
+
+
+
+<a name="qdrant-CreateShardKeyRequest"></a>
+
+### CreateShardKeyRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| request | [CreateShardKey](#qdrant-CreateShardKey) |  | Request to create shard key |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-CreateShardKeyResponse"></a>
+
+### CreateShardKeyResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [bool](#bool) |  |  |
+
+
+
+
+
+
 <a name="qdrant-DeleteAlias"></a>
 
 ### DeleteAlias
@@ -524,6 +580,53 @@
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-DeleteShardKey"></a>
+
+### DeleteShardKey
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_key | [ShardKey](#qdrant-ShardKey) |  | Shard key to delete |
+
+
+
+
+
+
+<a name="qdrant-DeleteShardKeyRequest"></a>
+
+### DeleteShardKeyRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| request | [DeleteShardKey](#qdrant-DeleteShardKey) |  | Request to delete shard key |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-DeleteShardKeyResponse"></a>
+
+### DeleteShardKeyResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [bool](#bool) |  |  |
 
 
 
@@ -986,6 +1089,8 @@ Note: 1kB = 1 vector of size 256. |
 | replicate_shard | [MoveShard](#qdrant-MoveShard) |  |  |
 | abort_transfer | [MoveShard](#qdrant-MoveShard) |  |  |
 | drop_replica | [Replica](#qdrant-Replica) |  |  |
+| create_shard_key | [CreateShardKey](#qdrant-CreateShardKey) |  |  |
+| delete_shard_key | [DeleteShardKey](#qdrant-DeleteShardKey) |  |  |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 
@@ -1320,6 +1425,8 @@ Note: 1kB = 1 vector of size 256. |
 | ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for all existing collections |
 | CollectionClusterInfo | [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest) | [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse) | Get cluster information for a collection |
 | UpdateCollectionClusterSetup | [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest) | [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse) | Update cluster setup for a collection |
+| CreateShardKey | [CreateShardKeyRequest](#qdrant-CreateShardKeyRequest) | [CreateShardKeyResponse](#qdrant-CreateShardKeyResponse) | Create shard key |
+| DeleteShardKey | [DeleteShardKeyRequest](#qdrant-DeleteShardKeyRequest) | [DeleteShardKeyResponse](#qdrant-DeleteShardKeyResponse) | Delete shard key |
 
  
 
