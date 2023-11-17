@@ -32,8 +32,9 @@ use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Liste
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
-use crate::shards::transfer::shard_transfer::{check_transfer_conflicts_strict, ShardTransfer};
+use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::TransferTasksPool;
+use crate::shards::transfer::ShardTransfer;
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 

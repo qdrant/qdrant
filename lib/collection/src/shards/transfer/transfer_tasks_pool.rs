@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::common::stoppable_task_async::CancellableAsyncTaskHandle;
-use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
+use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
 pub struct TransferTasksPool {

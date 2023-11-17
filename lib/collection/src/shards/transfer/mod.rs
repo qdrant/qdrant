@@ -2,17 +2,21 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::defaults;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
-use self::shard_transfer::ShardTransfer;
 use super::channel_service::ChannelService;
 use super::remote_shard::RemoteShard;
 use super::replica_set::ReplicaState;
-use super::shard::PeerId;
+use super::shard::{PeerId, ShardId};
 use super::CollectionId;
 use crate::operations::types::{CollectionError, CollectionResult};
 
-pub mod shard_transfer;
+pub mod driver;
+pub mod helpers;
+pub mod snapshot;
+pub mod stream_records;
 pub mod transfer_tasks_pool;
 
 /// Number of retries for confirming a consensus operation.
@@ -23,6 +27,54 @@ const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Time after which confirming a consensus operation times out.
 const CONSENSUS_CONFIRM_TIMEOUT: Duration = defaults::CONSENSUS_META_OP_WAIT;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ShardTransfer {
+    pub shard_id: ShardId,
+    pub from: PeerId,
+    pub to: PeerId,
+    /// If this flag is true, this is a replication related transfer of shard from 1 peer to another
+    /// Shard on original peer will not be deleted in this case
+    pub sync: bool,
+    /// Method to transfer shard with. `None` to choose automatically.
+    #[serde(default)]
+    pub method: Option<ShardTransferMethod>,
+}
+
+impl ShardTransfer {
+    pub fn key(&self) -> ShardTransferKey {
+        ShardTransferKey {
+            shard_id: self.shard_id,
+            from: self.from,
+            to: self.to,
+        }
+    }
+}
+
+/// Unique identifier of a transfer, agnostic of transfer method
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ShardTransferKey {
+    pub shard_id: ShardId,
+    pub from: PeerId,
+    pub to: PeerId,
+}
+
+impl ShardTransferKey {
+    pub fn check(&self, transfer: &ShardTransfer) -> bool {
+        self.shard_id == transfer.shard_id && self.from == transfer.from && self.to == transfer.to
+    }
+}
+
+/// Methods for transferring a shard from one node to another.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardTransferMethod {
+    /// Stream all shard records in batches until the whole shard is transferred.
+    #[default]
+    StreamRecords,
+    /// Snapshot the shard, transfer and restore it on the receiver.
+    Snapshot,
+}
 
 /// Interface to consensus for shard transfer operations.
 #[async_trait]

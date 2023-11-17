@@ -1,8 +1,7 @@
 use std::sync::Weak;
 
 use collection::operations::types::{CollectionError, CollectionResult};
-use collection::shards::transfer::shard_transfer::ShardTransfer;
-use collection::shards::transfer::ShardTransferConsensus;
+use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 use collection::shards::CollectionId;
 
 use super::TableOfContent;

@@ -44,7 +44,7 @@ use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::transfer::shard_transfer::ShardTransferMethod;
+use crate::shards::transfer::ShardTransferMethod;
 use crate::wal::WalError;
 
 /// Current state of the collection.

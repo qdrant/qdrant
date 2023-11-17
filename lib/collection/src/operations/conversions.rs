@@ -58,7 +58,7 @@ use crate::operations::types::{
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::transfer::shard_transfer::ShardTransferMethod;
+use crate::shards::transfer::ShardTransferMethod;
 
 pub fn sharding_method_to_proto(sharding_method: ShardingMethod) -> i32 {
     match sharding_method {

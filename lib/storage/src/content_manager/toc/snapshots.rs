@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferMethod};
+use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 
 use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;

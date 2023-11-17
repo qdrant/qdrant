@@ -26,7 +26,7 @@ use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet}
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
-use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
+use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
 const HASH_RING_SHARD_SCALE: u32 = 100;
