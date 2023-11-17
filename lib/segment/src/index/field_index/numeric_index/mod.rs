@@ -1,8 +1,8 @@
-#[cfg(test)]
-mod tests;
-
 mod immutable_numeric_index;
 mod mutable_numeric_index;
+
+#[cfg(test)]
+mod tests;
 
 use std::cmp::{max, min};
 use std::ops::Bound;
