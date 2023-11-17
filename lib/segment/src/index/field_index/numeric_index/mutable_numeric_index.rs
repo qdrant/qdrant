@@ -30,7 +30,7 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
             db_wrapper,
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
-            max_values_per_point: 1,
+            max_values_per_point: 0,
             point_to_values: Default::default(),
         }
     }

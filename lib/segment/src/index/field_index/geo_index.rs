@@ -73,7 +73,7 @@ impl MutableGeoMapIndex {
             point_to_values: vec![],
             points_count: 0,
             points_values_count: 0,
-            max_values_per_point: 1,
+            max_values_per_point: 0,
             db_wrapper,
         }
     }
@@ -356,6 +356,11 @@ impl GeoMapIndex {
         }
     }
 
+    /// Maximum number of values per point
+    ///
+    /// # Warning
+    ///
+    /// Zero if the index is empty.
     fn max_values_per_point(&self) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.max_values_per_point,

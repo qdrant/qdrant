@@ -155,7 +155,12 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         }
     }
 
-    pub fn get_max_values_per_point(&self) -> usize {
+    /// Maximum number of values per point
+    ///
+    /// # Warning
+    ///
+    /// Zero if the index is empty.
+    pub fn max_values_per_point(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.max_values_per_point,
             NumericIndex::Immutable(index) => index.max_values_per_point,
@@ -195,7 +200,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         // max = min(1000, 500) = 500
         let expected_min = max(
             min_estimation
-                .checked_div(self.get_max_values_per_point())
+                .checked_div(max_values_per_point)
                 .unwrap_or(0),
             max(
                 min(1, min_estimation),
