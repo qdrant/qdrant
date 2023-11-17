@@ -230,8 +230,7 @@ impl Collection {
             .map(|(res, request)| {
                 let order = match &request.query {
                     QueryEnum::Nearest(_) => collection_params
-                        .get_vector_params(request.query.get_vector_name())?
-                        .distance
+                        .get_distance(request.query.get_vector_name())?
                         .distance_order(),
 
                     // Score comes from special handling of the distances in a way that it doesn't
