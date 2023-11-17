@@ -266,6 +266,19 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
     return True
 
 
+def all_nodes_have_same_commit(peer_api_uris: [str]) -> bool:
+    commits = []
+    for uri in peer_api_uris:
+        try:
+            r = requests.get(f"{uri}/cluster")
+            assert_http_ok(r)
+            commits.append(r.json()["result"]["raft_info"]["commit"])
+        except requests.exceptions.ConnectionError:
+            print(f"Could not contact peer {uri} to fetch commit")
+            return False
+    return len(set(commits)) == 1
+
+
 def all_nodes_respond(peer_api_uris: [str]) -> bool:
     for uri in peer_api_uris:
         try:
@@ -356,6 +369,14 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str):
 def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
     try:
         wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
+
+
+def wait_for_same_commit(peer_api_uris: [str]):
+    try:
+        wait_for(all_nodes_have_same_commit, peer_api_uris)
     except Exception as e:
         print_clusters_info(peer_api_uris)
         raise e
