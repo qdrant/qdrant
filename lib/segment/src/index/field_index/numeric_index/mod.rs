@@ -168,6 +168,11 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     }
 
     fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
+        let max_values_per_point = self.max_values_per_point();
+        if max_values_per_point == 0 {
+            return CardinalityEstimation::exact(0);
+        }
+
         let lbound = if let Some(lte) = range.lte {
             Included(T::from_f64(lte))
         } else if let Some(lt) = range.lt {

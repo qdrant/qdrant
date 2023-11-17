@@ -472,6 +472,11 @@ impl GeoMapIndex {
     }
 
     pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
+        let max_values_per_point = self.max_values_per_point();
+        if max_values_per_point == 0 {
+            return CardinalityEstimation::exact(0);
+        }
+
         let common_hash = common_hash_prefix(values);
 
         let total_points = self.get_points_of_hash(&common_hash);
