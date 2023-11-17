@@ -33,9 +33,9 @@ use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Distance, Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
-    PayloadKeyTypeRef, PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -810,13 +810,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| {
-            self.segment_config
-                .vector_data
-                .get(name)
-                .map(|config| config.distance)
-                .unwrap_or(Distance::Dot) // sparse vector case, vector name has already been checked
-        });
+        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
@@ -869,13 +863,7 @@ impl SegmentEntry for Segment {
         mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| {
-            self.segment_config
-                .vector_data
-                .get(name)
-                .map(|config| config.distance)
-                .unwrap_or(Distance::Dot) // sparse vector case, vector name has already been checked
-        });
+        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
