@@ -153,6 +153,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &SparseVector = vector.try_into()?;
+        debug_assert!(vector.is_sorted());
         self.vectors.insert(key as usize, vector.clone());
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
@@ -170,6 +171,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_vector: &SparseVector = other.get_vector(point_id).try_into()?;
+            debug_assert!(other_vector.is_sorted());
             let other_deleted = other.is_deleted_vector(point_id);
             match self.vectors.get(point_id as usize) {
                 Some(_stored_vector) => {

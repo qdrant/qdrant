@@ -146,7 +146,10 @@ impl<'a> NamedVectors<'a> {
                     let preprocessed_vector = distance.preprocess_vector(v.to_vec());
                     *vector = CowValue::Dense(Cow::Owned(preprocessed_vector))
                 }
-                CowValue::Sparse(_) => {}
+                CowValue::Sparse(v) => {
+                    // sort by indices to enable faster dot product and overlap checks
+                    v.to_mut().sort_by_indices();
+                }
             }
         }
     }

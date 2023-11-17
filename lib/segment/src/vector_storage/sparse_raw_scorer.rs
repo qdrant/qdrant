@@ -8,7 +8,7 @@ use super::{RawScorer, SparseVectorStorage};
 use crate::spaces::tools::peek_top_largest_iterable;
 
 pub struct SparseRawScorer<'a, TVectorStorage: SparseVectorStorage> {
-    query: SparseVector,
+    query: SparseVector, // the query must be sorted by indices
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
@@ -17,12 +17,14 @@ pub struct SparseRawScorer<'a, TVectorStorage: SparseVectorStorage> {
 
 impl<'a, TVectorStorage: SparseVectorStorage> SparseRawScorer<'a, TVectorStorage> {
     pub fn new(
-        query: SparseVector,
+        mut query: SparseVector,
         vector_storage: &'a TVectorStorage,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
     ) -> Self {
+        // sort the input query by indices as persisted vectors are sorted
+        query.sort_by_indices();
         Self {
             query,
             vector_storage,
