@@ -3577,7 +3577,6 @@ pub struct SearchPoints {
     pub offset: ::core::option::Option<u64>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "10")]
-    #[validate(custom = "common::validation::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "11")]
@@ -3659,7 +3658,6 @@ pub struct SearchPointGroups {
     pub score_threshold: ::core::option::Option<f32>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "8")]
-    #[validate(custom = "common::validation::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
@@ -7066,7 +7064,6 @@ pub struct CoreSearchPoints {
     #[prost(uint64, optional, tag = "8")]
     pub offset: ::core::option::Option<u64>,
     #[prost(string, optional, tag = "9")]
-    #[validate(custom = "common::validation::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "10")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
