@@ -411,4 +411,15 @@ fn test_empty_cardinality(#[case] immutable: bool) {
             lte: None,
         },
     );
+
+    let (_temp_dir, index) = random_index(0, 0, immutable);
+    cardinality_request(
+        &index,
+        Range {
+            lt: Some(20.0),
+            gt: None,
+            gte: Some(10.0),
+            lte: None,
+        },
+    );
 }
