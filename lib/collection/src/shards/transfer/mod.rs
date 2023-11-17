@@ -41,6 +41,16 @@ pub struct ShardTransfer {
     pub method: Option<ShardTransferMethod>,
 }
 
+impl ShardTransfer {
+    pub fn key(&self) -> ShardTransferKey {
+        ShardTransferKey {
+            shard_id: self.shard_id,
+            from: self.from,
+            to: self.to,
+        }
+    }
+}
+
 /// Unique identifier of a transfer, agnostic of transfer method
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferKey {
@@ -52,16 +62,6 @@ pub struct ShardTransferKey {
 impl ShardTransferKey {
     pub fn check(&self, transfer: &ShardTransfer) -> bool {
         self.shard_id == transfer.shard_id && self.from == transfer.from && self.to == transfer.to
-    }
-}
-
-impl ShardTransfer {
-    pub fn key(&self) -> ShardTransferKey {
-        ShardTransferKey {
-            shard_id: self.shard_id,
-            from: self.from,
-            to: self.to,
-        }
     }
 }
 
