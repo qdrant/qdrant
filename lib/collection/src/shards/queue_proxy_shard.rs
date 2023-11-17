@@ -11,7 +11,7 @@ use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
-use super::transfer::shard_transfer::MAX_RETRY_COUNT;
+use super::transfer::driver::MAX_RETRY_COUNT;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{

@@ -5,8 +5,7 @@ use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
-use collection::shards::transfer::shard_transfer;
-use collection::shards::CollectionId;
+use collection::shards::{transfer, CollectionId};
 use uuid::Uuid;
 
 use super::TableOfContent;
@@ -278,7 +277,12 @@ impl TableOfContent {
                 // Peers: shard_id=1 - [{123: Active}]
                 // Transfer: {321 -> 123}, shard_id=1
 
-                shard_transfer::validate_transfer(&transfer, &all_peers, shard_state, &transfers)?;
+                transfer::helpers::validate_transfer(
+                    &transfer,
+                    &all_peers,
+                    shard_state,
+                    &transfers,
+                )?;
 
                 let on_finish = {
                     let collection_id = collection_id.clone();
@@ -332,7 +336,7 @@ impl TableOfContent {
             }
             ShardTransferOperations::Finish(transfer) => {
                 // Validate transfer exists to prevent double handling
-                shard_transfer::validate_transfer_exists(
+                transfer::helpers::validate_transfer_exists(
                     &transfer.key(),
                     &collection.state().await.transfers,
                 )?;
@@ -340,7 +344,7 @@ impl TableOfContent {
             }
             ShardTransferOperations::SnapshotRecovered(transfer) => {
                 // Validate transfer exists to prevent double handling
-                shard_transfer::validate_transfer_exists(
+                transfer::helpers::validate_transfer_exists(
                     &transfer,
                     &collection.state().await.transfers,
                 )?;
@@ -362,7 +366,7 @@ impl TableOfContent {
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
-                shard_transfer::validate_transfer_exists(
+                transfer::helpers::validate_transfer_exists(
                     &transfer,
                     &collection.state().await.transfers,
                 )?;

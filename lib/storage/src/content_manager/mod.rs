@@ -20,7 +20,7 @@ pub mod consensus_ops {
     use collection::shards::replica_set::ReplicaState;
     use collection::shards::replica_set::ReplicaState::Initializing;
     use collection::shards::shard::PeerId;
-    use collection::shards::transfer::shard_transfer::ShardTransfer;
+    use collection::shards::transfer::ShardTransfer;
     use collection::shards::{replica_set, CollectionId};
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};

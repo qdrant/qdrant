@@ -8,7 +8,7 @@ use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardKeyMapping;
-use crate::shards::transfer::shard_transfer::ShardTransfer;
+use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
     pub async fn apply_state(
