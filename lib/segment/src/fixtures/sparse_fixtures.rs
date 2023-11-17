@@ -17,7 +17,6 @@ use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use crate::types::Distance;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::VectorStorage;
 
@@ -45,7 +44,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let db = open_db(storage_dir, &[DB_VECTOR_CF]).unwrap();
-    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot)?;
+    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF)?;
 
     let sparse_index_config = SparseIndexConfig::new(full_scan_threshold, None);
     let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(

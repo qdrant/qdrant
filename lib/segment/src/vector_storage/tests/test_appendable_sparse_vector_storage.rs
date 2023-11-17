@@ -9,7 +9,6 @@ use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
-use crate::types::Distance;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
@@ -128,7 +127,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage2 = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+        let storage2 = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
         {
             let mut borrowed_storage2 = storage2.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
@@ -197,12 +196,12 @@ fn test_delete_points_in_simple_sparse_vector_storage() {
 
     {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+        let storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
         do_test_delete_points(storage.clone());
         storage.borrow().flusher()().unwrap();
     }
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+    let _storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
 }
 
 #[test]
@@ -210,11 +209,11 @@ fn test_update_from_delete_points_simple_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+        let storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
         do_test_update_from_delete_points(storage.clone());
         storage.borrow().flusher()().unwrap();
     }
 
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+    let _storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
 }

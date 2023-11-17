@@ -16,7 +16,6 @@ use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::VectorIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use segment::types::Distance;
 use segment::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use segment::vector_storage::VectorStorage;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
@@ -52,8 +51,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let vector_storage =
-        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
     let mut borrowed_storage = vector_storage.borrow_mut();
 
     // add points to storage only once

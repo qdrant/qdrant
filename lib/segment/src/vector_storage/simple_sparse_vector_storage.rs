@@ -21,7 +21,6 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleSparseVectorStorage {
-    distance: Distance,
     vectors: Vec<SparseVector>,
     db_wrapper: DatabaseColumnWrapper,
     update_buffer: StoredRecord,
@@ -41,7 +40,6 @@ struct StoredRecord {
 pub fn open_simple_sparse_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
-    distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
     let mut vectors = Vec::new();
@@ -70,7 +68,6 @@ pub fn open_simple_sparse_vector_storage(
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::SparseSimple(SimpleSparseVectorStorage {
-            distance,
             vectors,
             db_wrapper,
             update_buffer: StoredRecord {
@@ -136,7 +133,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn distance(&self) -> Distance {
-        self.distance
+        Distance::Dot
     }
 
     fn is_on_disk(&self) -> bool {
