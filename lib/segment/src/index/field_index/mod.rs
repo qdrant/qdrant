@@ -73,4 +73,9 @@ impl CardinalityEstimation {
         self.primary_clauses.push(clause);
         self
     }
+
+    #[cfg(test)]
+    pub fn equals_min_exp_max(&self, other: &Self) -> bool {
+        self.min == other.min && self.exp == other.exp && self.max == other.max
+    }
 }

@@ -1307,4 +1307,81 @@ mod tests {
         assert_eq!(new_index.points_count(), 1);
         assert_eq!(new_index.points_values_count(), 2);
     }
+
+    #[test]
+    fn test_empty_index_cardinality() {
+        let polygon = GeoPolygon {
+            exterior: GeoLineString {
+                points: vec![
+                    GeoPoint {
+                        lon: 19.415558242000287,
+                        lat: 69.18533258102943,
+                    },
+                    GeoPoint {
+                        lon: 2.4664944437317615,
+                        lat: 61.852748225727254,
+                    },
+                    GeoPoint {
+                        lon: 2.713789718828849,
+                        lat: 51.80793869181895,
+                    },
+                    GeoPoint {
+                        lon: 19.415558242000287,
+                        lat: 69.18533258102943,
+                    },
+                ],
+            },
+            interiors: None,
+        };
+        let polygon_with_interior = GeoPolygon {
+            exterior: polygon.exterior.clone(),
+            interiors: Some(vec![GeoLineString {
+                points: vec![
+                    GeoPoint {
+                        lon: 13.2257943327987,
+                        lat: 52.62328249733332,
+                    },
+                    GeoPoint {
+                        lon: 13.11841750240768,
+                        lat: 52.550216162683455,
+                    },
+                    GeoPoint {
+                        lon: 13.11841750240768,
+                        lat: 52.40371784468752,
+                    },
+                    GeoPoint {
+                        lon: 13.2257943327987,
+                        lat: 52.62328249733332,
+                    },
+                ],
+            }]),
+        };
+        let hashes = polygon_hashes(&polygon, GEO_QUERY_MAX_REGION).unwrap();
+        let hashes_with_interior =
+            polygon_hashes(&polygon_with_interior, GEO_QUERY_MAX_REGION).unwrap();
+
+        let field_index = build_random_index(0, 0);
+        assert!(field_index
+            .match_cardinality(&hashes)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(field_index
+            .match_cardinality(&hashes_with_interior)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+
+        let field_index = build_random_index(0, 100);
+        assert!(field_index
+            .match_cardinality(&hashes)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(field_index
+            .match_cardinality(&hashes_with_interior)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+
+        let field_index = build_random_index(100, 100);
+        assert!(!field_index
+            .match_cardinality(&hashes)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(!field_index
+            .match_cardinality(&hashes_with_interior)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+    }
 }
