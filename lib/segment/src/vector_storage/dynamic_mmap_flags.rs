@@ -12,7 +12,6 @@ use crate::common::error_logging::LogError;
 use crate::common::mmap_type::{MmapBitSlice, MmapType};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::vector_storage::div_ceil;
 
 #[cfg(debug_assertions)]
 const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
@@ -88,7 +87,7 @@ pub struct DynamicMmapFlags {
 
 /// Based on the number of flags determines the size of the mmap file.
 fn mmap_capacity_bytes(num_flags: usize) -> usize {
-    let number_of_bytes = div_ceil(num_flags, 8);
+    let number_of_bytes = num_flags.div_ceil(8);
 
     max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())
 }
