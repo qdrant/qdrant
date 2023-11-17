@@ -374,6 +374,14 @@ message RecommendPointGroups {
   optional ShardKeySelector shard_key_selector = 21; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
+message TargetVector {
+  oneof target {
+    VectorExample single = 1;
+    
+    // leaving extensibility for possibly adding multi-target
+  }
+}
+
 message VectorExample {
   oneof example {
     PointId id = 1;
@@ -388,8 +396,8 @@ message ContextExamplePair {
 
 message DiscoverPoints {
   string collection_name = 1; // name of the collection
-  VectorExample target = 2; // Use this as the primary search objective
-  repeated ContextExamplePair context_pairs = 3; // Search will be constrained by these pairs of examples
+  TargetVector target = 2; // Use this as the primary search objective
+  repeated ContextExamplePair context = 3; // Search will be constrained by these pairs of examples
   Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
   uint64 limit = 5; // Max number of result
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not

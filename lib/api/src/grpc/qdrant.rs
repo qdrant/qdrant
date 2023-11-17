@@ -3889,6 +3889,23 @@ pub struct RecommendPointGroups {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TargetVector {
+    #[prost(oneof = "target_vector::Target", tags = "1")]
+    pub target: ::core::option::Option<target_vector::Target>,
+}
+/// Nested message and enum types in `TargetVector`.
+pub mod target_vector {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Target {
+        #[prost(message, tag = "1")]
+        Single(super::VectorExample),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorExample {
     #[prost(oneof = "vector_example::Example", tags = "1, 2")]
     pub example: ::core::option::Option<vector_example::Example>,
@@ -3925,10 +3942,10 @@ pub struct DiscoverPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Use this as the primary search objective
     #[prost(message, optional, tag = "2")]
-    pub target: ::core::option::Option<VectorExample>,
+    pub target: ::core::option::Option<TargetVector>,
     /// Search will be constrained by these pairs of examples
     #[prost(message, repeated, tag = "3")]
-    pub context_pairs: ::prost::alloc::vec::Vec<ContextExamplePair>,
+    pub context: ::prost::alloc::vec::Vec<ContextExamplePair>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
     #[validate]
@@ -7001,14 +7018,14 @@ pub struct DiscoveryQuery {
     #[prost(message, optional, tag = "1")]
     pub target: ::core::option::Option<Vector>,
     #[prost(message, repeated, tag = "2")]
-    pub context_pairs: ::prost::alloc::vec::Vec<ContextPair>,
+    pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextQuery {
     #[prost(message, repeated, tag = "1")]
-    pub context_pairs: ::prost::alloc::vec::Vec<ContextPair>,
+    pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
