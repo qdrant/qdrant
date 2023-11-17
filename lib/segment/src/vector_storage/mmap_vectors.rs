@@ -10,7 +10,6 @@ use memmap2::Mmap;
 use memory::mmap_ops;
 use parking_lot::Mutex;
 
-use super::div_ceil;
 use crate::common::error_logging::LogError;
 use crate::common::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
@@ -229,7 +228,7 @@ fn ensure_mmap_file_size(path: &Path, header: &[u8], size: Option<u64>) -> Opera
 #[inline]
 const fn deleted_mmap_data_start() -> usize {
     let align = mem::align_of::<usize>();
-    div_ceil(HEADER_SIZE, align) * align
+    HEADER_SIZE.div_ceil(align) * align
 }
 
 /// Calculate size for deleted mmap to hold the given number of vectors.
@@ -237,8 +236,8 @@ const fn deleted_mmap_data_start() -> usize {
 /// The mmap will hold a file header and an aligned `BitSlice`.
 fn deleted_mmap_size(num: usize) -> usize {
     let unit_size = mem::size_of::<usize>();
-    let num_bytes = div_ceil(num, 8);
-    let num_usizes = div_ceil(num_bytes, unit_size);
+    let num_bytes = num.div_ceil(8);
+    let num_usizes = num_bytes.div_ceil(unit_size);
     let data_size = num_usizes * unit_size;
     deleted_mmap_data_start() + data_size
 }

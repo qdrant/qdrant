@@ -7,7 +7,6 @@ use std::path::Path;
 
 use common::types::PointOffsetType;
 
-use super::div_ceil;
 use crate::common::vector_utils::TrySetCapacityExact;
 
 // chunk size in bytes
@@ -69,7 +68,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         let key = key as usize;
         self.len = max(self.len, key + 1);
         self.chunks
-            .resize_with(div_ceil(self.len, self.chunk_capacity), Vec::new);
+            .resize_with(self.len.div_ceil(self.chunk_capacity), Vec::new);
 
         let chunk_idx = key / self.chunk_capacity;
         let chunk_data = &mut self.chunks[chunk_idx];
@@ -155,7 +154,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
 
 impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {
     fn try_set_capacity_exact(&mut self, capacity: usize) -> Result<(), TryReserveError> {
-        let num_chunks = div_ceil(capacity, self.chunk_capacity);
+        let num_chunks = capacity.div_ceil(self.chunk_capacity);
         let last_chunk_idx = capacity / self.chunk_capacity;
         self.chunks.try_set_capacity_exact(num_chunks)?;
         self.chunks.resize_with(num_chunks, Vec::new);

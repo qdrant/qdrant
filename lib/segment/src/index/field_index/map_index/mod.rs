@@ -28,7 +28,6 @@ use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
     PayloadKeyType, ValueVariants,
 };
-use crate::vector_storage::div_ceil;
 
 pub enum MapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     Mutable(MutableMapIndex<N>),
@@ -259,7 +258,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
 
         // Minimal amount of points, required to fit all unused values.
         // Cardinality can't be less than this value.
-        let min_not_excluded_by_values = div_ceil(non_excluded_values_count, max_values_per_point);
+        let min_not_excluded_by_values = non_excluded_values_count.div_ceil(max_values_per_point);
 
         let min = min_not_excluded_by_values.max(
             self.get_indexed_points()
