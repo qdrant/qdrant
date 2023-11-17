@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::Vector;
 use crate::index::field_index::FieldIndex;
 use crate::types::PayloadKeyType;
 
@@ -425,8 +425,8 @@ pub fn filter_json_values(
     }
 }
 
-pub fn transpose_map_into_named_vector(
-    map: HashMap<String, Vec<Vec<VectorElementType>>>,
+pub fn transpose_map_into_named_vector<TVector: Into<Vector>>(
+    map: HashMap<String, Vec<TVector>>,
 ) -> Vec<NamedVectors<'static>> {
     let mut result = Vec::new();
     for (key, values) in map {

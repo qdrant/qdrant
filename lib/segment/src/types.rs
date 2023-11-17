@@ -627,6 +627,12 @@ impl SegmentConfig {
             .and_then(|v| v.quantization_config.as_ref())
     }
 
+    pub fn distance(&self, vector_name: &str) -> Option<Distance> {
+        self.vector_data
+            .get(vector_name)
+            .map(|config| config.distance)
+    }
+
     pub fn is_any_vector_indexed(&self) -> bool {
         self.vector_data
             .values()

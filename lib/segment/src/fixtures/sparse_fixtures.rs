@@ -47,7 +47,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     let db = open_db(storage_dir, &[DB_VECTOR_CF]).unwrap();
     let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot)?;
 
-    let sparse_index_config = SparseIndexConfig::new(full_scan_threshold);
+    let sparse_index_config = SparseIndexConfig::new(full_scan_threshold, None);
     let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
         sparse_index_config,
         id_tracker,

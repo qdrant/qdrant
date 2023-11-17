@@ -205,6 +205,7 @@ impl Segment {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             match vector_opt {
                 None => {
+                    // TODO(sparse) check if vector_storage is sparse and insert sparse vector
                     let dim = vector_storage.vector_dim();
                     let vector = vec![1.0; dim];
                     vector_storage.insert_vector(new_index, vector.as_slice().into())?;
@@ -809,7 +810,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
+        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
@@ -862,7 +863,7 @@ impl SegmentEntry for Segment {
         mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
+        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -1382,15 +1383,21 @@ impl SegmentEntry for Segment {
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data_config = &self.segment_config.vector_data[vector_name];
-        Ok(vector_data_config.size)
+        Ok(self.vector_data[vector_name]
+            .vector_storage
+            .borrow()
+            .vector_dim())
     }
 
     fn vector_dims(&self) -> HashMap<String, usize> {
-        self.segment_config
-            .vector_data
+        self.vector_data
             .iter()
-            .map(|(vector_name, vector_config)| (vector_name.clone(), vector_config.size))
+            .map(|(vector_name, vector_data)| {
+                (
+                    vector_name.clone(),
+                    vector_data.vector_storage.borrow().vector_dim(),
+                )
+            })
             .collect()
     }
 
