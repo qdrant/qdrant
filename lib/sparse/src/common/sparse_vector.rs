@@ -9,8 +9,6 @@ use crate::common::types::{DimId, DimWeight};
 /// - indices to be unique
 /// - indices and values to be the same length
 /// - indices and values to be non-empty
-/// - values can be any f32
-/// - indices do not need to sorted (they are sorted on persistence)
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct SparseVector {
     pub indices: Vec<DimId>,
