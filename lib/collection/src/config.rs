@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
-    HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
+    Distance, HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -188,17 +188,16 @@ impl CollectionParams {
         }
     }
 
-    pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
-        self.vectors
-            .get_params(vector_name)
-            .cloned()
-            .ok_or_else(|| CollectionError::BadInput {
-                description: if vector_name == DEFAULT_VECTOR_NAME {
-                    "Default vector params are not specified in config".into()
-                } else {
-                    format!("Vector params for {vector_name} are not specified in config")
-                },
-            })
+    pub fn get_distance(&self, vector_name: &str) -> CollectionResult<Distance> {
+        match self.vectors.get_params(vector_name) {
+            Some(params) => Ok(params.distance),
+            None => Err(CollectionError::BadInput {
+                description: format!(
+                    "Vector params for {vector_name} are not specified in config",
+                    vector_name = vector_name
+                ),
+            }),
+        }
     }
 
     fn get_vector_params_mut(&mut self, vector_name: &str) -> CollectionResult<&mut VectorParams> {

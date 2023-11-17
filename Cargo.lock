@@ -4757,6 +4757,7 @@ dependencies = [
  "memory",
  "ordered-float 4.1.1",
  "rand 0.8.5",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",

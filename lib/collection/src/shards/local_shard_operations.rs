@@ -43,7 +43,7 @@ impl LocalShard {
 
         // check vector names existing
         for req in &core_request.searches {
-            collection_params.get_vector_params(req.query.get_vector_name())?;
+            collection_params.get_distance(req.query.get_vector_name())?;
         }
 
         let is_stopped = StoppingGuard::new();
@@ -72,10 +72,7 @@ impl LocalShard {
             .zip(core_request.searches.iter())
             .map(|(vector_res, req)| {
                 let vector_name = req.query.get_vector_name();
-                let distance = collection_params
-                    .get_vector_params(vector_name)
-                    .unwrap()
-                    .distance;
+                let distance = collection_params.get_distance(vector_name).unwrap();
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
                     match req.query {
                         QueryEnum::Nearest(_) => {

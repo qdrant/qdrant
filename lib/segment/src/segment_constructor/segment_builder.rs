@@ -218,21 +218,24 @@ impl SegmentBuilder {
 
     fn update_quantization(segment: &mut Segment, stopped: &AtomicBool) -> OperationResult<()> {
         let config = segment.config().clone();
-        for (vector_name, vector_data) in &mut segment.vector_data {
-            if let Some(quantization) = config.quantization_config(vector_name) {
-                let max_threads = match config
-                    .vector_data
-                    .get(vector_name)
-                    .map(|config| &config.index)
-                {
-                    Some(Indexes::Hnsw(hnsw)) => max_rayon_threads(hnsw.max_indexing_threads),
-                    _ => 1,
-                };
 
+        for (vector_name, vector_data) in &mut segment.vector_data {
+            let max_threads = if let Some(config) = config.vector_data.get(vector_name) {
+                match &config.index {
+                    Indexes::Hnsw(hnsw) => max_rayon_threads(hnsw.max_indexing_threads),
+                    _ => 1,
+                }
+            } else {
+                // quantization is applied only for dense vectors
+                continue;
+            };
+
+            if let Some(quantization) = config.quantization_config(vector_name) {
                 let segment_path = segment.current_path.as_path();
                 check_process_stopped(stopped)?;
 
                 let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+
                 let vector_storage = vector_data.vector_storage.borrow();
                 vector_data.quantized_vectors = Some(QuantizedVectors::create(
                     &vector_storage,

@@ -286,8 +286,8 @@ where
     let score_ordering = {
         let vector_name = request.source.vector_field_name();
         let collection_params = collection.collection_config.read().await;
-        let vector_params = collection_params.params.get_vector_params(vector_name)?;
-        vector_params.distance.distance_order()
+        let distance = collection_params.params.get_distance(vector_name)?;
+        distance.distance_order()
     };
 
     let mut aggregator = GroupsAggregator::new(
