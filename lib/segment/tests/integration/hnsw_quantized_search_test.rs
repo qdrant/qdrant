@@ -329,6 +329,20 @@ fn hnsw_quantized_search_euclid_test() {
 }
 
 #[test]
+fn hnsw_quantized_search_manhattan_test() {
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        5003,
+        ScalarQuantizationConfig {
+            r#type: Default::default(),
+            quantile: None,
+            always_ram: None,
+        }
+        .into(),
+    );
+}
+
+#[test]
 fn hnsw_product_quantization_cosine_test() {
     hnsw_quantized_search_test(
         Distance::Cosine,
@@ -345,6 +359,19 @@ fn hnsw_product_quantization_cosine_test() {
 fn hnsw_product_quantization_euclid_test() {
     hnsw_quantized_search_test(
         Distance::Euclid,
+        1003,
+        ProductQuantizationConfig {
+            compression: CompressionRatio::X4,
+            always_ram: Some(true),
+        }
+        .into(),
+    );
+}
+
+#[test]
+fn hnsw_product_quantization_manhattan_test() {
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
         1003,
         ProductQuantizationConfig {
             compression: CompressionRatio::X4,

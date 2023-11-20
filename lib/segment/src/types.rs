@@ -29,7 +29,7 @@ use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
 pub type PayloadKeyType = String;
@@ -124,6 +124,8 @@ pub enum Distance {
     Euclid,
     // <https://en.wikipedia.org/wiki/Dot_product>
     Dot,
+    // <https://simple.wikipedia.org/wiki/Manhattan_distance>
+    Manhattan,
 }
 
 impl Distance {
@@ -132,6 +134,7 @@ impl Distance {
             Distance::Cosine => CosineMetric::preprocess(vector),
             Distance::Euclid => EuclidMetric::preprocess(vector),
             Distance::Dot => DotProductMetric::preprocess(vector),
+            Distance::Manhattan => ManhattanMetric::preprocess(vector),
         }
     }
 
@@ -140,13 +143,14 @@ impl Distance {
             Distance::Cosine => CosineMetric::postprocess(score),
             Distance::Euclid => EuclidMetric::postprocess(score),
             Distance::Dot => DotProductMetric::postprocess(score),
+            Distance::Manhattan => ManhattanMetric::postprocess(score),
         }
     }
 
     pub fn distance_order(&self) -> Order {
         match self {
             Distance::Cosine | Distance::Dot => Order::LargeBetter,
-            Distance::Euclid => Order::SmallBetter,
+            Distance::Euclid | Distance::Manhattan => Order::SmallBetter,
         }
     }
 
@@ -166,6 +170,7 @@ impl Distance {
             Distance::Cosine => CosineMetric::similarity(v1, v2),
             Distance::Euclid => EuclidMetric::similarity(v1, v2),
             Distance::Dot => DotProductMetric::similarity(v1, v2),
+            Distance::Manhattan => ManhattanMetric::similarity(v1, v2),
         }
     }
 }

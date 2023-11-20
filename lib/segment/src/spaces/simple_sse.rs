@@ -57,6 +57,50 @@ pub(crate) unsafe fn euclid_similarity_sse(
 }
 
 #[target_feature(enable = "sse")]
+pub(crate) unsafe fn manhattan_similarity_sse(
+    v1: &[VectorElementType],
+    v2: &[VectorElementType],
+) -> ScoreType {
+    let mask: __m128 = _mm_set1_ps(-0.0f32); // 1 << 31 used to clear sign bit to mimic abs
+
+    let n = v1.len();
+    let m = n - (n % 16);
+    let mut ptr1: *const f32 = v1.as_ptr();
+    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut sum128_1: __m128 = _mm_setzero_ps();
+    let mut sum128_2: __m128 = _mm_setzero_ps();
+    let mut sum128_3: __m128 = _mm_setzero_ps();
+    let mut sum128_4: __m128 = _mm_setzero_ps();
+    let mut i: usize = 0;
+    while i < m {
+        let sub128_1 = _mm_sub_ps(_mm_loadu_ps(ptr1), _mm_loadu_ps(ptr2));
+        sum128_1 = _mm_add_ps(_mm_andnot_ps(mask, sub128_1), sum128_1);
+
+        let sub128_2 = _mm_sub_ps(_mm_loadu_ps(ptr1.add(4)), _mm_loadu_ps(ptr2.add(4)));
+        sum128_2 = _mm_add_ps(_mm_andnot_ps(mask, sub128_2), sum128_2);
+
+        let sub128_3 = _mm_sub_ps(_mm_loadu_ps(ptr1.add(8)), _mm_loadu_ps(ptr2.add(8)));
+        sum128_3 = _mm_add_ps(_mm_andnot_ps(mask, sub128_3), sum128_3);
+
+        let sub128_4 = _mm_sub_ps(_mm_loadu_ps(ptr1.add(12)), _mm_loadu_ps(ptr2.add(12)));
+        sum128_4 = _mm_add_ps(_mm_andnot_ps(mask, sub128_4), sum128_4);
+
+        ptr1 = ptr1.add(16);
+        ptr2 = ptr2.add(16);
+        i += 16;
+    }
+
+    let mut result = hsum128_ps_sse(sum128_1)
+        + hsum128_ps_sse(sum128_2)
+        + hsum128_ps_sse(sum128_3)
+        + hsum128_ps_sse(sum128_4);
+    for i in 0..n - m {
+        result += (*ptr1.add(i) - *ptr2.add(i)).abs();
+    }
+    -result
+}
+
+#[target_feature(enable = "sse")]
 pub(crate) unsafe fn cosine_preprocess_sse(vector: VectorType) -> VectorType {
     let n = vector.len();
     let m = n - (n % 16);
@@ -170,6 +214,10 @@ mod tests {
             let euclid_simd = unsafe { euclid_similarity_sse(&v1, &v2) };
             let euclid = euclid_similarity(&v1, &v2);
             assert_eq!(euclid_simd, euclid);
+
+            let manhattan_simd = unsafe { manhattan_similarity_sse(&v1, &v2) };
+            let manhattan = manhattan_similarity(&v1, &v2);
+            assert_eq!(manhattan_simd, manhattan);
 
             let dot_simd = unsafe { dot_similarity_sse(&v1, &v2) };
             let dot = dot_similarity(&v1, &v2);
