@@ -264,7 +264,7 @@ pub struct NamedVector {
     pub vector: VectorType,
 }
 
-/// Vector data with name
+/// Sparse vector data with name
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedSparseVector {

@@ -6295,7 +6295,7 @@
         }
       },
       "NamedSparseVector": {
-        "description": "Vector data with name",
+        "description": "Sparse vector data with name",
         "type": "object",
         "required": [
           "name",
@@ -10514,31 +10514,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DiscoverRequest"
-            }
-          }
-        }
-      },
-      "SparseVector": {
-        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length - indices and values to be non-empty",
-        "type": "object",
-        "required": [
-          "indices",
-          "values"
-        ],
-        "properties": {
-          "indices": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0
-            }
-          },
-          "values": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
             }
           }
         }
