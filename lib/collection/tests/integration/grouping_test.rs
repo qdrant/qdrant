@@ -1,6 +1,5 @@
 use collection::collection::Collection;
-use collection::grouping::group_by::{group_by, GroupRequest, SourceRequest};
-use collection::operations::consistency_params::ReadConsistency;
+use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::point_ops::{Batch, WriteOrdering};
 use collection::operations::types::{
     RecommendRequestInternal, SearchRequestInternal, UpdateStatus,
@@ -21,15 +20,13 @@ fn rand_vector(rng: &mut ThreadRng, size: usize) -> VectorType {
 }
 
 mod group_by {
-    use collection::operations::shard_selector_internal::ShardSelectorInternal;
+    use collection::grouping::GroupBy;
 
     use super::*;
 
     struct Resources {
         request: GroupRequest,
         collection: Collection,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: ShardSelectorInternal,
     }
 
     async fn setup(docs: u64, chunks: u64) -> Resources {
@@ -86,8 +83,6 @@ mod group_by {
         Resources {
             request,
             collection,
-            read_consistency: None,
-            shard_selection: ShardSelectorInternal::All,
         }
     }
 
@@ -95,15 +90,13 @@ mod group_by {
     async fn searching() {
         let resources = setup(16, 8).await;
 
-        let result = group_by(
+        let group_by = GroupBy::new(
             resources.request.clone(),
             &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+            |_| async { unreachable!() },
+        );
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -151,15 +144,11 @@ mod group_by {
             2,
         );
 
-        let result = group_by(
-            request.clone(),
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(request.clone(), &resources.collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -215,15 +204,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request,
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request, &resources.collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -251,15 +236,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &resources.collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -276,12 +257,7 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn group_by_string_field() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(16, 8).await;
+        let Resources { collection, .. } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequestInternal {
@@ -298,15 +274,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -321,12 +293,7 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn zero_group_size() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(16, 8).await;
+        let Resources { collection, .. } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequestInternal {
@@ -343,15 +310,11 @@ mod group_by {
             0,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -362,12 +325,7 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn zero_limit_groups() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(16, 8).await;
+        let Resources { collection, .. } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequestInternal {
@@ -384,15 +342,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -403,12 +357,7 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn big_limit_groups() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(1000, 5).await;
+        let Resources { collection, .. } = setup(1000, 5).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequestInternal {
@@ -425,15 +374,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -448,12 +393,7 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn big_group_size_groups() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(10, 500).await;
+        let Resources { collection, .. } = setup(10, 500).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequestInternal {
@@ -470,15 +410,11 @@ mod group_by {
             400,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-            None,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
