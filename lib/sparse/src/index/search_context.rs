@@ -163,6 +163,7 @@ impl<'a> SearchContext<'a> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
+        let mut best_min_score = f32::MIN;
         while let Some(candidate) = self.advance() {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
@@ -179,13 +180,18 @@ impl<'a> SearchContext<'a> {
             // TODO(sparse) pruning is expensive, we should only do it when it makes sense (detect hot keys at runtime)
             if self.use_pruning && self.result_queue.len() == self.top {
                 // current min score
-                let min_score = self.result_queue.top().unwrap().score;
-
+                let new_min_score = self.result_queue.top().unwrap().score;
+                if new_min_score == best_min_score {
+                    // no improvement in lowest best score since last pruning - skip pruning
+                    continue;
+                } else {
+                    best_min_score = new_min_score;
+                }
                 // make sure the first posting list is the longest for pruning
                 self.promote_longest_posting_lists_to_the_front();
 
                 // prune posting list that cannot possibly contribute to the top results
-                self.prune_longest_posting_list(min_score);
+                self.prune_longest_posting_list(new_min_score);
             }
         }
         // posting iterators exhausted, return result queue
