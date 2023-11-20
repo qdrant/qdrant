@@ -49,3 +49,15 @@ pub fn random_full_sparse_vector<R: Rng + ?Sized>(
 
     SparseVector::try_from(tuples).unwrap()
 }
+
+/// Generates a sparse vector with only positive values
+pub fn random_positive_sparse_vector<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    max_dim_size: usize,
+) -> SparseVector {
+    let mut vec = random_sparse_vector(rnd_gen, max_dim_size);
+    for value in vec.values.iter_mut() {
+        *value = value.abs();
+    }
+    vec
+}

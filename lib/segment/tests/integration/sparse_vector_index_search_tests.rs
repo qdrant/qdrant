@@ -22,10 +22,10 @@ use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
 /// Max dimension of sparse vectors used in tests
-const MAX_SPARSE_DIM: usize = 2048;
+const MAX_SPARSE_DIM: usize = 4096;
 
 /// Number of vectors to index in tests
-const NUM_VECTORS: usize = 1000;
+const NUM_VECTORS: usize = 2000;
 
 /// Default full scan threshold in tests
 /// very low value to force usage of index
@@ -48,7 +48,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
     );
 
     // random query vectors
-    let attempts = 100;
+    let attempts = 1000;
     let query_vectors = (0..attempts)
         .map(|_| random_sparse_vector(&mut rnd, MAX_SPARSE_DIM))
         .collect::<Vec<_>>();
@@ -65,7 +65,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
         let maximum_number_of_results = sparse_vector_index.max_result_count(&query);
         // get all results minus 10 to force a bit of pruning
         let top = max(1, maximum_number_of_results.saturating_sub(10));
-        let query_vector: QueryVector = query.into();
+        let query_vector: QueryVector = query.clone().into();
         // with filter
         let index_results_filter = sparse_vector_index
             .search(&[&query_vector], Some(&filter), top, None, &stopped)
@@ -82,8 +82,14 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
             .iter()
             .zip(index_results_no_filter.iter())
         {
-            assert_eq!(filter_result.len(), top);
-            assert_eq!(filter_result.len(), no_filter_result.len());
+            assert_eq!(
+                filter_result.len(),
+                no_filter_result.len(),
+                "query = {:#?}, filter_result = {:#?} no_filter_result = {:#?}",
+                query,
+                filter_result,
+                no_filter_result,
+            );
             for (filter_result, no_filter_result) in
                 filter_result.iter().zip(no_filter_result.iter())
             {
