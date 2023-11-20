@@ -450,15 +450,18 @@ impl Collection {
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
-        let get_shard_transfer = |key| shard_holder.get_transfer(&key);
+
+        let get_shard_transfers = |shard_id, from| {
+            shard_holder
+                .get_transfers(|transfer| transfer.shard_id == shard_id && transfer.from == from)
+        };
+
         for replica_set in shard_holder.all_shards() {
-            replica_set.sync_local_state(get_shard_transfer).await?;
+            replica_set.sync_local_state(get_shard_transfers).await?;
         }
 
         // Check for un-reported finished transfers
-        let outgoing_transfers = shard_holder
-            .get_outgoing_transfers(&self.this_peer_id)
-            .await;
+        let outgoing_transfers = shard_holder.get_outgoing_transfers(&self.this_peer_id);
         let tasks_lock = self.transfer_tasks.lock().await;
         for transfer in outgoing_transfers {
             match tasks_lock.get_task_result(&transfer.key()) {
@@ -521,7 +524,7 @@ impl Collection {
             }
 
             // Try to find dead replicas with no active transfers
-            let transfers = shard_holder.get_transfers(|_| true).await;
+            let transfers = shard_holder.get_transfers(|_| true);
 
             // Try to find a replica to transfer from
             for replica_id in replica_set.active_remote_shards().await {

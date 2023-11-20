@@ -622,7 +622,7 @@ impl ShardHolder {
             .cloned()
     }
 
-    pub async fn get_transfers<F>(&self, mut predicate: F) -> Vec<ShardTransfer>
+    pub fn get_transfers<F>(&self, mut predicate: F) -> Vec<ShardTransfer>
     where
         F: FnMut(&ShardTransfer) -> bool,
     {
@@ -634,9 +634,8 @@ impl ShardHolder {
             .collect()
     }
 
-    pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
+    pub fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
         self.get_transfers(|transfer| transfer.from == *current_peer_id)
-            .await
     }
 
     /// # Cancel safety

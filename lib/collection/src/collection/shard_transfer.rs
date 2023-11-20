@@ -22,7 +22,6 @@ impl Collection {
             .read()
             .await
             .get_outgoing_transfers(current_peer_id)
-            .await
     }
 
     pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {

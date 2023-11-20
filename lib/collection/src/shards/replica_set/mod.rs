@@ -17,7 +17,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
-use super::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
+use super::transfer::shard_transfer::ShardTransfer;
 use super::CollectionId;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -662,20 +662,14 @@ impl ShardReplicaSet {
 
     /// Check if the are any locally disabled peers
     /// And if so, report them to the consensus
-    pub async fn sync_local_state<F>(&self, get_shard_transfer: F) -> CollectionResult<()>
+    pub async fn sync_local_state<F>(&self, get_shard_transfers: F) -> CollectionResult<()>
     where
-        F: Fn(ShardTransferKey) -> Option<ShardTransfer>,
+        F: Fn(ShardId, PeerId) -> Vec<ShardTransfer>,
     {
         for &failed_peer in self.locally_disabled_peers.read().iter() {
             self.notify_peer_failure(failed_peer);
 
-            let key = ShardTransferKey {
-                shard_id: self.shard_id,
-                from: failed_peer,
-                to: self.this_peer_id(),
-            };
-
-            if let Some(transfer) = get_shard_transfer(key) {
+            for transfer in get_shard_transfers(self.shard_id, failed_peer) {
                 self.abort_shard_transfer(
                     transfer,
                     &format!(
