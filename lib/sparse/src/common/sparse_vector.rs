@@ -54,10 +54,14 @@ impl SparseVector {
 
     /// Score this vector against another vector using dot product.
     /// Warning: Expects both vectors to be sorted by indices.
-    pub fn score(&self, other: &SparseVector) -> f32 {
+    ///
+    /// Return None if the vectors do not overlap.
+    pub fn score(&self, other: &SparseVector) -> Option<f32> {
         debug_assert!(self.is_sorted());
         debug_assert!(other.is_sorted());
         let mut score = 0.0;
+        // track whether there is any overlap
+        let mut overlap = false;
         let mut i = 0;
         let mut j = 0;
         while i < self.indices.len() && j < other.indices.len() {
@@ -65,30 +69,18 @@ impl SparseVector {
                 std::cmp::Ordering::Less => i += 1,
                 std::cmp::Ordering::Greater => j += 1,
                 std::cmp::Ordering::Equal => {
+                    overlap = true;
                     score += self.values[i] * other.values[j];
                     i += 1;
                     j += 1;
                 }
             }
         }
-        score
-    }
-
-    /// Check if this vector overlaps with another vector.
-    /// Warning: Expects both vectors to be sorted by indices.
-    pub fn overlaps(&self, other: &SparseVector) -> bool {
-        debug_assert!(self.is_sorted());
-        debug_assert!(other.is_sorted());
-        let mut i = 0;
-        let mut j = 0;
-        while i < self.indices.len() && j < other.indices.len() {
-            match self.indices[i].cmp(&other.indices[j]) {
-                std::cmp::Ordering::Less => i += 1,
-                std::cmp::Ordering::Greater => j += 1,
-                std::cmp::Ordering::Equal => return true,
-            }
+        if overlap {
+            Some(score)
+        } else {
+            None
         }
-        false
     }
 }
 impl TryFrom<Vec<(i32, f64)>> for SparseVector {
@@ -141,28 +133,35 @@ mod tests {
     fn test_score_aligned_same_size() {
         let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
         let v2 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        assert_eq!(v1.score(&v2), 14.0);
+        assert_eq!(v1.score(&v2), Some(14.0));
     }
 
     #[test]
     fn test_score_not_aligned_same_size() {
         let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
         let v2 = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
-        assert_eq!(v1.score(&v2), 13.0);
+        assert_eq!(v1.score(&v2), Some(13.0));
     }
 
     #[test]
     fn test_score_aligned_different_size() {
         let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
         let v2 = SparseVector::new(vec![1, 2, 3, 4], vec![1.0, 2.0, 3.0, 4.0]).unwrap();
-        assert_eq!(v1.score(&v2), 14.0);
+        assert_eq!(v1.score(&v2), Some(14.0));
     }
 
     #[test]
     fn test_score_not_aligned_different_size() {
         let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
         let v2 = SparseVector::new(vec![2, 3, 4, 5], vec![2.0, 3.0, 4.0, 5.0]).unwrap();
-        assert_eq!(v1.score(&v2), 13.0);
+        assert_eq!(v1.score(&v2), Some(13.0));
+    }
+
+    #[test]
+    fn test_score_no_overlap() {
+        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = SparseVector::new(vec![4, 5, 6], vec![2.0, 3.0, 4.0]).unwrap();
+        assert!(v1.score(&v2).is_none());
     }
 
     #[test]
@@ -181,25 +180,6 @@ mod tests {
 
         let not_unique = SparseVector::new(vec![1, 2, 2], vec![1.0, 2.0, 3.0]);
         assert!(not_unique.is_err());
-    }
-
-    #[test]
-    fn overlaps_test() {
-        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
-        assert!(v1.overlaps(&v2));
-
-        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![4, 5, 6], vec![2.0, 3.0, 4.0]).unwrap();
-        assert!(!v1.overlaps(&v2));
-
-        let v1 = SparseVector::new(vec![2, 3], vec![2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![3, 4, 5], vec![2.0, 3.0, 4.0]).unwrap();
-        assert!(v1.overlaps(&v2));
-
-        let v1 = SparseVector::new(vec![3, 4, 5], vec![2.0, 3.0, 4.0]).unwrap();
-        let v2 = SparseVector::new(vec![2, 3], vec![2.0, 3.0]).unwrap();
-        assert!(v1.overlaps(&v2));
     }
 
     #[test]
