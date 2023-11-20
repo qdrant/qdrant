@@ -227,6 +227,10 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             let vector: &SparseVector = borrowed_vector_storage.get_vector(id).try_into()?;
+            // do not index empty vectors
+            if vector.is_empty() {
+                continue;
+            }
             ram_index.upsert(id, vector.to_owned());
             index_point_count += 1;
         }
