@@ -185,13 +185,23 @@ impl ShardReplicaSet {
 
         let total_results = all_res.len();
 
+        let write_consistency_factor = self
+            .collection_config
+            .read()
+            .await
+            .params
+            .write_consistency_factor
+            .get() as usize;
+
+        let minimal_success_count = write_consistency_factor.min(total_results);
+
         let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
         // Notify consensus about failures if:
         // 1. There is at least one success, otherwise it might be a problem of sending node
         // 2. ???
 
-        if !successes.is_empty() {
+        if successes.len() >= minimal_success_count {
             let wait_for_deactivation =
                 self.handle_failed_replicas(&failures, &self.replica_state.read());
             // report all failing peers to consensus
@@ -228,20 +238,10 @@ impl ShardReplicaSet {
             }
         }
 
-        if !failures.is_empty() {
-            let write_consistency_factor = self
-                .collection_config
-                .read()
-                .await
-                .params
-                .write_consistency_factor
-                .get() as usize;
-            let minimal_success_count = write_consistency_factor.min(total_results);
-            if successes.len() < minimal_success_count {
-                // completely failed - report error to user
-                let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
-                return Err(err);
-            }
+        if !failures.is_empty() && successes.len() < minimal_success_count {
+            // completely failed - report error to user
+            let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
+            return Err(err);
         }
         // there are enough successes, return the first one
         let res = successes
