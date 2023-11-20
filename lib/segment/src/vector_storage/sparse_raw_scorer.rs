@@ -42,14 +42,10 @@ impl<'a, TVectorStorage: SparseVectorStorage> SparseRawScorer<'a, TVectorStorage
     pub fn score_overlapping_point(&self, point_id: PointOffsetType) -> Option<ScoredPointOffset> {
         let point_id = point_id as PointOffsetType;
         let vector = self.vector_storage.get_sparse(point_id);
-        if self.query.overlaps(vector) {
-            Some(ScoredPointOffset {
-                idx: point_id,
-                score: vector.score(&self.query),
-            })
-        } else {
-            None
-        }
+        vector.score(&self.query).map(|score| ScoredPointOffset {
+            idx: point_id,
+            score,
+        })
     }
 }
 
@@ -67,7 +63,7 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
             // do not check overlap here as we want to score all points
             scores[size] = ScoredPointOffset {
                 idx: point_id,
-                score: vector.score(&self.query),
+                score: vector.score(&self.query).unwrap_or_default(),
             };
 
             size += 1;
@@ -94,13 +90,13 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let vector = self.vector_storage.get_sparse(point);
-        vector.score(&self.query)
+        vector.score(&self.query).unwrap_or_default()
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.vector_storage.get_sparse(point_a);
         let vector_b = self.vector_storage.get_sparse(point_b);
-        vector_a.score(vector_b)
+        vector_a.score(vector_b).unwrap_or_default()
     }
 
     fn peek_top_iter(
