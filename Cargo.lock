@@ -4472,6 +4472,7 @@ dependencies = [
  "io",
  "io-uring",
  "itertools 0.11.0",
+ "lazy_static",
  "log",
  "memmap2 0.9.0",
  "memory",

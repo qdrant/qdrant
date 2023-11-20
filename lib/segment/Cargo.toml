@@ -60,6 +60,7 @@ quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
 chrono = { version = "0.4.31", features = ["serde"] }
 smol_str = "0.2.0"
+lazy_static = "1.4"
 
 sysinfo = "0.29"
 futures = "0.3.28"
