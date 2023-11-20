@@ -75,7 +75,7 @@ tracing = { version = "0.1", features = ["async-await"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
-procfs = { version = "0.15", default-features = false }
+procfs = { version = "0.16", default-features = false }
 io-uring = "0.6.2"
 
 [[bench]]
