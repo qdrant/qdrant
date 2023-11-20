@@ -10466,6 +10466,50 @@
             }
           }
         }
+      },
+      "SparseVector": {
+        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length - indices and values to be non-empty",
+        "type": "object",
+        "required": [
+          "indices",
+          "values"
+        ],
+        "properties": {
+          "indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        }
+      },
+      "SparseIndexConfig": {
+        "type": "object",
+        "required": [
+          "full_scan_threshold"
+        ],
+        "properties": {
+          "full_scan_threshold": {
+            "description": "We prefer a full scan search upto (excluding) this number of vectors.\n\nNote: this is number of vectors, not KiloBytes.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "on_disk": {
+            "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
       }
     }
   }
