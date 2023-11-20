@@ -1254,19 +1254,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "crc"
-version = "3.0.0"
+name = "crc32c"
+version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53757d12b596c16c78b83458d732a5d1a17ab3f53f2f7412f6fb57cc8a140ab3"
+checksum = "d8f48d60e5b4d2c53d5c2b1d8a58c849a70ae5e5509b08a48d047e3b65714a74"
 dependencies = [
- "crc-catalog",
+ "rustc_version",
 ]
-
-[[package]]
-name = "crc-catalog"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d0165d2900ae6778e36e80bbc4da3b5eefccee9ba939761f9c2882a5d9af3ff"
 
 [[package]]
 name = "crc32fast"
@@ -5570,10 +5564,10 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=f62d2844ba0bb2b1f1aeb9a4766cdbd46f29d594#f62d2844ba0bb2b1f1aeb9a4766cdbd46f29d594"
+source = "git+https://github.com/qdrant/wal.git?rev=fad0e7c48be58d8e7db4cc739acd9b1cf6735de0#fad0e7c48be58d8e7db4cc739acd9b1cf6735de0"
 dependencies = [
  "byteorder",
- "crc",
+ "crc32c",
  "crossbeam-channel",
  "docopt",
  "env_logger",
@@ -5582,7 +5576,7 @@ dependencies = [
  "memmap2 0.9.0",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.38.21",
+ "rustix 0.36.13",
  "serde",
 ]
 
