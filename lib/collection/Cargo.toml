@@ -58,7 +58,7 @@ api = {path = "../api"}
 itertools = "0.11"
 indicatif = "0.17.6"
 chrono = { version = "~0.4", features = ["serde"] }
-schemars = { version = "0.8.15", features = ["uuid1", "preserve_order", "chrono", "url"] }
+schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url"] }
 num_cpus = "1.16.0"
 tar = "0.4.40"
 fs_extra = "1.3.0"
