@@ -7,7 +7,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::distributions::Standard;
 use rand::Rng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use segment::data_types::vectors::VectorElementType;
+use segment::data_types::vectors::{Vector, VectorElementType};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
@@ -39,9 +39,9 @@ fn init_vector_storage(
     {
         let mut borrowed_storage = storage.borrow_mut();
         for i in 0..num {
-            let vector: Vec<VectorElementType> = random_vector(dim);
+            let vector: Vector = random_vector(dim).into();
             borrowed_storage
-                .insert_vector(i as PointOffsetType, vector.as_slice().into())
+                .insert_vector(i as PointOffsetType, vector.to_vec_ref())
                 .unwrap();
         }
     }

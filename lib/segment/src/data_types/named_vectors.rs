@@ -44,6 +44,15 @@ impl<'a> CowValue<'a> {
     }
 }
 
+impl<'a> From<Vector> for CowValue<'a> {
+    fn from(v: Vector) -> Self {
+        match v {
+            Vector::Dense(v) => CowValue::Dense(Cow::Owned(v)),
+            Vector::Sparse(v) => CowValue::Sparse(Cow::Owned(v)),
+        }
+    }
+}
+
 impl<'a> NamedVectors<'a> {
     pub fn from_ref(key: &'a str, value: VectorRef<'a>) -> Self {
         let mut map = TinyMap::new();
@@ -66,11 +75,11 @@ impl<'a> NamedVectors<'a> {
         }
     }
 
-    pub fn from_map(map: HashMap<String, Vec<VectorElementType>>) -> Self {
+    pub fn from_map(map: HashMap<String, Vector>) -> Self {
         Self {
             map: map
                 .into_iter()
-                .map(|(k, v)| (CowKey::from(k), CowValue::Dense(Cow::Owned(v))))
+                .map(|(k, v)| (CowKey::from(k), v.into()))
                 .collect(),
         }
     }

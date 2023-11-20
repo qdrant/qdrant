@@ -4,7 +4,9 @@ use std::iter::FromIterator;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{only_default_vector, VectorStruct, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{
+    only_default_vector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::load_segment;
@@ -287,7 +289,9 @@ fn test_update_named_vector() {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         Some(VectorStruct::Multi(v)) => {
-            assert!((sqrt_distance(&v[DEFAULT_VECTOR_NAME]) - 1.).abs() < 1e-5);
+            let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
+            let v: &[_] = v.try_into().unwrap();
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         _ => panic!("unexpected vector type"),
     }
@@ -321,7 +325,9 @@ fn test_update_named_vector() {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         Some(VectorStruct::Multi(v)) => {
-            assert!((sqrt_distance(&v[DEFAULT_VECTOR_NAME]) - 1.).abs() < 1e-5);
+            let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
+            let v: &[_] = v.try_into().unwrap();
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
         _ => panic!("unexpected vector type"),
     }
