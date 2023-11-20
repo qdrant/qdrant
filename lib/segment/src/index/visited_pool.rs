@@ -1,13 +1,18 @@
 //! Structures for fast and tread-safe way to check if some points were visited or not
 
 use common::types::PointOffsetType;
+use lazy_static::lazy_static;
 use parking_lot::RwLock;
 
-/// Max number of visited lists to preserve in memory
-/// If more than this number of concurrent requests occurred - new list will be created dynamically,
-/// but will be deleted right after query finishes.
-/// Implemented in order to limit memory leak
-const POOL_KEEP_LIMIT: usize = 16;
+lazy_static! {
+    /// Max number of visited lists to preserve in memory
+    ///
+    /// If there are more concurrent requests, a new temporary list is created dynamically.
+    /// This limit is implemented to prevent memory leakage.
+    /// It matches the number of logical CPU cores, to best represent the expected number of
+    /// concurrent requests. Clamped between 16 and 128 to prevent extreme values.
+    static ref POOL_KEEP_LIMIT: usize = num_cpus::get().clamp(16, 128);
+}
 
 /// Visited list handle is an owner of the `VisitedList`, which is returned by `VisitedPool` and returned back to it
 #[derive(Debug)]
@@ -108,7 +113,7 @@ pub struct VisitedPool {
 impl VisitedPool {
     pub fn new() -> Self {
         VisitedPool {
-            pool: RwLock::new(vec![]),
+            pool: RwLock::new(Vec::with_capacity(*POOL_KEEP_LIMIT)),
         }
     }
 
@@ -126,7 +131,7 @@ impl VisitedPool {
 
     fn return_back(&self, data: VisitedList) {
         let mut pool = self.pool.write();
-        if pool.len() < POOL_KEEP_LIMIT {
+        if pool.len() < *POOL_KEEP_LIMIT {
             pool.push(data);
         }
     }
