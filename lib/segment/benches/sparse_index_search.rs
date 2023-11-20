@@ -12,7 +12,7 @@ use segment::index::{PayloadIndex, VectorIndex};
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{Condition, FieldCondition, Filter, Payload};
 use serde_json::json;
-use sparse::common::sparse_vector_fixture::random_sparse_vector;
+use sparse::common::sparse_vector_fixture::random_positive_sparse_vector;
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 50_000;
@@ -53,8 +53,8 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     }
     drop(payload_index);
 
-    // shared query vector
-    let sparse_vector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
+    // shared query vector (positive values to test pruning)
+    let sparse_vector = random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
     eprintln!("sparse_vector size = {:#?}", sparse_vector.values.len());
     let query_vector = sparse_vector.into();
 
