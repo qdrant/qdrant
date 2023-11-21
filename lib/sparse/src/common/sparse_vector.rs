@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -111,7 +112,7 @@ impl Validate for SparseVector {
                 ValidationError::new("must be the same length as indices"),
             );
         }
-        if self.indices.windows(2).any(|w| w[0] == w[1]) {
+        if self.indices.iter().unique().count() != self.indices.len() {
             errors.add("indices", ValidationError::new("must be unique"));
         }
 
@@ -174,7 +175,7 @@ mod tests {
         let not_sorted = SparseVector::new(vec![1, 3, 2], vec![1.0, 2.0, 3.0]);
         assert!(not_sorted.is_ok());
 
-        let not_unique = SparseVector::new(vec![1, 2, 2], vec![1.0, 2.0, 3.0]);
+        let not_unique = SparseVector::new(vec![1, 2, 3, 2], vec![1.0, 2.0, 3.0, 4.0]);
         assert!(not_unique.is_err());
     }
 
