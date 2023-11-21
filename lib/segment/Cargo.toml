@@ -30,7 +30,7 @@ tempfile = "3.8.1"
 parking_lot = "0.12"
 rayon = "1.8.0"
 num_cpus = "1.16"
-itertools = "0.11"
+itertools = "0.12"
 rocksdb = { version = "0.21.0", default-features = false, features = [ "snappy" ] }
 uuid = { version = "1.5", features = ["v4", "serde"] }
 bincode = "1.3"
