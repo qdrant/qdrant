@@ -4737,6 +4737,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "io",
+ "itertools 0.12.0",
  "memmap2 0.9.0",
  "memory",
  "ordered-float 4.1.1",
