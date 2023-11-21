@@ -157,7 +157,6 @@ pub struct CreateCollection {
     #[validate]
     pub quantization_config: Option<QuantizationConfig>,
     /// Sparse vector data config.
-    #[serde(default)]
     #[validate]
     pub sparse_vectors: Option<SparseVectorsConfig>,
 }
