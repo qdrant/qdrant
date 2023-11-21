@@ -160,7 +160,7 @@ impl TryFrom<i32> for ReadConsistencyType {
     type Error = tonic::Status;
 
     fn try_from(consistency: i32) -> Result<Self, Self::Error> {
-        let consistency = ReadConsistencyTypeGrpc::try_from(consistency).map_err(|_| {
+        let consistency = ReadConsistencyTypeGrpc::from_i32(consistency).ok_or_else(|| {
             tonic::Status::invalid_argument(format!(
                 "invalid read consistency type value {consistency}",
             ))

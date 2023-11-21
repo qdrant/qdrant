@@ -243,9 +243,9 @@ impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexPara
     fn try_from(params: TextIndexParams) -> Result<Self, Self::Error> {
         Ok(segment::data_types::text_index::TextIndexParams {
             r#type: TextIndexType::Text,
-            tokenizer: TokenizerType::try_from(params.tokenizer)
+            tokenizer: TokenizerType::from_i32(params.tokenizer)
                 .map(|x| x.try_into())
-                .unwrap_or_else(|_| Err(Status::invalid_argument("unknown tokenizer type")))?,
+                .unwrap_or_else(|| Err(Status::invalid_argument("unknown tokenizer type")))?,
             lowercase: params.lowercase,
             min_token_len: params.min_token_len.map(|x| x as usize),
             max_token_len: params.max_token_len.map(|x| x as usize),
@@ -281,13 +281,13 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
     type Error = Status;
 
     fn try_from(schema: PayloadSchemaInfo) -> Result<Self, Self::Error> {
-        let data_type = match PayloadSchemaType::try_from(schema.data_type) {
-            Err(_) => {
+        let data_type = match PayloadSchemaType::from_i32(schema.data_type) {
+            None => {
                 return Err(Status::invalid_argument(
                     "Malformed payload schema".to_string(),
                 ))
             }
-            Ok(data_type) => match data_type {
+            Some(data_type) => match data_type {
                 PayloadSchemaType::Keyword => segment::types::PayloadSchemaType::Keyword,
                 PayloadSchemaType::Integer => segment::types::PayloadSchemaType::Integer,
                 PayloadSchemaType::Float => segment::types::PayloadSchemaType::Float,
@@ -609,9 +609,9 @@ impl TryFrom<ScalarQuantization> for segment::types::ScalarQuantization {
     fn try_from(value: ScalarQuantization) -> Result<Self, Self::Error> {
         Ok(segment::types::ScalarQuantization {
             scalar: segment::types::ScalarQuantizationConfig {
-                r#type: match QuantizationType::try_from(value.r#type) {
-                    Ok(QuantizationType::Int8) => segment::types::ScalarType::Int8,
-                    Ok(QuantizationType::UnknownQuantization) | Err(_) => {
+                r#type: match QuantizationType::from_i32(value.r#type) {
+                    Some(QuantizationType::Int8) => segment::types::ScalarType::Int8,
+                    Some(QuantizationType::UnknownQuantization) | None => {
                         return Err(Status::invalid_argument("Unknown quantization type"))
                     }
                 },
@@ -644,17 +644,17 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
     fn try_from(value: ProductQuantization) -> Result<Self, Self::Error> {
         Ok(segment::types::ProductQuantization {
             product: segment::types::ProductQuantizationConfig {
-                compression: match CompressionRatio::try_from(value.compression) {
-                    Err(_) => {
+                compression: match CompressionRatio::from_i32(value.compression) {
+                    None => {
                         return Err(Status::invalid_argument(
                             "Unknown compression ratio".to_string(),
                         ))
                     }
-                    Ok(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
-                    Ok(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
-                    Ok(CompressionRatio::X16) => segment::types::CompressionRatio::X16,
-                    Ok(CompressionRatio::X32) => segment::types::CompressionRatio::X32,
-                    Ok(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
+                    Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
+                    Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
+                    Some(CompressionRatio::X16) => segment::types::CompressionRatio::X16,
+                    Some(CompressionRatio::X32) => segment::types::CompressionRatio::X32,
+                    Some(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
                 },
                 always_ram: value.always_ram,
             },
@@ -1208,10 +1208,10 @@ impl TryFrom<Distance> for segment::types::Distance {
 }
 
 pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
-    match Distance::try_from(dist) {
-        Err(_) => Err(Status::invalid_argument(format!(
+    match Distance::from_i32(dist) {
+        None => Err(Status::invalid_argument(format!(
             "Malformed distance parameter, unexpected value: {dist}"
         ))),
-        Ok(grpc_distance) => Ok(grpc_distance.try_into()?),
+        Some(grpc_distance) => Ok(grpc_distance.try_into()?),
     }
 }
