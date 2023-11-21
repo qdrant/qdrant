@@ -436,6 +436,15 @@ impl From<segment::data_types::vectors::VectorType> for Vector {
     }
 }
 
+impl From<segment::data_types::vectors::Vector> for Vector {
+    fn from(vector: segment::data_types::vectors::Vector) -> Self {
+        match vector {
+            segment::data_types::vectors::Vector::Dense(vector) => Self { data: vector },
+            segment::data_types::vectors::Vector::Sparse(_) => todo!(), // TODO(sparse) grpc conversion
+        }
+    }
+}
+
 impl From<HashMap<String, Vec<VectorElementType>>> for NamedVectors {
     fn from(vectors: HashMap<String, Vec<VectorElementType>>) -> Self {
         Self {
@@ -454,7 +463,13 @@ impl From<segment::data_types::vectors::VectorStruct> for Vectors {
                 vectors_options: Some(VectorsOptions::Vector(vector.into())),
             },
             segment::data_types::vectors::VectorStruct::Multi(vectors) => Self {
-                vectors_options: Some(VectorsOptions::Vectors(vectors.into())),
+                vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
+                    vectors: HashMap::from_iter(
+                        vectors
+                            .iter()
+                            .map(|(name, vector)| (name.clone(), vector.clone().into())),
+                    ),
+                })),
             },
         }
     }
@@ -495,6 +510,16 @@ impl From<NamedVectors> for HashMap<String, Vec<VectorElementType>> {
             .vectors
             .into_iter()
             .map(|(name, vector)| (name, vector.data))
+            .collect()
+    }
+}
+
+impl From<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector> {
+    fn from(vectors: NamedVectors) -> Self {
+        vectors
+            .vectors
+            .into_iter()
+            .map(|(name, vector)| (name, vector.data.into()))
             .collect()
     }
 }

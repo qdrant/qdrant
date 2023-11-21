@@ -24,7 +24,7 @@ use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
@@ -387,7 +387,7 @@ impl Segment {
         &self,
         vector_name: &str,
         point_offset: PointOffsetType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    ) -> OperationResult<Option<Vector>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let is_vector_deleted = vector_data
@@ -411,9 +411,7 @@ impl Segment {
                     ),
                 })
             } else {
-                // TODO(sparse) remove unwrap and return Vector type
-                let vector: &[_] = vector_storage.get_vector(point_offset).try_into().unwrap();
-                Ok(Some(vector.to_vec()))
+                Ok(Some(vector_storage.get_vector(point_offset).to_owned()))
             }
         } else {
             Ok(None)
@@ -594,7 +592,7 @@ impl Segment {
                             if let Some(vector) =
                                 self.vector_by_offset(vector_name, point_offset)?
                             {
-                                result.insert(vector_name.clone(), vector.into());
+                                result.insert(vector_name.clone(), vector);
                             }
                         }
                         Some(result.into())
@@ -985,11 +983,7 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn vector(
-        &self,
-        vector_name: &str,
-        point_id: PointIdType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
@@ -1000,7 +994,7 @@ impl SegmentEntry for Segment {
         let mut result = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
             if let Some(vec) = self.vector(vector_name, point_id)? {
-                result.insert(vector_name.clone(), vec.into());
+                result.insert(vector_name.clone(), vec);
             }
         }
         Ok(result)
