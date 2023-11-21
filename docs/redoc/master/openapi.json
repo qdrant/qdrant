@@ -6142,7 +6142,7 @@
         ]
       },
       "SparseVector": {
-        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length - indices and values to be non-empty",
+        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length",
         "type": "object",
         "required": [
           "indices",

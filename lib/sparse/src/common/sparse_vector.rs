@@ -9,7 +9,6 @@ use crate::common::types::{DimId, DimWeight};
 /// expects:
 /// - indices to be unique
 /// - indices and values to be the same length
-/// - indices and values to be non-empty
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVector {
@@ -50,6 +49,11 @@ impl SparseVector {
     /// Check if this vector is sorted by indices.
     pub fn is_sorted(&self) -> bool {
         self.indices.windows(2).all(|w| w[0] < w[1])
+    }
+
+    /// Check if this vector is empty.
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty() && self.values.is_empty()
     }
 
     /// Score this vector against another vector using dot product.
@@ -101,12 +105,6 @@ impl Validate for SparseVector {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = ValidationErrors::default();
 
-        if self.indices.is_empty() {
-            errors.add("indices", ValidationError::new("must be non-empty"));
-        }
-        if self.values.is_empty() {
-            errors.add("values", ValidationError::new("must be non-empty"));
-        }
         if self.indices.len() != self.values.len() {
             errors.add(
                 "values",
@@ -166,11 +164,9 @@ mod tests {
 
     #[test]
     fn validation_test() {
-        let empty_indices = SparseVector::new(vec![], vec![1.0, 2.0, 3.0]);
-        assert!(empty_indices.is_err());
-
-        let empty_values = SparseVector::new(vec![1, 2, 3], vec![]);
-        assert!(empty_values.is_err());
+        let fully_empty = SparseVector::new(vec![], vec![]);
+        assert!(fully_empty.is_ok());
+        assert!(fully_empty.unwrap().is_empty());
 
         let different_length = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0]);
         assert!(different_length.is_err());
