@@ -17,6 +17,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
+use super::transfer::ShardTransfer;
 use super::CollectionId;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -81,6 +82,7 @@ pub struct ShardReplicaSet {
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
     notify_peer_failure_cb: ChangePeerState,
+    abort_shard_transfer_cb: AbortShardTransfer,
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
@@ -91,6 +93,7 @@ pub struct ShardReplicaSet {
     write_ordering_lock: Mutex<()>,
 }
 
+pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
 pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
@@ -105,6 +108,7 @@ impl ShardReplicaSet {
         local: bool,
         remotes: HashSet<PeerId>,
         on_peer_failure: ChangePeerState,
+        abort_shard_transfer: AbortShardTransfer,
         collection_path: &Path,
         collection_config: Arc<RwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
@@ -159,6 +163,7 @@ impl ShardReplicaSet {
             replica_state: replica_state.into(),
             locally_disabled_peers: Default::default(),
             shard_path,
+            abort_shard_transfer_cb: abort_shard_transfer,
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
@@ -184,6 +189,7 @@ impl ShardReplicaSet {
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
+        abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
@@ -265,6 +271,7 @@ impl ShardReplicaSet {
             locally_disabled_peers: Default::default(),
             shard_path: shard_path.to_path_buf(),
             notify_peer_failure_cb: on_peer_failure,
+            abort_shard_transfer_cb: abort_shard_transfer,
             channel_service,
             collection_id,
             collection_config,
@@ -655,9 +662,22 @@ impl ShardReplicaSet {
 
     /// Check if the are any locally disabled peers
     /// And if so, report them to the consensus
-    pub async fn sync_local_state(&self) -> CollectionResult<()> {
-        for failed_peer in self.locally_disabled_peers.read().iter() {
-            self.notify_peer_failure(*failed_peer);
+    pub async fn sync_local_state<F>(&self, get_shard_transfers: F) -> CollectionResult<()>
+    where
+        F: Fn(ShardId, PeerId) -> Vec<ShardTransfer>,
+    {
+        for &failed_peer in self.locally_disabled_peers.read().iter() {
+            self.notify_peer_failure(failed_peer);
+
+            for transfer in get_shard_transfers(self.shard_id, failed_peer) {
+                self.abort_shard_transfer(
+                    transfer,
+                    &format!(
+                        "{failed_peer}/{}:{} replica failed",
+                        self.collection_id, self.shard_id
+                    ),
+                );
+            }
         }
         Ok(())
     }
@@ -736,6 +756,18 @@ impl ShardReplicaSet {
     fn notify_peer_failure(&self, peer_id: PeerId) {
         log::debug!("Notify peer failure: {}", peer_id);
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
+    }
+
+    fn abort_shard_transfer(&self, transfer: ShardTransfer, reason: &str) {
+        log::debug!(
+            "Abort {}:{} / {} -> {} shard transfer",
+            self.collection_id,
+            transfer.shard_id,
+            transfer.from,
+            transfer.to,
+        );
+
+        self.abort_shard_transfer_cb.deref()(transfer, reason)
     }
 }
 

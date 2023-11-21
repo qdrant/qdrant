@@ -10,7 +10,7 @@ use collection::operations::types::{CollectionError, VectorParams};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::{ChangePeerState, ReplicaState};
+use collection::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
 use collection::shards::CollectionId;
 use segment::types::Distance;
 
@@ -83,6 +83,10 @@ pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
     Arc::new(move |_transfer| {})
 }
 
+pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+    Arc::new(|_transfer, _reason| {})
+}
+
 /// Default to a collection with all the shards local
 #[cfg(test)]
 pub async fn new_local_collection(
@@ -102,6 +106,7 @@ pub async fn new_local_collection(
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )
@@ -134,6 +139,7 @@ pub async fn load_local_collection(
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )

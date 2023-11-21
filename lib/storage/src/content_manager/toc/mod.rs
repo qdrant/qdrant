@@ -24,7 +24,7 @@ use collection::config::{default_replication_factor, CollectionConfig};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set;
-use collection::shards::replica_set::ReplicaState;
+use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
 use futures::future::try_join_all;
@@ -144,6 +144,10 @@ impl TableOfContent {
                     None,
                 ),
                 Self::request_shard_transfer_callback(
+                    consensus_proposal_sender.clone(),
+                    collection_name.clone(),
+                ),
+                Self::abort_shard_transfer_callback(
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                 ),
@@ -487,6 +491,38 @@ impl TableOfContent {
                 }
             } else {
                 log::error!("Can't send proposal to request shard transfer. Error: this is a single node deployment");
+            }
+        })
+    }
+
+    fn abort_shard_transfer_callback(
+        proposal_sender: Option<OperationSender>,
+        collection_name: String,
+    ) -> AbortShardTransfer {
+        Arc::new(move |shard_transfer, reason| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let shard_id = shard_transfer.shard_id;
+                let from = shard_transfer.from;
+                let to = shard_transfer.to;
+
+                let operation = ConsensusOperations::abort_transfer(
+                    collection_name.clone(),
+                    shard_transfer,
+                    reason,
+                );
+
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to abort \
+                         {collection_name}:{shard_id} / {from} -> {to} shard transfer: \
+                         {send_error}",
+                    );
+                }
+            } else {
+                log::error!(
+                    "Can't send proposal to abort shard transfer: \
+                     this is a single node deployment",
+                );
             }
         })
     }

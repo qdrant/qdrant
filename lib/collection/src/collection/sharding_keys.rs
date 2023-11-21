@@ -30,6 +30,7 @@ impl Collection {
             is_local,
             peers,
             self.notify_peer_failure_cb.clone(),
+            self.abort_shard_transfer_cb.clone(),
             &self.path,
             self.collection_config.clone(),
             self.shared_storage_config.clone(),
