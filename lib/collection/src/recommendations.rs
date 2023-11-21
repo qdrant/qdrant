@@ -95,7 +95,7 @@ where
     Ok(results.into_iter().next().unwrap())
 }
 
-fn recommend_into_core_search(
+pub fn recommend_into_core_search(
     request: RecommendRequestInternal,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CollectionResult<CoreSearchRequest> {
