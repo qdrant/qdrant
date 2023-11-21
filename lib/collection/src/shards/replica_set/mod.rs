@@ -17,7 +17,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
-use super::transfer::shard_transfer::ShardTransfer;
+use super::transfer::ShardTransfer;
 use super::CollectionId;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
