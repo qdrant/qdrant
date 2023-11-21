@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use serde::Serialize;
+use common::validation::{validate_move_shard_different_peers, validate_range_generic};
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::qdrant::NamedVectors;
+use super::qdrant::{GeoLineString, NamedVectors};
 
 pub trait ValidateExt {
     fn validate(&self) -> Result<(), ValidationErrors>;
@@ -43,14 +43,10 @@ where
 {
     #[inline]
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let errors = self
-            .iter()
-            .filter_map(|v| v.validate().err())
-            .fold(Err(ValidationErrors::new()), |bag, err| {
-                ValidationErrors::merge(bag, "?", Err(err))
-            })
-            .unwrap_err();
-        errors.errors().is_empty().then_some(()).ok_or(errors)
+        match self.iter().find_map(|v| v.validate().err()) {
+            Some(err) => ValidationErrors::merge(Err(Default::default()), "[]", Err(err)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -60,14 +56,10 @@ where
 {
     #[inline]
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let errors = self
-            .values()
-            .filter_map(|v| v.validate().err())
-            .fold(Err(ValidationErrors::new()), |bag, err| {
-                ValidationErrors::merge(bag, "?", Err(err))
-            })
-            .unwrap_err();
-        errors.errors().is_empty().then_some(()).ok_or(errors)
+        match self.values().find_map(|v| v.validate().err()) {
+            Some(err) => ValidationErrors::merge(Err(Default::default()), "[]", Err(err)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -81,100 +73,168 @@ impl Validate for crate::grpc::qdrant::vectors_config::Config {
     }
 }
 
+impl Validate for crate::grpc::qdrant::vectors_config_diff::Config {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::vectors_config_diff::Config;
+        match self {
+            Config::Params(params) => params.validate(),
+            Config::ParamsMap(params_map) => params_map.validate(),
+        }
+    }
+}
+
 impl Validate for crate::grpc::qdrant::quantization_config::Quantization {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use crate::grpc::qdrant::quantization_config::Quantization;
         match self {
             Quantization::Scalar(scalar) => scalar.validate(),
             Quantization::Product(product) => product.validate(),
+            Quantization::Binary(binary) => binary.validate(),
         }
     }
 }
 
-/// Validate that `value` is a non-empty string or `None`.
-pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError> {
-    match value {
-        Some(value) if value.is_empty() => Err(ValidationError::new("not_empty")),
-        _ => Ok(()),
+impl Validate for crate::grpc::qdrant::quantization_config_diff::Quantization {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::quantization_config_diff::Quantization;
+        match self {
+            Quantization::Scalar(scalar) => scalar.validate(),
+            Quantization::Product(product) => product.validate(),
+            Quantization::Binary(binary) => binary.validate(),
+            Quantization::Disabled(_) => Ok(()),
+        }
+    }
+}
+
+impl Validate for crate::grpc::qdrant::update_collection_cluster_setup_request::Operation {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::update_collection_cluster_setup_request::Operation;
+        match self {
+            Operation::MoveShard(op) => op.validate(),
+            Operation::ReplicateShard(op) => op.validate(),
+            Operation::AbortTransfer(op) => op.validate(),
+            Operation::DropReplica(op) => op.validate(),
+            Operation::CreateShardKey(op) => op.validate(),
+            Operation::DeleteShardKey(op) => op.validate(),
+        }
+    }
+}
+
+impl Validate for crate::grpc::qdrant::MoveShard {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_move_shard_different_peers(self.from_peer_id, self.to_peer_id)
+    }
+}
+
+impl Validate for crate::grpc::qdrant::CreateShardKey {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        if self.replication_factor == Some(0) {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "replication_factor",
+                ValidationError::new("Replication factor must be greater than 0"),
+            );
+            return Err(errors);
+        }
+
+        if self.shards_number == Some(0) {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "shards_number",
+                ValidationError::new("Shards number must be greater than 0"),
+            );
+            return Err(errors);
+        }
+
+        Ok(())
+    }
+}
+
+impl Validate for crate::grpc::qdrant::DeleteShardKey {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        Ok(())
+    }
+}
+
+impl Validate for crate::grpc::qdrant::condition::ConditionOneOf {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::condition::ConditionOneOf;
+        match self {
+            ConditionOneOf::Field(field_condition) => field_condition.validate(),
+            ConditionOneOf::Nested(nested) => nested.validate(),
+            ConditionOneOf::Filter(filter) => filter.validate(),
+            ConditionOneOf::IsEmpty(_) => Ok(()),
+            ConditionOneOf::HasId(_) => Ok(()),
+            ConditionOneOf::IsNull(_) => Ok(()),
+        }
+    }
+}
+
+impl Validate for crate::grpc::qdrant::FieldCondition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let all_fields_none = self.r#match.is_none()
+            && self.range.is_none()
+            && self.geo_bounding_box.is_none()
+            && self.geo_radius.is_none()
+            && self.geo_polygon.is_none()
+            && self.values_count.is_none();
+
+        if all_fields_none {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "match",
+                ValidationError::new("At least one field condition must be specified"),
+            );
+            Err(errors)
+        } else {
+            Ok(())
+        }
     }
 }
 
 /// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(1), None)
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
 }
 
 /// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u32_range_min_1(value: &Option<u32>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(1), None)
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
 }
 
 /// Validate the value is in `[100, ]` or `None`.
 pub fn validate_u64_range_min_100(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(100), None)
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(100), None))
 }
 
 /// Validate the value is in `[1000, ]` or `None`.
 pub fn validate_u64_range_min_1000(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(1000), None)
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1000), None))
 }
 
 /// Validate the value is in `[4, ]` or `None`.
 pub fn validate_u64_range_min_4(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(4), None)
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), None))
 }
 
 /// Validate the value is in `[4, 10000]` or `None`.
 pub fn validate_u64_range_min_4_max_10000(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(4), Some(10_000))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), Some(10_000)))
 }
 
 /// Validate the value is in `[0.5, 1.0]` or `None`.
 pub fn validate_f32_range_min_0_5_max_1(value: &Option<f32>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(0.5), Some(1.0))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.5), Some(1.0)))
 }
 
 /// Validate the value is in `[0.0, 1.0]` or `None`.
 pub fn validate_f64_range_1(value: &Option<f64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(0.0), Some(1.0))
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.0), Some(1.0)))
 }
 
 /// Validate the value is in `[1.0, ]` or `None`.
 pub fn validate_f64_range_min_1(value: &Option<f64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(1.0), None)
-}
-
-/// Validate the value is in `[min, max]` or `None`.
-#[inline]
-pub fn validate_range_generic<N>(
-    value: &Option<N>,
-    min: Option<N>,
-    max: Option<N>,
-) -> Result<(), ValidationError>
-where
-    N: PartialOrd + Serialize,
-{
-    // If value is None we're good
-    let value = match value {
-        Some(value) => value,
-        None => return Ok(()),
-    };
-
-    // If value is within bounds we're good
-    if min.as_ref().map(|min| value >= min).unwrap_or(true)
-        && max.as_ref().map(|max| value <= max).unwrap_or(true)
-    {
-        return Ok(());
-    }
-
-    let mut err = ValidationError::new("range");
-    if let Some(min) = min {
-        err.add_param(Cow::from("min"), &min);
-    }
-    if let Some(max) = max {
-        err.add_param(Cow::from("max"), &max);
-    }
-    Err(err)
+    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1.0), None))
 }
 
 /// Validate the list of named vectors is not empty.
@@ -192,21 +252,44 @@ pub fn validate_named_vectors_not_empty(
     Err(err)
 }
 
-/// Validate the collection name contains no illegal characters.
-pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
-    const INVALID_CHARS: [char; 11] =
-        ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
-
-    match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
-        Some(c) => {
-            let mut err = ValidationError::new("does_not_contain");
-            err.add_param(Cow::from("pattern"), &c);
-            err.message
-                .replace(format!("collection name cannot contain \"{c}\" char").into());
-            Err(err)
-        }
-        None => Ok(()),
+/// Validate that GeoLineString has at least 4 points and is closed.
+pub fn validate_geo_polygon_line_helper(line: &GeoLineString) -> Result<(), ValidationError> {
+    let points = &line.points;
+    let min_length = 4;
+    if points.len() < min_length {
+        let mut err: ValidationError = ValidationError::new("min_line_length");
+        err.add_param(Cow::from("length"), &points.len());
+        err.add_param(Cow::from("min_length"), &min_length);
+        return Err(err);
     }
+
+    let first_point = &points[0];
+    let last_point = &points[points.len() - 1];
+    if first_point != last_point {
+        return Err(ValidationError::new("closed_line"));
+    }
+
+    Ok(())
+}
+
+pub fn validate_geo_polygon_exterior(line: &Option<GeoLineString>) -> Result<(), ValidationError> {
+    match line {
+        Some(l) => {
+            if l.points.is_empty() {
+                return Err(ValidationError::new("not_empty"));
+            }
+            validate_geo_polygon_line_helper(l)?;
+            Ok(())
+        }
+        _ => Err(ValidationError::new("not_empty")),
+    }
+}
+
+pub fn validate_geo_polygon_interiors(lines: &Vec<GeoLineString>) -> Result<(), ValidationError> {
+    for line in lines {
+        validate_geo_polygon_line_helper(line)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -214,7 +297,8 @@ mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, SearchPoints, UpdateCollection,
+        CreateCollection, CreateFieldIndexCollection, GeoLineString, GeoPoint, GeoPolygon,
+        SearchPoints, UpdateCollection,
     };
 
     #[test]
@@ -325,6 +409,90 @@ mod tests {
         assert!(
             bad_request.validate().is_err(),
             "bad search request should error on validation"
+        );
+    }
+
+    #[test]
+    fn test_geo_polygon() {
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString { points: vec![] }),
+            interiors: vec![],
+        };
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                ],
+            }),
+            interiors: vec![],
+        };
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 4., lon: 4. },
+                ],
+            }),
+            interiors: vec![],
+        };
+
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let bad_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 1., lon: 1. },
+                ],
+            }),
+            interiors: vec![GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 2., lon: 2. },
+                ],
+            }],
+        };
+
+        assert!(
+            bad_polygon.validate().is_err(),
+            "bad polygon should error on validation"
+        );
+
+        let good_polygon = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lat: 1., lon: 1. },
+                    GeoPoint { lat: 2., lon: 2. },
+                    GeoPoint { lat: 3., lon: 3. },
+                    GeoPoint { lat: 1., lon: 1. },
+                ],
+            }),
+            interiors: vec![],
+        };
+        assert!(
+            good_polygon.validate().is_ok(),
+            "good polygon should not error on validation"
         );
     }
 }

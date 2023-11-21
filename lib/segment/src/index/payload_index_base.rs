@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::types::PointOffsetType;
 use serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType,
 };
 
 pub trait PayloadIndex {
@@ -79,9 +79,6 @@ pub trait PayloadIndex {
 
     /// Drop all payload of the point
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
-
-    /// Completely drop payload. Pufff!
-    fn wipe(&mut self) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

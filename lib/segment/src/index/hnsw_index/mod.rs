@@ -12,10 +12,15 @@ mod search_context;
 #[cfg(test)]
 mod tests;
 
+// In case if we are dealing with high-CPU system, creating more than
+// this amount of threads will most likely not improve performance
+// But we still allow to override this value by setting `max_indexing_threads` to non-zero value
+const MAX_AUTO_RAYON_THREADS: usize = 16;
+
 pub fn max_rayon_threads(max_indexing_threads: usize) -> usize {
     if max_indexing_threads == 0 {
         let num_cpu = crate::common::cpu::get_num_cpus();
-        std::cmp::max(1, num_cpu - 1)
+        num_cpu.clamp(1, MAX_AUTO_RAYON_THREADS)
     } else {
         max_indexing_threads
     }

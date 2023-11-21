@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
-use crate::types::{PayloadIndexInfo, SegmentConfig, SegmentInfo, VectorDataConfig};
+use crate::types::{
+    PayloadIndexInfo, SegmentConfig, SegmentInfo, VectorDataConfig, VectorDataInfo,
+};
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct VectorIndexesTelemetry {
@@ -48,6 +50,9 @@ pub struct VectorIndexSearchesTelemetry {
     pub unfiltered_hnsw: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub unfiltered_sparse: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_plain: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
@@ -58,6 +63,9 @@ pub struct VectorIndexSearchesTelemetry {
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_exact: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub filtered_sparse: OperationDurationStatistics,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub unfiltered_exact: OperationDurationStatistics,
@@ -80,15 +88,23 @@ impl Anonymize for SegmentInfo {
             segment_type: self.segment_type,
             num_vectors: self.num_vectors.anonymize(),
             num_points: self.num_points.anonymize(),
+            num_indexed_vectors: self.num_indexed_vectors.anonymize(),
             num_deleted_vectors: self.num_deleted_vectors.anonymize(),
             ram_usage_bytes: self.ram_usage_bytes.anonymize(),
             disk_usage_bytes: self.disk_usage_bytes.anonymize(),
             is_appendable: self.is_appendable,
-            index_schema: self
-                .index_schema
-                .iter()
-                .map(|(k, v)| (k.anonymize(), v.anonymize()))
-                .collect(),
+            index_schema: self.index_schema.anonymize(),
+            vector_data: self.vector_data.anonymize(),
+        }
+    }
+}
+
+impl Anonymize for VectorDataInfo {
+    fn anonymize(&self) -> Self {
+        Self {
+            num_vectors: self.num_vectors.anonymize(),
+            num_indexed_vectors: self.num_indexed_vectors.anonymize(),
+            num_deleted_vectors: self.num_deleted_vectors.anonymize(),
         }
     }
 }
@@ -130,10 +146,12 @@ impl Anonymize for VectorIndexSearchesTelemetry {
             index_name: None,
             unfiltered_plain: self.unfiltered_plain.anonymize(),
             unfiltered_hnsw: self.unfiltered_hnsw.anonymize(),
+            unfiltered_sparse: self.unfiltered_sparse.anonymize(),
             filtered_plain: self.filtered_plain.anonymize(),
             filtered_small_cardinality: self.filtered_small_cardinality.anonymize(),
             filtered_large_cardinality: self.filtered_large_cardinality.anonymize(),
             filtered_exact: self.filtered_exact.anonymize(),
+            filtered_sparse: self.filtered_sparse.anonymize(),
             unfiltered_exact: self.filtered_exact.anonymize(),
         }
     }

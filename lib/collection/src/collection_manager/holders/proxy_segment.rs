@@ -1,12 +1,14 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::VectorElementType;
-use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
+use segment::data_types::vectors::{QueryVector, Vector};
+use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
@@ -34,6 +36,7 @@ pub struct ProxySegment {
     deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsMap,
     last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
+    wrapped_config: SegmentConfig,
 }
 
 impl ProxySegment {
@@ -44,6 +47,7 @@ impl ProxySegment {
         created_indexes: LockedFieldsMap,
         deleted_indexes: LockedFieldsSet,
     ) -> Self {
+        let wrapped_config = segment.get().read().config().clone();
         ProxySegment {
             write_segment,
             wrapped_segment: segment,
@@ -51,6 +55,7 @@ impl ProxySegment {
             created_indexes,
             deleted_indexes,
             last_flushed_version: Arc::new(RwLock::new(None)),
+            wrapped_config,
         }
     }
 
@@ -170,12 +175,13 @@ impl SegmentEntry for ProxySegment {
     fn search(
         &self,
         vector_name: &str,
-        vector: &[VectorElementType],
+        vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let deleted_points = self.deleted_points.read();
 
@@ -198,6 +204,7 @@ impl SegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 top,
                 params,
+                is_stopped,
             )?
         } else {
             self.wrapped_segment.get().read().search(
@@ -208,6 +215,7 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
+                is_stopped,
             )?
         };
 
@@ -219,6 +227,7 @@ impl SegmentEntry for ProxySegment {
             filter,
             top,
             params,
+            is_stopped,
         )?;
 
         wrapped_result.append(&mut write_result);
@@ -228,12 +237,13 @@ impl SegmentEntry for ProxySegment {
     fn search_batch(
         &self,
         vector_name: &str,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -256,6 +266,7 @@ impl SegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 top,
                 params,
+                is_stopped,
             )?
         } else {
             self.wrapped_segment.get().read().search_batch(
@@ -266,6 +277,7 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
+                is_stopped,
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -276,6 +288,7 @@ impl SegmentEntry for ProxySegment {
             filter,
             top,
             params,
+            is_stopped,
         )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
@@ -391,11 +404,7 @@ impl SegmentEntry for ProxySegment {
             .clear_payload(op_num, point_id)
     }
 
-    fn vector(
-        &self,
-        vector_name: &str,
-        point_id: PointIdType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment
                 .get()
@@ -564,28 +573,48 @@ impl SegmentEntry for ProxySegment {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
 
+        let vector_name_count = self.config().vector_data.len();
+        let deleted_points_count = self.deleted_points.read().len();
+
         // This is a best estimate
-        let num_vectors = {
-            let vector_name_count = self.config().vector_data.len();
-            let deleted_points_count = self.deleted_points.read().len();
-            (wrapped_info.num_vectors + write_info.num_vectors)
+        let num_vectors = (wrapped_info.num_vectors + write_info.num_vectors)
+            .saturating_sub(deleted_points_count * vector_name_count);
+
+        let num_indexed_vectors = if wrapped_info.segment_type == SegmentType::Indexed {
+            wrapped_info
+                .num_vectors
                 .saturating_sub(deleted_points_count * vector_name_count)
+        } else {
+            0
         };
+
+        let mut vector_data = wrapped_info.vector_data;
+
+        for (key, info) in write_info.vector_data.into_iter() {
+            vector_data
+                .entry(key)
+                .and_modify(|wrapped_info| {
+                    wrapped_info.num_vectors += info.num_vectors;
+                })
+                .or_insert(info);
+        }
 
         SegmentInfo {
             segment_type: SegmentType::Special,
             num_vectors,
+            num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false,
             index_schema: wrapped_info.index_schema,
+            vector_data,
         }
     }
 
-    fn config(&self) -> SegmentConfig {
-        self.wrapped_segment.get().read().config()
+    fn config(&self) -> &SegmentConfig {
+        &self.wrapped_config
     }
 
     fn is_appendable(&self) -> bool {
@@ -798,7 +827,7 @@ mod tests {
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -808,6 +837,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -865,7 +895,7 @@ mod tests {
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -875,6 +905,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -889,6 +920,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -918,7 +950,7 @@ mod tests {
             deleted_indexes,
         );
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -928,6 +960,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -942,6 +975,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -971,13 +1005,12 @@ mod tests {
             deleted_indexes,
         );
 
-        let q1 = vec![1.0, 1.0, 1.0, 0.1];
-        let q2 = vec![1.0, 1.0, 0.1, 0.1];
-        let q3 = vec![1.0, 0.1, 1.0, 0.1];
-        let q4 = vec![0.1, 1.0, 1.0, 0.1];
+        let q1 = [1.0, 1.0, 1.0, 0.1];
+        let q2 = [1.0, 1.0, 0.1, 0.1];
+        let q3 = [1.0, 0.1, 1.0, 0.1];
+        let q4 = [0.1, 1.0, 1.0, 0.1];
 
-        let query_vectors: &[&[VectorElementType]] =
-            &[q1.as_slice(), q2.as_slice(), q3.as_slice(), q4.as_slice()];
+        let query_vectors: &[&QueryVector] = &[&q1.into(), &q2.into(), &q3.into(), &q4.into()];
 
         let mut all_single_results = Vec::with_capacity(query_vectors.len());
         for query_vector in query_vectors {
@@ -990,6 +1023,7 @@ mod tests {
                     None,
                     10,
                     None,
+                    &false.into(),
                 )
                 .unwrap();
             all_single_results.push(res);
@@ -1006,6 +1040,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -1244,13 +1279,13 @@ mod tests {
         assert_eq!(segment_info.num_points, 5);
         assert_eq!(segment_info.num_vectors, 5);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         proxy_segment.delete_point(101, 99999.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 5);
         assert_eq!(segment_info.num_vectors, 5);
 
-        // Delete point 1, counts should derease by 1
+        // Delete point 1, counts should decrease by 1
         proxy_segment.delete_point(102, 4.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
@@ -1270,7 +1305,7 @@ mod tests {
         use segment::segment_constructor::build_segment;
         use segment::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
 
-        // Create proxyied multivec segment
+        // Create proxied multivec segment
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let dim = 1;
         let config = SegmentConfig {
@@ -1353,13 +1388,13 @@ mod tests {
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         proxy_segment.delete_point(104, 1.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete point 4, counts should derease by 1
+        // Delete point 4, counts should decrease by 1
         proxy_segment.delete_point(105, 4.into()).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);

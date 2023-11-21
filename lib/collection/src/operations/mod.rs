@@ -5,6 +5,8 @@ pub mod conversions;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;
+pub mod shard_key_selector;
+pub mod shard_selector_internal;
 pub mod shared_storage_config;
 pub mod snapshot_ops;
 pub mod types;
@@ -127,10 +129,7 @@ where
     let mut op_vec_by_shard: HashMap<ShardId, Vec<O>> = HashMap::new();
     for operation in iter {
         let shard_id = point_to_shard(id_extractor(&operation), ring);
-        op_vec_by_shard
-            .entry(shard_id)
-            .or_insert_with(Vec::new)
-            .push(operation);
+        op_vec_by_shard.entry(shard_id).or_default().push(operation);
     }
     OperationToShard::by_shard(op_vec_by_shard)
 }

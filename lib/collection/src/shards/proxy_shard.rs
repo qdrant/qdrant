@@ -13,12 +13,13 @@ use tokio::runtime::Handle;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
 
+use super::update_tracker::UpdateTracker;
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -119,6 +120,10 @@ impl ProxyShard {
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         self.wrapped_shard.get_telemetry_data()
     }
+
+    pub fn update_tracker(&self) -> &UpdateTracker {
+        self.wrapped_shard.update_tracker()
+    }
 }
 
 #[async_trait]
@@ -197,17 +202,20 @@ impl ShardOperation for ProxyShard {
     }
 
     /// Forward read-only `search` to `wrapped_shard`
-    async fn search(
+    async fn core_search(
         &self,
-        request: Arc<SearchRequestBatch>,
+        request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
-        local_shard.search(request, search_runtime_handle).await
+        local_shard
+            .core_search(request, search_runtime_handle, timeout)
+            .await
     }
 
     /// Forward read-only `count` to `wrapped_shard`
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard.count(request).await
     }
@@ -215,7 +223,7 @@ impl ShardOperation for ProxyShard {
     /// Forward read-only `retrieve` to `wrapped_shard`
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {

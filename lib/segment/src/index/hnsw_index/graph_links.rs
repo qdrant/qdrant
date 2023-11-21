@@ -5,12 +5,12 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use memmap2::{Mmap, MmapMut};
+use memory::{madvise, mmap_ops};
 
-use crate::common::mmap_ops;
-use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::madvise;
-use crate::types::PointOffsetType;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::vector_utils::TrySetCapacityExact;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
 
@@ -206,12 +206,7 @@ impl GraphLinksConverter {
     }
 
     pub fn serialize_to(&self, bytes_data: &mut [u8]) {
-        let header = GraphLinksFileHeader {
-            point_count: self.reindex.len() as u64,
-            levels_count: self.get_levels_count() as u64,
-            total_links_len: self.total_links_len as u64,
-            total_offsets_len: self.total_offsets_len as u64,
-        };
+        let header = self.get_header();
 
         header.serialize_bytes_to(bytes_data);
 
@@ -223,7 +218,8 @@ impl GraphLinksConverter {
             reindex_slice.copy_from_slice(&self.reindex);
         }
 
-        let mut level_offsets = Vec::new();
+        let header_levels_count = header.levels_count as usize;
+        let mut level_offsets = Vec::with_capacity(header_levels_count);
         {
             let links_range = header.get_links_range();
             let offsets_range = header.get_offsets_range();
@@ -238,7 +234,7 @@ impl GraphLinksConverter {
 
             let mut links_pos = 0;
             let mut offsets_pos = 1;
-            for level in 0..header.levels_count as usize {
+            for level in 0..header_levels_count {
                 level_offsets.push(offsets_pos as u64 - 1);
                 self.iterate_level_points(level, |_, links| {
                     links_mmap[links_pos..links_pos + links.len()].copy_from_slice(links);
@@ -403,19 +399,19 @@ impl GraphLinksRam {
         let mut reindex: Vec<PointOffsetType> = Vec::new();
 
         let link_slice = get_links_slice(data, &header);
-        links.try_reserve_exact(link_slice.len())?;
+        links.try_set_capacity_exact(link_slice.len())?;
         links.extend_from_slice(link_slice);
 
         let offsets_slice = get_offsets_slice(data, &header);
-        offsets.try_reserve_exact(offsets_slice.len())?;
+        offsets.try_set_capacity_exact(offsets_slice.len())?;
         offsets.extend_from_slice(offsets_slice);
 
         let level_offsets_slice = get_level_offsets(data, &header);
-        level_offsets.try_reserve_exact(level_offsets_slice.len())?;
+        level_offsets.try_set_capacity_exact(level_offsets_slice.len())?;
         level_offsets.extend_from_slice(level_offsets_slice);
 
         let reindex_slice = get_reindex_slice(data, &header);
-        reindex.try_reserve_exact(reindex_slice.len())?;
+        reindex.try_set_capacity_exact(reindex_slice.len())?;
         reindex.extend_from_slice(reindex_slice);
 
         let graph_links = Self {
@@ -585,7 +581,6 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::types::PointOffsetType;
 
     fn to_vec<TGraphLinks: GraphLinks>(links: &TGraphLinks) -> Vec<Vec<Vec<PointOffsetType>>> {
         let mut result = Vec::new();
@@ -683,7 +678,7 @@ mod tests {
         );
         assert_eq!(links, cmp_links);
 
-        // 4 levels with random unexists links
+        // 4 levels with random nonexistent links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
             vec![vec![1, 2, 5, 6]],
             vec![vec![0, 2, 7, 8], vec![], vec![34, 45, 10]],

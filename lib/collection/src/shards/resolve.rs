@@ -4,7 +4,7 @@ use std::hash;
 use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
-use crate::operations::types::Record;
+use crate::operations::types::{CountResult, Record};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResolveCondition {
@@ -14,6 +14,31 @@ pub enum ResolveCondition {
 
 pub trait Resolve: Sized {
     fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self;
+}
+
+impl Resolve for CountResult {
+    fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
+        match condition {
+            ResolveCondition::All => Self {
+                count: records
+                    .iter()
+                    .map(|result| result.count)
+                    .min()
+                    .unwrap_or_default(),
+            },
+            ResolveCondition::Majority => {
+                let mut counts = records
+                    .iter()
+                    .map(|result| result.count)
+                    .collect::<Vec<_>>();
+                counts.sort_unstable();
+                let middle = counts.len() / 2;
+                Self {
+                    count: counts.get(middle).copied().unwrap_or_default(),
+                }
+            }
+        }
+    }
 }
 
 impl Resolve for Vec<Record> {
@@ -221,7 +246,7 @@ impl<'a, T> ResolverRecord<'a, T> {
 mod test {
     use std::fmt;
 
-    use segment::types::ScoreType;
+    use common::types::ScoreType;
 
     use super::*;
 
@@ -251,6 +276,7 @@ mod test {
             score,
             payload: None,
             vector: None,
+            shard_key: None,
         }
     }
 

@@ -3,17 +3,18 @@ use std::sync::Arc;
 
 use bincode;
 use bitvec::prelude::{BitSlice, BitVec};
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
-use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
+use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 /// Point Id type used for storing ids internally
 /// Should be serializable by `bincode`, therefore is not untagged.
@@ -97,7 +98,7 @@ impl SimpleIdTracker {
                     external_id,
                     replaced_id
                 );
-                match external_id {
+                match replaced_id {
                     PointIdType::NumId(idx) => {
                         external_to_internal_num.remove(&idx);
                     }

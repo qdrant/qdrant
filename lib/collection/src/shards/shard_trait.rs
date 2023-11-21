@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use segment::types::{
@@ -7,8 +8,8 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequestBatch, UpdateResult,
+    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequestInternal, CountResult,
+    PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 
@@ -33,17 +34,18 @@ pub trait ShardOperation {
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;
 
-    async fn search(
+    async fn core_search(
         &self,
-        request: Arc<SearchRequestBatch>,
+        request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult>;
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult>;
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;

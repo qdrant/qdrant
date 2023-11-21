@@ -10,13 +10,17 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
-    HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
+    Distance, HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
+use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
+use crate::operations::types::{
+    CollectionError, CollectionResult, VectorParams, VectorParamsDiff, VectorsConfig,
+    VectorsConfigDiff,
+};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
@@ -49,6 +53,14 @@ impl Default for WalConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardingMethod {
+    #[default]
+    Auto,
+    Custom,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
@@ -58,6 +70,12 @@ pub struct CollectionParams {
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
+    /// Sharding method
+    /// Default is Auto - points are distributed across all available shards
+    /// Custom - points are distributed across shards according to shard key
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sharding_method: Option<ShardingMethod>,
     /// Number of replicas for each shard
     #[serde(default = "default_replication_factor")]
     pub replication_factor: NonZeroU32,
@@ -67,6 +85,12 @@ pub struct CollectionParams {
     /// Does not have any performance impact.
     #[serde(default = "default_write_consistency_factor")]
     pub write_consistency_factor: NonZeroU32,
+    /// Defines how many additional replicas should be processing read request at the same time.
+    /// Default value is Auto, which means that fan-out will be determined automatically based on
+    /// the busyness of the local replica.
+    /// Having more than 0 might be useful to smooth latency spikes of individual nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_fan_out_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -80,14 +104,16 @@ impl Anonymize for CollectionParams {
         CollectionParams {
             vectors: self.vectors.anonymize(),
             shard_number: self.shard_number,
+            sharding_method: self.sharding_method,
             replication_factor: self.replication_factor,
             write_consistency_factor: self.write_consistency_factor,
+            read_fan_out_factor: self.read_fan_out_factor,
             on_disk_payload: self.on_disk_payload,
         }
     }
 }
 
-fn default_shard_number() -> NonZeroU32 {
+pub fn default_shard_number() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 
@@ -150,10 +176,33 @@ impl CollectionConfig {
 }
 
 impl CollectionParams {
-    pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
+    pub fn empty() -> Self {
+        CollectionParams {
+            vectors: VectorsConfig::empty(),
+            shard_number: default_shard_number(),
+            sharding_method: None,
+            replication_factor: default_replication_factor(),
+            write_consistency_factor: default_write_consistency_factor(),
+            read_fan_out_factor: None,
+            on_disk_payload: default_on_disk_payload(),
+        }
+    }
+
+    pub fn get_distance(&self, vector_name: &str) -> CollectionResult<Distance> {
+        match self.vectors.get_params(vector_name) {
+            Some(params) => Ok(params.distance),
+            None => Err(CollectionError::BadInput {
+                description: format!(
+                    "Vector params for {vector_name} are not specified in config",
+                    vector_name = vector_name
+                ),
+            }),
+        }
+    }
+
+    fn get_vector_params_mut(&mut self, vector_name: &str) -> CollectionResult<&mut VectorParams> {
         self.vectors
-            .get_params(vector_name)
-            .cloned()
+            .get_params_mut(vector_name)
             .ok_or_else(|| CollectionError::BadInput {
                 description: if vector_name == DEFAULT_VECTOR_NAME {
                     "Default vector params are not specified in config".into()
@@ -161,6 +210,50 @@ impl CollectionParams {
                     format!("Vector params for {vector_name} are not specified in config")
                 },
             })
+    }
+
+    /// Update collection vectors from the given update vectors config
+    pub fn update_vectors_from_diff(
+        &mut self,
+        update_vectors_diff: &VectorsConfigDiff,
+    ) -> CollectionResult<()> {
+        for (vector_name, update_params) in update_vectors_diff.0.iter() {
+            let vector_params = self.get_vector_params_mut(vector_name)?;
+
+            let VectorParamsDiff {
+                hnsw_config,
+                quantization_config,
+                on_disk,
+            } = update_params.clone();
+
+            if let Some(hnsw_diff) = hnsw_config {
+                if let Some(existing_hnsw) = &vector_params.hnsw_config {
+                    vector_params.hnsw_config = Some(hnsw_diff.update(existing_hnsw)?);
+                } else {
+                    vector_params.hnsw_config = Some(hnsw_diff);
+                }
+            }
+
+            if let Some(quantization_diff) = quantization_config {
+                vector_params.quantization_config = match quantization_diff.clone() {
+                    QuantizationConfigDiff::Scalar(scalar) => {
+                        Some(QuantizationConfig::Scalar(scalar))
+                    }
+                    QuantizationConfigDiff::Product(product) => {
+                        Some(QuantizationConfig::Product(product))
+                    }
+                    QuantizationConfigDiff::Binary(binary) => {
+                        Some(QuantizationConfig::Binary(binary))
+                    }
+                    QuantizationConfigDiff::Disabled(_) => None,
+                }
+            }
+
+            if let Some(on_disk) = on_disk {
+                vector_params.on_disk = Some(on_disk);
+            }
+        }
+        Ok(())
     }
 
     /// Convert into unoptimized named vector data configs

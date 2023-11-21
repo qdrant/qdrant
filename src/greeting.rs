@@ -1,6 +1,6 @@
 use std::env;
+use std::io::{stdout, IsTerminal};
 
-use atty::Stream;
 use colored::{Color, ColoredString, Colorize};
 
 use crate::settings::Settings;
@@ -15,8 +15,9 @@ fn paint(text: &str, true_color: bool) -> ColoredString {
 
 /// Prints welcome message
 #[rustfmt::skip]
+#[allow(clippy::needless_raw_string_hashes)]
 pub fn welcome(settings: &Settings) {
-    if !atty::is(Stream::Stdout) {
+    if !stdout().is_terminal()  {
         colored::control::set_override(false);
     }
 

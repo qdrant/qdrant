@@ -1,6 +1,7 @@
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+
 use crate::payload_storage::FilterContext;
-use crate::types::{PointOffsetType, ScoreType};
-use crate::vector_storage::{RawScorer, ScoredPointOffset};
+use crate::vector_storage::RawScorer;
 
 pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,
@@ -60,10 +61,10 @@ impl<'a> FilteredScorer<'a> {
         };
         if limit == 0 {
             self.points_buffer
-                .resize(filtered_point_ids.len(), ScoredPointOffset::default());
+                .resize_with(filtered_point_ids.len(), ScoredPointOffset::default);
         } else {
             self.points_buffer
-                .resize(limit, ScoredPointOffset::default());
+                .resize_with(limit, ScoredPointOffset::default);
         }
         let count = self
             .raw_scorer

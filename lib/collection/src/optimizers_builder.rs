@@ -7,6 +7,7 @@ use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
@@ -15,7 +16,9 @@ use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
 
 const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
-const DEFAULT_INDEXING_THRESHOLD_KB: usize = 20_000;
+pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 20_000;
+const SEGMENTS_PATH: &str = "segments";
+const TEMP_SEGMENTS_PATH: &str = "temp_segments";
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct OptimizersConfig {
@@ -108,6 +111,20 @@ impl OptimizersConfig {
     }
 }
 
+pub fn clear_temp_segments(shard_path: &Path) {
+    let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
+    if temp_segments_path.exists() {
+        log::debug!("Removing temp_segments directory: {:?}", temp_segments_path);
+        if let Err(err) = std::fs::remove_dir_all(&temp_segments_path) {
+            log::warn!(
+                "Failed to remove temp_segments directory: {:?}, error: {:?}",
+                temp_segments_path,
+                err
+            );
+        }
+    }
+}
+
 pub fn build_optimizers(
     shard_path: &Path,
     collection_params: &CollectionParams,
@@ -115,8 +132,8 @@ pub fn build_optimizers(
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
-    let segments_path = shard_path.join("segments");
-    let temp_segments_path = shard_path.join("temp_segments");
+    let segments_path = shard_path.join(SEGMENTS_PATH);
+    let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
 
     let indexing_threshold = match optimizers_config.indexing_threshold {
         None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
@@ -156,6 +173,14 @@ pub fn build_optimizers(
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
             optimizers_config.vacuum_min_vector_number,
+            threshold_config.clone(),
+            segments_path.clone(),
+            temp_segments_path.clone(),
+            collection_params.clone(),
+            hnsw_config.clone(),
+            quantization_config.clone(),
+        )),
+        Arc::new(ConfigMismatchOptimizer::new(
             threshold_config,
             segments_path,
             temp_segments_path,

@@ -1,5 +1,11 @@
+use std::num::NonZeroUsize;
+use std::time::Duration;
+
 use crate::operations::types::NodeType;
 
+/// Default timeout for search requests.
+/// In cluster mode, this should be aligned with collection timeout.
+const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
 const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
 
@@ -12,6 +18,9 @@ pub struct SharedStorageConfig {
     pub node_type: NodeType,
     pub handle_collection_load_errors: bool,
     pub recovery_mode: Option<String>,
+    pub search_timeout: Duration,
+    pub update_concurrency: Option<NonZeroUsize>,
+    pub is_distributed: bool,
 }
 
 impl Default for SharedStorageConfig {
@@ -21,6 +30,9 @@ impl Default for SharedStorageConfig {
             node_type: Default::default(),
             handle_collection_load_errors: false,
             recovery_mode: None,
+            search_timeout: DEFAULT_SEARCH_TIMEOUT,
+            update_concurrency: None,
+            is_distributed: false,
         }
     }
 }
@@ -31,17 +43,22 @@ impl SharedStorageConfig {
         node_type: NodeType,
         handle_collection_load_errors: bool,
         recovery_mode: Option<String>,
+        search_timeout: Option<Duration>,
+        update_concurrency: Option<NonZeroUsize>,
+        is_distributed: bool,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
             NodeType::Listener => DEFAULT_UPDATE_QUEUE_SIZE_LISTENER,
         });
-
         Self {
             update_queue_size,
             node_type,
             handle_collection_load_errors,
             recovery_mode,
+            search_timeout: search_timeout.unwrap_or(DEFAULT_SEARCH_TIMEOUT),
+            update_concurrency,
+            is_distributed,
         }
     }
 }

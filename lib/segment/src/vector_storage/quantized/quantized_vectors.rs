@@ -1,22 +1,28 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use bitvec::slice::BitSlice;
+use common::types::PointOffsetType;
+use io::file_operations::{atomic_save_json, read_json};
+use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
-use super::quantized_raw_scorer::QuantizedRawScorer;
-use crate::common::file_operations::{atomic_save_json, read_json};
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
+use super::quantized_scorer_builder::QuantizedScorerBuilder;
+use crate::common::operation_error::OperationResult;
+use crate::common::vector_utils::TrySetCapacityExact;
+use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::types::{
-    CompressionRatio, Distance, ProductQuantization, QuantizationConfig, ScalarQuantization,
+    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
+    ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
 };
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
-use crate::vector_storage::RawScorer;
+use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
@@ -33,6 +39,8 @@ pub enum QuantizedVectorStorage {
     ScalarMmap(EncodedVectorsU8<QuantizedMmapStorage>),
     PQRam(EncodedVectorsPQ<ChunkedVectors<u8>>),
     PQMmap(EncodedVectorsPQ<QuantizedMmapStorage>),
+    BinaryRam(EncodedVectorsBin<ChunkedVectors<u8>>),
+    BinaryMmap(EncodedVectorsBin<QuantizedMmapStorage>),
 }
 
 pub struct QuantizedVectors {
@@ -43,54 +51,29 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
+    pub fn default_rescoring(&self) -> bool {
+        matches!(
+            self.storage_impl,
+            QuantizedVectorStorage::BinaryRam(_) | QuantizedVectorStorage::BinaryMmap(_)
+        )
+    }
+
     pub fn raw_scorer<'a>(
         &'a self,
-        query: &[VectorElementType],
+        query: QueryVector,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
-    ) -> Box<dyn RawScorer + 'a> {
-        let query = self
-            .distance
-            .preprocess_vector(query)
-            .unwrap_or_else(|| query.to_vec());
-        match &self.storage_impl {
-            QuantizedVectorStorage::ScalarRam(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                })
-            }
-            QuantizedVectorStorage::ScalarMmap(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                })
-            }
-            QuantizedVectorStorage::PQRam(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                })
-            }
-            QuantizedVectorStorage::PQMmap(storage) => {
-                let query = storage.encode_query(&query);
-                Box::new(QuantizedRawScorer {
-                    query,
-                    point_deleted,
-                    vec_deleted,
-                    quantized_data: storage,
-                })
-            }
-        }
+        is_stopped: &'a AtomicBool,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        QuantizedScorerBuilder::new(
+            &self.storage_impl,
+            query,
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+            &self.distance,
+        )
+        .build()
     }
 
     pub fn save_to(&self, path: &Path) -> OperationResult<()> {
@@ -101,6 +84,8 @@ impl QuantizedVectors {
             QuantizedVectorStorage::ScalarMmap(storage) => storage.save(&data_path, &meta_path)?,
             QuantizedVectorStorage::PQRam(storage) => storage.save(&data_path, &meta_path)?,
             QuantizedVectorStorage::PQMmap(storage) => storage.save(&data_path, &meta_path)?,
+            QuantizedVectorStorage::BinaryRam(storage) => storage.save(&data_path, &meta_path)?,
+            QuantizedVectorStorage::BinaryMmap(storage) => storage.save(&data_path, &meta_path)?,
         };
         Ok(())
     }
@@ -116,24 +101,27 @@ impl QuantizedVectors {
         ]
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn create<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
+    pub fn create(
+        vector_storage: &VectorStorageEnum,
         quantization_config: &QuantizationConfig,
-        distance: Distance,
-        dim: usize,
-        count: usize,
         path: &Path,
-        on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+        let count = vector_storage.total_vector_count();
+        // TODO(sparse) avoid unwrap
+        let vectors =
+            (0..count as PointOffsetType).map(|i| vector_storage.get_vector(i).try_into().unwrap());
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let distance = vector_storage.distance();
+        let dim = vector_storage.vector_dim();
+
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: scalar_config,
-            }) => Self::crate_scalar(
+            }) => Self::create_scalar(
                 vectors,
                 &vector_parameters,
                 scalar_config,
@@ -142,7 +130,7 @@ impl QuantizedVectors {
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
-                Self::crate_pq(
+                Self::create_pq(
                     vectors,
                     &vector_parameters,
                     pq_config,
@@ -152,6 +140,16 @@ impl QuantizedVectors {
                     stopped,
                 )?
             }
+            QuantizationConfig::Binary(BinaryQuantization {
+                binary: binary_config,
+            }) => Self::create_binary(
+                vectors,
+                &vector_parameters,
+                binary_config,
+                path,
+                on_disk_vector_storage,
+                stopped,
+            )?,
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -168,7 +166,7 @@ impl QuantizedVectors {
 
         quantized_vectors.save_to(path)?;
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
-        Ok(quantized_vectors)
+        Ok(Arc::new(AtomicRefCell::new(quantized_vectors)))
     }
 
     pub fn config_exists(path: &Path) -> bool {
@@ -176,10 +174,12 @@ impl QuantizedVectors {
     }
 
     pub fn load(
+        vector_storage: &VectorStorageEnum,
         path: &Path,
-        on_disk_vector_storage: bool,
-        distance: Distance,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let distance = vector_storage.distance();
+
         let data_path = path.join(QUANTIZED_DATA_PATH);
         let meta_path = path.join(QUANTIZED_META_PATH);
         let config_path = path.join(QUANTIZED_CONFIG_PATH);
@@ -217,20 +217,39 @@ impl QuantizedVectors {
                     )?)
                 }
             }
+            QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+                if Self::is_ram(binary.always_ram, on_disk_vector_storage) {
+                    QuantizedVectorStorage::BinaryRam(
+                        EncodedVectorsBin::<ChunkedVectors<u8>>::load(
+                            &data_path,
+                            &meta_path,
+                            &config.vector_parameters,
+                        )?,
+                    )
+                } else {
+                    QuantizedVectorStorage::BinaryMmap(
+                        EncodedVectorsBin::<QuantizedMmapStorage>::load(
+                            &data_path,
+                            &meta_path,
+                            &config.vector_parameters,
+                        )?,
+                    )
+                }
+            }
         };
 
-        Ok(QuantizedVectors {
+        Ok(Arc::new(AtomicRefCell::new(QuantizedVectors {
             storage_impl: quantized_store,
             config,
             path: path.to_path_buf(),
             distance,
-        })
+        })))
     }
 
-    fn crate_scalar<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone,
+    fn create_scalar<'a>(
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
         vector_parameters: &quantization::VectorParameters,
-        scalar_config: &crate::types::ScalarQuantizationConfig,
+        scalar_config: &ScalarQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
@@ -240,7 +259,7 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_reserve_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
@@ -267,10 +286,10 @@ impl QuantizedVectors {
         }
     }
 
-    fn crate_pq<'a>(
-        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
+    fn create_pq<'a>(
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
-        pq_config: &crate::types::ProductQuantizationConfig,
+        pq_config: &ProductQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
@@ -285,7 +304,7 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_reserve_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
@@ -309,6 +328,42 @@ impl QuantizedVectors {
                 max_threads,
                 || stopped.load(Ordering::Relaxed),
             )?))
+        }
+    }
+
+    fn create_binary<'a>(
+        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
+        vector_parameters: &quantization::VectorParameters,
+        binary_config: &BinaryQuantizationConfig,
+        path: &Path,
+        on_disk_vector_storage: bool,
+        stopped: &AtomicBool,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let quantized_vector_size =
+            EncodedVectorsBin::<QuantizedMmapStorage>::get_quantized_vector_size_from_params(
+                vector_parameters,
+            );
+        let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
+        if in_ram {
+            let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            Ok(QuantizedVectorStorage::BinaryRam(
+                EncodedVectorsBin::encode(vectors, storage_builder, vector_parameters, || {
+                    stopped.load(Ordering::Relaxed)
+                })?,
+            ))
+        } else {
+            let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
+            let storage_builder = QuantizedMmapStorageBuilder::new(
+                mmap_data_path.as_path(),
+                vector_parameters.count,
+                quantized_vector_size,
+            )?;
+            Ok(QuantizedVectorStorage::BinaryMmap(
+                EncodedVectorsBin::encode(vectors, storage_builder, vector_parameters, || {
+                    stopped.load(Ordering::Relaxed)
+                })?,
+            ))
         }
     }
 

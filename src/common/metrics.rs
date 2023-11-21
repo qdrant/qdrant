@@ -2,7 +2,7 @@ use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricT
 use prometheus::TextEncoder;
 
 use crate::common::telemetry::TelemetryData;
-use crate::common::telemetry_ops::app_telemetry::AppBuildTelemetry;
+use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppFeaturesTelemetry};
 use crate::common::telemetry_ops::cluster_telemetry::{ClusterStatusTelemetry, ClusterTelemetry};
 use crate::common::telemetry_ops::collections_telemetry::{
     CollectionTelemetryEnum, CollectionsTelemetry,
@@ -88,6 +88,18 @@ impl MetricsProvider for AppBuildTelemetry {
                 &[("name", &self.name), ("version", &self.version)],
             )],
         ));
+        self.features.iter().for_each(|f| f.add_metrics(metrics));
+    }
+}
+
+impl MetricsProvider for AppFeaturesTelemetry {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        metrics.push(metric_family(
+            "app_status_recovery_mode",
+            "features enabled in qdrant server",
+            MetricType::COUNTER,
+            vec![counter(if self.recovery_mode { 1.0 } else { 0.0 }, &[])],
+        ))
     }
 }
 

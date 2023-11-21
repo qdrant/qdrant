@@ -3,8 +3,13 @@ use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
-use actix_web_validator::{Json, Path, Query};
-use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use actix_web_validator as valid;
+use collection::common::file_utils::move_file;
+use collection::operations::snapshot_ops::{
+    ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
+};
+use collection::shards::shard::ShardId;
+use futures::{FutureExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -20,10 +25,13 @@ use uuid::Uuid;
 use validator::Validate;
 
 use super::CollectionPath;
+use crate::actix::helpers;
 use crate::actix::helpers::{
     accepted_response, collection_into_actix_error, process_response, storage_into_actix_error,
 };
+use crate::common;
 use crate::common::collections::*;
+use crate::common::http_client::HttpClient;
 
 #[derive(Deserialize, Validate)]
 struct SnapshotPath {
@@ -76,7 +84,7 @@ pub async fn do_save_uploaded_snapshot(
 
     let path = collection_snapshot_path.join(filename);
 
-    snapshot.file.persist(&path)?;
+    move_file(snapshot.file.path(), &path).await?;
 
     let absolute_path = path.canonicalize()?;
 
@@ -122,7 +130,7 @@ async fn list_snapshots(toc: web::Data<TableOfContent>, path: web::Path<String>)
 async fn create_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let wait = params.wait.unwrap_or(true);
@@ -139,9 +147,10 @@ async fn create_snapshot(
 #[post("/collections/{name}/snapshots/upload")]
 async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
+    http_client: web::Data<HttpClient>,
+    collection: valid::Path<CollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
-    params: Query<SnapshotUploadingParam>,
+    params: valid::Query<SnapshotUploadingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let snapshot = form.snapshot;
@@ -153,6 +162,11 @@ async fn upload_snapshot(
             Err(err) => return process_response::<()>(Err(err), timing),
         };
 
+    let http_client = match http_client.client() {
+        Ok(http_client) => http_client,
+        Err(err) => return process_response::<()>(Err(err.into()), timing),
+    };
+
     let snapshot_recover = SnapshotRecover {
         location: snapshot_location,
         priority: params.priority,
@@ -163,8 +177,10 @@ async fn upload_snapshot(
         &collection.name,
         snapshot_recover,
         wait,
+        http_client,
     )
     .await;
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -175,21 +191,29 @@ async fn upload_snapshot(
 #[put("/collections/{name}/snapshots/recover")]
 async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
-    request: Json<SnapshotRecover>,
-    params: Query<SnapshottingParam>,
+    http_client: web::Data<HttpClient>,
+    collection: valid::Path<CollectionPath>,
+    request: valid::Json<SnapshotRecover>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let snapshot_recover = request.into_inner();
     let wait = params.wait.unwrap_or(true);
+
+    let http_client = match http_client.client() {
+        Ok(http_client) => http_client,
+        Err(err) => return process_response::<()>(Err(err.into()), timing),
+    };
 
     let response = do_recover_from_snapshot(
         dispatcher.get_ref(),
         &collection.name,
         snapshot_recover,
         wait,
+        http_client,
     )
     .await;
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -215,7 +239,7 @@ async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
 #[post("/snapshots")]
 async fn create_full_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
@@ -240,7 +264,7 @@ async fn get_full_snapshot(
 async fn delete_full_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let snapshot_name = path.into_inner();
     let timing = Instant::now();
@@ -257,7 +281,7 @@ async fn delete_full_snapshot(
 async fn delete_collection_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
-    params: Query<SnapshottingParam>,
+    params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
     let timing = Instant::now();
@@ -272,6 +296,129 @@ async fn delete_collection_snapshot(
     }
 }
 
+#[get("/collections/{collection}/shards/{shard}/snapshots")]
+async fn list_shard_snapshots(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId)>,
+) -> impl Responder {
+    let (collection, shard) = path.into_inner();
+    let future = common::snapshots::list_shard_snapshots(toc.into_inner(), collection, shard)
+        .map_err(Into::into);
+
+    helpers::time(future).await
+}
+
+#[post("/collections/{collection}/shards/{shard}/snapshots")]
+async fn create_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId)>,
+    query: web::Query<SnapshottingParam>,
+) -> impl Responder {
+    let (collection, shard) = path.into_inner();
+    let future = common::snapshots::create_shard_snapshot(toc.into_inner(), collection, shard)
+        .map_err(Into::into);
+
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+}
+
+// TODO: `PUT` (same as `recover_from_snapshot`) or `POST`!?
+#[put("/collections/{collection}/shards/{shard}/snapshots/recover")]
+async fn recover_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    http_client: web::Data<HttpClient>,
+    path: web::Path<(String, ShardId)>,
+    query: web::Query<SnapshottingParam>,
+    web::Json(request): web::Json<ShardSnapshotRecover>,
+) -> impl Responder {
+    let future = async move {
+        let (collection, shard) = path.into_inner();
+
+        common::snapshots::recover_shard_snapshot(
+            toc.into_inner(),
+            collection,
+            shard,
+            request.location,
+            request.priority.unwrap_or_default(),
+            http_client.as_ref().clone(),
+        )
+        .await?;
+
+        Ok(())
+    };
+
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+}
+
+// TODO: `POST` (same as `upload_snapshot`) or `PUT`!?
+#[post("/collections/{collection}/shards/{shard}/snapshots/upload")]
+async fn upload_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId)>,
+    query: web::Query<SnapshotUploadingParam>,
+    MultipartForm(form): MultipartForm<SnapshottingForm>,
+) -> impl Responder {
+    let (collection, shard) = path.into_inner();
+    let SnapshotUploadingParam { wait, priority } = query.into_inner();
+
+    // - `recover_shard_snapshot_impl` is *not* cancel safe
+    //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
+
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+        let future = async {
+            let collection = toc.get_collection(&collection).await?;
+            collection.assert_shard_exists(shard).await?;
+
+            Result::<_, helpers::HttpError>::Ok(collection)
+        };
+
+        let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
+
+        // `recover_shard_snapshot_impl` is *not* cancel safe
+        common::snapshots::recover_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard,
+            form.snapshot.file.path(),
+            priority.unwrap_or_default(),
+            cancel,
+        )
+        .await?;
+
+        Result::<_, helpers::HttpError>::Ok(())
+    })
+    .map_err(Into::into)
+    .map(|res| res.and_then(|res| res));
+
+    helpers::time_or_accept(future, wait.unwrap_or(true)).await
+}
+
+#[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn download_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId, String)>,
+) -> Result<impl Responder, helpers::HttpError> {
+    let (collection, shard, snapshot) = path.into_inner();
+    let collection = toc.get_collection(&collection).await?;
+    let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
+
+    Ok(NamedFile::open(snapshot_path))
+}
+
+#[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
+async fn delete_shard_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<(String, ShardId, String)>,
+    query: web::Query<SnapshottingParam>,
+) -> impl Responder {
+    let (collection, shard, snapshot) = path.into_inner();
+    let future =
+        common::snapshots::delete_shard_snapshot(toc.into_inner(), collection, shard, snapshot)
+            .map_ok(|_| true)
+            .map_err(Into::into);
+
+    helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
+}
+
 // Configure services
 pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
     cfg.service(list_snapshots)
@@ -283,5 +430,11 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(create_full_snapshot)
         .service(get_full_snapshot)
         .service(delete_full_snapshot)
-        .service(delete_collection_snapshot);
+        .service(delete_collection_snapshot)
+        .service(list_shard_snapshots)
+        .service(create_shard_snapshot)
+        .service(recover_shard_snapshot)
+        .service(upload_shard_snapshot)
+        .service(download_shard_snapshot)
+        .service(delete_shard_snapshot);
 }

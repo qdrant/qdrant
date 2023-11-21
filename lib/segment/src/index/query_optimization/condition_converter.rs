@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::utils::IndexesMap;
@@ -12,9 +13,9 @@ use crate::payload_storage::query_checker::{
     select_nested_indexes,
 };
 use crate::types::{
-    AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match,
-    MatchAny, MatchExcept, MatchText, MatchValue, OwnedPayloadRef, PayloadContainer,
-    PointOffsetType, Range, ValueVariants,
+    AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
+    GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, OwnedPayloadRef,
+    PayloadContainer, Range, ValueVariants,
 };
 
 pub fn condition_converter<'a>(
@@ -159,7 +160,32 @@ pub fn field_condition_index<'a>(
         return Some(checker);
     }
 
+    if let Some(checker) = field_condition
+        .geo_polygon
+        .clone()
+        .and_then(|cond| get_geo_polygon_checkers(index, cond))
+    {
+        return Some(checker);
+    }
+
     None
+}
+
+pub fn get_geo_polygon_checkers(
+    index: &FieldIndex,
+    geo_polygon: GeoPolygon,
+) -> Option<ConditionCheckerFn> {
+    let polygon_wrapper = geo_polygon.convert();
+    match index {
+        FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            geo_index.get_values(point_id).map_or(false, |values| {
+                values
+                    .iter()
+                    .any(|geo_point| polygon_wrapper.check_point(geo_point))
+            })
+        })),
+        _ => None,
+    }
 }
 
 pub fn get_geo_radius_checkers(
@@ -171,7 +197,7 @@ pub fn get_geo_radius_checkers(
             geo_index.get_values(point_id).map_or(false, |values| {
                 values
                     .iter()
-                    .any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
+                    .any(|geo_point| geo_radius.check_point(geo_point))
             })
         })),
         _ => None,
@@ -188,7 +214,7 @@ pub fn get_geo_bounding_box_checkers(
                 None => false,
                 Some(values) => values
                     .iter()
-                    .any(|geo_point| geo_bounding_box.check_point(geo_point.lon, geo_point.lat)),
+                    .any(|geo_point| geo_bounding_box.check_point(geo_point)),
             }
         })),
         _ => None,
@@ -233,6 +259,15 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
                         .map_or(false, |values| values.iter().any(|i| i == &value))
                 }))
             }
+            (ValueVariants::Bool(is_true), FieldIndex::BinaryIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    if is_true {
+                        index.values_has_true(point_id)
+                    } else {
+                        index.values_has_false(point_id)
+                    }
+                }))
+            }
             _ => None,
         },
         Match::Text(MatchText { text }) => match index {
@@ -249,9 +284,11 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         Match::Any(MatchAny { any }) => match (any, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index
-                        .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|k| list.contains(k)))
+                    index.get_values(point_id).map_or(false, |values| {
+                        values
+                            .iter()
+                            .any(|k| list.iter().any(|s| s.as_str() == k.as_ref()))
+                    })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
@@ -266,9 +303,11 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         Match::Except(MatchExcept { except }) => match (except, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index
-                        .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|k| !list.contains(k)))
+                    index.get_values(point_id).map_or(false, |values| {
+                        values
+                            .iter()
+                            .any(|k| !list.iter().any(|s| s.as_str() == k.as_ref()))
+                    })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {

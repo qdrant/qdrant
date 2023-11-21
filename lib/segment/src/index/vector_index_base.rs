@@ -1,25 +1,30 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use common::types::{PointOffsetType, ScoredPointOffset};
+use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
+use super::sparse_index::sparse_vector_index::SparseVectorIndex;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::vectors::QueryVector;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
-use crate::vector_storage::ScoredPointOffset;
 
 /// Trait for vector searching
 pub trait VectorIndex {
     /// Return list of Ids with fitting
     fn search(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> Vec<Vec<ScoredPointOffset>>;
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
     /// Force internal index rebuild.
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
@@ -31,14 +36,16 @@ pub trait VectorIndex {
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;
 
-    /// Whether this vector index type support appending.
-    fn is_appendable(&self) -> bool;
+    /// Update index for a single vector
+    fn update_vector(&mut self, id: PointOffsetType) -> OperationResult<()>;
 }
 
 pub enum VectorIndexEnum {
     Plain(PlainIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),
     HnswMmap(HNSWIndex<GraphLinksMmap>),
+    SparseRam(SparseVectorIndex<InvertedIndexRam>),
+    SparseMmap(SparseVectorIndex<InvertedIndexMmap>),
 }
 
 impl VectorIndexEnum {
@@ -47,6 +54,8 @@ impl VectorIndexEnum {
             Self::Plain(_) => false,
             Self::HnswRam(_) => true,
             Self::HnswMmap(_) => true,
+            Self::SparseRam(_) => true,
+            Self::SparseMmap(_) => true,
         }
     }
 }
@@ -54,15 +63,26 @@ impl VectorIndexEnum {
 impl VectorIndex for VectorIndexEnum {
     fn search(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> Vec<Vec<ScoredPointOffset>> {
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match self {
-            VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params),
-            VectorIndexEnum::HnswRam(index) => index.search(vectors, filter, top, params),
-            VectorIndexEnum::HnswMmap(index) => index.search(vectors, filter, top, params),
+            VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params, is_stopped),
+            VectorIndexEnum::HnswRam(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
+            VectorIndexEnum::HnswMmap(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
+            VectorIndexEnum::SparseRam(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
+            VectorIndexEnum::SparseMmap(index) => {
+                index.search(vectors, filter, top, params, is_stopped)
+            }
         }
     }
 
@@ -71,6 +91,8 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.build_index(stopped),
             VectorIndexEnum::HnswRam(index) => index.build_index(stopped),
             VectorIndexEnum::HnswMmap(index) => index.build_index(stopped),
+            VectorIndexEnum::SparseRam(index) => index.build_index(stopped),
+            VectorIndexEnum::SparseMmap(index) => index.build_index(stopped),
         }
     }
 
@@ -79,6 +101,8 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.get_telemetry_data(),
             VectorIndexEnum::HnswRam(index) => index.get_telemetry_data(),
             VectorIndexEnum::HnswMmap(index) => index.get_telemetry_data(),
+            VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(),
+            VectorIndexEnum::SparseMmap(index) => index.get_telemetry_data(),
         }
     }
 
@@ -87,6 +111,8 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.files(),
             VectorIndexEnum::HnswRam(index) => index.files(),
             VectorIndexEnum::HnswMmap(index) => index.files(),
+            VectorIndexEnum::SparseRam(index) => index.files(),
+            VectorIndexEnum::SparseMmap(index) => index.files(),
         }
     }
 
@@ -95,14 +121,18 @@ impl VectorIndex for VectorIndexEnum {
             Self::Plain(index) => index.indexed_vector_count(),
             Self::HnswRam(index) => index.indexed_vector_count(),
             Self::HnswMmap(index) => index.indexed_vector_count(),
+            Self::SparseRam(index) => index.indexed_vector_count(),
+            Self::SparseMmap(index) => index.indexed_vector_count(),
         }
     }
 
-    fn is_appendable(&self) -> bool {
+    fn update_vector(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
-            Self::Plain(index) => index.is_appendable(),
-            Self::HnswRam(index) => index.is_appendable(),
-            Self::HnswMmap(index) => index.is_appendable(),
+            Self::Plain(index) => index.update_vector(id),
+            Self::HnswRam(index) => index.update_vector(id),
+            Self::HnswMmap(index) => index.update_vector(id),
+            Self::SparseRam(index) => index.update_vector(id),
+            Self::SparseMmap(index) => index.update_vector(id),
         }
     }
 }

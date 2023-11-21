@@ -2,8 +2,10 @@ use std::future::{ready, Ready};
 
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
+use actix_web::http::header::Header;
 use actix_web::http::Method;
 use actix_web::{Error, HttpResponse};
+use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
 use futures_util::future::LocalBoxFuture;
 
 use crate::common::auth::AuthKeys;
@@ -22,14 +24,14 @@ const READ_ONLY_POST_PATTERNS: [&str; 8] = [
 
 pub struct ApiKey {
     auth_keys: Option<AuthKeys>,
-    skip_prefixes: Vec<String>,
+    whitelist: Vec<WhitelistItem>,
 }
 
 impl ApiKey {
-    pub fn new(auth_keys: Option<AuthKeys>, skip_prefixes: Vec<String>) -> Self {
+    pub fn new(auth_keys: Option<AuthKeys>, whitelist: Vec<WhitelistItem>) -> Self {
         Self {
             auth_keys,
-            skip_prefixes,
+            whitelist,
         }
     }
 }
@@ -48,17 +50,58 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(ApiKeyMiddleware {
-            skip_prefixes: self.skip_prefixes.clone(),
             auth_keys: self.auth_keys.clone(),
+            whitelist: self.whitelist.clone(),
             service,
         }))
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct WhitelistItem(pub String, pub PathMode);
+
+impl WhitelistItem {
+    pub fn exact<S: Into<String>>(path: S) -> Self {
+        Self(path.into(), PathMode::Exact)
+    }
+
+    pub fn prefix<S: Into<String>>(path: S) -> Self {
+        Self(path.into(), PathMode::Prefix)
+    }
+
+    pub fn matches(&self, other: &str) -> bool {
+        self.1.check(&self.0, other)
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub enum PathMode {
+    /// Path must match exactly
+    Exact,
+    /// Path must have given prefix
+    Prefix,
+}
+
+impl PathMode {
+    fn check(&self, key: &str, other: &str) -> bool {
+        match self {
+            Self::Exact => key == other,
+            Self::Prefix => other.starts_with(key),
+        }
+    }
+}
+
 pub struct ApiKeyMiddleware<S> {
-    skip_prefixes: Vec<String>,
     auth_keys: Option<AuthKeys>,
+    /// List of items whitelisted from authentication.
+    whitelist: Vec<WhitelistItem>,
     service: S,
+}
+
+impl<S> ApiKeyMiddleware<S> {
+    pub fn is_path_whitelisted(&self, path: &str) -> bool {
+        self.whitelist.iter().any(|item| item.matches(path))
+    }
 }
 
 impl<S, B> Service<ServiceRequest> for ApiKeyMiddleware<S>
@@ -74,28 +117,31 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        if self
-            .skip_prefixes
-            .iter()
-            .any(|prefix| req.path().starts_with(prefix))
-        {
+        let path = req.path();
+
+        if self.is_path_whitelisted(path) {
             return Box::pin(self.service.call(req));
         }
 
-        if let Some(key) = req.headers().get("api-key") {
-            if let Ok(key) = key.to_str() {
-                let is_allowed = if let Some(ref auth_keys) = self.auth_keys {
-                    auth_keys.can_write(key) || (is_read_only(&req) && auth_keys.can_read(key))
-                } else {
-                    // This code path should not be reached
-                    log::warn!(
-                        "Auth for REST API is set up incorrectly. Denying access by default."
-                    );
-                    false
-                };
-                if is_allowed {
-                    return Box::pin(self.service.call(req));
-                }
+        // Grab API key from request
+        let key =
+            // Request header
+            req.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
+                // Fall back to authentication header with bearer token
+                .or_else(|| {
+                    Authorization::<Bearer>::parse(&req).ok().map(|auth| auth.as_ref().token().into())
+                });
+
+        if let Some(key) = key {
+            let is_allowed = if let Some(ref auth_keys) = self.auth_keys {
+                auth_keys.can_write(&key) || (is_read_only(&req) && auth_keys.can_read(&key))
+            } else {
+                // This code path should not be reached
+                log::warn!("Auth for REST API is set up incorrectly. Denying access by default.");
+                false
+            };
+            if is_allowed {
+                return Box::pin(self.service.call(req));
             }
         }
 

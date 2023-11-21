@@ -59,12 +59,9 @@ impl IndexingOptimizer {
     ) -> Option<(SegmentId, usize)> {
         segments
             .iter()
+            // Excluded externally, might already be scheduled for optimization
+            .filter(|(idx, _)| !excluded_ids.contains(idx))
             .filter_map(|(idx, segment)| {
-                if excluded_ids.contains(idx) {
-                    // This segment is excluded externally. It might already be scheduled for optimization
-                    return None;
-                }
-
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let point_count = read_segment.available_point_count();
@@ -83,9 +80,9 @@ impl IndexingOptimizer {
 
                 let segment_config = read_segment.config();
                 let is_any_vector_indexed = segment_config.is_any_vector_indexed();
-                let is_any_mmap = segment_config.is_any_mmap();
+                let is_any_on_disk = segment_config.is_any_on_disk();
 
-                if !(is_any_vector_indexed || is_any_mmap) {
+                if !(is_any_vector_indexed || is_any_on_disk) {
                     return None;
                 }
 
@@ -103,12 +100,9 @@ impl IndexingOptimizer {
         let segments_read_guard = segments.read();
         let candidates: Vec<_> = segments_read_guard
             .iter()
+            // Excluded externally, might already be scheduled for optimization
+            .filter(|(idx, _)| !excluded_ids.contains(idx))
             .filter_map(|(idx, segment)| {
-                if excluded_ids.contains(idx) {
-                    // This segment is excluded externally. It might already be scheduled for optimization
-                    return None;
-                }
-
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let point_count = read_segment.available_point_count();
@@ -129,7 +123,7 @@ impl IndexingOptimizer {
 
                 // Apply indexing to plain segments which have grown too big
                 let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
-                let is_any_mmap = segment_config.is_any_mmap();
+                let is_any_on_disk = segment_config.is_any_on_disk();
 
                 let big_for_mmap = vector_size
                     >= self
@@ -142,8 +136,8 @@ impl IndexingOptimizer {
                         .indexing_threshold
                         .saturating_mul(BYTES_IN_KB);
 
-                let require_indexing =
-                    (big_for_mmap && !is_any_mmap) || (big_for_index && !are_all_vectors_indexed);
+                let require_indexing = (big_for_mmap && !is_any_on_disk)
+                    || (big_for_index && !are_all_vectors_indexed);
 
                 require_indexing.then_some((*idx, vector_size))
             })
@@ -197,6 +191,10 @@ impl IndexingOptimizer {
 }
 
 impl SegmentOptimizer for IndexingOptimizer {
+    fn name(&self) -> &str {
+        "indexing"
+    }
+
     fn collection_path(&self) -> &Path {
         self.segments_path.as_path()
     }
@@ -241,7 +239,7 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::num::{NonZeroU32, NonZeroU64};
+    use std::num::NonZeroU64;
     use std::ops::Deref;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -261,7 +259,7 @@ mod tests {
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
-    use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
+    use crate::operations::point_ops::{Batch, PointOperations};
     use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
@@ -319,10 +317,7 @@ mod tests {
             segments_temp_dir.path().to_owned(),
             CollectionParams {
                 vectors: VectorsConfig::Multi(vectors_config),
-                shard_number: NonZeroU32::new(1).unwrap(),
-                replication_factor: NonZeroU32::new(1).unwrap(),
-                write_consistency_factor: NonZeroU32::new(1).unwrap(),
-                on_disk_payload: false,
+                ..CollectionParams::empty()
             },
             Default::default(),
             Default::default(),
@@ -354,7 +349,7 @@ mod tests {
         let configs = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().config())
+            .map(|(_sid, segment)| segment.get().read().config().clone())
             .collect_vec();
 
         assert_eq!(infos.len(), 2);
@@ -423,10 +418,7 @@ mod tests {
                     quantization_config: None,
                     on_disk: None,
                 }),
-                shard_number: NonZeroU32::new(1).unwrap(),
-                replication_factor: NonZeroU32::new(1).unwrap(),
-                write_consistency_factor: NonZeroU32::new(1).unwrap(),
-                on_disk_payload: false,
+                ..CollectionParams::empty()
             },
             Default::default(),
             Default::default(),
@@ -514,7 +506,7 @@ mod tests {
         let configs = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().config())
+            .map(|(_sid, segment)| segment.get().read().config().clone())
             .collect_vec();
 
         let indexed_count = infos
@@ -526,9 +518,12 @@ mod tests {
             "Testing that 2 segments are actually indexed"
         );
 
-        let mmap_count = configs.iter().filter(|config| config.is_any_mmap()).count();
+        let on_disk_count = configs
+            .iter()
+            .filter(|config| config.is_any_on_disk())
+            .count();
         assert_eq!(
-            mmap_count, 1,
+            on_disk_count, 1,
             "Testing that only largest segment is not Mmap"
         );
 
@@ -552,21 +547,21 @@ mod tests {
         }
 
         let point_payload: Payload = json!({"number":10000i64}).into();
-        let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
-                ids: vec![501.into(), 502.into(), 503.into()],
-                vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                ]
-                .into(),
-                payloads: Some(vec![
-                    Some(point_payload.clone()),
-                    Some(point_payload.clone()),
-                    Some(point_payload),
-                ]),
-            }));
+        let insert_point_ops: PointOperations = Batch {
+            ids: vec![501.into(), 502.into(), 503.into()],
+            vectors: vec![
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+            ]
+            .into(),
+            payloads: Some(vec![
+                Some(point_payload.clone()),
+                Some(point_payload.clone()),
+                Some(point_payload),
+            ]),
+        }
+        .into();
 
         let smallest_size = infos
             .iter()
@@ -625,17 +620,17 @@ mod tests {
             "Testing that new segment is created if none left"
         );
 
-        let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
-                ids: vec![601.into(), 602.into(), 603.into()],
-                vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                ]
-                .into(),
-                payloads: None,
-            }));
+        let insert_point_ops: PointOperations = Batch {
+            ids: vec![601.into(), 602.into(), 603.into()],
+            vectors: vec![
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+                random_vector(&mut rng, dim),
+            ]
+            .into(),
+            payloads: None,
+        }
+        .into();
 
         process_point_operation(
             locked_holder.deref(),

@@ -11,10 +11,10 @@ use semver::Version;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::common::version::StorageVersion;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
@@ -31,6 +31,7 @@ use crate::types::{
 };
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorage;
 
@@ -81,11 +82,17 @@ fn create_segment(
 
     let id_tracker = sp(SimpleIdTracker::open(database.clone())?);
 
+    let appendable_flag = config
+        .vector_data
+        .values()
+        .all(|vector_config| vector_config.is_appendable());
+
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
         payload_storage,
         id_tracker.clone(),
         &payload_index_path,
+        appendable_flag,
     )?);
 
     let mut vector_data = HashMap::new();
@@ -129,14 +136,18 @@ fn create_segment(
             );
         }
 
-        if config.quantization_config(vector_name).is_some() {
+        let quantized_vectors = if config.quantization_config(vector_name).is_some() {
             let quantized_data_path = vector_storage_path;
-            // Try to load quantization data from disk, if exists
-            // If not exists or it's a new segment, just ignore it
-            vector_storage
-                .borrow_mut()
-                .load_quantization(&quantized_data_path)?;
-        }
+            if QuantizedVectors::config_exists(&quantized_data_path) {
+                let quantized_vectors =
+                    QuantizedVectors::load(&vector_storage.borrow(), &quantized_data_path)?;
+                Some(quantized_vectors)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &vector_config.index {
             Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
@@ -149,6 +160,7 @@ fn create_segment(
                     &vector_index_path,
                     id_tracker.clone(),
                     vector_storage.clone(),
+                    quantized_vectors.clone(),
                     payload_index.clone(),
                     vector_hnsw_config.clone(),
                 )?)
@@ -157,6 +169,7 @@ fn create_segment(
                     &vector_index_path,
                     id_tracker.clone(),
                     vector_storage.clone(),
+                    quantized_vectors.clone(),
                     payload_index.clone(),
                     vector_hnsw_config.clone(),
                 )?)
@@ -168,6 +181,7 @@ fn create_segment(
             VectorData {
                 vector_storage,
                 vector_index,
+                quantized_vectors,
             },
         );
     }
@@ -177,7 +191,6 @@ fn create_segment(
     } else {
         SegmentType::Plain
     };
-    let appendable_flag = vector_data.values().all(VectorData::is_appendable);
 
     Ok(Segment {
         version,
@@ -196,6 +209,17 @@ fn create_segment(
 }
 
 pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext == "deleted")
+        .unwrap_or(false)
+    {
+        log::warn!("Segment is marked as deleted, skipping: {}", path.display());
+        // Skip deleted segments
+        return Ok(None);
+    }
+
     if !SegmentVersion::check_exists(path) {
         // Assume segment was not properly saved.
         // Server might have crashed before saving the segment fully.

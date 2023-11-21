@@ -5,16 +5,17 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
+use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
@@ -24,9 +25,9 @@ use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType, SearchParams,
+    SearchParams,
 };
-use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorageEnum};
+use crate::vector_storage::{new_stoppable_raw_scorer, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -175,10 +176,6 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
-        unreachable!()
-    }
-
     fn flusher(&self) -> Flusher {
         unreachable!()
     }
@@ -226,11 +223,12 @@ impl PlainIndex {
 impl VectorIndex for PlainIndex {
     fn search(
         &self,
-        vectors: &[&[VectorElementType]],
+        vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
-    ) -> Vec<Vec<ScoredPointOffset>> {
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
@@ -240,13 +238,16 @@ impl VectorIndex for PlainIndex {
                 let filtered_ids_vec = payload_index.query_points(filter);
                 vectors
                     .iter()
-                    .map(|vector| {
-                        new_raw_scorer(
-                            vector.to_vec(),
+                    .map(|&vector| {
+                        new_stoppable_raw_scorer(
+                            vector.to_owned(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
+                            is_stopped,
                         )
-                        .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
+                        .map(|scorer| {
+                            scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
+                        })
                     })
                     .collect()
             }
@@ -256,13 +257,14 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 vectors
                     .iter()
-                    .map(|vector| {
-                        new_raw_scorer(
-                            vector.to_vec(),
+                    .map(|&vector| {
+                        new_stoppable_raw_scorer(
+                            vector.to_owned(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
+                            is_stopped,
                         )
-                        .peek_top_all(top)
+                        .map(|scorer| scorer.peek_top_all(top))
                     })
                     .collect()
             }
@@ -282,7 +284,9 @@ impl VectorIndex for PlainIndex {
             filtered_small_cardinality: OperationDurationStatistics::default(),
             filtered_large_cardinality: OperationDurationStatistics::default(),
             filtered_exact: OperationDurationStatistics::default(),
+            filtered_sparse: Default::default(),
             unfiltered_exact: OperationDurationStatistics::default(),
+            unfiltered_sparse: OperationDurationStatistics::default(),
         }
     }
 
@@ -294,8 +298,8 @@ impl VectorIndex for PlainIndex {
         0
     }
 
-    fn is_appendable(&self) -> bool {
-        true
+    fn update_vector(&mut self, _id: PointOffsetType) -> OperationResult<()> {
+        Ok(())
     }
 }
 

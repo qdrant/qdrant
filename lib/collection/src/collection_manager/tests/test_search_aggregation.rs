@@ -1,4 +1,5 @@
-use segment::types::{PointIdType, ScoreType, ScoredPoint, SeqNumberType};
+use common::types::ScoreType;
+use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 
@@ -9,6 +10,7 @@ fn score_point(id: usize, score: ScoreType, version: SeqNumberType) -> ScoredPoi
         score,
         payload: None,
         vector: None,
+        shard_key: None,
     }
 }
 

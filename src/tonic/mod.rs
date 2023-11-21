@@ -6,15 +6,28 @@ mod tonic_telemetry;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
+use ::api::grpc::grpc_health_v1::health_check_response::ServingStatus;
+use ::api::grpc::grpc_health_v1::health_server::{Health, HealthServer};
+use ::api::grpc::grpc_health_v1::{
+    HealthCheckRequest as ProtocolHealthCheckRequest,
+    HealthCheckResponse as ProtocolHealthCheckResponse,
+};
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
+use ::api::grpc::qdrant::qdrant_internal_server::{QdrantInternal, QdrantInternalServer};
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
+use ::api::grpc::qdrant::shard_snapshots_server::ShardSnapshotsServer;
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
-use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
+use ::api::grpc::qdrant::{
+    HealthCheckReply, HealthCheckRequest, WaitOnConsensusCommitRequest,
+    WaitOnConsensusCommitResponse,
+};
+use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -26,13 +39,14 @@ use tonic::{Request, Response, Status};
 
 use crate::common::auth::AuthKeys;
 use crate::common::helpers;
+use crate::common::http_client::HttpClient;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
-use crate::tonic::api::snapshots_api::SnapshotsService;
+use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -44,6 +58,60 @@ impl Qdrant for QdrantService {
         _request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckReply>, Status> {
         Ok(Response::new(VersionInfo::default().into()))
+    }
+}
+
+// Additional health check service that follows gRPC health check protocol as described in #2614
+#[derive(Default)]
+pub struct HealthService {}
+
+#[tonic::async_trait]
+impl Health for HealthService {
+    async fn check(
+        &self,
+        _request: Request<ProtocolHealthCheckRequest>,
+    ) -> Result<Response<ProtocolHealthCheckResponse>, Status> {
+        let response = ProtocolHealthCheckResponse {
+            status: ServingStatus::Serving as i32,
+        };
+
+        Ok(Response::new(response))
+    }
+}
+
+pub struct QdrantInternalService {
+    /// Qdrant settings
+    settings: Settings,
+    /// Consensus state
+    consensus_state: ConsensusStateRef,
+}
+
+impl QdrantInternalService {
+    fn new(settings: Settings, consensus_state: ConsensusStateRef) -> Self {
+        Self {
+            settings,
+            consensus_state,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl QdrantInternal for QdrantInternalService {
+    async fn wait_on_consensus_commit(
+        &self,
+        request: Request<WaitOnConsensusCommitRequest>,
+    ) -> Result<Response<WaitOnConsensusCommitResponse>, Status> {
+        let request = request.into_inner();
+        let commit = request.commit as u64;
+        let term = request.term as u64;
+        let timeout = Duration::from_secs(request.timeout as u64);
+        let consensus_tick = Duration::from_millis(self.settings.cluster.consensus.tick_period_ms);
+        let ok = self
+            .consensus_state
+            .wait_for_consensus_commit(commit, term, consensus_tick, timeout)
+            .await
+            .is_ok();
+        Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
     }
 }
 
@@ -76,9 +144,22 @@ pub fn init(
             SocketAddr::from((settings.service.host.parse::<IpAddr>().unwrap(), grpc_port));
 
         let qdrant_service = QdrantService::default();
+        let health_service = HealthService::default();
         let collections_service = CollectionsService::new(dispatcher.clone());
-        let points_service = PointsService::new(dispatcher.toc().clone());
+        let points_service = PointsService::new(dispatcher.clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
+
+        // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET
+        // will be advertised, so explicitly list the services to be included.
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(QDRANT_DESCRIPTOR_SET)
+            .with_service_name("qdrant.Collections")
+            .with_service_name("qdrant.Points")
+            .with_service_name("qdrant.Snapshots")
+            .with_service_name("qdrant.Qdrant")
+            .with_service_name("grpc.health.v1.Health")
+            .build()
+            .unwrap();
 
         log::info!("Qdrant gRPC listening on {}", grpc_port);
 
@@ -109,6 +190,7 @@ pub fn init(
 
         server
             .layer(middleware_layer)
+            .add_service(reflection_service)
             .add_service(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)
@@ -133,6 +215,12 @@ pub fn init(
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
             )
+            .add_service(
+                HealthServer::new(health_service)
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
+            )
             .serve_with_shutdown(socket, async {
                 wait_stop_signal("gRPC service").await;
             })
@@ -148,6 +236,7 @@ pub fn init_internal(
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    settings: Settings,
     host: String,
     internal_grpc_port: u16,
     tls_config: Option<ServerTlsConfig>,
@@ -158,13 +247,18 @@ pub fn init_internal(
 
     use crate::tonic::api::raft_api::RaftService;
 
+    let http_client = HttpClient::from_settings(&settings)?;
+
     runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
             let qdrant_service = QdrantService::default();
+            let qdrant_internal_service =
+                QdrantInternalService::new(settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
+            let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
             let raft_service = RaftService::new(to_consensus, consensus_state);
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
@@ -204,6 +298,12 @@ pub fn init_internal(
                         .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
+                    QdrantInternalServer::new(qdrant_internal_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
+                )
+                .add_service(
                     CollectionsInternalServer::new(collections_internal_service)
                         .send_compressed(CompressionEncoding::Gzip)
                         .accept_compressed(CompressionEncoding::Gzip)
@@ -211,6 +311,12 @@ pub fn init_internal(
                 )
                 .add_service(
                     PointsInternalServer::new(points_internal_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
+                )
+                .add_service(
+                    ShardSnapshotsServer::new(shard_snapshots_service)
                         .send_compressed(CompressionEncoding::Gzip)
                         .accept_compressed(CompressionEncoding::Gzip)
                         .max_decoding_message_size(usize::MAX),

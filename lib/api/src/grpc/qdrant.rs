@@ -1,10 +1,11 @@
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParams {
     /// Size of the vectors
     #[prost(uint64, tag = "1")]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 65536))]
     pub size: u64,
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
@@ -22,6 +23,24 @@ pub struct VectorParams {
     pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorParamsDiff {
+    /// Update params for HNSW index. If empty object - it will be unset
+    #[prost(message, optional, tag = "1")]
+    #[validate]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+    /// Update quantization params. If none - it is left unchanged.
+    #[prost(message, optional, tag = "2")]
+    #[validate]
+    pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
+    /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+    #[prost(bool, optional, tag = "3")]
+    pub on_disk: ::core::option::Option<bool>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsMap {
@@ -30,6 +49,19 @@ pub struct VectorParamsMap {
     pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorParamsDiffMap {
+    #[prost(map = "string, message", tag = "1")]
+    #[validate]
+    pub map: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        VectorParamsDiff,
+    >,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsConfig {
@@ -39,6 +71,7 @@ pub struct VectorsConfig {
 }
 /// Nested message and enum types in `VectorsConfig`.
 pub mod vectors_config {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Config {
@@ -49,6 +82,28 @@ pub mod vectors_config {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorsConfigDiff {
+    #[prost(oneof = "vectors_config_diff::Config", tags = "1, 2")]
+    #[validate]
+    pub config: ::core::option::Option<vectors_config_diff::Config>,
+}
+/// Nested message and enum types in `VectorsConfigDiff`.
+pub mod vectors_config_diff {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Config {
+        #[prost(message, tag = "1")]
+        Params(super::VectorParamsDiff),
+        #[prost(message, tag = "2")]
+        ParamsMap(super::VectorParamsDiffMap),
+    }
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequest {
@@ -58,9 +113,11 @@ pub struct GetCollectionInfoRequest {
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsRequest {}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionDescription {
@@ -68,6 +125,7 @@ pub struct CollectionDescription {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoResponse {
@@ -77,6 +135,7 @@ pub struct GetCollectionInfoResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsResponse {
@@ -86,6 +145,7 @@ pub struct ListCollectionsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizerStatus {
@@ -95,6 +155,7 @@ pub struct OptimizerStatus {
     pub error: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HnswConfigDiff {
@@ -128,6 +189,7 @@ pub struct HnswConfigDiff {
     pub payload_m: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {
@@ -140,6 +202,7 @@ pub struct WalConfigDiff {
     pub wal_segments_ahead: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizersConfigDiff {
@@ -206,6 +269,7 @@ pub struct OptimizersConfigDiff {
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScalarQuantization {
@@ -221,6 +285,7 @@ pub struct ScalarQuantization {
     pub always_ram: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProductQuantization {
@@ -232,15 +297,26 @@ pub struct ProductQuantization {
     pub always_ram: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BinaryQuantization {
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "1")]
+    pub always_ram: ::core::option::Option<bool>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
-    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2")]
+    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3")]
     #[validate]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
 /// Nested message and enum types in `QuantizationConfig`.
 pub mod quantization_config {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Quantization {
@@ -248,9 +324,42 @@ pub mod quantization_config {
         Scalar(super::ScalarQuantization),
         #[prost(message, tag = "2")]
         Product(super::ProductQuantization),
+        #[prost(message, tag = "3")]
+        Binary(super::BinaryQuantization),
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Disabled {}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationConfigDiff {
+    #[prost(oneof = "quantization_config_diff::Quantization", tags = "1, 2, 3, 4")]
+    #[validate]
+    pub quantization: ::core::option::Option<quantization_config_diff::Quantization>,
+}
+/// Nested message and enum types in `QuantizationConfigDiff`.
+pub mod quantization_config_diff {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Quantization {
+        #[prost(message, tag = "1")]
+        Scalar(super::ScalarQuantization),
+        #[prost(message, tag = "2")]
+        Product(super::ProductQuantization),
+        #[prost(message, tag = "3")]
+        Disabled(super::Disabled),
+        #[prost(message, tag = "4")]
+        Binary(super::BinaryQuantization),
+    }
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
@@ -258,7 +367,7 @@ pub struct CreateCollection {
     #[prost(string, tag = "1")]
     #[validate(
         length(min = 1, max = 255),
-        custom = "crate::grpc::validate::validate_collection_name"
+        custom = "common::validation::validate_collection_name"
     )]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index
@@ -299,8 +408,12 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "14")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// Sharding method
+    #[prost(enumeration = "ShardingMethod", optional, tag = "15")]
+    pub sharding_method: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
@@ -308,11 +421,11 @@ pub struct UpdateCollection {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// New configuration parameters for the collection
+    /// New configuration parameters for the collection. This operation is blocking, it will only proceed once all current optimizations are complete
     #[prost(message, optional, tag = "2")]
     #[validate]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "3")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
@@ -320,8 +433,21 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "4")]
     #[validate]
     pub params: ::core::option::Option<CollectionParamsDiff>,
+    /// New HNSW parameters for the collection index
+    #[prost(message, optional, tag = "5")]
+    #[validate]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+    /// New vector parameters
+    #[prost(message, optional, tag = "6")]
+    #[validate]
+    pub vectors_config: ::core::option::Option<VectorsConfigDiff>,
+    /// Quantization configuration of vector
+    #[prost(message, optional, tag = "7")]
+    #[validate]
+    pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteCollection {
@@ -334,6 +460,7 @@ pub struct DeleteCollection {
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
@@ -345,6 +472,7 @@ pub struct CollectionOperationResponse {
     pub time: f64,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
@@ -364,8 +492,15 @@ pub struct CollectionParams {
     /// How many replicas should apply the operation for us to consider it successful
     #[prost(uint32, optional, tag = "7")]
     pub write_consistency_factor: ::core::option::Option<u32>,
+    /// Fan-out every read request to these many additional remote nodes (and return first available response)
+    #[prost(uint32, optional, tag = "8")]
+    pub read_fan_out_factor: ::core::option::Option<u32>,
+    /// Sharding method
+    #[prost(enumeration = "ShardingMethod", optional, tag = "9")]
+    pub sharding_method: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParamsDiff {
@@ -375,8 +510,15 @@ pub struct CollectionParamsDiff {
     /// How many replicas should apply the operation for us to consider it successful
     #[prost(uint32, optional, tag = "2")]
     pub write_consistency_factor: ::core::option::Option<u32>,
+    /// If true - point's payload will not be stored in memory
+    #[prost(bool, optional, tag = "3")]
+    pub on_disk_payload: ::core::option::Option<bool>,
+    /// Fan-out every read request to these many additional remote nodes (and return first available response)
+    #[prost(uint32, optional, tag = "4")]
+    pub read_fan_out_factor: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
@@ -399,6 +541,7 @@ pub struct CollectionConfig {
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TextIndexParams {
@@ -415,6 +558,7 @@ pub struct TextIndexParams {
     #[prost(uint64, optional, tag = "4")]
     pub max_token_len: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIndexParams {
@@ -423,6 +567,7 @@ pub struct PayloadIndexParams {
 }
 /// Nested message and enum types in `PayloadIndexParams`.
 pub mod payload_index_params {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum IndexParams {
@@ -431,6 +576,7 @@ pub mod payload_index_params {
         TextIndexParams(super::TextIndexParams),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadSchemaInfo {
@@ -444,6 +590,7 @@ pub struct PayloadSchemaInfo {
     #[prost(uint64, optional, tag = "3")]
     pub points: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
@@ -476,6 +623,7 @@ pub struct CollectionInfo {
     pub indexed_vectors_count: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangeAliases {
@@ -487,6 +635,7 @@ pub struct ChangeAliases {
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AliasOperations {
@@ -495,6 +644,7 @@ pub struct AliasOperations {
 }
 /// Nested message and enum types in `AliasOperations`.
 pub mod alias_operations {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Action {
@@ -506,6 +656,7 @@ pub mod alias_operations {
         DeleteAlias(super::DeleteAlias),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateAlias {
@@ -516,6 +667,7 @@ pub struct CreateAlias {
     #[prost(string, tag = "2")]
     pub alias_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RenameAlias {
@@ -526,6 +678,7 @@ pub struct RenameAlias {
     #[prost(string, tag = "2")]
     pub new_alias_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteAlias {
@@ -534,10 +687,12 @@ pub struct DeleteAlias {
     pub alias_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAliasesRequest {}
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionAliasesRequest {
@@ -546,6 +701,7 @@ pub struct ListCollectionAliasesRequest {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AliasDescription {
@@ -556,6 +712,7 @@ pub struct AliasDescription {
     #[prost(string, tag = "2")]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAliasesResponse {
@@ -566,6 +723,7 @@ pub struct ListAliasesResponse {
     pub time: f64,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionClusterInfoRequest {
@@ -573,6 +731,28 @@ pub struct CollectionClusterInfoRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardKey {
+    #[prost(oneof = "shard_key::Key", tags = "1, 2")]
+    pub key: ::core::option::Option<shard_key::Key>,
+}
+/// Nested message and enum types in `ShardKey`.
+pub mod shard_key {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Key {
+        /// String key
+        #[prost(string, tag = "1")]
+        Keyword(::prost::alloc::string::String),
+        /// Number key
+        #[prost(uint64, tag = "2")]
+        Number(u64),
+    }
+}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LocalShardInfo {
@@ -585,7 +765,11 @@ pub struct LocalShardInfo {
     /// Is replica active
     #[prost(enumeration = "ReplicaState", tag = "3")]
     pub state: i32,
+    /// User-defined shard key
+    #[prost(message, optional, tag = "4")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RemoteShardInfo {
@@ -598,7 +782,11 @@ pub struct RemoteShardInfo {
     /// Is replica active
     #[prost(enumeration = "ReplicaState", tag = "3")]
     pub state: i32,
+    /// User-defined shard key
+    #[prost(message, optional, tag = "4")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ShardTransferInfo {
@@ -613,6 +801,7 @@ pub struct ShardTransferInfo {
     #[prost(bool, tag = "4")]
     pub sync: bool,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionClusterInfoResponse {
@@ -632,6 +821,7 @@ pub struct CollectionClusterInfoResponse {
     #[prost(message, repeated, tag = "5")]
     pub shard_transfers: ::prost::alloc::vec::Vec<ShardTransferInfo>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MoveShard {
@@ -642,7 +832,11 @@ pub struct MoveShard {
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
+    pub method: ::core::option::Option<i32>,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Replica {
@@ -651,7 +845,33 @@ pub struct Replica {
     #[prost(uint64, tag = "2")]
     pub peer_id: u64,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateShardKey {
+    /// User-defined shard key
+    #[prost(message, optional, tag = "1")]
+    pub shard_key: ::core::option::Option<ShardKey>,
+    /// Number of shards to create per shard key
+    #[prost(uint32, optional, tag = "2")]
+    pub shards_number: ::core::option::Option<u32>,
+    /// Number of replicas of each shard to create
+    #[prost(uint32, optional, tag = "3")]
+    pub replication_factor: ::core::option::Option<u32>,
+    /// List of peer ids, allowed to create shards. If empty - all peers are allowed
+    #[prost(uint64, repeated, tag = "4")]
+    pub placement: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardKey {
+    /// Shard key to delete
+    #[prost(message, optional, tag = "1")]
+    pub shard_key: ::core::option::Option<ShardKey>,
+}
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionClusterSetupRequest {
@@ -660,17 +880,20 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "6")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
-        tags = "2, 3, 4, 5"
+        tags = "2, 3, 4, 5, 7, 8"
     )]
+    #[validate]
     pub operation: ::core::option::Option<
         update_collection_cluster_setup_request::Operation,
     >,
 }
 /// Nested message and enum types in `UpdateCollectionClusterSetupRequest`.
 pub mod update_collection_cluster_setup_request {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Operation {
@@ -682,14 +905,62 @@ pub mod update_collection_cluster_setup_request {
         AbortTransfer(super::MoveShard),
         #[prost(message, tag = "5")]
         DropReplica(super::Replica),
+        #[prost(message, tag = "7")]
+        CreateShardKey(super::CreateShardKey),
+        #[prost(message, tag = "8")]
+        DeleteShardKey(super::DeleteShardKey),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionClusterSetupResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateShardKeyRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Request to create shard key
+    #[prost(message, optional, tag = "2")]
+    pub request: ::core::option::Option<CreateShardKey>,
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag = "3")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardKeyRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Request to delete shard key
+    #[prost(message, optional, tag = "2")]
+    pub request: ::core::option::Option<DeleteShardKey>,
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag = "3")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateShardKeyResponse {
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardKeyResponse {
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Distance {
@@ -722,6 +993,7 @@ impl Distance {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CollectionStatus {
@@ -757,6 +1029,7 @@ impl CollectionStatus {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PayloadSchemaType {
@@ -798,6 +1071,7 @@ impl PayloadSchemaType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum QuantizationType {
@@ -824,6 +1098,7 @@ impl QuantizationType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CompressionRatio {
@@ -859,6 +1134,36 @@ impl CompressionRatio {
         }
     }
 }
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardingMethod {
+    /// Auto-sharding based on record ids
+    Auto = 0,
+    /// Shard by user-defined key
+    Custom = 1,
+}
+impl ShardingMethod {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardingMethod::Auto => "Auto",
+            ShardingMethod::Custom => "Custom",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Auto" => Some(Self::Auto),
+            "Custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum TokenizerType {
@@ -866,6 +1171,7 @@ pub enum TokenizerType {
     Prefix = 1,
     Whitespace = 2,
     Word = 3,
+    Multilingual = 4,
 }
 impl TokenizerType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -878,6 +1184,7 @@ impl TokenizerType {
             TokenizerType::Prefix => "Prefix",
             TokenizerType::Whitespace => "Whitespace",
             TokenizerType::Word => "Word",
+            TokenizerType::Multilingual => "Multilingual",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -887,10 +1194,12 @@ impl TokenizerType {
             "Prefix" => Some(Self::Prefix),
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
+            "Multilingual" => Some(Self::Multilingual),
             _ => None,
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ReplicaState {
@@ -904,6 +1213,8 @@ pub enum ReplicaState {
     Initializing = 3,
     /// A shard which receives data, but is not used for search; Useful for backup shards
     Listener = 4,
+    /// Snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard
+    PartialSnapshot = 5,
 }
 impl ReplicaState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -917,6 +1228,7 @@ impl ReplicaState {
             ReplicaState::Partial => "Partial",
             ReplicaState::Initializing => "Initializing",
             ReplicaState::Listener => "Listener",
+            ReplicaState::PartialSnapshot => "PartialSnapshot",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -927,6 +1239,34 @@ impl ReplicaState {
             "Partial" => Some(Self::Partial),
             "Initializing" => Some(Self::Initializing),
             "Listener" => Some(Self::Listener),
+            "PartialSnapshot" => Some(Self::PartialSnapshot),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardTransferMethod {
+    StreamRecords = 0,
+    Snapshot = 1,
+}
+impl ShardTransferMethod {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardTransferMethod::StreamRecords => "StreamRecords",
+            ShardTransferMethod::Snapshot => "Snapshot",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "StreamRecords" => Some(Self::StreamRecords),
+            "Snapshot" => Some(Self::Snapshot),
             _ => None,
         }
     }
@@ -1279,6 +1619,60 @@ pub mod collections_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        ///
+        /// Create shard key
+        pub async fn create_shard_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateShardKeyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/CreateShardKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "CreateShardKey"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Delete shard key
+        pub async fn delete_shard_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardKeyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/DeleteShardKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "DeleteShardKey"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1378,6 +1772,24 @@ pub mod collections_server {
             tonic::Response<super::UpdateCollectionClusterSetupResponse>,
             tonic::Status,
         >;
+        ///
+        /// Create shard key
+        async fn create_shard_key(
+            &self,
+            request: tonic::Request<super::CreateShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateShardKeyResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Delete shard key
+        async fn delete_shard_key(
+            &self,
+            request: tonic::Request<super::DeleteShardKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardKeyResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct CollectionsServer<T: Collections> {
@@ -1475,7 +1887,9 @@ pub mod collections_server {
                             request: tonic::Request<super::GetCollectionInfoRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).get(request).await };
+                            let fut = async move {
+                                <T as Collections>::get(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1519,7 +1933,9 @@ pub mod collections_server {
                             request: tonic::Request<super::ListCollectionsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).list(request).await };
+                            let fut = async move {
+                                <T as Collections>::list(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1563,7 +1979,9 @@ pub mod collections_server {
                             request: tonic::Request<super::CreateCollection>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).create(request).await };
+                            let fut = async move {
+                                <T as Collections>::create(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1607,7 +2025,9 @@ pub mod collections_server {
                             request: tonic::Request<super::UpdateCollection>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).update(request).await };
+                            let fut = async move {
+                                <T as Collections>::update(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1651,7 +2071,9 @@ pub mod collections_server {
                             request: tonic::Request<super::DeleteCollection>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).delete(request).await };
+                            let fut = async move {
+                                <T as Collections>::delete(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1696,7 +2118,7 @@ pub mod collections_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).update_aliases(request).await
+                                <T as Collections>::update_aliases(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1742,7 +2164,8 @@ pub mod collections_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_collection_aliases(request).await
+                                <T as Collections>::list_collection_aliases(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1788,7 +2211,7 @@ pub mod collections_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_aliases(request).await
+                                <T as Collections>::list_aliases(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1834,7 +2257,8 @@ pub mod collections_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).collection_cluster_info(request).await
+                                <T as Collections>::collection_cluster_info(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1883,7 +2307,11 @@ pub mod collections_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).update_collection_cluster_setup(request).await
+                                <T as Collections>::update_collection_cluster_setup(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1896,6 +2324,98 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = UpdateCollectionClusterSetupSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/CreateShardKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateShardKeySvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::CreateShardKeyRequest>
+                    for CreateShardKeySvc<T> {
+                        type Response = super::CreateShardKeyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateShardKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::create_shard_key(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateShardKeySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/DeleteShardKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteShardKeySvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::DeleteShardKeyRequest>
+                    for DeleteShardKeySvc<T> {
+                        type Response = super::DeleteShardKeyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteShardKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::delete_shard_key(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteShardKeySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1953,6 +2473,7 @@ pub mod collections_server {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequestInternal {
@@ -1962,6 +2483,7 @@ pub struct GetCollectionInfoRequestInternal {
     pub shard_id: u32,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InitiateShardTransferRequest {
@@ -1972,6 +2494,26 @@ pub struct InitiateShardTransferRequest {
     /// Id of the temporary shard
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WaitForShardStateRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Shard state to wait for
+    #[prost(enumeration = "ReplicaState", tag = "3")]
+    pub state: i32,
+    /// Timeout in seconds
+    #[prost(uint64, tag = "4")]
+    #[validate(range(min = 1))]
+    pub timeout: u64,
 }
 /// Generated client implementations.
 pub mod collections_internal_client {
@@ -2112,6 +2654,35 @@ pub mod collections_internal_client {
                 .insert(GrpcMethod::new("qdrant.CollectionsInternal", "Initiate"));
             self.inner.unary(req, path, codec).await
         }
+        /// *
+        /// Wait for a shard to get into the given state
+        pub async fn wait_for_shard_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::WaitForShardStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.CollectionsInternal/WaitForShardState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.CollectionsInternal", "WaitForShardState"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2135,6 +2706,15 @@ pub mod collections_internal_server {
         async fn initiate(
             &self,
             request: tonic::Request<super::InitiateShardTransferRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
+        /// *
+        /// Wait for a shard to get into the given state
+        async fn wait_for_shard_state(
+            &self,
+            request: tonic::Request<super::WaitForShardStateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
@@ -2239,7 +2819,9 @@ pub mod collections_internal_server {
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).get(request).await };
+                            let fut = async move {
+                                <T as CollectionsInternal>::get(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -2283,7 +2865,9 @@ pub mod collections_internal_server {
                             request: tonic::Request<super::InitiateShardTransferRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).initiate(request).await };
+                            let fut = async move {
+                                <T as CollectionsInternal>::initiate(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -2295,6 +2879,56 @@ pub mod collections_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InitiateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.CollectionsInternal/WaitForShardState" => {
+                    #[allow(non_camel_case_types)]
+                    struct WaitForShardStateSvc<T: CollectionsInternal>(pub Arc<T>);
+                    impl<
+                        T: CollectionsInternal,
+                    > tonic::server::UnaryService<super::WaitForShardStateRequest>
+                    for WaitForShardStateSvc<T> {
+                        type Response = super::CollectionOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::WaitForShardStateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CollectionsInternal>::wait_for_shard_state(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = WaitForShardStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -2360,6 +2994,7 @@ pub mod collections_internal_server {
 /// with the proto support for the language.
 ///
 /// The JSON representation for `Struct` is a JSON object.
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Struct {
@@ -2373,6 +3008,7 @@ pub struct Struct {
 /// variants, absence of any variant indicates an error.
 ///
 /// The JSON representation for `Value` is a JSON value.
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
@@ -2383,6 +3019,7 @@ pub struct Value {
 /// Nested message and enum types in `Value`.
 pub mod value {
     /// The kind of value.
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
@@ -2412,6 +3049,7 @@ pub mod value {
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
 /// The JSON representation for `ListValue` is a JSON array.
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListValue {
@@ -2423,6 +3061,7 @@ pub struct ListValue {
 /// `Value` type union.
 ///
 ///   The JSON representation for `NullValue` is JSON `null`.
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum NullValue {
@@ -2447,6 +3086,7 @@ impl NullValue {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WriteOrdering {
@@ -2454,6 +3094,7 @@ pub struct WriteOrdering {
     #[prost(enumeration = "WriteOrderingType", tag = "1")]
     pub r#type: i32,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadConsistency {
@@ -2462,6 +3103,7 @@ pub struct ReadConsistency {
 }
 /// Nested message and enum types in `ReadConsistency`.
 pub mod read_consistency {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
@@ -2473,6 +3115,7 @@ pub mod read_consistency {
         Factor(u64),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointId {
@@ -2481,6 +3124,7 @@ pub struct PointId {
 }
 /// Nested message and enum types in `PointId`.
 pub mod point_id {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointIdOptions {
@@ -2492,13 +3136,26 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
 }
+/// ---------------------------------------------
+/// ----------------- ShardKeySelector ----------
+/// ---------------------------------------------
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardKeySelector {
+    /// List of shard keys which should be used in the request
+    #[prost(message, repeated, tag = "1")]
+    pub shard_keys: ::prost::alloc::vec::Vec<ShardKey>,
+}
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPoints {
@@ -2514,8 +3171,12 @@ pub struct UpsertPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePoints {
@@ -2532,8 +3193,12 @@ pub struct DeletePoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPoints {
@@ -2553,8 +3218,12 @@ pub struct GetPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "6")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdatePointVectors {
@@ -2571,7 +3240,11 @@ pub struct UpdatePointVectors {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointVectors {
@@ -2583,6 +3256,7 @@ pub struct PointVectors {
     pub vectors: ::core::option::Option<Vectors>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePointVectors {
@@ -2602,8 +3276,12 @@ pub struct DeletePointVectors {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "5")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "6")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPoints {
@@ -2623,8 +3301,12 @@ pub struct SetPayloadPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPoints {
@@ -2644,8 +3326,12 @@ pub struct DeletePayloadPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPoints {
@@ -2662,8 +3348,12 @@ pub struct ClearPayloadPoints {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFieldIndexCollection {
@@ -2689,6 +3379,7 @@ pub struct CreateFieldIndexCollection {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollection {
@@ -2707,6 +3398,7 @@ pub struct DeleteFieldIndexCollection {
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIncludeSelector {
@@ -2714,6 +3406,7 @@ pub struct PayloadIncludeSelector {
     #[prost(string, repeated, tag = "1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadExcludeSelector {
@@ -2721,6 +3414,7 @@ pub struct PayloadExcludeSelector {
     #[prost(string, repeated, tag = "1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithPayloadSelector {
@@ -2729,6 +3423,7 @@ pub struct WithPayloadSelector {
 }
 /// Nested message and enum types in `WithPayloadSelector`.
 pub mod with_payload_selector {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SelectorOptions {
@@ -2741,12 +3436,14 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {
     #[prost(map = "string, message", tag = "1")]
     pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vectors {
@@ -2755,6 +3452,7 @@ pub struct Vectors {
 }
 /// Nested message and enum types in `Vectors`.
 pub mod vectors {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum VectorsOptions {
@@ -2764,6 +3462,7 @@ pub mod vectors {
         Vectors(super::NamedVectors),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsSelector {
@@ -2771,6 +3470,7 @@ pub struct VectorsSelector {
     #[prost(string, repeated, tag = "1")]
     pub names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithVectorsSelector {
@@ -2779,6 +3479,7 @@ pub struct WithVectorsSelector {
 }
 /// Nested message and enum types in `WithVectorsSelector`.
 pub mod with_vectors_selector {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SelectorOptions {
@@ -2791,6 +3492,7 @@ pub mod with_vectors_selector {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationSearchParams {
@@ -2799,7 +3501,7 @@ pub struct QuantizationSearchParams {
     #[prost(bool, optional, tag = "1")]
     pub ignore: ::core::option::Option<bool>,
     ///
-    /// If true, use original vectors to re-score top-k results. Default is true.
+    /// If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not.
     #[prost(bool, optional, tag = "2")]
     pub rescore: ::core::option::Option<bool>,
     ///
@@ -2815,6 +3517,7 @@ pub struct QuantizationSearchParams {
     pub oversampling: ::core::option::Option<f64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
@@ -2832,8 +3535,15 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "3")]
     #[validate]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
+    ///
+    /// If enabled, the engine will only perform search among indexed or small segments.
+    /// Using this option prevents slow searches in case of delayed index, but does not
+    /// guarantee that all uploaded vectors will be included in search results
+    #[prost(bool, optional, tag = "4")]
+    pub indexed_only: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPoints {
@@ -2846,6 +3556,7 @@ pub struct SearchPoints {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "4")]
@@ -2866,7 +3577,6 @@ pub struct SearchPoints {
     pub offset: ::core::option::Option<u64>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "10")]
-    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "11")]
@@ -2874,8 +3584,16 @@ pub struct SearchPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "13")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "14")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchPoints {
@@ -2889,7 +3607,12 @@ pub struct SearchBatchPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithLookup {
@@ -2904,6 +3627,7 @@ pub struct WithLookup {
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPointGroups {
@@ -2916,6 +3640,7 @@ pub struct SearchPointGroups {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint32, tag = "4")]
@@ -2933,7 +3658,6 @@ pub struct SearchPointGroups {
     pub score_threshold: ::core::option::Option<f32>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "8")]
-    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
@@ -2952,8 +3676,16 @@ pub struct SearchPointGroups {
     /// Options for specifying how to use the group id to lookup points in another collection
     #[prost(message, optional, tag = "13")]
     pub with_lookup: ::core::option::Option<WithLookup>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "14")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "15")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
@@ -2962,6 +3694,7 @@ pub struct ScrollPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Start with this ID
     #[prost(message, optional, tag = "3")]
@@ -2979,7 +3712,11 @@ pub struct ScrollPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "8")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "9")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LookupLocation {
@@ -2988,8 +3725,12 @@ pub struct LookupLocation {
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "2")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "3")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPoints {
@@ -2997,14 +3738,15 @@ pub struct RecommendPoints {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// Look for vectors closest to those
+    /// Look for vectors closest to the vectors from these points
     #[prost(message, repeated, tag = "2")]
     pub positive: ::prost::alloc::vec::Vec<PointId>,
-    /// Try to avoid vectors like this
+    /// Try to avoid vectors like the vector from these points
     #[prost(message, repeated, tag = "3")]
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "5")]
@@ -3034,8 +3776,25 @@ pub struct RecommendPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// How to use the example vectors to find the results
+    #[prost(enumeration = "RecommendStrategy", optional, tag = "16")]
+    pub strategy: ::core::option::Option<i32>,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "17")]
+    pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "18")]
+    pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "19")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "20")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchPoints {
@@ -3049,8 +3808,13 @@ pub struct RecommendBatchPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPointGroups {
@@ -3058,14 +3822,15 @@ pub struct RecommendPointGroups {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
-    /// Look for vectors closest to those
+    /// Look for vectors closest to the vectors from these points
     #[prost(message, repeated, tag = "2")]
     pub positive: ::prost::alloc::vec::Vec<PointId>,
-    /// Try to avoid vectors like this
+    /// Try to avoid vectors like the vector from these points
     #[prost(message, repeated, tag = "3")]
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of groups in result
     #[prost(uint32, tag = "5")]
@@ -3104,8 +3869,143 @@ pub struct RecommendPointGroups {
     /// Options for specifying how to use the group id to lookup points in another collection
     #[prost(message, optional, tag = "15")]
     pub with_lookup: ::core::option::Option<WithLookup>,
+    /// How to use the example vectors to find the results
+    #[prost(enumeration = "RecommendStrategy", optional, tag = "17")]
+    pub strategy: ::core::option::Option<i32>,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "18")]
+    pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "19")]
+    pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "20")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "21")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TargetVector {
+    #[prost(oneof = "target_vector::Target", tags = "1")]
+    pub target: ::core::option::Option<target_vector::Target>,
+}
+/// Nested message and enum types in `TargetVector`.
+pub mod target_vector {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Target {
+        #[prost(message, tag = "1")]
+        Single(super::VectorExample),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorExample {
+    #[prost(oneof = "vector_example::Example", tags = "1, 2")]
+    pub example: ::core::option::Option<vector_example::Example>,
+}
+/// Nested message and enum types in `VectorExample`.
+pub mod vector_example {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Example {
+        #[prost(message, tag = "1")]
+        Id(super::PointId),
+        #[prost(message, tag = "2")]
+        Vector(super::Vector),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextExamplePair {
+    #[prost(message, optional, tag = "1")]
+    pub positive: ::core::option::Option<VectorExample>,
+    #[prost(message, optional, tag = "2")]
+    pub negative: ::core::option::Option<VectorExample>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverPoints {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Use this as the primary search objective
+    #[prost(message, optional, tag = "2")]
+    pub target: ::core::option::Option<TargetVector>,
+    /// Search will be constrained by these pairs of examples
+    #[prost(message, repeated, tag = "3")]
+    pub context: ::prost::alloc::vec::Vec<ContextExamplePair>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "4")]
+    #[validate]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
+    #[prost(uint64, tag = "5")]
+    #[validate(range(min = 1))]
+    pub limit: u64,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "7")]
+    #[validate]
+    pub params: ::core::option::Option<SearchParams>,
+    /// Offset of the result
+    #[prost(uint64, optional, tag = "8")]
+    pub offset: ::core::option::Option<u64>,
+    /// Define which vector to use for recommendation, if not specified - default vector
+    #[prost(string, optional, tag = "9")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "10")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Name of the collection to use for points lookup, if not specified - use current collection
+    #[prost(message, optional, tag = "11")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "12")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "13")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "14")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverBatchPoints {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    #[validate]
+    pub discover_points: ::prost::alloc::vec::Vec<DiscoverPoints>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "3")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPoints {
@@ -3115,11 +4015,163 @@ pub struct CountPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// If `true` - return exact count, if `false` - return approximate count
     #[prost(bool, optional, tag = "3")]
     pub exact: ::core::option::Option<bool>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "4")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointsUpdateOperation {
+    #[prost(
+        oneof = "points_update_operation::Operation",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10"
+    )]
+    pub operation: ::core::option::Option<points_update_operation::Operation>,
+}
+/// Nested message and enum types in `PointsUpdateOperation`.
+pub mod points_update_operation {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct PointStructList {
+        #[prost(message, repeated, tag = "1")]
+        pub points: ::prost::alloc::vec::Vec<super::PointStruct>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct SetPayload {
+        #[prost(map = "string, message", tag = "1")]
+        pub payload: ::std::collections::HashMap<
+            ::prost::alloc::string::String,
+            super::Value,
+        >,
+        /// Affected points
+        #[prost(message, optional, tag = "2")]
+        pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DeletePayload {
+        #[prost(string, repeated, tag = "1")]
+        pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+        /// Affected points
+        #[prost(message, optional, tag = "2")]
+        pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct UpdateVectors {
+        /// List of points and vectors to update
+        #[prost(message, repeated, tag = "1")]
+        pub points: ::prost::alloc::vec::Vec<super::PointVectors>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DeleteVectors {
+        /// Affected points
+        #[prost(message, optional, tag = "1")]
+        pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// List of vector names to delete
+        #[prost(message, optional, tag = "2")]
+        pub vectors: ::core::option::Option<super::VectorsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(validator::Validate)]
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DeletePoints {
+        /// Affected points
+        #[prost(message, optional, tag = "1")]
+        pub points: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct ClearPayload {
+        /// Affected points
+        #[prost(message, optional, tag = "1")]
+        pub points: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "2")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Operation {
+        #[prost(message, tag = "1")]
+        Upsert(PointStructList),
+        #[prost(message, tag = "2")]
+        DeleteDeprecated(super::PointsSelector),
+        #[prost(message, tag = "3")]
+        SetPayload(SetPayload),
+        #[prost(message, tag = "4")]
+        OverwritePayload(SetPayload),
+        #[prost(message, tag = "5")]
+        DeletePayload(DeletePayload),
+        #[prost(message, tag = "6")]
+        ClearPayloadDeprecated(super::PointsSelector),
+        #[prost(message, tag = "7")]
+        UpdateVectors(UpdateVectors),
+        #[prost(message, tag = "8")]
+        DeleteVectors(DeleteVectors),
+        #[prost(message, tag = "9")]
+        DeletePoints(DeletePoints),
+        #[prost(message, tag = "10")]
+        ClearPayload(ClearPayload),
+    }
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateBatchPoints {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(message, repeated, tag = "3")]
+    #[validate(length(min = 1))]
+    pub operations: ::prost::alloc::vec::Vec<PointsUpdateOperation>,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "4")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
+}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsOperationResponse {
@@ -3129,16 +4181,18 @@ pub struct PointsOperationResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResult {
     /// Number of operation
-    #[prost(uint64, tag = "1")]
-    pub operation_id: u64,
+    #[prost(uint64, optional, tag = "1")]
+    pub operation_id: ::core::option::Option<u64>,
     /// Operation status
     #[prost(enumeration = "UpdateStatus", tag = "2")]
     pub status: i32,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
@@ -3157,7 +4211,11 @@ pub struct ScoredPoint {
     /// Vectors to search
     #[prost(message, optional, tag = "6")]
     pub vectors: ::core::option::Option<Vectors>,
+    /// Shard key
+    #[prost(message, optional, tag = "7")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GroupId {
@@ -3166,6 +4224,7 @@ pub struct GroupId {
 }
 /// Nested message and enum types in `GroupId`.
 pub mod group_id {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
@@ -3180,6 +4239,7 @@ pub mod group_id {
         StringValue(::prost::alloc::string::String),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointGroup {
@@ -3193,6 +4253,7 @@ pub struct PointGroup {
     #[prost(message, optional, tag = "3")]
     pub lookup: ::core::option::Option<RetrievedPoint>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GroupsResult {
@@ -3200,6 +4261,7 @@ pub struct GroupsResult {
     #[prost(message, repeated, tag = "1")]
     pub groups: ::prost::alloc::vec::Vec<PointGroup>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
@@ -3209,12 +4271,14 @@ pub struct SearchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchResult {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchResponse {
@@ -3224,6 +4288,7 @@ pub struct SearchBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchGroupsResponse {
@@ -3233,6 +4298,7 @@ pub struct SearchGroupsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountResponse {
@@ -3242,6 +4308,7 @@ pub struct CountResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollResponse {
@@ -3254,12 +4321,14 @@ pub struct ScrollResponse {
     #[prost(double, tag = "3")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountResult {
     #[prost(uint64, tag = "1")]
     pub count: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetrievedPoint {
@@ -3269,7 +4338,11 @@ pub struct RetrievedPoint {
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(message, optional, tag = "4")]
     pub vectors: ::core::option::Option<Vectors>,
+    /// Shard key
+    #[prost(message, optional, tag = "5")]
+    pub shard_key: ::core::option::Option<ShardKey>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
@@ -3279,6 +4352,7 @@ pub struct GetResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendResponse {
@@ -3288,6 +4362,7 @@ pub struct RecommendResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchResponse {
@@ -3297,6 +4372,27 @@ pub struct RecommendBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverBatchResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<BatchResult>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendGroupsResponse {
@@ -3306,27 +4402,46 @@ pub struct RecommendGroupsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateBatchResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<UpdateResult>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Filter {
     /// At least one of those conditions should match
     #[prost(message, repeated, tag = "1")]
+    #[validate]
     pub should: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must match
     #[prost(message, repeated, tag = "2")]
+    #[validate]
     pub must: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must NOT match
     #[prost(message, repeated, tag = "3")]
+    #[validate]
     pub must_not: ::prost::alloc::vec::Vec<Condition>,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
     #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6")]
+    #[validate]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
 pub mod condition {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum ConditionOneOf {
@@ -3344,24 +4459,29 @@ pub mod condition {
         Nested(super::NestedCondition),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IsEmptyCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IsNullCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HasIdCondition {
     #[prost(message, repeated, tag = "1")]
     pub has_id: ::prost::alloc::vec::Vec<PointId>,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NestedCondition {
@@ -3370,8 +4490,10 @@ pub struct NestedCondition {
     pub key: ::prost::alloc::string::String,
     /// Filter condition
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FieldCondition {
@@ -3392,7 +4514,11 @@ pub struct FieldCondition {
     /// Check number of values for a specific field
     #[prost(message, optional, tag = "6")]
     pub values_count: ::core::option::Option<ValuesCount>,
+    /// Check if geo point is within a given polygon
+    #[prost(message, optional, tag = "7")]
+    pub geo_polygon: ::core::option::Option<GeoPolygon>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
@@ -3401,6 +4527,7 @@ pub struct Match {
 }
 /// Nested message and enum types in `Match`.
 pub mod r#match {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum MatchValue {
@@ -3430,18 +4557,21 @@ pub mod r#match {
         ExceptKeywords(super::RepeatedStrings),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RepeatedStrings {
     #[prost(string, repeated, tag = "1")]
     pub strings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RepeatedIntegers {
     #[prost(int64, repeated, tag = "1")]
     pub integers: ::prost::alloc::vec::Vec<i64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Range {
@@ -3454,6 +4584,7 @@ pub struct Range {
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
@@ -3464,6 +4595,7 @@ pub struct GeoBoundingBox {
     #[prost(message, optional, tag = "2")]
     pub bottom_right: ::core::option::Option<GeoPoint>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoRadius {
@@ -3474,6 +4606,31 @@ pub struct GeoRadius {
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoLineString {
+    /// Ordered sequence of GeoPoints representing the line
+    #[prost(message, repeated, tag = "1")]
+    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
+}
+/// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
+/// Additionally, the first and last points of each GeoLineString must be the same.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoPolygon {
+    /// The exterior line bounds the surface
+    #[prost(message, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_geo_polygon_exterior")]
+    pub exterior: ::core::option::Option<GeoLineString>,
+    /// Interior lines (if present) bound holes within the surface
+    #[prost(message, repeated, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_geo_polygon_interiors")]
+    pub interiors: ::prost::alloc::vec::Vec<GeoLineString>,
+}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ValuesCount {
@@ -3486,6 +4643,7 @@ pub struct ValuesCount {
     #[prost(uint64, optional, tag = "4")]
     pub lte: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsSelector {
@@ -3496,6 +4654,7 @@ pub struct PointsSelector {
 }
 /// Nested message and enum types in `PointsSelector`.
 pub mod points_selector {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointsSelectorOneOf {
@@ -3505,12 +4664,14 @@ pub mod points_selector {
         Filter(super::Filter),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsIdsList {
     #[prost(message, repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointStruct {
@@ -3521,6 +4682,7 @@ pub struct PointStruct {
     #[prost(message, optional, tag = "4")]
     pub vectors: ::core::option::Option<Vectors>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPoint {
@@ -3529,6 +4691,7 @@ pub struct GeoPoint {
     #[prost(double, tag = "2")]
     pub lat: f64,
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum WriteOrderingType {
@@ -3561,6 +4724,7 @@ impl WriteOrderingType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ReadConsistencyType {
@@ -3593,6 +4757,7 @@ impl ReadConsistencyType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum FieldType {
@@ -3631,6 +4796,40 @@ impl FieldType {
         }
     }
 }
+/// How to use positive and negative vectors to find the results, default is `AverageVector`:
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RecommendStrategy {
+    /// Average positive and negative vectors and create a single query with the formula
+    /// `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
+    AverageVector = 0,
+    /// Uses custom search objective. Each candidate is compared against all
+    /// examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
+    /// If the `max_neg_score` is chosen then it is squared and negated.
+    BestScore = 1,
+}
+impl RecommendStrategy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            RecommendStrategy::AverageVector => "AverageVector",
+            RecommendStrategy::BestScore => "BestScore",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AverageVector" => Some(Self::AverageVector),
+            "BestScore" => Some(Self::BestScore),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum UpdateStatus {
@@ -4104,7 +5303,7 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         ///
-        /// Iterate over all or filtered points points
+        /// Iterate over all or filtered points
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPoints>,
@@ -4203,6 +5402,71 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         ///
+        /// Use context and a target to find the most similar points to the target, constrained by the context.
+        ///
+        /// When using only the context (without a target), a special search - called context search - is performed where
+        /// pairs of points are used to generate a loss that guides the search towards the zone where
+        /// most positive examples overlap. This means that the score minimizes the scenario of
+        /// finding a point closer to a negative than to a positive part of a pair.
+        ///
+        /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
+        /// and it becomes normal that many points can have a score of 0.0.
+        ///
+        /// When using target (with or without context), the score behaves a little different: The
+        /// integer part of the score represents the rank with respect to the context, while the
+        /// decimal part of the score relates to the distance to the target. The context part of the score for
+        /// each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair,
+        /// and -1 otherwise.
+        pub async fn discover(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DiscoverPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Discover");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Discover"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Batch request points based on { positive, negative } pairs of examples, and/or a target
+        pub async fn discover_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DiscoverBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverBatchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/DiscoverBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "DiscoverBatch"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
         /// Count points in collection with given filtering conditions
         pub async fn count(
             &mut self,
@@ -4221,6 +5485,32 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Count");
             let mut req = request.into_request();
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Count"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Perform multiple update operations in one request
+        pub async fn update_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateBatchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/UpdateBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "UpdateBatch"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -4353,7 +5643,7 @@ pub mod points_server {
             tonic::Status,
         >;
         ///
-        /// Iterate over all or filtered points points
+        /// Iterate over all or filtered points
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPoints>,
@@ -4386,11 +5676,52 @@ pub mod points_server {
             tonic::Status,
         >;
         ///
+        /// Use context and a target to find the most similar points to the target, constrained by the context.
+        ///
+        /// When using only the context (without a target), a special search - called context search - is performed where
+        /// pairs of points are used to generate a loss that guides the search towards the zone where
+        /// most positive examples overlap. This means that the score minimizes the scenario of
+        /// finding a point closer to a negative than to a positive part of a pair.
+        ///
+        /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
+        /// and it becomes normal that many points can have a score of 0.0.
+        ///
+        /// When using target (with or without context), the score behaves a little different: The
+        /// integer part of the score represents the rank with respect to the context, while the
+        /// decimal part of the score relates to the distance to the target. The context part of the score for
+        /// each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair,
+        /// and -1 otherwise.
+        async fn discover(
+            &self,
+            request: tonic::Request<super::DiscoverPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Batch request points based on { positive, negative } pairs of examples, and/or a target
+        async fn discover_batch(
+            &self,
+            request: tonic::Request<super::DiscoverBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::DiscoverBatchResponse>,
+            tonic::Status,
+        >;
+        ///
         /// Count points in collection with given filtering conditions
         async fn count(
             &self,
             request: tonic::Request<super::CountPoints>,
         ) -> std::result::Result<tonic::Response<super::CountResponse>, tonic::Status>;
+        ///
+        /// Perform multiple update operations in one request
+        async fn update_batch(
+            &self,
+            request: tonic::Request<super::UpdateBatchPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateBatchResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -4486,7 +5817,9 @@ pub mod points_server {
                             request: tonic::Request<super::UpsertPoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).upsert(request).await };
+                            let fut = async move {
+                                <T as Points>::upsert(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -4528,7 +5861,9 @@ pub mod points_server {
                             request: tonic::Request<super::DeletePoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).delete(request).await };
+                            let fut = async move {
+                                <T as Points>::delete(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -4570,7 +5905,9 @@ pub mod points_server {
                             request: tonic::Request<super::GetPoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).get(request).await };
+                            let fut = async move {
+                                <T as Points>::get(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -4615,7 +5952,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).update_vectors(request).await
+                                <T as Points>::update_vectors(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -4661,7 +5998,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_vectors(request).await
+                                <T as Points>::delete_vectors(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -4704,7 +6041,9 @@ pub mod points_server {
                             request: tonic::Request<super::SetPayloadPoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).set_payload(request).await };
+                            let fut = async move {
+                                <T as Points>::set_payload(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -4747,7 +6086,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).overwrite_payload(request).await
+                                <T as Points>::overwrite_payload(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -4793,7 +6132,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_payload(request).await
+                                <T as Points>::delete_payload(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -4839,7 +6178,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).clear_payload(request).await
+                                <T as Points>::clear_payload(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -4885,7 +6224,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).create_field_index(request).await
+                                <T as Points>::create_field_index(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -4931,7 +6270,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_field_index(request).await
+                                <T as Points>::delete_field_index(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -4974,7 +6313,9 @@ pub mod points_server {
                             request: tonic::Request<super::SearchPoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).search(request).await };
+                            let fut = async move {
+                                <T as Points>::search(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -5017,7 +6358,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).search_batch(request).await
+                                <T as Points>::search_batch(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5061,7 +6402,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).search_groups(request).await
+                                <T as Points>::search_groups(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5104,7 +6445,9 @@ pub mod points_server {
                             request: tonic::Request<super::ScrollPoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).scroll(request).await };
+                            let fut = async move {
+                                <T as Points>::scroll(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -5146,7 +6489,9 @@ pub mod points_server {
                             request: tonic::Request<super::RecommendPoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).recommend(request).await };
+                            let fut = async move {
+                                <T as Points>::recommend(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -5191,7 +6536,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).recommend_batch(request).await
+                                <T as Points>::recommend_batch(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5237,7 +6582,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).recommend_groups(request).await
+                                <T as Points>::recommend_groups(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5250,6 +6595,96 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = RecommendGroupsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/Discover" => {
+                    #[allow(non_camel_case_types)]
+                    struct DiscoverSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::DiscoverPoints>
+                    for DiscoverSvc<T> {
+                        type Response = super::DiscoverResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DiscoverPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::discover(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DiscoverSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/DiscoverBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct DiscoverBatchSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::DiscoverBatchPoints>
+                    for DiscoverBatchSvc<T> {
+                        type Response = super::DiscoverBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DiscoverBatchPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::discover_batch(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DiscoverBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5280,7 +6715,9 @@ pub mod points_server {
                             request: tonic::Request<super::CountPoints>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).count(request).await };
+                            let fut = async move {
+                                <T as Points>::count(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -5292,6 +6729,50 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = CountSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/UpdateBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateBatchSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::UpdateBatchPoints>
+                    for UpdateBatchSvc<T> {
+                        type Response = super::UpdateBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateBatchPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::update_batch(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5348,6 +6829,7 @@ pub mod points_server {
         const NAME: &'static str = "qdrant.Points";
     }
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5370,6 +6852,7 @@ pub struct SyncPoints {
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5380,6 +6863,7 @@ pub struct SyncPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5390,6 +6874,7 @@ pub struct UpsertPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5400,6 +6885,7 @@ pub struct DeletePointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5410,6 +6896,7 @@ pub struct UpdateVectorsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5420,6 +6907,7 @@ pub struct DeleteVectorsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5430,6 +6918,7 @@ pub struct SetPayloadPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5440,6 +6929,7 @@ pub struct DeletePayloadPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5450,6 +6940,7 @@ pub struct ClearPayloadPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5462,6 +6953,7 @@ pub struct CreateFieldIndexCollectionInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5474,6 +6966,7 @@ pub struct DeleteFieldIndexCollectionInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5484,6 +6977,7 @@ pub struct SearchPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5496,7 +6990,120 @@ pub struct SearchBatchPointsInternal {
     pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(uint64, optional, tag = "4")]
+    pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecoQuery {
+    #[prost(message, repeated, tag = "1")]
+    pub positives: ::prost::alloc::vec::Vec<Vector>,
+    #[prost(message, repeated, tag = "2")]
+    pub negatives: ::prost::alloc::vec::Vec<Vector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextPair {
+    #[prost(message, optional, tag = "1")]
+    pub positive: ::core::option::Option<Vector>,
+    #[prost(message, optional, tag = "2")]
+    pub negative: ::core::option::Option<Vector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoveryQuery {
+    #[prost(message, optional, tag = "1")]
+    pub target: ::core::option::Option<Vector>,
+    #[prost(message, repeated, tag = "2")]
+    pub context: ::prost::alloc::vec::Vec<ContextPair>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextQuery {
+    #[prost(message, repeated, tag = "1")]
+    pub context: ::prost::alloc::vec::Vec<ContextPair>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryEnum {
+    #[prost(oneof = "query_enum::Query", tags = "1, 2, 3, 4")]
+    pub query: ::core::option::Option<query_enum::Query>,
+}
+/// Nested message and enum types in `QueryEnum`.
+pub mod query_enum {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Query {
+        /// ANN
+        #[prost(message, tag = "1")]
+        NearestNeighbors(super::Vector),
+        /// Recommend points with higher similarity to positive examples
+        #[prost(message, tag = "2")]
+        RecommendBestScore(super::RecoQuery),
+        /// Search for points that get closer to a target, constrained by a context of positive and negative pairs
+        #[prost(message, tag = "3")]
+        Discover(super::DiscoveryQuery),
+        /// Use only the context to find points that minimize loss against negative examples
+        #[prost(message, tag = "4")]
+        Context(super::ContextQuery),
+    }
+}
+/// This is only used internally, so it makes more sense to add it here rather than in points.proto
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CoreSearchPoints {
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub query: ::core::option::Option<QueryEnum>,
+    #[prost(message, optional, tag = "3")]
+    #[validate]
+    pub filter: ::core::option::Option<Filter>,
+    #[prost(uint64, tag = "4")]
+    #[validate(range(min = 1))]
+    pub limit: u64,
+    #[prost(message, optional, tag = "5")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    #[prost(message, optional, tag = "6")]
+    #[validate]
+    pub params: ::core::option::Option<SearchParams>,
+    #[prost(float, optional, tag = "7")]
+    pub score_threshold: ::core::option::Option<f32>,
+    #[prost(uint64, optional, tag = "8")]
+    pub offset: ::core::option::Option<u64>,
+    #[prost(string, optional, tag = "9")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "10")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    #[prost(message, optional, tag = "11")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CoreSearchBatchPointsInternal {
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    #[validate]
+    pub search_points: ::prost::alloc::vec::Vec<CoreSearchPoints>,
+    #[prost(uint32, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<u32>,
+    #[prost(uint64, optional, tag = "4")]
+    pub timeout: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5507,6 +7114,7 @@ pub struct ScrollPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5517,6 +7125,7 @@ pub struct RecommendPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5527,6 +7136,7 @@ pub struct GetPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5944,6 +7554,31 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "SearchBatch"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn core_search_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CoreSearchBatchPointsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/CoreSearchBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "CoreSearchBatch"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPointsInternal>,
@@ -6131,6 +7766,13 @@ pub mod points_internal_server {
             tonic::Response<super::SearchBatchResponse>,
             tonic::Status,
         >;
+        async fn core_search_batch(
+            &self,
+            request: tonic::Request<super::CoreSearchBatchPointsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        >;
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPointsInternal>,
@@ -6247,7 +7889,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::UpsertPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).upsert(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::upsert(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6291,7 +7935,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::SyncPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).sync(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::sync(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6335,7 +7981,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::DeletePointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).delete(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::delete(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6380,7 +8028,7 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).update_vectors(request).await
+                                <T as PointsInternal>::update_vectors(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6426,7 +8074,7 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_vectors(request).await
+                                <T as PointsInternal>::delete_vectors(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6471,7 +8119,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::SetPayloadPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).set_payload(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::set_payload(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6516,7 +8166,8 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).overwrite_payload(request).await
+                                <T as PointsInternal>::overwrite_payload(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6562,7 +8213,7 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_payload(request).await
+                                <T as PointsInternal>::delete_payload(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6608,7 +8259,7 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).clear_payload(request).await
+                                <T as PointsInternal>::clear_payload(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6657,7 +8308,8 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).create_field_index(request).await
+                                <T as PointsInternal>::create_field_index(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6706,7 +8358,8 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_field_index(request).await
+                                <T as PointsInternal>::delete_field_index(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6751,7 +8404,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::SearchPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).search(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::search(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6796,7 +8451,7 @@ pub mod points_internal_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).search_batch(request).await
+                                <T as PointsInternal>::search_batch(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6809,6 +8464,53 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SearchBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/CoreSearchBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct CoreSearchBatchSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::CoreSearchBatchPointsInternal>
+                    for CoreSearchBatchSvc<T> {
+                        type Response = super::SearchBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CoreSearchBatchPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::core_search_batch(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CoreSearchBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -6841,7 +8543,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::ScrollPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).scroll(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::scroll(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6885,7 +8589,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::CountPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).count(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::count(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6929,7 +8635,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::RecommendPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).recommend(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::recommend(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6973,7 +8681,9 @@ pub mod points_internal_server {
                             request: tonic::Request<super::GetPointsInternal>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).get(request).await };
+                            let fut = async move {
+                                <T as PointsInternal>::get(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -7041,12 +8751,339 @@ pub mod points_internal_server {
         const NAME: &'static str = "qdrant.PointsInternal";
     }
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WaitOnConsensusCommitRequest {
+    /// Raft commit as u64
+    #[prost(int64, tag = "1")]
+    pub commit: i64,
+    /// Raft term as u64
+    #[prost(int64, tag = "2")]
+    pub term: i64,
+    /// Timeout in seconds
+    #[prost(int64, tag = "3")]
+    pub timeout: i64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WaitOnConsensusCommitResponse {
+    /// False if commit/term is diverged and never reached or if timed out.
+    #[prost(bool, tag = "1")]
+    pub ok: bool,
+}
+/// Generated client implementations.
+pub mod qdrant_internal_client {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct QdrantInternalClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl QdrantInternalClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> QdrantInternalClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> QdrantInternalClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
+        {
+            QdrantInternalClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        ///
+        /// Wait until the target node reached the given commit ID.
+        pub async fn wait_on_consensus_commit(
+            &mut self,
+            request: impl tonic::IntoRequest<super::WaitOnConsensusCommitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WaitOnConsensusCommitResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/WaitOnConsensusCommit",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.QdrantInternal", "WaitOnConsensusCommit"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod qdrant_internal_server {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with QdrantInternalServer.
+    #[async_trait]
+    pub trait QdrantInternal: Send + Sync + 'static {
+        ///
+        /// Wait until the target node reached the given commit ID.
+        async fn wait_on_consensus_commit(
+            &self,
+            request: tonic::Request<super::WaitOnConsensusCommitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WaitOnConsensusCommitResponse>,
+            tonic::Status,
+        >;
+    }
+    #[derive(Debug)]
+    pub struct QdrantInternalServer<T: QdrantInternal> {
+        inner: _Inner<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    struct _Inner<T>(Arc<T>);
+    impl<T: QdrantInternal> QdrantInternalServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            let inner = _Inner(inner);
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for QdrantInternalServer<T>
+    where
+        T: QdrantInternal,
+        B: Body + Send + 'static,
+        B::Error: Into<StdError> + Send + 'static,
+    {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let inner = self.inner.clone();
+            match req.uri().path() {
+                "/qdrant.QdrantInternal/WaitOnConsensusCommit" => {
+                    #[allow(non_camel_case_types)]
+                    struct WaitOnConsensusCommitSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::WaitOnConsensusCommitRequest>
+                    for WaitOnConsensusCommitSvc<T> {
+                        type Response = super::WaitOnConsensusCommitResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::WaitOnConsensusCommitRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::wait_on_consensus_commit(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = WaitOnConsensusCommitSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        Ok(
+                            http::Response::builder()
+                                .status(200)
+                                .header("grpc-status", "12")
+                                .header("content-type", "application/grpc")
+                                .body(empty_body())
+                                .unwrap(),
+                        )
+                    })
+                }
+            }
+        }
+    }
+    impl<T: QdrantInternal> Clone for QdrantInternalServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    impl<T: QdrantInternal> Clone for _Inner<T> {
+        fn clone(&self) -> Self {
+            Self(Arc::clone(&self.0))
+        }
+    }
+    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+    impl<T: QdrantInternal> tonic::server::NamedService for QdrantInternalServer<T> {
+        const NAME: &'static str = "qdrant.QdrantInternal";
+    }
+}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RaftMessage {
     #[prost(bytes = "vec", tag = "1")]
     pub message: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AllPeers {
@@ -7055,6 +9092,7 @@ pub struct AllPeers {
     #[prost(uint64, tag = "2")]
     pub first_peer_id: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Peer {
@@ -7063,12 +9101,13 @@ pub struct Peer {
     #[prost(uint64, tag = "2")]
     pub id: u64,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddPeerToKnownMessage {
     #[prost(string, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
+    #[validate(custom = "common::validation::validate_not_empty")]
     pub uri: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(uint32, optional, tag = "2")]
     #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
@@ -7076,12 +9115,14 @@ pub struct AddPeerToKnownMessage {
     #[prost(uint64, tag = "3")]
     pub id: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PeerId {
     #[prost(uint64, tag = "1")]
     pub id: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Uri {
@@ -7397,7 +9438,9 @@ pub mod raft_server {
                             request: tonic::Request<super::RaftMessage>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).send(request).await };
+                            let fut = async move {
+                                <T as Raft>::send(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -7439,7 +9482,9 @@ pub mod raft_server {
                             request: tonic::Request<super::PeerId>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).who_is(request).await };
+                            let fut = async move {
+                                <T as Raft>::who_is(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -7484,7 +9529,7 @@ pub mod raft_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).add_peer_to_known(request).await
+                                <T as Raft>::add_peer_to_known(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -7528,7 +9573,7 @@ pub mod raft_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).add_peer_as_participant(request).await
+                                <T as Raft>::add_peer_as_participant(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -7597,14 +9642,17 @@ pub mod raft_server {
         const NAME: &'static str = "qdrant.Raft";
     }
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFullSnapshotRequest {}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFullSnapshotsRequest {}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7614,6 +9662,7 @@ pub struct DeleteFullSnapshotRequest {
     #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7623,6 +9672,7 @@ pub struct CreateSnapshotRequest {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7632,6 +9682,7 @@ pub struct ListSnapshotsRequest {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7645,6 +9696,7 @@ pub struct DeleteSnapshotRequest {
     #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotDescription {
@@ -7653,11 +9705,13 @@ pub struct SnapshotDescription {
     pub name: ::prost::alloc::string::String,
     /// Creation time of the snapshot
     #[prost(message, optional, tag = "2")]
+    #[serde(skip)]
     pub creation_time: ::core::option::Option<::prost_types::Timestamp>,
     /// Size of the snapshot in bytes
     #[prost(int64, tag = "3")]
     pub size: i64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateSnapshotResponse {
@@ -7667,6 +9721,7 @@ pub struct CreateSnapshotResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSnapshotsResponse {
@@ -7676,6 +9731,7 @@ pub struct ListSnapshotsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSnapshotResponse {
@@ -7817,7 +9873,7 @@ pub mod snapshots_client {
             self.inner.unary(req, path, codec).await
         }
         ///
-        /// Delete collection snapshots
+        /// Delete collection snapshot
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteSnapshotRequest>,
@@ -7894,7 +9950,7 @@ pub mod snapshots_client {
             self.inner.unary(req, path, codec).await
         }
         ///
-        /// List full storage snapshots
+        /// Delete full storage snapshot
         pub async fn delete_full(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteFullSnapshotRequest>,
@@ -7948,7 +10004,7 @@ pub mod snapshots_server {
             tonic::Status,
         >;
         ///
-        /// Delete collection snapshots
+        /// Delete collection snapshot
         async fn delete(
             &self,
             request: tonic::Request<super::DeleteSnapshotRequest>,
@@ -7975,7 +10031,7 @@ pub mod snapshots_server {
             tonic::Status,
         >;
         ///
-        /// List full storage snapshots
+        /// Delete full storage snapshot
         async fn delete_full(
             &self,
             request: tonic::Request<super::DeleteFullSnapshotRequest>,
@@ -8080,7 +10136,9 @@ pub mod snapshots_server {
                             request: tonic::Request<super::CreateSnapshotRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).create(request).await };
+                            let fut = async move {
+                                <T as Snapshots>::create(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -8124,7 +10182,9 @@ pub mod snapshots_server {
                             request: tonic::Request<super::ListSnapshotsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).list(request).await };
+                            let fut = async move {
+                                <T as Snapshots>::list(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -8168,7 +10228,9 @@ pub mod snapshots_server {
                             request: tonic::Request<super::DeleteSnapshotRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).delete(request).await };
+                            let fut = async move {
+                                <T as Snapshots>::delete(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -8212,7 +10274,9 @@ pub mod snapshots_server {
                             request: tonic::Request<super::CreateFullSnapshotRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).create_full(request).await };
+                            let fut = async move {
+                                <T as Snapshots>::create_full(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -8256,7 +10320,9 @@ pub mod snapshots_server {
                             request: tonic::Request<super::ListFullSnapshotsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).list_full(request).await };
+                            let fut = async move {
+                                <T as Snapshots>::list_full(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -8300,7 +10366,9 @@ pub mod snapshots_server {
                             request: tonic::Request<super::DeleteFullSnapshotRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).delete_full(request).await };
+                            let fut = async move {
+                                <T as Snapshots>::delete_full(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -8368,9 +10436,682 @@ pub mod snapshots_server {
         const NAME: &'static str = "qdrant.Snapshots";
     }
 }
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateShardSnapshotRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListShardSnapshotsRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardSnapshotRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Name of the shard snapshot
+    #[prost(string, tag = "3")]
+    #[validate(length(min = 1))]
+    pub snapshot_name: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecoverShardSnapshotRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Location of the shard snapshot
+    #[prost(message, optional, tag = "3")]
+    pub snapshot_location: ::core::option::Option<ShardSnapshotLocation>,
+    /// Priority of the shard snapshot
+    #[prost(enumeration = "ShardSnapshotPriority", tag = "4")]
+    pub snapshot_priority: i32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardSnapshotLocation {
+    #[prost(oneof = "shard_snapshot_location::Location", tags = "1, 2")]
+    pub location: ::core::option::Option<shard_snapshot_location::Location>,
+}
+/// Nested message and enum types in `ShardSnapshotLocation`.
+pub mod shard_snapshot_location {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Location {
+        /// URL of the remote shard snapshot
+        #[prost(string, tag = "1")]
+        Url(::prost::alloc::string::String),
+        /// Path of the local shard snapshot
+        #[prost(string, tag = "2")]
+        Path(::prost::alloc::string::String),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecoverSnapshotResponse {
+    /// Time in seconds spent to process request
+    #[prost(double, tag = "1")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardSnapshotPriority {
+    /// Restore snapshot without *any* additional synchronization
+    NoSync = 0,
+    /// Prefer snapshot data over the current state
+    Snapshot = 1,
+    /// Prefer existing data over the snapshot
+    Replica = 2,
+    /// Internal priority to use during snapshot shard transfer
+    ShardTransfer = 3,
+}
+impl ShardSnapshotPriority {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardSnapshotPriority::NoSync => "ShardSnapshotPriorityNoSync",
+            ShardSnapshotPriority::Snapshot => "ShardSnapshotPrioritySnapshot",
+            ShardSnapshotPriority::Replica => "ShardSnapshotPriorityReplica",
+            ShardSnapshotPriority::ShardTransfer => "ShardSnapshotPriorityShardTransfer",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ShardSnapshotPriorityNoSync" => Some(Self::NoSync),
+            "ShardSnapshotPrioritySnapshot" => Some(Self::Snapshot),
+            "ShardSnapshotPriorityReplica" => Some(Self::Replica),
+            "ShardSnapshotPriorityShardTransfer" => Some(Self::ShardTransfer),
+            _ => None,
+        }
+    }
+}
+/// Generated client implementations.
+pub mod shard_snapshots_client {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct ShardSnapshotsClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl ShardSnapshotsClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> ShardSnapshotsClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> ShardSnapshotsClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
+        {
+            ShardSnapshotsClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        ///
+        /// Create shard snapshot
+        pub async fn create_shard(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateShardSnapshotRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateSnapshotResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.ShardSnapshots/CreateShard",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "CreateShard"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// List shard snapshots
+        pub async fn list_shard(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListShardSnapshotsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSnapshotsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.ShardSnapshots/ListShard",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "ListShard"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Delete shard snapshot
+        pub async fn delete_shard(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteShardSnapshotRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteSnapshotResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.ShardSnapshots/DeleteShard",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "DeleteShard"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Recover shard snapshot
+        pub async fn recover_shard(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecoverShardSnapshotRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RecoverSnapshotResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.ShardSnapshots/RecoverShard",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "RecoverShard"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod shard_snapshots_server {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with ShardSnapshotsServer.
+    #[async_trait]
+    pub trait ShardSnapshots: Send + Sync + 'static {
+        ///
+        /// Create shard snapshot
+        async fn create_shard(
+            &self,
+            request: tonic::Request<super::CreateShardSnapshotRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateSnapshotResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// List shard snapshots
+        async fn list_shard(
+            &self,
+            request: tonic::Request<super::ListShardSnapshotsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSnapshotsResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Delete shard snapshot
+        async fn delete_shard(
+            &self,
+            request: tonic::Request<super::DeleteShardSnapshotRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteSnapshotResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Recover shard snapshot
+        async fn recover_shard(
+            &self,
+            request: tonic::Request<super::RecoverShardSnapshotRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RecoverSnapshotResponse>,
+            tonic::Status,
+        >;
+    }
+    #[derive(Debug)]
+    pub struct ShardSnapshotsServer<T: ShardSnapshots> {
+        inner: _Inner<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    struct _Inner<T>(Arc<T>);
+    impl<T: ShardSnapshots> ShardSnapshotsServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            let inner = _Inner(inner);
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for ShardSnapshotsServer<T>
+    where
+        T: ShardSnapshots,
+        B: Body + Send + 'static,
+        B::Error: Into<StdError> + Send + 'static,
+    {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let inner = self.inner.clone();
+            match req.uri().path() {
+                "/qdrant.ShardSnapshots/CreateShard" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    impl<
+                        T: ShardSnapshots,
+                    > tonic::server::UnaryService<super::CreateShardSnapshotRequest>
+                    for CreateShardSvc<T> {
+                        type Response = super::CreateSnapshotResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateShardSnapshotRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ShardSnapshots>::create_shard(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateShardSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.ShardSnapshots/ListShard" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    impl<
+                        T: ShardSnapshots,
+                    > tonic::server::UnaryService<super::ListShardSnapshotsRequest>
+                    for ListShardSvc<T> {
+                        type Response = super::ListSnapshotsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListShardSnapshotsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ShardSnapshots>::list_shard(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListShardSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.ShardSnapshots/DeleteShard" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    impl<
+                        T: ShardSnapshots,
+                    > tonic::server::UnaryService<super::DeleteShardSnapshotRequest>
+                    for DeleteShardSvc<T> {
+                        type Response = super::DeleteSnapshotResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteShardSnapshotRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ShardSnapshots>::delete_shard(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteShardSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.ShardSnapshots/RecoverShard" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecoverShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    impl<
+                        T: ShardSnapshots,
+                    > tonic::server::UnaryService<super::RecoverShardSnapshotRequest>
+                    for RecoverShardSvc<T> {
+                        type Response = super::RecoverSnapshotResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecoverShardSnapshotRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ShardSnapshots>::recover_shard(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RecoverShardSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        Ok(
+                            http::Response::builder()
+                                .status(200)
+                                .header("grpc-status", "12")
+                                .header("content-type", "application/grpc")
+                                .body(empty_body())
+                                .unwrap(),
+                        )
+                    })
+                }
+            }
+        }
+    }
+    impl<T: ShardSnapshots> Clone for ShardSnapshotsServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    impl<T: ShardSnapshots> Clone for _Inner<T> {
+        fn clone(&self) -> Self {
+            Self(Arc::clone(&self.0))
+        }
+    }
+    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+    impl<T: ShardSnapshots> tonic::server::NamedService for ShardSnapshotsServer<T> {
+        const NAME: &'static str = "qdrant.ShardSnapshots";
+    }
+}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HealthCheckRequest {}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HealthCheckReply {
@@ -8602,7 +11343,7 @@ pub mod qdrant_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).health_check(request).await
+                                <T as Qdrant>::health_check(&inner, request).await
                             };
                             Box::pin(fut)
                         }

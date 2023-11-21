@@ -11,7 +11,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::data_types::vectors::VectorElementType;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
@@ -24,18 +24,20 @@ use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
-use uuid::Uuid;
 use wal::{Wal, WalOptions};
 
+use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::optimizers::TrackerLog;
+use crate::common::file_utils::move_dir;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::optimizers_builder::build_optimizers;
+use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
@@ -53,12 +55,14 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
 pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
-    pub(super) shred_storage_config: Arc<SharedStorageConfig>,
+    pub(super) shared_storage_config: Arc<SharedStorageConfig>,
     pub(super) wal: LockedWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
+    pub(super) update_tracker: UpdateTracker,
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
+    pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     update_runtime: Handle,
 }
 
@@ -69,8 +73,10 @@ impl LocalShard {
         let wal_to = Self::wal_path(to);
         let segments_from = Self::segments_path(from);
         let segments_to = Self::segments_path(to);
-        tokio::fs::rename(wal_from, wal_to).await?;
-        tokio::fs::rename(segments_from, segments_to).await?;
+
+        move_dir(wal_from, wal_to).await?;
+        move_dir(segments_from, segments_to).await?;
+
         Ok(())
     }
 
@@ -111,10 +117,12 @@ impl LocalShard {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
+        let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             optimizers.clone(),
+            optimizers_log.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
@@ -126,18 +134,22 @@ impl LocalShard {
             mpsc::channel(shared_storage_config.update_queue_size);
         update_handler.run_workers(update_receiver);
 
+        let update_tracker = segment_holder.read().update_tracker();
+
         drop(config); // release `shared_config` from borrow checker
 
         Self {
             segments: segment_holder,
             collection_config,
-            shred_storage_config: shared_storage_config,
+            shared_storage_config,
             wal: locked_wal,
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
+            update_tracker,
             path: shard_path.to_owned(),
             update_runtime,
             optimizers,
+            optimizers_log,
         }
     }
 
@@ -178,15 +190,6 @@ impl LocalShard {
 
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
-            if segments_path.ends_with("deleted") {
-                remove_dir_all(&segments_path).await.map_err(|_| {
-                    CollectionError::service_error(format!(
-                        "Can't remove marked-for-remove segment {}",
-                        segments_path.to_str().unwrap()
-                    ))
-                })?;
-                continue;
-            }
             load_handlers.push(
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
@@ -194,6 +197,14 @@ impl LocalShard {
                         let mut res = load_segment(&segments_path)?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
+                        } else {
+                            std::fs::remove_dir_all(&segments_path).map_err(|err| {
+                                CollectionError::service_error(format!(
+                                    "Can't remove leftover segment {}, due to {}",
+                                    segments_path.to_str().unwrap(),
+                                    err
+                                ))
+                            })?;
                         }
                         Ok::<_, CollectionError>(res)
                     })?,
@@ -201,15 +212,23 @@ impl LocalShard {
         }
 
         for handler in load_handlers {
-            let segment_opt = handler.join().map_err(|err| {
+            let segment = handler.join().map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't join segment load thread: {:?}",
                     err.type_id()
                 ))
             })??;
-            if let Some(segment) = segment_opt {
-                segment_holder.add(segment);
-            }
+
+            let Some(segment) = segment else {
+                continue;
+            };
+
+            collection_config_read
+                .params
+                .vectors
+                .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
+
+            segment_holder.add(segment);
         }
 
         let res = segment_holder.deduplicate_points()?;
@@ -217,6 +236,7 @@ impl LocalShard {
             log::debug!("Deduplicated {} points", res);
         }
 
+        clear_temp_segments(shard_path);
         let optimizers = build_optimizers(
             shard_path,
             &collection_config_read.params,
@@ -243,7 +263,7 @@ impl LocalShard {
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
         let vectors_size_bytes = collection.estimate_vector_data_size().await;
 
-        // Simple heuristic to exclude mmap prefaulting for colletions that won't benefit from it.
+        // Simple heuristic to exclude mmap prefaulting for collections that won't benefit from it.
         //
         // We assume that mmap prefaulting is beneficial if we can put significant part of data
         // into RAM in advance. However, if we can see that the data is too big to fit into RAM,
@@ -472,7 +492,7 @@ impl LocalShard {
         let mut update_handler = self.update_handler.lock().await;
 
         let (update_sender, update_receiver) =
-            mpsc::channel(self.shred_storage_config.update_queue_size);
+            mpsc::channel(self.shared_storage_config.update_queue_size);
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
         old_sender.send(UpdateSignal::Stop).await?;
@@ -557,8 +577,7 @@ impl LocalShard {
             rx.await?;
         }
 
-        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
-        create_dir_all(&temp_path).await?;
+        let temp_path = temp_path.to_owned();
 
         tokio::task::spawn_blocking(move || {
             let segments_read = segments.read();
@@ -695,6 +714,7 @@ impl LocalShard {
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
                 optimizations,
+                log: self.optimizers_log.lock().to_telemetry(),
             },
         }
     }
@@ -726,6 +746,7 @@ impl LocalShard {
                         CompressionRatio::X32 => vector_size / 8,
                         CompressionRatio::X64 => vector_size / 16,
                     },
+                    Some(QuantizationConfig::Binary(_)) => vector_size / 8,
                 };
 
                 vector_size * size_of::<VectorElementType>() + quantized_size_bytes
@@ -747,30 +768,13 @@ impl LocalShard {
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
 
-            let segment_info = match segment {
-                LockedSegment::Original(original_segment) => {
-                    let info = original_segment.read().info();
-                    if info.segment_type == SegmentType::Indexed {
-                        indexed_vectors_count += info.num_vectors;
-                    }
-                    info
-                }
-                LockedSegment::Proxy(proxy_segment) => {
-                    let proxy_segment_lock = proxy_segment.read();
-                    let proxy_segment_info = proxy_segment_lock.info();
-
-                    let wrapped_info = proxy_segment_lock.wrapped_segment.get().read().info();
-                    if wrapped_info.segment_type == SegmentType::Indexed {
-                        indexed_vectors_count += wrapped_info.num_vectors;
-                    }
-                    proxy_segment_info
-                }
-            };
+            let segment_info = segment.get().read().info();
 
             if segment_info.segment_type == SegmentType::Special {
                 status = CollectionStatus::Yellow;
             }
             vectors_count += segment_info.num_vectors;
+            indexed_vectors_count += segment_info.num_indexed_vectors;
             points_count += segment_info.num_points;
             for (key, val) in segment_info.index_schema {
                 match schema.entry(key) {
@@ -802,6 +806,10 @@ impl LocalShard {
             config: collection_config,
             payload_schema: schema,
         }
+    }
+
+    pub fn update_tracker(&self) -> &UpdateTracker {
+        &self.update_tracker
     }
 }
 

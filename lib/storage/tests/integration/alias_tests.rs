@@ -1,9 +1,10 @@
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
 
 use collection::operations::types::VectorParams;
 use collection::optimizers_builder::OptimizersConfig;
-use segment::madvise;
+use collection::shards::channel_service::ChannelService;
+use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
@@ -45,6 +46,7 @@ fn test_alias_operation() {
             max_search_threads: 1,
             max_optimization_threads: 1,
             update_rate_limit: None,
+            search_timeout_sec: None,
         },
         hnsw_index: Default::default(),
         quantization: None,
@@ -54,6 +56,8 @@ fn test_alias_operation() {
         handle_collection_load_errors: false,
         recovery_mode: None,
         async_scorer: false,
+        update_concurrency: Some(NonZeroUsize::new(2).unwrap()),
+        // update_concurrency: None,
     };
 
     let search_runtime = Runtime::new().unwrap();
@@ -71,7 +75,7 @@ fn test_alias_operation() {
         search_runtime,
         update_runtime,
         general_runtime,
-        Default::default(),
+        ChannelService::new(6333),
         0,
         Some(propose_operation_sender),
     ));
@@ -100,6 +104,7 @@ fn test_alias_operation() {
                         write_consistency_factor: None,
                         init_from: None,
                         quantization_config: None,
+                        sharding_method: None,
                     },
                 )),
                 None,

@@ -1,37 +1,39 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
 
+use common::types::ScoreType;
 use geo::prelude::HaversineDistance;
-use geo::{Contains, Coord, Point, Polygon};
+use geo::{Contains, Coord, LineString, Point, Polygon};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use smol_str::SmolStr;
 use uuid::Uuid;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils;
-use crate::common::utils::MultiValue;
+use crate::common::utils::{
+    check_exclude_pattern, check_include_pattern, filter_json_values, get_value_from_json_map,
+    MultiValue,
+};
 use crate::data_types::text_index::TextIndexParams;
-use crate::data_types::vectors::{VectorElementType, VectorStruct};
+use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 
-/// Type of point index inside a segment
-pub type PointOffsetType = u32;
 pub type PayloadKeyType = String;
 pub type PayloadKeyTypeRef<'a> = &'a str;
-pub type SeqNumberType = u64;
 /// Sequential number of modification, applied to segment
-pub type ScoreType = f32;
-/// Type of vector matching score
+pub type SeqNumberType = u64;
 pub type TagType = u64;
 /// Type of float point payload
 pub type FloatPayloadType = f64;
@@ -123,10 +125,7 @@ pub enum Distance {
 }
 
 impl Distance {
-    pub fn preprocess_vector(
-        &self,
-        vector: &[VectorElementType],
-    ) -> Option<Vec<VectorElementType>> {
+    pub fn preprocess_vector(&self, vector: VectorType) -> VectorType {
         match self {
             Distance::Cosine => CosineMetric::preprocess(vector),
             Distance::Euclid => EuclidMetric::preprocess(vector),
@@ -156,6 +155,17 @@ impl Distance {
             Order::SmallBetter => score < threshold,
         }
     }
+
+    /// Calculates distance between two vectors
+    ///
+    /// Warn: prefer compile-time generics with `Metric` trait
+    pub fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        match self {
+            Distance::Cosine => CosineMetric::similarity(v1, v2),
+            Distance::Euclid => EuclidMetric::similarity(v1, v2),
+            Distance::Dot => DotProductMetric::similarity(v1, v2),
+        }
+    }
 }
 
 pub enum Order {
@@ -176,6 +186,9 @@ pub struct ScoredPoint {
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,
+    /// Shard Key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
 }
 
 impl Eq for ScoredPoint {}
@@ -215,8 +228,7 @@ pub enum SegmentType {
 #[serde(rename_all = "snake_case")]
 pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<PayloadSchemaParams>,
     /// Number of points indexed with this index
     pub points: usize,
@@ -241,6 +253,14 @@ impl PayloadIndexInfo {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorDataInfo {
+    pub num_vectors: usize,
+    pub num_indexed_vectors: usize,
+    pub num_deleted_vectors: usize,
+}
+
 /// Aggregated information about segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -248,11 +268,13 @@ pub struct SegmentInfo {
     pub segment_type: SegmentType,
     pub num_vectors: usize,
     pub num_points: usize,
+    pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    pub vector_data: HashMap<String, VectorDataInfo>,
 }
 
 /// Additional parameters of the search
@@ -265,9 +287,9 @@ pub struct QuantizationSearchParams {
 
     /// If true, use original vectors to re-score top-k results.
     /// Might require more time in case if original vectors are stored on disk.
-    /// Default is false.
-    #[serde(default = "default_quantization_rescore_value")]
-    pub rescore: bool,
+    /// If not set, qdrant decides automatically apply rescoring or not.
+    #[serde(default)]
+    pub rescore: Option<bool>,
 
     /// Oversampling factor for quantization. Default is 1.0.
     ///
@@ -282,10 +304,6 @@ pub struct QuantizationSearchParams {
 }
 
 pub const fn default_quantization_ignore_value() -> bool {
-    false
-}
-
-pub const fn default_quantization_rescore_value() -> bool {
     false
 }
 
@@ -309,6 +327,12 @@ pub struct SearchParams {
     #[serde(default)]
     #[validate]
     pub quantization: Option<QuantizationSearchParams>,
+
+    /// If enabled, the engine will only perform search among indexed or small segments.
+    /// Using this option prevents slow searches in case of delayed index, but does not
+    /// guarantee that all uploaded vectors will be included in search results
+    #[serde(default)]
+    pub indexed_only: bool,
 }
 
 /// Vector index configuration
@@ -352,13 +376,32 @@ pub struct HnswConfig {
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub on_disk: Option<bool>,
     /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
+}
+
+impl HnswConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a HNSW rebuild is required
+    ///
+    /// For example, a change in `max_indexing_threads` will not require rebuilding because it
+    /// doesn't affect the final index, and thus this would return false.
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self.m != other.m
+            || self.ef_construct != other.ef_construct
+            || self.full_scan_threshold != other.full_scan_threshold
+            || self.payload_m != other.payload_m
+            // Data on disk is the same, we have a unit test for that. We can eventually optimize
+            // this to just reload the collection rather than optimizing it again as a whole just
+            // to flip this flag
+            || self.on_disk != other.on_disk
+    }
 }
 
 const fn default_max_indexing_threads() -> usize {
@@ -382,7 +425,7 @@ pub enum ScalarType {
     Int8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
@@ -397,18 +440,21 @@ pub struct ScalarQuantizationConfig {
     pub always_ram: Option<bool>,
 }
 
+impl ScalarQuantizationConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a quantization rebuild is required
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct ScalarQuantization {
     #[validate]
     pub scalar: ScalarQuantizationConfig,
-}
-
-impl PartialEq for ScalarQuantizationConfig {
-    fn eq(&self, other: &Self) -> bool {
-        self.quantile == other.quantile
-            && self.always_ram == other.always_ram
-            && self.r#type == other.r#type
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -418,6 +464,17 @@ pub struct ProductQuantizationConfig {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
+}
+
+impl ProductQuantizationConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a quantization rebuild is required
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -435,12 +492,36 @@ impl std::hash::Hash for ScalarQuantizationConfig {
 
 impl Eq for ScalarQuantizationConfig {}
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+pub struct BinaryQuantizationConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+pub struct BinaryQuantization {
+    #[validate]
+    pub binary: BinaryQuantizationConfig,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
+    Binary(BinaryQuantization),
+}
+
+impl QuantizationConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a quantization rebuild is required
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
 }
 
 impl Validate for QuantizationConfig {
@@ -448,6 +529,7 @@ impl Validate for QuantizationConfig {
         match self {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
             QuantizationConfig::Product(product) => product.validate(),
+            QuantizationConfig::Binary(binary) => binary.validate(),
         }
     }
 }
@@ -461,6 +543,12 @@ impl From<ScalarQuantizationConfig> for QuantizationConfig {
 impl From<ProductQuantizationConfig> for QuantizationConfig {
     fn from(config: ProductQuantizationConfig) -> Self {
         QuantizationConfig::Product(ProductQuantization { product: config })
+    }
+}
+
+impl From<BinaryQuantizationConfig> for QuantizationConfig {
+    fn from(config: BinaryQuantizationConfig) -> Self {
+        QuantizationConfig::Binary(BinaryQuantization { binary: config })
     }
 }
 
@@ -493,8 +581,7 @@ impl Default for Indexes {
 
 /// Type of payload index
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "options")]
+#[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadIndexType {
     // Do not index anything, just keep of what should be indexed later
     #[default]
@@ -505,14 +592,19 @@ pub enum PayloadIndexType {
 
 /// Type of payload storage
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "options")]
+#[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
     #[default]
     InMemory,
     // Store payload on disk only, read each time it is requested
     OnDisk,
+}
+
+impl PayloadStorageType {
+    pub fn is_on_disk(&self) -> bool {
+        matches!(self, PayloadStorageType::OnDisk)
+    }
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -535,6 +627,12 @@ impl SegmentConfig {
             .and_then(|v| v.quantization_config.as_ref())
     }
 
+    pub fn distance(&self, vector_name: &str) -> Option<Distance> {
+        self.vector_data
+            .get(vector_name)
+            .map(|config| config.distance)
+    }
+
     pub fn is_any_vector_indexed(&self) -> bool {
         self.vector_data
             .values()
@@ -547,14 +645,11 @@ impl SegmentConfig {
             .all(|config| config.index.is_indexed())
     }
 
-    /// Check if any vector storage is mmap'ed
-    ///
-    /// This assumes that when the storage for a named vector requests to be stored on disk; it is
-    /// mmap'ed.
-    pub fn is_any_mmap(&self) -> bool {
+    /// Check if any vector storage is on-disk
+    pub fn is_any_on_disk(&self) -> bool {
         self.vector_data
             .values()
-            .any(|config| config.storage_type.is_mmap())
+            .any(|config| config.storage_type.is_on_disk())
     }
 }
 
@@ -578,7 +673,7 @@ pub enum VectorStorageType {
 
 impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
-    fn is_mmap(&self) -> bool {
+    pub fn is_on_disk(&self) -> bool {
         match self {
             Self::Memory => false,
             Self::Mmap | Self::ChunkedMmap => true,
@@ -602,6 +697,24 @@ pub struct VectorDataConfig {
     pub quantization_config: Option<QuantizationConfig>,
 }
 
+impl VectorDataConfig {
+    /// Whether this vector data can be appended to
+    ///
+    /// This requires an index and storage type that both support appending.
+    pub fn is_appendable(&self) -> bool {
+        let is_index_appendable = match self.index {
+            Indexes::Plain {} => true,
+            Indexes::Hnsw(_) => false,
+        };
+        let is_storage_appendable = match self.storage_type {
+            VectorStorageType::Memory => true,
+            VectorStorageType::Mmap => false,
+            VectorStorageType::ChunkedMmap => true,
+        };
+        is_index_appendable && is_storage_appendable
+    }
+}
+
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
@@ -619,6 +732,12 @@ pub struct SegmentState {
 pub struct GeoPoint {
     pub lon: f64,
     pub lat: f64,
+}
+
+/// Ordered sequence of GeoPoints representing the line
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct GeoLineString {
+    pub points: Vec<GeoPoint>,
 }
 
 #[derive(Deserialize)]
@@ -711,19 +830,19 @@ impl Payload {
 
 impl PayloadContainer for Map<String, Value> {
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        utils::get_value_from_json_map(path, self)
+        get_value_from_json_map(path, self)
     }
 }
 
 impl PayloadContainer for Payload {
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        utils::get_value_from_json_map(path, &self.0)
+        get_value_from_json_map(path, &self.0)
     }
 }
 
 impl<'a> PayloadContainer for OwnedPayloadRef<'a> {
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        utils::get_value_from_json_map(path, self.deref())
+        get_value_from_json_map(path, self.deref())
     }
 }
 
@@ -818,8 +937,7 @@ impl<'a> From<&'a Map<String, Value>> for OwnedPayloadRef<'a> {
 /// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
 /// ```
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadVariant<T> {
     List(Vec<T>),
     Value(T),
@@ -836,8 +954,7 @@ impl<T: Clone> PayloadVariant<T> {
 
 /// Json representation of a payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum JsonPayload {
     Keyword(PayloadVariant<String>),
     Integer(PayloadVariant<IntPayloadType>),
@@ -859,15 +976,13 @@ pub enum PayloadSchemaType {
 
 /// Payload type with parameters
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSchemaParams {
     Text(TextIndexParams),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
@@ -992,8 +1107,7 @@ pub struct MatchExcept {
 
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
@@ -1003,8 +1117,7 @@ pub enum MatchInterface {
 
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(from = "MatchInterface")]
-#[serde(untagged)]
+#[serde(untagged, from = "MatchInterface")]
 pub enum Match {
     Value(MatchValue),
     Text(MatchText),
@@ -1062,6 +1175,14 @@ impl From<String> for Match {
     fn from(keyword: String) -> Self {
         Self::Value(MatchValue {
             value: ValueVariants::Keyword(keyword),
+        })
+    }
+}
+
+impl From<SmolStr> for Match {
+    fn from(keyword: SmolStr) -> Self {
+        Self::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword.into()),
         })
     }
 }
@@ -1171,11 +1292,11 @@ pub struct GeoBoundingBox {
 }
 
 impl GeoBoundingBox {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
-        (self.top_left.lon < lon)
-            && (lon < self.bottom_right.lon)
-            && (self.bottom_right.lat < lat)
-            && (lat < self.top_left.lat)
+    pub fn check_point(&self, point: &GeoPoint) -> bool {
+        (self.top_left.lon < point.lon)
+            && (point.lon < self.bottom_right.lon)
+            && (self.bottom_right.lat < point.lat)
+            && (point.lat < self.top_left.lat)
     }
 }
 
@@ -1192,40 +1313,135 @@ pub struct GeoRadius {
 }
 
 impl GeoRadius {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+    pub fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::new(self.center.lon, self.center.lat);
-        query_center.haversine_distance(&Point::new(lon, lat)) < self.radius
+        query_center.haversine_distance(&Point::new(point.lon, point.lat)) < self.radius
+    }
+}
+
+#[derive(Deserialize)]
+pub struct GeoPolygonShadow {
+    pub exterior: GeoLineString,
+    pub interiors: Option<Vec<GeoLineString>>,
+}
+
+pub struct PolygonWrapper {
+    pub polygon: Polygon,
+}
+
+impl PolygonWrapper {
+    pub fn check_point(&self, point: &GeoPoint) -> bool {
+        let point_new = Point::new(point.lon, point.lat);
+        self.polygon.contains(&point_new)
     }
 }
 
 /// Geo filter request
 ///
-/// Matches coordinates inside the polygon, defined by the given coordinates in order.
+/// Matches coordinates inside the polygon, defined by `exterior` and `interiors`
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "GeoPolygonShadow", rename_all = "snake_case")]
 pub struct GeoPolygon {
-    /// Ordered list of coordinates representing the vertices of a polygon.
-    pub points: Vec<GeoPoint>,
+    /// The exterior line bounds the surface
+    /// must consist of a minimum of 4 points, and the first and last points
+    /// must be the same.
+    pub exterior: GeoLineString,
+    /// Interior lines (if present) bound holes within the surface
+    /// each GeoLineString must consist of a minimum of 4 points, and the first
+    /// and last points must be the same.
+    pub interiors: Option<Vec<GeoLineString>>,
 }
 
 impl GeoPolygon {
-    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
-        let polygon_points: Vec<Coord<f64>> = self
-            .points
-            .iter()
-            .map(|p| Coord { x: p.lon, y: p.lat })
-            .collect();
+    pub fn validate_line_string(line: &GeoLineString) -> OperationResult<()> {
+        if line.points.len() <= 3 {
+            return Err(OperationError::ValidationError {
+                description: format!(
+                    "polygon invalid, the size must be at least 4, got {}",
+                    line.points.len()
+                ),
+            });
+        }
 
-        let polygon = Polygon::new(polygon_points.into(), vec![]);
+        if let (Some(first), Some(last)) = (line.points.first(), line.points.last()) {
+            if (first.lat - last.lat).abs() > f64::EPSILON
+                || (first.lon - last.lon).abs() > f64::EPSILON
+            {
+                return Err(OperationError::ValidationError {
+                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line") 
+                });
+            }
+        }
 
-        let point = Coord { x: lon, y: lat };
+        Ok(())
+    }
 
-        polygon.contains(&point)
+    // convert GeoPolygon to Geo crate Polygon class for checking point intersection
+    pub fn convert(&self) -> PolygonWrapper {
+        let exterior_line: LineString = LineString(
+            self.exterior
+                .points
+                .iter()
+                .map(|p| Coord { x: p.lon, y: p.lat })
+                .collect(),
+        );
+
+        // Convert the interior points to coordinates (if any)
+        let interior_lines: Vec<LineString> = match &self.interiors {
+            None => vec![],
+            Some(interiors) => interiors
+                .iter()
+                .map(|interior_points| {
+                    interior_points
+                        .points
+                        .iter()
+                        .map(|p| Coord { x: p.lon, y: p.lat })
+                        .collect()
+                })
+                .map(LineString)
+                .collect(),
+        };
+        PolygonWrapper {
+            polygon: Polygon::new(exterior_line, interior_lines),
+        }
+    }
+
+    pub fn new(exterior: &GeoLineString, interiors: &Vec<GeoLineString>) -> OperationResult<Self> {
+        Self::validate_line_string(exterior)?;
+
+        for interior in interiors {
+            Self::validate_line_string(interior)?;
+        }
+
+        Ok(GeoPolygon {
+            exterior: exterior.clone(),
+            interiors: Some(interiors.to_vec()),
+        })
+    }
+}
+
+impl TryFrom<GeoPolygonShadow> for GeoPolygon {
+    type Error = OperationError;
+
+    fn try_from(value: GeoPolygonShadow) -> OperationResult<Self> {
+        Self::validate_line_string(&value.exterior)?;
+
+        if let Some(interiors) = &value.interiors {
+            for interior in interiors {
+                Self::validate_line_string(interior)?;
+            }
+        }
+
+        Ok(GeoPolygon {
+            exterior: value.exterior,
+            interiors: value.interiors,
+        })
     }
 }
 
 /// All possible payload filtering conditions
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[validate(schema(function = "validate_field_condition"))]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
     /// Payload key
@@ -1238,6 +1454,8 @@ pub struct FieldCondition {
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
+    /// Check if geo point is within a given polygon
+    pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
     pub values_count: Option<ValuesCount>,
 }
@@ -1250,6 +1468,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1261,6 +1480,7 @@ impl FieldCondition {
             range: Some(range),
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1275,6 +1495,7 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: Some(geo_bounding_box),
             geo_radius: None,
+            geo_polygon: None,
             values_count: None,
         }
     }
@@ -1286,6 +1507,19 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: Some(geo_radius),
+            geo_polygon: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_geo_polygon(key: impl Into<PayloadKeyType>, geo_polygon: GeoPolygon) -> Self {
+        Self {
+            key: key.into(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: Some(geo_polygon),
             values_count: None,
         }
     }
@@ -1297,8 +1531,28 @@ impl FieldCondition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            geo_polygon: None,
             values_count: Some(values_count),
         }
+    }
+
+    pub fn all_fields_none(&self) -> bool {
+        self.r#match.is_none()
+            && self.range.is_none()
+            && self.geo_bounding_box.is_none()
+            && self.geo_radius.is_none()
+            && self.geo_polygon.is_none()
+            && self.values_count.is_none()
+    }
+}
+
+pub fn validate_field_condition(field_condition: &FieldCondition) -> Result<(), ValidationError> {
+    if field_condition.all_fields_none() {
+        Err(ValidationError::new(
+            "At least one field condition must be specified",
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -1350,14 +1604,16 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 }
 
 /// Select points with payload for a specified nested field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 pub struct Nested {
     pub key: PayloadKeyType,
+    #[validate]
     pub filter: Filter,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 pub struct NestedCondition {
+    #[validate]
     pub nested: Nested,
 }
 
@@ -1416,10 +1672,21 @@ impl Condition {
     }
 }
 
+// The validator crate does not support deriving for enums.
+impl Validate for Condition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            Condition::HasId(_) | Condition::IsEmpty(_) | Condition::IsNull(_) => Ok(()),
+            Condition::Field(field_condition) => field_condition.validate(),
+            Condition::Nested(nested_condition) => nested_condition.validate(),
+            Condition::Filter(filter) => filter.validate(),
+        }
+    }
+}
+
 /// Options for specifying which payload to include or not
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum WithPayloadInterface {
     /// If `true` - return all payload,
     /// If `false` - do not return payload
@@ -1438,8 +1705,7 @@ impl From<bool> for WithPayloadInterface {
 
 /// Options for specifying which vector to include
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum WithVector {
     /// If `true` - return all vector,
     /// If `false` - do not return vector
@@ -1507,8 +1773,7 @@ impl From<&WithPayloadInterface> for WithPayload {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorInclude {
     /// Only include this payload keys
     pub include: Vec<PayloadKeyType>,
@@ -1521,8 +1786,7 @@ impl PayloadSelectorInclude {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorExclude {
     /// Exclude this fields from returning payload
     pub exclude: Vec<PayloadKeyType>,
@@ -1536,8 +1800,7 @@ impl PayloadSelectorExclude {
 
 /// Specifies how to treat payload selector
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-#[serde(rename_all = "snake_case")]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSelector {
     /// Include only this fields into response payload
     Include(PayloadSelectorInclude),
@@ -1564,24 +1827,35 @@ impl PayloadSelector {
         })
     }
 
-    #[allow(clippy::ptr_arg)]
-    pub fn check(&self, key: &PayloadKeyType) -> bool {
-        match self {
-            PayloadSelector::Include(selector) => selector.include.contains(key),
-            PayloadSelector::Exclude(selector) => !selector.exclude.contains(key),
-        }
+    pub fn new_exclude(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
+        PayloadSelector::Exclude(PayloadSelectorExclude {
+            exclude: vecs_payload_key_type,
+        })
     }
 
+    /// Process payload selector
     pub fn process(&self, x: Payload) -> Payload {
-        let map: serde_json::Map<String, Value> =
-            x.into_iter().filter(|(key, _)| self.check(key)).collect();
-        map.into()
+        match self {
+            PayloadSelector::Include(selector) => filter_json_values(&x.0, |key, _| {
+                selector
+                    .include
+                    .iter()
+                    .any(|pattern| check_include_pattern(pattern, key))
+            })
+            .into(),
+            PayloadSelector::Exclude(selector) => filter_json_values(&x.0, |key, _| {
+                selector
+                    .exclude
+                    .iter()
+                    .all(|pattern| !check_exclude_pattern(pattern, key))
+            })
+            .into(),
+        }
     }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct WithPayload {
     /// Enable return payloads or not
     pub enable: bool,
@@ -1589,15 +1863,17 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
+    #[validate]
     pub should: Option<Vec<Condition>>,
     /// All conditions must match
+    #[validate]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
+    #[validate]
     pub must_not: Option<Vec<Condition>>,
 }
 
@@ -1647,11 +1923,60 @@ impl Filter {
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use super::{GeoLineString, GeoPoint, GeoPolygon};
+
+    pub fn build_polygon(exterior_points: Vec<(f64, f64)>) -> GeoPolygon {
+        let exterior_line = GeoLineString {
+            points: exterior_points
+                .into_iter()
+                .map(|(lon, lat)| GeoPoint { lon, lat })
+                .collect(),
+        };
+
+        GeoPolygon {
+            exterior: exterior_line,
+            interiors: None,
+        }
+    }
+
+    pub fn build_polygon_with_interiors(
+        exterior_points: Vec<(f64, f64)>,
+        interiors_points: Vec<Vec<(f64, f64)>>,
+    ) -> GeoPolygon {
+        let exterior_line = GeoLineString {
+            points: exterior_points
+                .into_iter()
+                .map(|(lon, lat)| GeoPoint { lon, lat })
+                .collect(),
+        };
+
+        let interior_lines = Some(
+            interiors_points
+                .into_iter()
+                .map(|points| GeoLineString {
+                    points: points
+                        .into_iter()
+                        .map(|(lon, lat)| GeoPoint { lon, lat })
+                        .collect(),
+                })
+                .collect(),
+        );
+
+        GeoPolygon {
+            exterior: exterior_line,
+            interiors: interior_lines,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
 
+    use super::test_utils::build_polygon_with_interiors;
     use super::*;
     use crate::common::utils::remove_value_from_json_map;
 
@@ -1682,10 +2007,10 @@ mod tests {
             radius: 80000.0,
         };
 
-        let inside_result = radius.check_point(0.5, 0.5);
+        let inside_result = radius.check_point(&GeoPoint { lon: 0.5, lat: 0.5 });
         assert!(inside_result);
 
-        let outside_result = radius.check_point(1.5, 1.5);
+        let outside_result = radius.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
         assert!(!outside_result);
     }
 
@@ -1703,71 +2028,81 @@ mod tests {
         };
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 78626.29627999048
-        let inside_result = bounding_box.check_point(-0.5, 0.5);
+        let inside_result = bounding_box.check_point(&GeoPoint {
+            lon: -0.5,
+            lat: 0.5,
+        });
         assert!(inside_result);
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
-        let outside_result = bounding_box.check_point(1.5, 1.5);
+        let outside_result = bounding_box.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
         assert!(!outside_result);
     }
 
     #[test]
     fn test_geo_polygon_check_point() {
-        // Create a GeoPolygon with a square shape
-        let polygon_1 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -1.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: 1.0,
-                    lat: -1.0,
-                },
-                GeoPoint { lon: 1.0, lat: 1.0 },
-                GeoPoint {
-                    lon: -1.0,
-                    lat: 1.0,
-                },
-            ],
-        };
+        let test_cases = [
+            // Create a GeoPolygon with a square shape
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.0, -1.0),
+                    (1.0, 1.0),
+                    (-1.0, 1.0),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![]],
+                // Expected results
+                vec![((0.5, 0.5), true), ((1.5, 1.5), false), ((1.0, 0.0), false)],
+            ),
+            // Create a GeoPolygon as a `twisted square`
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.0, 1.0),
+                    (1.0, -1.0),
+                    (-1.0, 1.0),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![]],
+                // Expected results
+                vec![((0.5, 0.0), true), ((0.0, 0.5), false), ((0.0, 0.0), false)],
+            ),
+            // Create a GeoPolygon with an interior (a 'hole' inside the polygon)
+            (
+                // Exterior
+                vec![
+                    (-1.0, -1.0),
+                    (1.5, -1.0),
+                    (1.5, 1.5),
+                    (-1.0, 1.5),
+                    (-1.0, -1.0),
+                ],
+                // Interiors
+                vec![vec![
+                    (-0.5, -0.5),
+                    (-0.5, 0.5),
+                    (0.5, 0.5),
+                    (0.5, -0.5),
+                    (-0.5, -0.5),
+                ]],
+                // Expected results
+                vec![((0.6, 0.6), true), ((0.0, 0.0), false), ((0.5, 0.5), false)],
+            ),
+        ];
 
-        let inside_result = polygon_1.check_point(0.5, 0.5);
-        assert!(inside_result);
+        for (exterior, interiors, points) in test_cases {
+            let polygon = build_polygon_with_interiors(exterior, interiors);
 
-        let outside_result = polygon_1.check_point(1.5, 1.5);
-        assert!(!outside_result);
-
-        let on_edge_result = polygon_1.check_point(1.0, 0.0);
-        assert!(!on_edge_result);
-
-        // Create a GeoPolygon as a `twisted square`
-        let polygon_2 = GeoPolygon {
-            points: vec![
-                GeoPoint {
-                    lon: -1.0,
-                    lat: -1.0,
-                },
-                GeoPoint { lon: 1.0, lat: 1.0 },
-                GeoPoint {
-                    lon: 1.0,
-                    lat: -1.0,
-                },
-                GeoPoint {
-                    lon: -1.0,
-                    lat: 1.0,
-                },
-            ],
-        };
-
-        let inside_result_2 = polygon_2.check_point(0.5, 0.0);
-        assert!(inside_result_2);
-
-        let outside_result_2 = polygon_2.check_point(0.0, 0.5);
-        assert!(!outside_result_2);
-
-        let on_edge_result_2 = polygon_2.check_point(0.0, 0.0);
-        assert!(!on_edge_result_2);
+            for ((lon, lat), expected_result) in points {
+                let inside_result = polygon.convert().check_point(&GeoPoint { lon, lat });
+                assert_eq!(inside_result, expected_result);
+            }
+        }
     }
 
     #[test]
@@ -2163,10 +2498,132 @@ mod tests {
             ]
         }
         "#;
-
         let filter: Result<Filter, _> = serde_json::from_str(query1);
-
         assert!(filter.is_err());
+
+        let query2 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_polygon": {
+                        "exterior": {},
+                        "interiors": []
+                    }
+                }
+            ]
+        }
+        "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query2);
+        assert!(filter.is_err());
+
+        let query3 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_polygon": {
+                        "exterior":{
+                            "points": [
+                                {"lon": -12.0, "lat": -34.0},
+                                {"lon": 11.0, "lat": -22.0},
+                                {"lon": -32.0, "lat": -14.0}
+                            ]
+                        },
+                        "interiors": []
+                    }
+                }
+            ]
+        }
+        "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query3);
+        assert!(filter.is_err());
+
+        let query4 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_polygon": {
+                        "exterior": {
+                            "points": [
+                                {"lon": -12.0, "lat": -34.0},
+                                {"lon": 11.0, "lat": -22.0},
+                                {"lon": -32.0, "lat": -14.0},
+                                {"lon": -12.0, "lat": -34.0}
+                            ]
+                        },
+                        "interiors": []
+                    }
+                }
+            ]
+        }
+        "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query4);
+        assert!(filter.is_ok());
+
+        let query5 = r#"
+            {
+                "must": [
+                    {
+                        "key": "geo_field",
+                        "geo_polygon": {
+                            "exterior": {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0},
+                                        {"lon": -12.0, "lat": -34.0}
+                                    ]
+                                },
+                            "interiors": [
+                                {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+            "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query5);
+        assert!(filter.is_err());
+
+        let query6 = r#"
+            {
+                "must": [
+                    {
+                        "key": "geo_field",
+                        "geo_polygon": {
+                            "exterior": {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0},
+                                        {"lon": -12.0, "lat": -34.0}
+                                    ]
+                                },
+                            "interiors": [
+                                {
+                                    "points": [
+                                        {"lon": -12.0, "lat": -34.0},
+                                        {"lon": 11.0, "lat": -22.0},
+                                        {"lon": -32.0, "lat": -14.0},
+                                        {"lon": -12.0, "lat": -34.0}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+            "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query6);
+        assert!(filter.is_ok());
     }
 
     #[test]
@@ -2306,15 +2763,270 @@ mod tests {
         let merged = this.merge(&other);
 
         assert!(merged.must.is_some());
-        assert!(merged.must.as_ref().unwrap().len() == 2);
+        assert_eq!(merged.must.as_ref().unwrap().len(), 2);
         assert!(merged.must_not.is_none());
         assert!(merged.should.is_some());
-        assert!(merged.should.as_ref().unwrap().len() == 1);
+        assert_eq!(merged.should.as_ref().unwrap().len(), 1);
 
         assert!(merged.must.as_ref().unwrap().contains(&condition1));
         assert!(merged.must.as_ref().unwrap().contains(&condition2));
         assert!(merged.should.as_ref().unwrap().contains(&condition1));
     }
+
+    #[test]
+    fn test_payload_selector_include() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
+                }
+            }
+        });
+
+        // include root & nested
+        let selector = PayloadSelector::new_include(vec!["a".to_string(), "b.e.f".to_string()]);
+        let payload = selector.process(payload.into());
+
+        let expected = json!({
+            "a": 1,
+            "b": {
+                "e": {
+                    "f": [1,2,3],
+                }
+            }
+        });
+        assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_array_include() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "f": [1,2,3,4,5],
+            }
+        });
+
+        // handles duplicates
+        let selector = PayloadSelector::new_include(vec!["a".to_string(), "a".to_string()]);
+        let payload = selector.process(payload.into());
+
+        let expected = json!({
+            "a": 1
+        });
+        assert_eq!(payload, expected.into());
+
+        // ignore path that points to array
+        let selector = PayloadSelector::new_include(vec!["b.f[0]".to_string()]);
+        let payload = selector.process(payload);
+
+        // nothing included
+        let expected = json!({});
+        assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_no_implicit_array_include() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": [
+                    {
+                        "d": 1,
+                        "e": 2
+                    },
+                    {
+                        "d": 3,
+                        "e": 4
+                    }
+                ],
+            }
+        });
+
+        let selector = PayloadSelector::new_include(vec!["b.c".to_string()]);
+        let selected_payload = selector.process(payload.clone().into());
+
+        let expected = json!({
+            "b": {
+                "c": [
+                    {
+                        "d": 1,
+                        "e": 2
+                    },
+                    {
+                        "d": 3,
+                        "e": 4
+                    }
+                ]
+            }
+        });
+        assert_eq!(selected_payload, expected.into());
+
+        // with explicit array traversal ([] notation)
+        let selector = PayloadSelector::new_include(vec!["b.c[].d".to_string()]);
+        let selected_payload = selector.process(payload.clone().into());
+
+        let expected = json!({
+            "b": {
+                "c": [
+                    {"d": 1},
+                    {"d": 3}
+                ]
+            }
+        });
+        assert_eq!(selected_payload, expected.into());
+
+        // shortcuts implicit array traversal
+        let selector = PayloadSelector::new_include(vec!["b.c.d".to_string()]);
+        let selected_payload = selector.process(payload.into());
+
+        let expected = json!({
+            "b": {
+                "c": []
+            }
+        });
+        assert_eq!(selected_payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_exclude() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
+                }
+            }
+        });
+
+        // exclude
+        let selector = PayloadSelector::new_exclude(vec!["a".to_string(), "b.e.f".to_string()]);
+        let payload = selector.process(payload.into());
+
+        // root removal & nested removal
+        let expected = json!({
+            "b": {
+                "c": 123,
+                "e": {
+                    "g": 7,
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
+                }
+            }
+        });
+        assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_payload_selector_array_exclude() {
+        let payload = json!({
+            "a": 1,
+            "b": {
+                "c": 123,
+                "f": [1,2,3,4,5],
+            }
+        });
+
+        // handles duplicates
+        let selector = PayloadSelector::new_exclude(vec!["a".to_string(), "a".to_string()]);
+        let payload = selector.process(payload.into());
+
+        // single removal
+        let expected = json!({
+            "b": {
+                "c": 123,
+                "f": [1,2,3,4,5],
+            }
+        });
+        assert_eq!(payload, expected.into());
+
+        // ignore path that points to array
+        let selector = PayloadSelector::new_exclude(vec!["b.f[0]".to_string()]);
+        let payload = selector.process(payload);
+
+        // no removal
+        let expected = json!({
+            "b": {
+                "c": 123,
+                "f": [1,2,3,4,5],
+            }
+        });
+        assert_eq!(payload, expected.into());
+    }
 }
 
 pub type TheMap<K, V> = BTreeMap<K, V>;
+
+#[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum ShardKey {
+    Keyword(String),
+    Number(u64),
+}
+
+impl From<String> for ShardKey {
+    fn from(s: String) -> Self {
+        ShardKey::Keyword(s)
+    }
+}
+
+impl From<&str> for ShardKey {
+    fn from(s: &str) -> Self {
+        ShardKey::Keyword(s.to_owned())
+    }
+}
+
+impl From<u64> for ShardKey {
+    fn from(n: u64) -> Self {
+        ShardKey::Number(n)
+    }
+}
+
+impl Display for ShardKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
+            ShardKey::Number(number) => write!(f, "{}", number),
+        }
+    }
+}

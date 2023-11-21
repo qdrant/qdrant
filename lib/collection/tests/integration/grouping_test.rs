@@ -1,10 +1,10 @@
 use collection::collection::Collection;
-use collection::grouping::group_by::{group_by, GroupRequest, SourceRequest};
-use collection::operations::consistency_params::ReadConsistency;
+use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::point_ops::{Batch, WriteOrdering};
-use collection::operations::types::{RecommendRequest, SearchRequest, UpdateStatus};
+use collection::operations::types::{
+    RecommendRequestInternal, SearchRequestInternal, UpdateStatus,
+};
 use collection::operations::CollectionUpdateOperations;
-use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use rand::distributions::Uniform;
 use rand::rngs::ThreadRng;
@@ -20,20 +20,19 @@ fn rand_vector(rng: &mut ThreadRng, size: usize) -> VectorType {
 }
 
 mod group_by {
+    use collection::grouping::GroupBy;
 
     use super::*;
 
     struct Resources {
         request: GroupRequest,
         collection: Collection,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
     }
 
     async fn setup(docs: u64, chunks: u64) -> Resources {
         let mut rng = rand::thread_rng();
 
-        let source = SourceRequest::Search(SearchRequest {
+        let source = SourceRequest::Search(SearchRequestInternal {
             vector: vec![0.5, 0.5, 0.5, 0.5].into(),
             filter: None,
             params: None,
@@ -75,7 +74,7 @@ mod group_by {
         );
 
         let insert_result = collection
-            .update_from_client(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(insert_points, true, WriteOrdering::default())
             .await
             .expect("insert failed");
 
@@ -84,8 +83,6 @@ mod group_by {
         Resources {
             request,
             collection,
-            read_consistency: None,
-            shard_selection: None,
         }
     }
 
@@ -93,14 +90,13 @@ mod group_by {
     async fn searching() {
         let resources = setup(16, 8).await;
 
-        let result = group_by(
+        let group_by = GroupBy::new(
             resources.request.clone(),
             &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-        )
-        .await;
+            |_| async { unreachable!() },
+        );
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -130,7 +126,8 @@ mod group_by {
         let resources = setup(16, 8).await;
 
         let request = GroupRequest::with_limit_from_request(
-            SourceRequest::Recommend(RecommendRequest {
+            SourceRequest::Recommend(RecommendRequestInternal {
+                strategy: Default::default(),
                 filter: None,
                 params: None,
                 limit: 4,
@@ -147,14 +144,11 @@ mod group_by {
             2,
         );
 
-        let result = group_by(
-            request.clone(),
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(request.clone(), &resources.collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -196,7 +190,7 @@ mod group_by {
         .unwrap();
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
+            SourceRequest::Search(SearchRequestInternal {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: Some(filter.clone()),
                 params: None,
@@ -210,14 +204,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request,
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request, &resources.collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -231,7 +222,7 @@ mod group_by {
         let resources = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
+            SourceRequest::Search(SearchRequestInternal {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
                 params: None,
@@ -245,14 +236,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &resources.collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -269,15 +257,10 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn group_by_string_field() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(16, 8).await;
+        let Resources { collection, .. } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
+            SourceRequest::Search(SearchRequestInternal {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
                 params: None,
@@ -291,14 +274,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -313,15 +293,10 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn zero_group_size() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(16, 8).await;
+        let Resources { collection, .. } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
+            SourceRequest::Search(SearchRequestInternal {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
                 params: None,
@@ -335,14 +310,11 @@ mod group_by {
             0,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -353,15 +325,10 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn zero_limit_groups() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(16, 8).await;
+        let Resources { collection, .. } = setup(16, 8).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
+            SourceRequest::Search(SearchRequestInternal {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
                 params: None,
@@ -375,14 +342,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -393,15 +357,10 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn big_limit_groups() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(1000, 5).await;
+        let Resources { collection, .. } = setup(1000, 5).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
+            SourceRequest::Search(SearchRequestInternal {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
                 params: None,
@@ -415,14 +374,11 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -437,15 +393,10 @@ mod group_by {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn big_group_size_groups() {
-        let Resources {
-            collection,
-            read_consistency,
-            shard_selection,
-            ..
-        } = setup(10, 500).await;
+        let Resources { collection, .. } = setup(10, 500).await;
 
         let group_by_request = GroupRequest::with_limit_from_request(
-            SourceRequest::Search(SearchRequest {
+            SourceRequest::Search(SearchRequestInternal {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
                 params: None,
@@ -459,14 +410,11 @@ mod group_by {
             400,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &collection,
-            |_name| async { unreachable!() },
-            read_consistency,
-            shard_selection,
-        )
-        .await;
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
+
+        let result = group_by.execute().await;
 
         assert!(result.is_ok());
 
@@ -502,7 +450,7 @@ mod group_by_builder {
     async fn setup(docs: u64, chunks_per_doc: u64) -> Resources {
         let mut rng = rand::thread_rng();
 
-        let source_request = SourceRequest::Search(SearchRequest {
+        let source_request = SourceRequest::Search(SearchRequestInternal {
             vector: vec![0.5, 0.5, 0.5, 0.5].into(),
             filter: None,
             params: None,
@@ -539,7 +487,7 @@ mod group_by_builder {
             );
 
             let insert_result = collection
-                .update_from_client(insert_points, true, WriteOrdering::default())
+                .update_from_client_simple(insert_points, true, WriteOrdering::default())
                 .await
                 .expect("insert failed");
 
@@ -570,7 +518,7 @@ mod group_by_builder {
                 .into(),
             );
             let insert_result = lookup_collection
-                .update_from_client(insert_points, true, WriteOrdering::default())
+                .update_from_client_simple(insert_points, true, WriteOrdering::default())
                 .await
                 .expect("insert failed");
 

@@ -1,11 +1,11 @@
 use std::mem::size_of;
 use std::ops::Range;
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
+use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -13,20 +13,19 @@ use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use super::VectorStorageEnum;
+use super::{DenseVectorStorage, VectorStorageEnum};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::types::Distance;
+use crate::vector_storage::bitvec::bitvec_set_deleted;
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage {
     dim: usize,
     distance: Distance,
     vectors: ChunkedVectors<VectorElementType>,
-    quantized_vectors: Option<QuantizedVectors>,
     db_wrapper: DatabaseColumnWrapper,
     update_buffer: StoredRecord,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
@@ -77,7 +76,6 @@ pub fn open_simple_vector_storage(
             dim,
             distance,
             vectors,
-            quantized_vectors: None,
             db_wrapper,
             update_buffer: StoredRecord {
                 deleted: false,
@@ -130,6 +128,12 @@ impl SimpleVectorStorage {
     }
 }
 
+impl DenseVectorStorage for SimpleVectorStorage {
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+        self.vectors.get(key)
+    }
+}
+
 impl VectorStorage for SimpleVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
@@ -139,19 +143,20 @@ impl VectorStorage for SimpleVectorStorage {
         self.distance
     }
 
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
     fn total_vector_count(&self) -> usize {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.vectors.get(key)
+    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+        self.get_dense(key).into()
     }
 
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: &[VectorElementType],
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        let vector = vector.try_into()?;
         self.vectors.insert(key, vector)?;
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
@@ -168,7 +173,7 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other.get_vector(point_id);
+            let other_vector = other.get_vector(point_id).try_into()?;
             let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted);
@@ -182,45 +187,8 @@ impl VectorStorage for SimpleVectorStorage {
         self.db_wrapper.flusher()
     }
 
-    fn quantize(
-        &mut self,
-        path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
-        self.quantized_vectors = Some(QuantizedVectors::create(
-            vector_data_iterator,
-            quantization_config,
-            self.distance,
-            self.dim,
-            self.vectors.len(),
-            path,
-            false,
-            max_threads,
-            stopped,
-        )?);
-        Ok(())
-    }
-
-    fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
-        if QuantizedVectors::config_exists(path) {
-            self.quantized_vectors = Some(QuantizedVectors::load(path, false, self.distance)?);
-        }
-        Ok(())
-    }
-
-    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
-        self.quantized_vectors.as_ref()
-    }
-
     fn files(&self) -> Vec<std::path::PathBuf> {
-        if let Some(quantized_vectors) = &self.quantized_vectors {
-            quantized_vectors.files()
-        } else {
-            vec![]
-        }
+        vec![]
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
@@ -242,28 +210,4 @@ impl VectorStorage for SimpleVectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
     }
-
-    fn is_appendable(&self) -> bool {
-        true
-    }
-}
-
-/// Set deleted state in given bitvec.
-///
-/// Grows bitvec automatically if it is not big enough.
-///
-/// Returns previous deleted state of the given point.
-#[inline]
-fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, deleted: bool) -> bool {
-    // Set deleted flag if bitvec is large enough, no need to check bounds
-    if (point_id as usize) < bitvec.len() {
-        return unsafe { bitvec.replace_unchecked(point_id as usize, deleted) };
-    }
-
-    // Bitvec is too small; grow and set the deletion flag, no need to check bounds
-    if deleted {
-        bitvec.resize(point_id as usize + 1, false);
-        unsafe { bitvec.set_unchecked(point_id as usize, true) };
-    }
-    false
 }

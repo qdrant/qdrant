@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use segment::types::{
@@ -8,8 +9,8 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::shard_trait::ShardOperation;
@@ -55,10 +56,6 @@ impl DummyShard {
 
 #[async_trait]
 impl ShardOperation for DummyShard {
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
-        self.dummy()
-    }
-
     async fn update(
         &self,
         _: CollectionUpdateOperations,
@@ -80,21 +77,26 @@ impl ShardOperation for DummyShard {
         self.dummy()
     }
 
-    async fn search(
+    async fn info(&self) -> CollectionResult<CollectionInfo> {
+        self.dummy()
+    }
+
+    async fn core_search(
         &self,
-        _: Arc<SearchRequestBatch>,
+        _: Arc<CoreSearchRequestBatch>,
         _: &Handle,
+        _: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy()
     }
 
-    async fn count(&self, _: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, _: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         self.dummy()
     }
 
     async fn retrieve(
         &self,
-        _: Arc<PointRequest>,
+        _: Arc<PointRequestInternal>,
         _: &WithPayload,
         _: &WithVector,
     ) -> CollectionResult<Vec<Record>> {

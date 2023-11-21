@@ -5,11 +5,12 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::common::version::StorageVersion;
-use segment::entry::entry_point::{check_process_stopped, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -44,6 +45,9 @@ pub struct OptimizerThresholds {
 /// The selection of the candidates for optimization and the configuration
 /// of resulting segment are up to concrete implementations.
 pub trait SegmentOptimizer {
+    /// Get name describing this optimizer
+    fn name(&self) -> &str;
+
     /// Get path of the whole collection
     fn collection_path(&self) -> &Path;
 
@@ -260,7 +264,7 @@ pub trait SegmentOptimizer {
     ///
     /// # Result
     ///
-    /// Rolls back back optimization state.
+    /// Rolls back optimization state.
     /// All processed changes will still be there, but the collection should be returned into state
     /// before optimization.
     fn handle_cancellation(

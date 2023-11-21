@@ -1,12 +1,14 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
-use collection::operations::types::{SearchRequest, SearchRequestBatch, VectorParams};
+use collection::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStruct,
+};
+use collection::operations::types::{CoreSearchRequestBatch, SearchRequestInternal, VectorParams};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
@@ -39,7 +41,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         points.push(point);
     }
     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperations::PointsList(points),
+        PointInsertOperationsInternal::PointsList(points),
     ))
 }
 
@@ -65,10 +67,7 @@ fn batch_search_bench(c: &mut Criterion) {
             on_disk: None,
         }
         .into(),
-        shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
-        replication_factor: NonZeroU32::new(1).unwrap(),
-        write_consistency_factor: NonZeroU32::new(1).unwrap(),
-        on_disk_payload: false,
+        ..CollectionParams::empty()
     };
 
     let collection_config = CollectionConfig {
@@ -134,7 +133,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     let mut rng = thread_rng();
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        let search_query = SearchRequest {
+                        let search_query = SearchRequestInternal {
                             vector: query.into(),
                             filter: filter.clone(),
                             params: None,
@@ -145,11 +144,12 @@ fn batch_search_bench(c: &mut Criterion) {
                             score_threshold: None,
                         };
                         let result = shard
-                            .search(
-                                Arc::new(SearchRequestBatch {
-                                    searches: vec![search_query],
+                            .core_search(
+                                Arc::new(CoreSearchRequestBatch {
+                                    searches: vec![search_query.into()],
                                 }),
                                 search_runtime_handle,
+                                None,
                             )
                             .await
                             .unwrap();
@@ -166,7 +166,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        let search_query = SearchRequest {
+                        let search_query = SearchRequestInternal {
                             vector: query.into(),
                             filter: filter.clone(),
                             params: None,
@@ -176,12 +176,12 @@ fn batch_search_bench(c: &mut Criterion) {
                             with_vector: None,
                             score_threshold: None,
                         };
-                        searches.push(search_query);
+                        searches.push(search_query.into());
                     }
 
-                    let search_query = SearchRequestBatch { searches };
+                    let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .search(Arc::new(search_query), search_runtime_handle)
+                        .core_search(Arc::new(search_query), search_runtime_handle, None)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

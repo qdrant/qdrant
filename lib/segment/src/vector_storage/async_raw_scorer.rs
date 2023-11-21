@@ -1,61 +1,78 @@
-use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
+use super::query::context_query::ContextQuery;
+use super::query::discovery_query::DiscoveryQuery;
+use super::query::reco_query::RecoQuery;
+use super::query::TransformInto;
+use super::query_scorer::custom_query_scorer::CustomQueryScorer;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
-use crate::spaces::tools::FixedLengthPriorityQueue;
-use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::types::Distance;
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage as _};
+use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::{RawScorer, VectorStorage as _, DEFAULT_STOPPED};
 
 pub fn new<'a>(
-    vector: Vec<VectorElementType>,
+    query: QueryVector,
     storage: &'a MemmapVectorStorage,
     point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    Ok(AsyncRawScorerBuilder::new(vector, storage, point_deleted)?.build())
+    AsyncRawScorerBuilder::new(query, storage, point_deleted)?
+        .with_is_stopped(is_stopped)
+        .build()
 }
 
-pub struct AsyncRawScorerImpl<'a, TMetric: Metric> {
+pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer> {
     points_count: PointOffsetType,
-    query: Vec<VectorElementType>,
+    query_scorer: TQueryScorer,
     storage: &'a MmapVectors,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
-    metric: PhantomData<TMetric>,
+    /// This flag indicates that the search process is stopped externally,
+    /// the search result is no longer needed and the search process should be stopped as soon as possible.
+    pub is_stopped: &'a AtomicBool,
 }
 
-impl<'a, TMetric> AsyncRawScorerImpl<'a, TMetric>
+impl<'a, TQueryScorer> AsyncRawScorerImpl<'a, TQueryScorer>
 where
-    TMetric: Metric,
+    TQueryScorer: QueryScorer,
 {
     fn new(
         points_count: PointOffsetType,
-        vector: Vec<VectorElementType>,
+        query_scorer: TQueryScorer,
         storage: &'a MmapVectors,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
+        is_stopped: &'a AtomicBool,
     ) -> Self {
         Self {
             points_count,
-            query: TMetric::preprocess(&vector).unwrap_or(vector),
+            query_scorer,
             storage,
             point_deleted,
             vec_deleted,
-            metric: PhantomData,
+            is_stopped,
         }
     }
 }
 
-impl<'a, TMetric> RawScorer for AsyncRawScorerImpl<'a, TMetric>
+impl<'a, TQueryScorer> RawScorer for AsyncRawScorerImpl<'a, TQueryScorer>
 where
-    TMetric: Metric,
+    TQueryScorer: QueryScorer,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return 0;
+        }
         let points_stream = points
             .iter()
             .copied()
@@ -66,7 +83,7 @@ where
             .read_vectors_async(points_stream, |idx, point_id, other_vector| {
                 scores[idx] = ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: self.query_scorer.score(other_vector),
                 };
                 processed += 1;
             })
@@ -83,13 +100,16 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
     ) -> Vec<ScoredPointOffset> {
+        if self.is_stopped.load(Ordering::Relaxed) {
+            return vec![];
+        }
         let mut scores = vec![];
 
         self.storage
             .read_vectors_async(points, |_idx, point_id, other_vector| {
                 scores.push(ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: self.query_scorer.score(other_vector),
                 });
             })
             .unwrap();
@@ -120,14 +140,11 @@ where
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
-        let other_vector = self.storage.get_vector(point);
-        TMetric::similarity(&self.query, other_vector)
+        self.query_scorer.score_stored(point)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        let vector_a = self.storage.get_vector(point_a);
-        let vector_b = self.storage.get_vector(point_b);
-        TMetric::similarity(vector_a, vector_b)
+        self.query_scorer.score_internal(point_a, point_b)
     }
 
     fn peek_top_iter(
@@ -140,13 +157,15 @@ where
         }
 
         let mut pq = FixedLengthPriorityQueue::new(top);
-        let points_stream = points.filter(|point_id| self.check_vector(*point_id));
+        let points_stream = points
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
 
         self.storage
             .read_vectors_async(points_stream, |_, point_id, other_vector| {
                 let scored_point_offset = ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: self.query_scorer.score(other_vector),
                 };
                 pq.push(scored_point_offset);
             })
@@ -164,14 +183,16 @@ where
             return vec![];
         }
 
-        let points_stream = (0..self.points_count).filter(|point_id| self.check_vector(*point_id));
+        let points_stream = (0..self.points_count)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id));
 
         let mut pq = FixedLengthPriorityQueue::new(top);
         self.storage
             .read_vectors_async(points_stream, |_, point_id, other_vector| {
                 let scored_point_offset = ScoredPointOffset {
                     idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
+                    score: self.query_scorer.score(other_vector),
                 };
                 pq.push(scored_point_offset);
             })
@@ -187,16 +208,17 @@ where
 
 struct AsyncRawScorerBuilder<'a> {
     points_count: PointOffsetType,
-    vector: Vec<VectorElementType>,
-    storage: &'a MmapVectors,
+    query: QueryVector,
+    storage: &'a MemmapVectorStorage,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     distance: Distance,
+    is_stopped: Option<&'a AtomicBool>,
 }
 
 impl<'a> AsyncRawScorerBuilder<'a> {
     pub fn new(
-        vector: Vec<VectorElementType>,
+        query: QueryVector,
         storage: &'a MemmapVectorStorage,
         point_deleted: &'a BitSlice,
     ) -> OperationResult<Self> {
@@ -204,35 +226,100 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         let vec_deleted = storage.deleted_vector_bitslice();
 
         let distance = storage.distance();
-        let storage = storage.get_mmap_vectors();
 
         let builder = Self {
             points_count,
-            vector,
+            query,
             point_deleted,
             vec_deleted,
             storage,
             distance,
+            is_stopped: None,
         };
 
         Ok(builder)
     }
 
-    pub fn build(self) -> Box<dyn RawScorer + 'a> {
+    pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.distance {
-            Distance::Cosine => Box::new(self.with_metric::<CosineMetric>()),
-            Distance::Euclid => Box::new(self.with_metric::<EuclidMetric>()),
-            Distance::Dot => Box::new(self.with_metric::<DotProductMetric>()),
+            Distance::Cosine => self._build_with_metric::<CosineMetric>(),
+            Distance::Euclid => self._build_with_metric::<EuclidMetric>(),
+            Distance::Dot => self._build_with_metric::<DotProductMetric>(),
         }
     }
 
-    fn with_metric<TMetric: Metric>(self) -> AsyncRawScorerImpl<'a, TMetric> {
-        AsyncRawScorerImpl::new(
-            self.points_count,
-            self.vector,
-            self.storage,
-            self.point_deleted,
-            self.vec_deleted,
-        )
+    pub fn with_is_stopped(mut self, is_stopped: &'a AtomicBool) -> Self {
+        self.is_stopped = Some(is_stopped);
+        self
+    }
+
+    fn _build_with_metric<TMetric: Metric + 'a>(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        let Self {
+            points_count,
+            query,
+            storage,
+            point_deleted,
+            vec_deleted,
+            distance: _,
+            is_stopped,
+        } = self;
+
+        match query {
+            QueryVector::Nearest(vector) => {
+                match vector {
+                    Vector::Dense(dense_vector) => {
+                        let query_scorer =
+                            MetricQueryScorer::<TMetric, _>::new(dense_vector, storage);
+                        Ok(Box::new(AsyncRawScorerImpl::new(
+                            points_count,
+                            query_scorer,
+                            storage.get_mmap_vectors(),
+                            point_deleted,
+                            vec_deleted,
+                            is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                        )))
+                    }
+                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO(sparse)
+                }
+            }
+            QueryVector::Recommend(reco_query) => {
+                let reco_query: RecoQuery<VectorType> = reco_query.transform_into()?;
+                let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(reco_query, storage);
+                Ok(Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                )))
+            }
+            QueryVector::Discovery(discovery_query) => {
+                let discovery_query: DiscoveryQuery<VectorType> =
+                    discovery_query.transform_into()?;
+                let query_scorer =
+                    CustomQueryScorer::<TMetric, _, _>::new(discovery_query, storage);
+                Ok(Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                )))
+            }
+            QueryVector::Context(context_query) => {
+                let context_query: ContextQuery<VectorType> = context_query.transform_into()?;
+                let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(context_query, storage);
+                Ok(Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                )))
+            }
+        }
     }
 }

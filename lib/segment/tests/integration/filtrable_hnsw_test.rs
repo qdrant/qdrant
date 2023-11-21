@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use rstest::rstest;
+use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
@@ -13,20 +15,81 @@ use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
-    PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
-    VectorStorageType,
+    Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
+use segment::vector_storage::query::context_query::ContextPair;
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::reco_query::RecoQuery;
 use serde_json::json;
 use tempfile::Builder;
 
-#[test]
-fn test_filterable_hnsw() {
+const MAX_EXAMPLE_PAIRS: usize = 4;
+
+enum QueryVariant {
+    Nearest,
+    RecommendBestScore,
+    Discovery,
+}
+
+fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
+    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+
+    let target = random_vector(rnd, dim).into();
+
+    let pairs = (0..num_pairs)
+        .map(|_| {
+            let positive = random_vector(rnd, dim).into();
+            let negative = random_vector(rnd, dim).into();
+            ContextPair { positive, negative }
+        })
+        .collect_vec();
+
+    DiscoveryQuery::new(target, pairs).into()
+}
+
+fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
+    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+
+    let positive = (0..num_examples)
+        .map(|_| random_vector(rnd, dim).into())
+        .collect_vec();
+    let negative = (0..num_examples)
+        .map(|_| random_vector(rnd, dim).into())
+        .collect_vec();
+
+    RecoQuery::new(positive, negative).into()
+}
+
+fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rnd: &mut R, dim: usize) -> QueryVector {
+    match variant {
+        QueryVariant::Nearest => random_vector(rnd, dim).into(),
+        QueryVariant::Discovery => random_discovery_query(rnd, dim),
+        QueryVariant::RecommendBestScore => random_reco_query(rnd, dim),
+    }
+}
+
+#[rstest]
+#[case::nearest(QueryVariant::Nearest, 32, 5)]
+#[case::discovery(QueryVariant::Discovery, 128, 10)] // tests that check better precision are in `hnsw_discover_test.rs`
+#[case::recommend(QueryVariant::RecommendBestScore, 64, 10)]
+fn test_filterable_hnsw(
+    #[case] query_variant: QueryVariant,
+    #[case] ef: usize,
+    #[case] max_failures: usize, // out of 100
+) {
+    _test_filterable_hnsw(query_variant, ef, max_failures);
+}
+
+fn _test_filterable_hnsw(
+    query_variant: QueryVariant,
+    ef: usize,
+    max_failures: usize, // out of 100
+) {
     let stopped = AtomicBool::new(false);
 
     let dim = 8;
     let m = 8;
     let num_vectors: u64 = 5_000;
-    let ef = 32;
     let ef_construct = 16;
     let distance = Distance::Cosine;
     let full_scan_threshold = 16; // KB
@@ -69,7 +132,6 @@ fn test_filterable_hnsw() {
             .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
-    // let opnum = num_vectors + 1;
 
     let payload_index_ptr = segment.payload_index.clone();
 
@@ -83,10 +145,12 @@ fn test_filterable_hnsw() {
     };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
+    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
         vector_storage.clone(),
+        quantized_vectors.clone(),
         payload_index_ptr.clone(),
         hnsw_config,
     )
@@ -137,8 +201,8 @@ fn test_filterable_hnsw() {
     let top = 3;
     let mut hits = 0;
     let attempts = 100;
-    for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim);
+    for i in 0..attempts {
+        let query = random_query(&query_variant, &mut rnd, dim);
 
         let range_size = 40;
         let left_range = rnd.gen_range(0..400);
@@ -155,27 +219,42 @@ fn test_filterable_hnsw() {
         )));
 
         let filter_query = Some(&filter);
-        // let filter_query = None;
 
-        let index_result = hnsw_index.search_with_graph(
-            &query,
-            filter_query,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                ..Default::default()
-            }),
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
+
+        // check that search was performed using HNSW index
+        assert_eq!(
+            hnsw_index
+                .get_telemetry_data()
+                .filtered_large_cardinality
+                .count,
+            i + 1
         );
 
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None);
+            .search(&[&query], filter_query, top, None, &false.into())
+            .unwrap();
 
-        if plain_result.get(0).unwrap() == &index_result {
+        if plain_result == index_result {
             hits += 1;
         }
     }
-    assert!(attempts - hits < 5, "hits: {hits} of {attempts}"); // Not more than 5% failures
+    assert!(
+        attempts - hits <= max_failures,
+        "hits: {hits} of {attempts}"
+    ); // Not more than X% failures
     eprintln!("hits = {hits:#?} out of {attempts}");
 }

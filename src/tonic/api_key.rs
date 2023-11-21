@@ -1,5 +1,6 @@
 use std::task::{Context, Poll};
 
+use actix_web_httpauth::headers::authorization::{Bearer, Scheme};
 use futures_util::future::BoxFuture;
 use reqwest::header::HeaderValue;
 use reqwest::StatusCode;
@@ -51,13 +52,23 @@ where
         &mut self,
         request: tonic::codegen::http::Request<tonic::transport::Body>,
     ) -> Self::Future {
-        if let Some(key) = request.headers().get("api-key") {
-            if let Ok(key) = key.to_str() {
-                let is_allowed = self.auth_keys.can_write(key)
-                    || (is_read_only(&request) && self.auth_keys.can_read(key));
-                if is_allowed {
-                    return Box::pin(self.service.call(request));
-                }
+        // Grab API key from request
+        let key =
+            // Request header
+            request.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
+                // Fall back to authentication header with bearer token
+                .or_else(|| {
+                    request.headers().get("authorization")
+                        .and_then(|auth| {
+                            Bearer::parse(auth).ok().map(|bearer| bearer.token().into())
+                        })
+                });
+
+        if let Some(key) = key {
+            let is_allowed = self.auth_keys.can_write(&key)
+                || (is_read_only(&request) && self.auth_keys.can_read(&key));
+            if is_allowed {
+                return Box::pin(self.service.call(request));
             }
         }
 

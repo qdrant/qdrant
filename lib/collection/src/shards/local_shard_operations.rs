@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
@@ -10,15 +11,95 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequestBatch, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, QueryEnum, Record, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
+use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
 
+impl LocalShard {
+    async fn do_search(
+        &self,
+        core_request: Arc<CoreSearchRequestBatch>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let (collection_params, indexing_threshold_kb) = {
+            let collection_config = self.collection_config.read().await;
+            (
+                collection_config.params.clone(),
+                collection_config
+                    .optimizer_config
+                    .indexing_threshold
+                    .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
+            )
+        };
+
+        // check vector names existing
+        for req in &core_request.searches {
+            collection_params.get_distance(req.query.get_vector_name())?;
+        }
+
+        let is_stopped = StoppingGuard::new();
+
+        let search_request = SegmentsSearcher::search(
+            Arc::clone(&self.segments),
+            Arc::clone(&core_request),
+            search_runtime_handle,
+            true,
+            is_stopped.get_is_stopped(),
+            indexing_threshold_kb,
+        );
+
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+
+        let res = tokio::time::timeout(timeout, search_request)
+            .await
+            .map_err(|_| {
+                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
+                // StoppingGuard takes care of setting is_stopped to true
+                CollectionError::timeout(timeout.as_secs() as usize, "Search")
+            })??;
+
+        let top_results = res
+            .into_iter()
+            .zip(core_request.searches.iter())
+            .map(|(vector_res, req)| {
+                let vector_name = req.query.get_vector_name();
+                let distance = collection_params.get_distance(vector_name).unwrap();
+                let processed_res = vector_res.into_iter().map(|mut scored_point| {
+                    match req.query {
+                        QueryEnum::Nearest(_) => {
+                            scored_point.score = distance.postprocess_score(scored_point.score);
+                        }
+                        // Don't post-process if we are dealing with custom scoring
+                        QueryEnum::RecommendBestScore(_)
+                        | QueryEnum::Discover(_)
+                        | QueryEnum::Context(_) => {}
+                    };
+                    scored_point
+                });
+
+                if let Some(threshold) = req.score_threshold {
+                    processed_res
+                        .take_while(|scored_point| {
+                            distance.check_threshold(scored_point.score, threshold)
+                        })
+                        .collect()
+                } else {
+                    processed_res.collect()
+                }
+            })
+            .collect();
+        Ok(top_results)
+    }
+}
 #[async_trait]
 impl ShardOperation for LocalShard {
     /// Imply interior mutability.
@@ -53,12 +134,12 @@ impl ShardOperation for LocalShard {
         if let Some(receiver) = callback_receiver {
             let _res = receiver.await??;
             Ok(UpdateResult {
-                operation_id,
+                operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
             })
         } else {
             Ok(UpdateResult {
-                operation_id,
+                operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
             })
         }
@@ -114,52 +195,17 @@ impl ShardOperation for LocalShard {
         Ok(self.local_shard_info().await)
     }
 
-    async fn search(
+    async fn core_search(
         &self,
-        request: Arc<SearchRequestBatch>,
+        request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let collection_params = self.collection_config.read().await.params.clone();
-        // check vector names existing
-        for req in &request.searches {
-            collection_params.get_vector_params(req.vector.get_name())?;
-        }
-        let res = SegmentsSearcher::search(
-            self.segments(),
-            request.clone(),
-            search_runtime_handle,
-            true,
-        )
-        .await?;
-        let top_results = res
-            .into_iter()
-            .zip(request.searches.iter())
-            .map(|(vector_res, req)| {
-                let vector_name = req.vector.get_name();
-                let distance = collection_params
-                    .get_vector_params(vector_name)
-                    .unwrap()
-                    .distance;
-                let processed_res = vector_res.into_iter().map(|mut scored_point| {
-                    scored_point.score = distance.postprocess_score(scored_point.score);
-                    scored_point
-                });
-
-                if let Some(threshold) = req.score_threshold {
-                    processed_res
-                        .take_while(|scored_point| {
-                            distance.check_threshold(scored_point.score, threshold)
-                        })
-                        .collect()
-                } else {
-                    processed_res.collect()
-                }
-            })
-            .collect();
-        Ok(top_results)
+        self.do_search(request, search_runtime_handle, timeout)
+            .await
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let total_count = if request.exact {
             let all_points = self.read_filtered(request.filter.as_ref())?;
             all_points.len()
@@ -171,7 +217,7 @@ impl ShardOperation for LocalShard {
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {

@@ -1,34 +1,48 @@
-use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::time::Duration;
 
-use futures::future::try_join_all;
 use itertools::Itertools;
-use segment::data_types::vectors::{NamedVector, VectorElementType, DEFAULT_VECTOR_NAME};
-use segment::types::{
-    Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayloadInterface, WithVector,
+use segment::data_types::vectors::{
+    NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef, VectorType,
+    DEFAULT_VECTOR_NAME,
 };
+use segment::types::{
+    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
+};
+use segment::vector_storage::query::reco_query::RecoQuery;
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
+use crate::common::batching::batch_requests;
+use crate::common::fetch_vectors::{
+    convert_to_vectors, convert_to_vectors_owned, resolve_referenced_vectors_batch,
+    ReferencedVectors,
+};
+use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequest, RecommendRequest, RecommendRequestBatch,
-    Record, SearchRequest, SearchRequestBatch, UsingVector,
+    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, QueryEnum,
+    RecommendRequestInternal, RecommendStrategy, UsingVector,
 };
 
-fn avg_vectors<'a>(
-    vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-) -> Vec<VectorElementType> {
+// TODO(sparse): support avg for sparse vectors
+fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> Vector {
     let mut count: usize = 0;
-    let mut avg_vector: Vec<VectorElementType> = vec![];
+    let mut avg_vector: VectorType = Default::default();
     for vector in vectors {
-        count += 1;
-        for i in 0..vector.len() {
-            if i >= avg_vector.len() {
-                avg_vector.push(vector[i])
-            } else {
-                avg_vector[i] += vector[i];
+        match vector {
+            VectorRef::Dense(vector) => {
+                count += 1;
+                for i in 0..vector.len() {
+                    if i >= avg_vector.len() {
+                        avg_vector.push(vector[i])
+                    } else {
+                        avg_vector[i] += vector[i];
+                    }
+                }
             }
+            VectorRef::Sparse(_) => unimplemented!(), // TODO(sparse)
         }
     }
 
@@ -36,14 +50,30 @@ fn avg_vectors<'a>(
         *item /= count as VectorElementType;
     }
 
-    avg_vector
+    avg_vector.into()
+}
+
+fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Vector {
+    match (positive, negative) {
+        (Vector::Dense(positive), Vector::Dense(negative)) => {
+            let vector: VectorType = positive
+                .iter()
+                .zip(negative.iter())
+                .map(|(pos, neg)| pos + pos - neg)
+                .collect();
+            vector.into()
+        }
+        _ => unimplemented!(), // TODO(sparse)
+    }
 }
 
 pub async fn recommend_by<'a, F, Fut>(
-    request: RecommendRequest,
+    request: RecommendRequestInternal,
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    shard_selector: ShardSelectorInternal,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -53,70 +83,51 @@ where
         return Ok(vec![]);
     }
     // `recommend_by` is a special case of recommend_by_batch with a single batch
-    let request_batch = RecommendRequestBatch {
-        searches: vec![request],
-    };
+    let request_batch = vec![(request, shard_selector)];
     let results = recommend_batch_by(
         request_batch,
         collection,
         collection_by_name,
         read_consistency,
+        timeout,
     )
     .await?;
     Ok(results.into_iter().next().unwrap())
 }
 
-async fn retrieve_points(
-    collection: &Collection,
-    ids: Vec<PointIdType>,
-    vector_names: Vec<String>,
-    read_consistency: Option<ReadConsistency>,
-) -> CollectionResult<Vec<Record>> {
-    collection
-        .retrieve(
-            PointRequest {
-                ids,
-                with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: WithVector::Selector(vector_names),
-            },
-            read_consistency,
-            None,
-        )
-        .await
-}
+pub fn recommend_into_core_search(
+    request: RecommendRequestInternal,
+    all_vectors_records_map: &ReferencedVectors,
+) -> CollectionResult<CoreSearchRequest> {
+    let reference_vectors_ids = request
+        .positive
+        .iter()
+        .chain(&request.negative)
+        .filter_map(|example| example.as_point_id())
+        .collect_vec();
 
-enum CollectionRefHolder<'a> {
-    Ref(&'a Collection),
-    Guard(RwLockReadGuard<'a, Collection>),
-}
+    let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
 
-async fn retrieve_points_with_locked_collection(
-    collection_holder: CollectionRefHolder<'_>,
-    ids: Vec<PointIdType>,
-    vector_names: Vec<String>,
-    read_consistency: Option<ReadConsistency>,
-) -> CollectionResult<Vec<Record>> {
-    match collection_holder {
-        CollectionRefHolder::Ref(collection) => {
-            retrieve_points(collection, ids, vector_names, read_consistency).await
-        }
-        CollectionRefHolder::Guard(guard) => {
-            retrieve_points(&guard, ids, vector_names, read_consistency).await
+    for &point_id in &reference_vectors_ids {
+        if all_vectors_records_map
+            .get(&lookup_collection_name, point_id)
+            .is_none()
+        {
+            return Err(CollectionError::PointNotFound {
+                missed_point_id: point_id,
+            });
         }
     }
-}
 
-fn get_search_vector_name(request: &RecommendRequest) -> String {
-    match &request.lookup_from {
-        None => match &request.using {
-            None => DEFAULT_VECTOR_NAME.to_owned(),
-            Some(UsingVector::Name(vector_name)) => vector_name.clone(),
-        },
-        Some(lookup_from) => match &lookup_from.vector {
-            None => DEFAULT_VECTOR_NAME.to_owned(),
-            Some(vector_name) => vector_name.clone(),
-        },
-    }
+    let res = match request.strategy.unwrap_or_default() {
+        RecommendStrategy::AverageVector => {
+            recommend_by_avg_vector(request, reference_vectors_ids, all_vectors_records_map)
+        }
+        RecommendStrategy::BestScore => {
+            recommend_by_best_score(request, reference_vectors_ids, all_vectors_records_map)
+        }
+    };
+    Ok(res)
 }
 
 /// Search points in a collection by already existing points in this or another collection.
@@ -131,184 +142,228 @@ fn get_search_vector_name(request: &RecommendRequest) -> String {
 /// # Arguments
 ///
 /// * `request_batch` - batch recommendations request
-/// * `search_runtime_handle` - tokio runtime handle to execute search queries
 /// * `collection` - collection to search in
 /// * `collection_by_name` - function to retrieve collection by name, used to retrieve points from other collections
+/// * `timeout` - timeout for the whole batch, in the searching stage. E.g. time in preprocessing won't be counted
 ///
 pub async fn recommend_batch_by<'a, F, Fut>(
-    request_batch: RecommendRequestBatch,
+    request_batch: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
     collection: &Collection,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
     // shortcuts batch if all requests with limit=0
-    if request_batch.searches.iter().all(|s| s.limit == 0) {
+    if request_batch.iter().all(|(s, _)| s.limit == 0) {
         return Ok(vec![]);
     }
-    // pack all reference vector ids
-    let mut all_reference_vectors_ids: HashMap<_, HashSet<PointIdType>> = Default::default();
-    let mut vector_names_per_collection: HashMap<_, HashSet<String>> = Default::default();
 
-    for request in &request_batch.searches {
-        if request.positive.is_empty() {
-            return Err(CollectionError::BadRequest {
-                description: "At least one positive vector ID required".to_owned(),
-            });
-        }
-        let collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
-
-        let reference_vectors_ids = all_reference_vectors_ids
-            .entry(collection_name)
-            .or_insert_with(HashSet::new);
-
-        let vector_names = vector_names_per_collection
-            .entry(collection_name)
-            .or_insert_with(HashSet::new);
-
-        vector_names.insert(get_search_vector_name(request));
-
-        for point_id in request.positive.iter().chain(&request.negative) {
-            reference_vectors_ids.insert(*point_id);
-        }
-    }
-
-    debug_assert!(all_reference_vectors_ids.len() == vector_names_per_collection.len());
-
-    let mut collections_names: Vec<_> = Default::default();
-    let mut vector_retrieves: Vec<_> = Default::default();
-    for (collection_name, reference_vectors_ids) in all_reference_vectors_ids.into_iter() {
-        collections_names.push(collection_name);
-        let points: Vec<_> = reference_vectors_ids.into_iter().collect();
-        let vector_names: Vec<_> = vector_names_per_collection
-            .remove(&collection_name)
-            .unwrap()
-            .into_iter()
-            .collect();
-        match collection_name {
-            None => vector_retrieves.push(retrieve_points_with_locked_collection(
-                CollectionRefHolder::Ref(collection),
-                points,
-                vector_names,
-                read_consistency,
-            )),
-            Some(name) => {
-                let other_collection = collection_by_name(name.to_string()).await;
-                match other_collection {
-                    Some(other_collection) => {
-                        vector_retrieves.push(retrieve_points_with_locked_collection(
-                            CollectionRefHolder::Guard(other_collection),
-                            points,
-                            vector_names,
-                            read_consistency,
-                        ))
-                    }
-                    None => {
-                        return Err(CollectionError::NotFound {
-                            what: format!("Collection {name}"),
-                        })
-                    }
+    // Validate amount of examples
+    request_batch.iter().try_for_each(|(request, _)| {
+        match request.strategy.unwrap_or_default() {
+            RecommendStrategy::AverageVector => {
+                if request.positive.is_empty() {
+                    return Err(CollectionError::BadRequest {
+                        description: "At least one positive vector ID required with this strategy"
+                            .to_owned(),
+                    });
+                }
+            }
+            RecommendStrategy::BestScore => {
+                if request.positive.is_empty() && request.negative.is_empty() {
+                    return Err(CollectionError::BadRequest {
+                        description: "At least one positive or negative vector ID required with this strategy"
+                            .to_owned(),
+                    });
                 }
             }
         }
-    }
+        Ok(())
+    })?;
 
-    let all_reference_vectors: Vec<Vec<Record>> = try_join_all(vector_retrieves).await?;
+    let all_vectors_records_map = resolve_referenced_vectors_batch(
+        &request_batch,
+        collection,
+        collection_by_name,
+        read_consistency,
+    )
+    .await?;
 
-    let mut all_vectors_records_map: HashMap<_, _> = Default::default();
-
-    for (collection_name, reference_vectors) in
-        collections_names.into_iter().zip(all_reference_vectors)
-    {
-        for rec in reference_vectors {
-            all_vectors_records_map.insert((collection_name, rec.id), rec);
-        }
-    }
-
-    let mut searches = Vec::with_capacity(request_batch.searches.len());
-
-    for request in &request_batch.searches {
-        let vector_name = match &request.using {
-            None => DEFAULT_VECTOR_NAME,
-            Some(UsingVector::Name(name)) => name,
-        };
-
-        let lookup_vector_name = get_search_vector_name(request);
-
-        let reference_vectors_ids = request
-            .positive
-            .iter()
-            .chain(&request.negative)
-            .cloned()
-            .collect_vec();
-
-        let request_from_collection = request.lookup_from.as_ref().map(|x| &x.collection);
-
-        for &point_id in &reference_vectors_ids {
-            if !all_vectors_records_map.contains_key(&(request_from_collection, point_id)) {
-                return Err(CollectionError::PointNotFound {
-                    missed_point_id: point_id,
-                });
+    let res = batch_requests::<
+        (RecommendRequestInternal, ShardSelectorInternal),
+        ShardSelectorInternal,
+        Vec<CoreSearchRequest>,
+        Vec<_>,
+    >(
+        request_batch,
+        |(_req, shard)| shard,
+        |(req, _), acc| {
+            recommend_into_core_search(req, &all_vectors_records_map).map(|core_req| {
+                acc.push(core_req);
+            })
+        },
+        |shard_selector, core_searches, requests| {
+            if core_searches.is_empty() {
+                return Ok(());
             }
-        }
 
-        let avg_positive = avg_vectors(request.positive.iter().filter_map(|vid| {
-            let rec = all_vectors_records_map
-                .get(&(request_from_collection, *vid))
-                .unwrap();
-            rec.get_vector_by_name(&lookup_vector_name)
-        }));
+            let core_search_batch_request = CoreSearchRequestBatch {
+                searches: core_searches,
+            };
 
-        let search_vector = if request.negative.is_empty() {
-            avg_positive
-        } else {
-            let avg_negative = avg_vectors(request.negative.iter().filter_map(|vid| {
-                let rec = all_vectors_records_map
-                    .get(&(request_from_collection, *vid))
-                    .unwrap();
-                rec.get_vector_by_name(&lookup_vector_name)
-            }));
+            requests.push(collection.core_search_batch(
+                core_search_batch_request,
+                read_consistency,
+                shard_selector,
+                timeout,
+            ));
 
-            avg_positive
-                .iter()
-                .cloned()
-                .zip(avg_negative.iter().cloned())
-                .map(|(pos, neg)| pos + pos - neg)
-                .collect()
-        };
+            Ok(())
+        },
+    )?;
 
-        let search_request = SearchRequest {
-            vector: NamedVector {
-                name: vector_name.to_string(),
-                vector: search_vector,
-            }
-            .into(),
-            filter: Some(Filter {
-                should: None,
-                must: request
-                    .filter
-                    .clone()
-                    .map(|filter| vec![Condition::Filter(filter)]),
-                must_not: Some(vec![Condition::HasId(HasIdCondition {
-                    has_id: reference_vectors_ids.iter().cloned().collect(),
-                })]),
-            }),
-            with_payload: request.with_payload.clone(),
-            with_vector: request.with_vector.clone(),
-            params: request.params,
-            limit: request.limit,
-            score_threshold: request.score_threshold,
-            offset: request.offset,
-        };
-        searches.push(search_request)
+    let results = futures::future::try_join_all(res).await?;
+    let flatten_results: Vec<Vec<_>> = results.into_iter().flatten().collect();
+    Ok(flatten_results)
+}
+
+fn recommend_by_avg_vector(
+    request: RecommendRequestInternal,
+    reference_vectors_ids: Vec<ExtendedPointId>,
+    all_vectors_records_map: &ReferencedVectors,
+) -> CoreSearchRequest {
+    let lookup_vector_name = request.get_search_vector_name();
+
+    let RecommendRequestInternal {
+        filter,
+        with_payload,
+        with_vector,
+        params,
+        limit,
+        score_threshold,
+        offset,
+        using,
+        positive,
+        negative,
+        lookup_from,
+        ..
+    } = request;
+
+    let lookup_collection_name = lookup_from.as_ref().map(|x| &x.collection);
+
+    let positive_vectors = convert_to_vectors(
+        positive.iter(),
+        all_vectors_records_map,
+        &lookup_vector_name,
+        lookup_collection_name,
+    );
+
+    let negative_vectors = convert_to_vectors(
+        negative.iter(),
+        all_vectors_records_map,
+        &lookup_vector_name,
+        lookup_collection_name,
+    );
+
+    let vector_name = match using {
+        None => DEFAULT_VECTOR_NAME.to_string(),
+        Some(UsingVector::Name(name)) => name,
+    };
+
+    let avg_positive = avg_vectors(positive_vectors);
+    let negative = negative_vectors.collect_vec();
+
+    let search_vector = if negative.is_empty() {
+        avg_positive
+    } else {
+        let avg_negative = avg_vectors(negative.into_iter());
+        merge_positive_and_negative_avg(avg_positive, avg_negative)
+    };
+
+    CoreSearchRequest {
+        query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+            search_vector.clone(),
+            vector_name,
+        )),
+        filter: Some(Filter {
+            should: None,
+            must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
+            must_not: Some(vec![Condition::HasId(HasIdCondition {
+                has_id: reference_vectors_ids.iter().cloned().collect(),
+            })]),
+        }),
+        with_payload,
+        with_vector,
+        params,
+        limit,
+        score_threshold,
+        offset,
     }
+}
 
-    let search_batch_request = SearchRequestBatch { searches };
+fn recommend_by_best_score(
+    request: RecommendRequestInternal,
+    reference_vectors_ids: Vec<PointIdType>,
+    all_vectors_records_map: &ReferencedVectors,
+) -> CoreSearchRequest {
+    let lookup_vector_name = request.get_search_vector_name();
 
-    collection
-        .search_batch(search_batch_request, read_consistency, None)
-        .await
+    let RecommendRequestInternal {
+        positive,
+        negative,
+        strategy: _,
+        filter,
+        params,
+        limit,
+        offset,
+        with_payload,
+        with_vector,
+        score_threshold,
+        using,
+        lookup_from,
+    } = request;
+
+    let lookup_collection_name = lookup_from.as_ref().map(|x| &x.collection);
+
+    let positive = convert_to_vectors_owned(
+        positive,
+        all_vectors_records_map,
+        &lookup_vector_name,
+        lookup_collection_name,
+    );
+
+    let negative = convert_to_vectors_owned(
+        negative,
+        all_vectors_records_map,
+        &lookup_vector_name,
+        lookup_collection_name,
+    );
+
+    let query = QueryEnum::RecommendBestScore(NamedQuery {
+        query: RecoQuery::new(positive, negative),
+        using: using.map(|x| match x {
+            UsingVector::Name(name) => name,
+        }),
+    });
+
+    CoreSearchRequest {
+        query,
+        filter: Some(Filter {
+            should: None,
+            must: filter.map(|filter| vec![Condition::Filter(filter)]),
+            must_not: Some(vec![Condition::HasId(HasIdCondition {
+                has_id: reference_vectors_ids.into_iter().collect(),
+            })]),
+        }),
+        params,
+        limit,
+        offset,
+        with_payload,
+        with_vector,
+        score_threshold,
+    }
 }

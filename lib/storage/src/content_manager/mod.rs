@@ -20,7 +20,7 @@ pub mod consensus_ops {
     use collection::shards::replica_set::ReplicaState;
     use collection::shards::replica_set::ReplicaState::Initializing;
     use collection::shards::shard::PeerId;
-    use collection::shards::transfer::shard_transfer::ShardTransfer;
+    use collection::shards::transfer::ShardTransfer;
     use collection::shards::{replica_set, CollectionId};
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
@@ -103,8 +103,11 @@ pub mod consensus_ops {
             let mut operation = UpdateCollectionOperation::new(
                 collection_name,
                 UpdateCollection {
+                    vectors: None,
                     optimizers_config: None,
                     params: None,
+                    hnsw_config: None,
+                    quantization_config: None,
                 },
             );
             operation
@@ -128,14 +131,6 @@ pub mod consensus_ops {
                 ReplicaState::Active,
                 Some(Initializing),
             )
-        }
-
-        pub fn deactivate_replica(
-            collection_name: CollectionId,
-            shard_id: u32,
-            peer_id: PeerId,
-        ) -> Self {
-            Self::set_replica_state(collection_name, shard_id, peer_id, ReplicaState::Dead, None)
         }
 
         pub fn start_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {

@@ -2,11 +2,11 @@ use std::num::NonZeroU32;
 
 use merge::Merge;
 use schemars::JsonSchema;
-use segment::types::HnswConfig;
+use segment::types::{BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
 
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
@@ -16,6 +16,12 @@ use crate::optimizers_builder::OptimizersConfig;
 // TODO: make auto-generated somehow...
 
 pub trait DiffConfig<T: DeserializeOwned + Serialize> {
+    /// Update the given `config` with fields in this diff
+    ///
+    /// This clones, modifies and returns `config`.
+    ///
+    /// This diff has higher priority, meaning that fields specified in this diff will always be in
+    /// the returned object.
     fn update(self, config: &T) -> CollectionResult<T>
     where
         Self: Sized + Serialize + DeserializeOwned + Merge,
@@ -32,7 +38,18 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
 }
 
 #[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq, Merge, Hash,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Merge,
+    Hash,
 )]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
@@ -82,6 +99,14 @@ pub struct CollectionParamsDiff {
     pub replication_factor: Option<NonZeroU32>,
     /// Minimal number successful responses from replicas to consider operation successful
     pub write_consistency_factor: Option<NonZeroU32>,
+    /// Fan-out every read request to these many additional remote nodes (and return first available response)
+    pub read_fan_out_factor: Option<u32>,
+    /// If true - point's payload will not be stored in memory.
+    /// It will be read from the disk every time it is requested.
+    /// This setting saves RAM by (slightly) increasing the response time.
+    /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
+    #[serde(default)]
+    pub on_disk_payload: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
@@ -164,6 +189,8 @@ impl Eq for OptimizersConfigDiff {}
 
 impl DiffConfig<HnswConfig> for HnswConfigDiff {}
 
+impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {}
+
 impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
 
 impl DiffConfig<WalConfig> for WalConfigDiff {}
@@ -241,6 +268,58 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
     Ok(res)
 }
 
+/// Hacky way to figure out if the given configuration is considered empty
+///
+/// The following types are considered empty:
+/// - Null
+/// - Empty string
+/// - Array or object with zero items
+///
+/// Intended to only be used in non critical for speed places.
+pub fn is_empty<T: Serialize>(config: &T) -> CollectionResult<bool> {
+    let config_values = serde_json::to_value(config)?;
+
+    Ok(match config_values {
+        Value::Null => true,
+        Value::String(value) => value.is_empty(),
+        Value::Array(values) => values.is_empty(),
+        Value::Object(values) => values.is_empty(),
+        Value::Bool(_) | Value::Number(_) => false,
+    })
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+pub enum Disabled {
+    Disabled,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum QuantizationConfigDiff {
+    Scalar(ScalarQuantization),
+    Product(ProductQuantization),
+    Binary(BinaryQuantization),
+    Disabled(Disabled),
+}
+
+impl QuantizationConfigDiff {
+    pub fn new_disabled() -> Self {
+        QuantizationConfigDiff::Disabled(Disabled::Disabled)
+    }
+}
+
+impl Validate for QuantizationConfigDiff {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            QuantizationConfigDiff::Scalar(scalar) => scalar.validate(),
+            QuantizationConfigDiff::Product(product) => product.validate(),
+            QuantizationConfigDiff::Binary(binary) => binary.validate(),
+            QuantizationConfigDiff::Disabled(_) => Ok(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU64;
@@ -262,21 +341,21 @@ mod tests {
                 on_disk: None,
             }
             .into(),
-            shard_number: NonZeroU32::new(1).unwrap(),
-            replication_factor: NonZeroU32::new(1).unwrap(),
-            write_consistency_factor: NonZeroU32::new(1).unwrap(),
-            on_disk_payload: false,
+            ..CollectionParams::empty()
         };
 
         let diff = CollectionParamsDiff {
             replication_factor: None,
             write_consistency_factor: Some(NonZeroU32::new(2).unwrap()),
+            read_fan_out_factor: None,
+            on_disk_payload: None,
         };
 
         let new_params = diff.update(&params).unwrap();
 
         assert_eq!(new_params.replication_factor.get(), 1);
         assert_eq!(new_params.write_consistency_factor.get(), 2);
+        assert!(!new_params.on_disk_payload);
     }
 
     #[test]

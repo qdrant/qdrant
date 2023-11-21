@@ -2,7 +2,7 @@ use std::backtrace::Backtrace;
 use std::io::Error as IoError;
 
 use collection::operations::types::CollectionError;
-use segment::common::file_operations::FileStorageError;
+use io::file_operations::FileStorageError;
 use tempfile::PersistError;
 use thiserror::Error;
 
@@ -22,6 +22,8 @@ pub enum StorageError {
     BadRequest { description: String },
     #[error("Storage locked: {description}")]
     Locked { description: String },
+    #[error("Timeout: {description}")]
+    Timeout { description: String },
 }
 
 impl StorageError {
@@ -32,15 +34,15 @@ impl StorageError {
         }
     }
 
-    pub fn bad_request(description: &str) -> StorageError {
+    pub fn bad_request(description: impl Into<String>) -> StorageError {
         StorageError::BadRequest {
-            description: description.to_string(),
+            description: description.into(),
         }
     }
 
-    pub fn bad_input(description: &str) -> StorageError {
+    pub fn bad_input(description: impl Into<String>) -> StorageError {
         StorageError::BadInput {
-            description: description.to_string(),
+            description: description.into(),
         }
     }
 
@@ -86,6 +88,9 @@ impl StorageError {
                 description: overriding_description,
                 backtrace: None,
             },
+            CollectionError::Timeout { .. } => StorageError::Timeout {
+                description: overriding_description,
+            },
         }
     }
 }
@@ -123,6 +128,9 @@ impl From<CollectionError> for StorageError {
             CollectionError::OutOfMemory { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
                 backtrace: None,
+            },
+            CollectionError::Timeout { .. } => StorageError::Timeout {
+                description: format!("{err}"),
             },
         }
     }
@@ -180,6 +188,15 @@ impl From<serde_cbor::Error> for StorageError {
     fn from(err: serde_cbor::Error) -> Self {
         StorageError::ServiceError {
             description: format!("cbor (de)serialization error: {err}"),
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
+impl From<serde_json::Error> for StorageError {
+    fn from(err: serde_json::Error) -> Self {
+        StorageError::ServiceError {
+            description: format!("json (de)serialization error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -254,5 +271,11 @@ impl From<PersistError> for StorageError {
             description: format!("Persist error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
+    }
+}
+
+impl From<cancel::Error> for StorageError {
+    fn from(err: cancel::Error) -> Self {
+        CollectionError::from(err).into()
     }
 }

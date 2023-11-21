@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
-use segment::types::{
-    Condition, FieldCondition, Filter, Match, Payload, PayloadSchemaType, PointOffsetType, Range,
-};
+use segment::types::{Condition, FieldCondition, Filter, Match, Payload, PayloadSchemaType, Range};
 use serde_json::json;
 use tempfile::Builder;
 
@@ -72,7 +71,7 @@ fn test_filtering_context_consistency() {
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
     let mut index =
-        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path()).unwrap();
+        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
 
     index
         .set_indexed("f", PayloadSchemaType::Integer.into())

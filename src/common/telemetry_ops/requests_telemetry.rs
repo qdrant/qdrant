@@ -136,9 +136,7 @@ impl WebApiTelemetry {
         for (method, status_codes) in &other.responses {
             let status_codes_map = self.responses.entry(method.clone()).or_default();
             for (status_code, statistics) in status_codes {
-                let entry = status_codes_map
-                    .entry(*status_code)
-                    .or_insert_with(OperationDurationStatistics::default);
+                let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
             }
         }

@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use crate::entry::entry_point::OperationResult;
+use crate::common::operation_error::OperationResult;
 
 // This is a mock implementation of the async_io module for those platforms that don't support io_uring.
 #[allow(dead_code)]

@@ -7,19 +7,25 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
-use futures::io;
+use common::types::ScoreType;
+use common::validation::validate_range_generic;
+use io::file_operations::FileStorageError;
+use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::common::file_operations::FileStorageError;
+use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType, VectorRef,
+    VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
-use segment::entry::entry_point::OperationError;
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
 };
+use segment::vector_storage::query::context_query::ContextQuery;
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::reco_query::RecoQuery;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
@@ -28,14 +34,17 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
-use crate::config::CollectionConfig;
+use super::config_diff;
+use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
-use crate::operations::config_diff::HnswConfigDiff;
+use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
+use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::transfer::ShardTransferMethod;
 use crate::wal::WalError;
 
 /// Current state of the collection.
@@ -77,6 +86,9 @@ pub struct Record {
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,
+    /// Shard Key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
 }
 
 /// Current statistics and configuration of the collection
@@ -108,6 +120,21 @@ pub struct CollectionInfo {
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }
 
+impl CollectionInfo {
+    pub fn empty(collection_config: CollectionConfig) -> Self {
+        Self {
+            status: CollectionStatus::Green,
+            optimizer_status: OptimizersStatus::Ok,
+            vectors_count: 0,
+            indexed_vectors_count: 0,
+            points_count: 0,
+            segments_count: 0,
+            config: collection_config,
+            payload_schema: HashMap::new(),
+        }
+    }
+}
+
 /// Current clustering distribution for the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionClusterInfo {
@@ -131,6 +158,8 @@ pub struct ShardTransferInfo {
     /// If `true` transfer is a synchronization of a replicas
     /// If `false` transfer is a moving of a shard from one peer to another
     pub sync: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<ShardTransferMethod>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -138,6 +167,9 @@ pub struct ShardTransferInfo {
 pub struct LocalShardInfo {
     /// Local shard id
     pub shard_id: ShardId,
+    /// User-defined sharding key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
     /// Number of points in the shard
     pub points_count: usize,
     /// Is replica active
@@ -149,6 +181,9 @@ pub struct LocalShardInfo {
 pub struct RemoteShardInfo {
     /// Remote shard id
     pub shard_id: ShardId,
+    /// User-defined sharding key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKey>,
     /// Remote peer id
     pub peer_id: PeerId,
     /// Is replica active
@@ -168,21 +203,34 @@ pub enum UpdateStatus {
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
     /// Sequential number of the operation
-    pub operation_id: SeqNumberType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<SeqNumberType>,
     /// Update status
     pub status: UpdateStatus,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ScrollRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub scroll_request: ScrollRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 /// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct ScrollRequest {
+pub struct ScrollRequestInternal {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
+    #[validate]
     pub filter: Option<Filter>,
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
@@ -191,9 +239,9 @@ pub struct ScrollRequest {
     pub with_vector: WithVector,
 }
 
-impl Default for ScrollRequest {
+impl Default for ScrollRequestInternal {
     fn default() -> Self {
-        ScrollRequest {
+        ScrollRequestInternal {
             offset: None,
             limit: Some(10),
             filter: None,
@@ -213,15 +261,27 @@ pub struct ScrollResult {
     pub next_page_offset: Option<PointIdType>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub search_request: SearchRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct SearchRequest {
+pub struct SearchRequestInternal {
     /// Look for vectors closest to this
     pub vector: NamedVectorStruct,
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
     /// Additional search params
     #[validate]
@@ -254,12 +314,86 @@ pub struct SearchRequestBatch {
     pub searches: Vec<SearchRequest>,
 }
 
+#[derive(Debug, Clone)]
+pub enum QueryEnum {
+    Nearest(NamedVectorStruct),
+    RecommendBestScore(NamedQuery<RecoQuery<Vector>>),
+    Discover(NamedQuery<DiscoveryQuery<Vector>>),
+    Context(NamedQuery<ContextQuery<Vector>>),
+}
+
+impl QueryEnum {
+    pub fn get_vector_name(&self) -> &str {
+        match self {
+            QueryEnum::Nearest(vector) => vector.get_name(),
+            QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
+            QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
+            QueryEnum::Context(context_query) => context_query.get_name(),
+        }
+    }
+}
+
+impl From<Vec<VectorElementType>> for QueryEnum {
+    fn from(vector: Vec<VectorElementType>) -> Self {
+        QueryEnum::Nearest(NamedVectorStruct::Default(vector))
+    }
+}
+
+impl From<NamedQuery<DiscoveryQuery<Vector>>> for QueryEnum {
+    fn from(query: NamedQuery<DiscoveryQuery<Vector>>) -> Self {
+        QueryEnum::Discover(query)
+    }
+}
+
+impl AsRef<QueryEnum> for QueryEnum {
+    fn as_ref(&self) -> &QueryEnum {
+        self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CoreSearchRequest {
+    /// Every kind of query that can be performed on segment level
+    pub query: QueryEnum,
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+    /// Additional search params
+    pub params: Option<SearchParams>,
+    /// Max number of result to return
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    pub offset: usize,
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    pub with_vector: Option<WithVector>,
+    pub score_threshold: Option<ScoreType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoreSearchRequestBatch {
+    pub searches: Vec<CoreSearchRequest>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SearchGroupsRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub search_group_request: SearchGroupsRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct SearchGroupsRequestInternal {
     /// Look for vectors closest to this
     pub vector: NamedVectorStruct,
 
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
 
     /// Additional search params
@@ -285,8 +419,18 @@ pub struct SearchGroupsRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
 pub struct PointRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub point_request: PointRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct PointRequestInternal {
     /// Look for points with ids
     pub ids: Vec<PointIdType>,
     /// Select which payload to return with the response. Default: All
@@ -296,9 +440,47 @@ pub struct PointRequest {
     pub with_vector: WithVector,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
+pub enum RecommendExample {
+    PointId(PointIdType),
+    Vector(VectorType),
+}
+
+impl RecommendExample {
+    pub fn as_point_id(&self) -> Option<PointIdType> {
+        match self {
+            RecommendExample::PointId(id) => Some(*id),
+            _ => None,
+        }
+    }
+}
+
+impl From<u64> for RecommendExample {
+    fn from(id: u64) -> Self {
+        RecommendExample::PointId(id.into())
+    }
+}
+
+/// How to use positive and negative examples to find the results, default is `average_vector`:
+///
+/// * `average_vector` - Average positive and negative vectors and create a single query
+///   with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
+///
+/// * `best_score` - Uses custom search objective. Each candidate is compared against all
+///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
+///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
+///   the `max_pos_score`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendStrategy {
+    #[default]
+    AverageVector,
+    BestScore,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
     Name(String),
 }
@@ -320,50 +502,80 @@ pub struct LookupLocation {
     /// If not provided, the default vector field will be used.
     #[serde(default)]
     pub vector: Option<String>,
+
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
-/// Recommendation request.
-/// Provides positive and negative examples of the vectors, which
-/// are already stored in the collection.
-///
-/// Service should look for the points which are closer to positive examples and at the same time
-/// further to negative examples. The concrete way of how to compare negative and positive distances
-/// is up to implementation in `segment` crate.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub recommend_request: RecommendRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+/// Recommendation request.
+/// Provides positive and negative examples of the vectors, which can be ids of points that
+/// are already stored in the collection, raw vectors, or even ids and vectors combined.
+///
+/// Service should look for the points which are closer to positive examples and at the same time
+/// further to negative examples. The concrete way of how to compare negative and positive distances
+/// is up to the `strategy` chosen.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct RecommendRequestInternal {
     /// Look for vectors closest to those
-    pub positive: Vec<PointIdType>,
+    #[serde(default)]
+    pub positive: Vec<RecommendExample>,
+
     /// Try to avoid vectors like this
     #[serde(default)]
-    pub negative: Vec<PointIdType>,
+    pub negative: Vec<RecommendExample>,
+
+    /// How to use positive and negative examples to find the results
+    pub strategy: Option<RecommendStrategy>,
+
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
+
     /// Additional search params
     #[validate]
     pub params: Option<SearchParams>,
+
     /// Max number of result to return
     #[serde(alias = "top")]
     #[validate(range(min = 1))]
     pub limit: usize,
+
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
     #[serde(default)]
     pub offset: usize,
+
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
+
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
+
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
+
     /// Define which vector to use for recommendation, if not specified - try to use default vector
     #[serde(default)]
     pub using: Option<UsingVector>,
+
     /// The location used to lookup vectors. If not specified - use current collection.
     /// Note: the other collection should have the same vector size as the current collection
     #[serde(default)]
@@ -378,15 +590,32 @@ pub struct RecommendRequestBatch {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct RecommendGroupsRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub recommend_group_request: RecommendGroupsRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct RecommendGroupsRequestInternal {
     /// Look for vectors closest to those
-    pub positive: Vec<PointIdType>,
+    #[serde(default)]
+    pub positive: Vec<RecommendExample>,
 
     /// Try to avoid vectors like this
     #[serde(default)]
-    pub negative: Vec<PointIdType>,
+    pub negative: Vec<RecommendExample>,
+
+    /// How to use positive and negative examples to find the results
+    #[serde(default)]
+    pub strategy: Option<RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
 
     /// Additional search params
@@ -419,6 +648,94 @@ pub struct RecommendGroupsRequest {
     pub group_request: BaseGroupRequest,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct ContextExamplePair {
+    pub positive: RecommendExample,
+    pub negative: RecommendExample,
+}
+
+impl ContextExamplePair {
+    pub fn iter(&self) -> impl Iterator<Item = &RecommendExample> {
+        iter::once(&self.positive).chain(iter::once(&self.negative))
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct DiscoverRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub discover_request: DiscoverRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+/// Use context and a target to find the most similar points, constrained by the context.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct DiscoverRequestInternal {
+    /// Look for vectors closest to this.
+    ///
+    /// When using the target (with or without context), the integer part of the score represents
+    /// the rank with respect to the context, while the decimal part of the score relates to the
+    /// distance to the target.
+    pub target: Option<RecommendExample>,
+
+    /// Pairs of { positive, negative } examples to constrain the search.
+    ///
+    /// When using only the context (without a target), a special search - called context search - is
+    /// performed where pairs of points are used to generate a loss that guides the search towards the
+    /// zone where most positive examples overlap. This means that the score minimizes the scenario of
+    /// finding a point closer to a negative than to a positive part of a pair.
+    ///
+    /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
+    /// and it becomes normal that many points can have a score of 0.0.
+    ///
+    /// For discovery search (when including a target), the context part of the score for each pair
+    /// is calculated +1 if the point is closer to a positive than to a negative part of a pair,
+    /// and -1 otherwise.
+    pub context: Option<Vec<ContextExamplePair>>,
+
+    /// Look only for points which satisfies this conditions
+    #[validate]
+    pub filter: Option<Filter>,
+
+    /// Additional search params
+    #[validate]
+    pub params: Option<SearchParams>,
+
+    /// Max number of result to return
+    #[serde(alias = "top")]
+    #[validate(range(min = 1))]
+    pub limit: usize,
+
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    #[serde(default)]
+    pub offset: usize,
+
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Whether to return the point vector with the result?
+    pub with_vector: Option<WithVector>,
+
+    /// Define which vector to use for recommendation, if not specified - try to use default vector
+    #[serde(default)]
+    pub using: Option<UsingVector>,
+
+    /// The location used to lookup vectors. If not specified - use current collection.
+    /// Note: the other collection should have the same vector size as the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct DiscoverRequestBatch {
+    #[validate]
+    pub searches: Vec<DiscoverRequest>,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub struct PointGroup {
     /// Scored points that have the same value of the group_by key
@@ -435,13 +752,25 @@ pub struct GroupsResult {
     pub groups: Vec<PointGroup>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct CountRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub count_request: CountRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
 /// Count Request
 /// Counts the number of points which satisfy the given filter.
 /// If filter is not provided, the count of all points in the collection will be returned.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
-pub struct CountRequest {
+pub struct CountRequestInternal {
     /// Look only for points which satisfies this conditions
+    #[validate]
     pub filter: Option<Filter>,
     /// If true, count exact number of points. If false, count approximate number of points faster.
     /// Approximate count might be unreliable during the indexing process. Default: true
@@ -492,12 +821,23 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Timeout error: {description}")]
+    Timeout { description: String },
 }
 
 impl CollectionError {
-    pub fn service_error(error: String) -> CollectionError {
+    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> CollectionError {
+        CollectionError::Timeout {
+            description: format!(
+                "Operation '{}' timed out after {timeout_sec} seconds",
+                operation.into()
+            ),
+        }
+    }
+
+    pub fn service_error(error: impl Into<String>) -> CollectionError {
         CollectionError::ServiceError {
-            error,
+            error: error.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -525,6 +865,37 @@ impl CollectionError {
         match self {
             Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
             _ => None,
+        }
+    }
+
+    pub fn shard_key_not_found(shard_key: &Option<ShardKey>) -> CollectionError {
+        match shard_key {
+            Some(shard_key) => CollectionError::NotFound {
+                what: format!("Shard key {shard_key} not found"),
+            },
+            None => CollectionError::NotFound {
+                what: "Shard expected, but not provided".to_string(),
+            },
+        }
+    }
+
+    /// Returns true if the error is transient and the operation can be retried.
+    /// Returns false if the error is not transient and the operation should fail on all replicas.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            // Transient
+            Self::ServiceError { .. } => true,
+            Self::Timeout { .. } => true,
+            Self::Cancelled { .. } => true,
+            Self::OutOfMemory { .. } => true,
+            // Not transient
+            Self::BadInput { .. } => false,
+            Self::NotFound { .. } => false,
+            Self::PointNotFound { .. } => false,
+            Self::BadRequest { .. } => false,
+            Self::BadShardSelection { .. } => false,
+            Self::InconsistentShardFailure { .. } => false,
+            Self::ForwardProxyError { .. } => false,
         }
     }
 }
@@ -583,6 +954,12 @@ impl From<OperationError> for CollectionError {
                 error: format!("{err}"),
                 backtrace: None,
             },
+            OperationError::ValidationError { .. } => Self::BadInput {
+                description: format!("{err}"),
+            },
+            OperationError::WrongSparse => Self::BadInput {
+                description: "Conversion between sparse and regular vectors failed".to_string(),
+            },
         }
     }
 }
@@ -632,8 +1009,8 @@ impl From<JsonError> for CollectionError {
     }
 }
 
-impl From<io::Error> for CollectionError {
-    fn from(err: io::Error) -> Self {
+impl From<futures::io::Error> for CollectionError {
+    fn from(err: futures::io::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("File IO error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
@@ -675,8 +1052,14 @@ impl From<tonic::Status> for CollectionError {
                 error: format!("Internal error: {err}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
             },
-            other => CollectionError::ServiceError {
-                error: format!("Tonic status error: {other}"),
+            tonic::Code::DeadlineExceeded => CollectionError::Timeout {
+                description: format!("Deadline Exceeded: {err}"),
+            },
+            tonic::Code::Cancelled => CollectionError::Cancelled {
+                description: format!("{err}"),
+            },
+            _other => CollectionError::ServiceError {
+                error: format!("Tonic status error: {err}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
             },
         }
@@ -730,14 +1113,28 @@ impl From<validator::ValidationErrors> for CollectionError {
     }
 }
 
-pub type CollectionResult<T> = Result<T, CollectionError>;
-
-pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
-    match err {
-        Ok(_) => false,
-        Err(error) => matches!(error, CollectionError::ServiceError { .. }),
+impl From<cancel::Error> for CollectionError {
+    fn from(err: cancel::Error) -> Self {
+        match err {
+            cancel::Error::Join(err) => err.into(),
+            cancel::Error::Cancelled => Self::Cancelled {
+                description: err.to_string(),
+            },
+        }
     }
 }
+
+impl From<tempfile::PathPersistError> for CollectionError {
+    fn from(err: tempfile::PathPersistError) -> Self {
+        Self::service_error(format!(
+            "failed to persist temporary file path {}: {}",
+            err.path.display(),
+            err.error,
+        ))
+    }
+}
+
+pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl Record {
     pub fn vector_names(&self) -> Vec<&str> {
@@ -750,16 +1147,12 @@ impl Record {
         }
     }
 
-    pub fn get_vector_by_name(&self, name: &str) -> Option<&VectorType> {
+    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
         match &self.vector {
             Some(VectorStruct::Single(vector)) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(vector)
-                } else {
-                    None
-                }
+                (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
             }
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name),
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(|v| v.into()),
             None => None,
         }
     }
@@ -770,11 +1163,12 @@ impl Record {
 #[serde(rename_all = "snake_case")]
 pub struct VectorParams {
     /// Size of a vectors used
+    #[validate(custom = "validate_nonzerou64_range_min_1_max_65536")]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Custom params for HNSW index. If none - values from collection configuration are used.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for quantization. If none - values from collection configuration are used.
@@ -789,6 +1183,21 @@ pub struct VectorParams {
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+/// Validate the value is in `[1, 65536]` or `None`.
+pub fn validate_nonzerou64_range_min_1_max_65536(
+    value: &NonZeroU64,
+) -> Result<(), ValidationError> {
+    validate_range_generic(value.get(), Some(1), Some(65536))
+}
+
+/// Is considered empty if `None` or if diff has no field specified
+fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
+    hnsw_config
+        .as_ref()
+        .and_then(|config| config_diff::is_empty(config).ok())
+        .unwrap_or(true)
 }
 
 impl Anonymize for VectorParams {
@@ -811,18 +1220,35 @@ impl Anonymize for VectorParams {
 ///      }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case", untagged)]
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
 }
 
 impl VectorsConfig {
+    pub fn empty() -> Self {
+        VectorsConfig::Multi(BTreeMap::new())
+    }
+
+    pub fn vectors_num(&self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Multi(vectors) => vectors.len(),
+        }
+    }
+
     pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
         match self {
             VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
             VectorsConfig::Multi(params) => params.get(name),
+        }
+    }
+
+    pub fn get_params_mut(&mut self, name: &str) -> Option<&mut VectorParams> {
+        match self {
+            VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
+            VectorsConfig::Multi(params) => params.get_mut(name),
         }
     }
 
@@ -836,76 +1262,78 @@ impl VectorsConfig {
         }
     }
 
-    fn check_vector_params_compatibility(
-        self_params: &VectorParams,
-        other_params: &VectorParams,
-        vector_name: &str,
-    ) -> Result<(), CollectionError> {
-        if self_params.size != other_params.size {
-            return Err(CollectionError::BadInput {
-                description: format!(
-                    "Vectors configuration is not compatible: origin vector {} size: {}, while other vector size: {}",
-                    vector_name, self_params.size, other_params.size
-                )
-            });
-        }
+    // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
+    pub fn check_compatible(&self, other: &Self) -> CollectionResult<()> {
+        match (self, other) {
+            (Self::Single(_), Self::Single(_)) | (Self::Multi(_), Self::Multi(_)) => (),
+            _ => {
+                return Err(incompatible_vectors_error(
+                    self.params_iter().map(|(name, _)| name),
+                    other.params_iter().map(|(name, _)| name),
+                ));
+            }
+        };
 
-        if self_params.distance != other_params.distance {
-            return Err(CollectionError::BadInput {
-                description: format!(
-                    "Vectors configuration is not compatible: origin vector {} distance: {:?}, while other vector distance: {:?}",
-                    vector_name, self_params.distance, other_params.distance
-                )
-            });
+        for (vector_name, this) in self.params_iter() {
+            let Some(other) = other.get_params(vector_name) else {
+                return Err(missing_vector_error(vector_name));
+            };
+
+            VectorParamsBase::from(this).check_compatibility(&other.into(), vector_name)?;
         }
 
         Ok(())
     }
 
-    pub fn check_compatible(&self, other: &Self) -> Result<(), CollectionError> {
-        match (self, other) {
-            (VectorsConfig::Single(self_single), VectorsConfig::Single(other_single)) => {
-                Self::check_vector_params_compatibility(
-                    self_single,
-                    other_single,
-                    DEFAULT_VECTOR_NAME,
-                )
-            }
-            (VectorsConfig::Multi(self_params), VectorsConfig::Multi(other_params)) => {
-                for (self_vector_name, self_vector_params) in self_params {
-                    if let Some(other_vector_params) = other_params.get(self_vector_name) {
-                        Self::check_vector_params_compatibility(
-                            self_vector_params,
-                            other_vector_params,
-                            self_vector_name,
-                        )?;
-                    } else {
-                        return Err(CollectionError::BadInput {
-                            description: format!(
-                                "Vectors configuration is not compatible: origin collection have vector {}, while other collection does not",
-                                self_vector_name
-                            )
-                        });
-                    }
-                }
-                Ok(())
-            }
-            _ => {
-                let self_vectors = self
-                    .params_iter()
-                    .map(|(name, _)| name)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let other_vectors = other
-                    .params_iter()
-                    .map(|(name, _)| name)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(CollectionError::BadInput {
-                    description: format!("Vectors configuration is not compatible: origin collection have vectors: [{}], while other vectors: [{}]", self_vectors, other_vectors)
-                })
-            }
+    // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
+    pub fn check_compatible_with_segment_config(
+        &self,
+        other: &HashMap<String, segment::types::VectorDataConfig>,
+        exact: bool,
+    ) -> CollectionResult<()> {
+        if exact && self.vectors_num() != other.len() {
+            return Err(incompatible_vectors_error(
+                self.params_iter().map(|(name, _)| name),
+                other.keys().map(String::as_str),
+            ));
         }
+
+        for (vector_name, this) in self.params_iter() {
+            let Some(other) = other.get(vector_name) else {
+                return Err(missing_vector_error(vector_name));
+            };
+
+            VectorParamsBase::from(this).check_compatibility(&other.into(), vector_name)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn incompatible_vectors_error<'a, 'b>(
+    this: impl Iterator<Item = &'a str>,
+    other: impl Iterator<Item = &'b str>,
+) -> CollectionError {
+    let this_vectors = this.collect::<Vec<_>>().join(", ");
+    let other_vectors = other.collect::<Vec<_>>().join(", ");
+
+    CollectionError::BadInput {
+        description: format!(
+            "Vectors configuration is not compatible: \
+             origin collection have vectors [{}], \
+             while other vectors [{}]",
+            this_vectors, other_vectors
+        ),
+    }
+}
+
+fn missing_vector_error(vector_name: &str) -> CollectionError {
+    CollectionError::BadInput {
+        description: format!(
+            "Vectors configuration is not compatible: \
+             origin collection have vector {}, while other collection does not",
+            vector_name
+        ),
     }
 }
 
@@ -919,6 +1347,7 @@ impl Anonymize for VectorsConfig {
 }
 
 impl Validate for VectorsConfig {
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             VectorsConfig::Single(single) => single.validate(),
@@ -939,6 +1368,129 @@ impl Validate for VectorsConfig {
 impl From<VectorParams> for VectorsConfig {
     fn from(params: VectorParams) -> Self {
         VectorsConfig::Single(params)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct VectorParamsBase {
+    /// Size of a vectors used
+    size: usize,
+    /// Type of distance function used for measuring distance between vectors
+    distance: Distance,
+}
+
+impl VectorParamsBase {
+    fn check_compatibility(&self, other: &Self, vector_name: &str) -> CollectionResult<()> {
+        if self.size != other.size {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: \
+                     origin vector {} size: {}, while other vector size: {}",
+                    vector_name, self.size, other.size
+                ),
+            });
+        }
+
+        if self.distance != other.distance {
+            return Err(CollectionError::BadInput {
+                description: format!(
+                    "Vectors configuration is not compatible: \
+                     origin vector {} distance: {:?}, while other vector distance: {:?}",
+                    vector_name, self.distance, other.distance
+                ),
+            });
+        }
+
+        Ok(())
+    }
+}
+
+impl From<&VectorParams> for VectorParamsBase {
+    fn from(params: &VectorParams) -> Self {
+        Self {
+            size: params.size.get() as _, // TODO!?
+            distance: params.distance,
+        }
+    }
+}
+
+impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
+    fn from(config: &segment::types::VectorDataConfig) -> Self {
+        Self {
+            size: config.size,
+            distance: config.distance,
+        }
+    }
+}
+
+#[derive(
+    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Merge,
+)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorParamsDiff {
+    /// Update params for HNSW index. If empty object - it will be unset.
+    #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
+    /// Update params for quantization. If none - it is left unchanged.
+    #[serde(
+        default,
+        alias = "quantization",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfigDiff>,
+    /// If true, vectors are served from disk, improving RAM usage at the cost of latency
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_disk: Option<bool>,
+}
+
+/// Vector update params for multiple vectors
+///
+/// {
+///     "vector_name": {
+///         "hnsw_config": { "m": 8 }
+///     }
+/// }
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+pub struct VectorsConfigDiff(pub BTreeMap<String, VectorParamsDiff>);
+
+impl VectorsConfigDiff {
+    /// Check that the vector names in this config are part of the given collection.
+    ///
+    /// Returns an error if incompatible.
+    pub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {
+        for vector_name in self.0.keys() {
+            collection
+                .vectors
+                .get_params(vector_name)
+                .map(|_| ())
+                .ok_or_else(|| OperationError::VectorNameNotExists {
+                    received_name: vector_name.into(),
+                })?;
+        }
+        Ok(())
+    }
+}
+
+impl Validate for VectorsConfigDiff {
+    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let errors = self
+            .0
+            .values()
+            .filter_map(|v| v.validate().err())
+            .fold(Err(ValidationErrors::new()), |bag, err| {
+                ValidationErrors::merge(bag, "?", Err(err))
+            })
+            .unwrap_err();
+        errors.errors().is_empty().then_some(()).ok_or(errors)
+    }
+}
+
+impl From<VectorParamsDiff> for VectorsConfigDiff {
+    fn from(params: VectorParamsDiff) -> Self {
+        VectorsConfigDiff(BTreeMap::from([("".into(), params)]))
     }
 }
 
@@ -984,4 +1536,30 @@ pub struct BaseGroupRequest {
 
     /// Look for points in another collection using the group ids
     pub with_lookup: Option<WithLookupInterface>,
+}
+
+impl From<SearchRequestInternal> for CoreSearchRequest {
+    fn from(request: SearchRequestInternal) -> Self {
+        Self {
+            query: QueryEnum::Nearest(request.vector),
+            filter: request.filter,
+            params: request.params,
+            limit: request.limit,
+            offset: request.offset,
+            with_payload: request.with_payload,
+            with_vector: request.with_vector,
+            score_threshold: request.score_threshold,
+        }
+    }
+}
+
+impl From<QueryEnum> for QueryVector {
+    fn from(query: QueryEnum) -> Self {
+        match query {
+            QueryEnum::Nearest(named) => QueryVector::Nearest(named.into()),
+            QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query),
+            QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
+            QueryEnum::Context(named) => QueryVector::Context(named.query),
+        }
+    }
 }

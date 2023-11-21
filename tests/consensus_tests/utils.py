@@ -95,11 +95,17 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
 
 
 # Starts a peer and returns its api_uri and p2p_uri
-def start_first_peer(peer_dir: Path, log_file: str, port=None) -> Tuple[str, str]:
+def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None) -> Tuple[str, str]:
+    if extra_env is None:
+        extra_env = {}
+
     p2p_port = get_port() if port is None else port + 0
     grpc_port = get_port() if port is None else port + 1
     http_port = get_port() if port is None else port + 2
-    env = get_env(p2p_port, grpc_port, http_port)
+    env = {
+        **get_env(p2p_port, grpc_port, http_port),
+        **extra_env
+    }
     test_log_folder = init_pytest_log_folder()
     log_file = open(f"{test_log_folder}/{log_file}", "w")
     bootstrap_uri = get_uri(p2p_port)
@@ -110,7 +116,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None) -> Tuple[str, str
     return get_uri(http_port), bootstrap_uri
 
 
-def start_cluster(tmp_path, num_peers, port_seed=None):
+def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)
 
@@ -118,7 +124,8 @@ def start_cluster(tmp_path, num_peers, port_seed=None):
     peer_api_uris = []
 
     # Start bootstrap
-    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log", port=port_seed)
+    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log", port=port_seed,
+                                                          extra_env=extra_env)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
@@ -129,7 +136,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None):
     for i in range(1, len(peer_dirs)):
         if port_seed is not None:
             port = port_seed + i * 100
-        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=port))
+        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader)
@@ -259,6 +266,19 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
     return True
 
 
+def all_nodes_have_same_commit(peer_api_uris: [str]) -> bool:
+    commits = []
+    for uri in peer_api_uris:
+        try:
+            r = requests.get(f"{uri}/cluster")
+            assert_http_ok(r)
+            commits.append(r.json()["result"]["raft_info"]["commit"])
+        except requests.exceptions.ConnectionError:
+            print(f"Could not contact peer {uri} to fetch commit")
+            return False
+    return len(set(commits)) == 1
+
+
 def all_nodes_respond(peer_api_uris: [str]) -> bool:
     for uri in peer_api_uris:
         try:
@@ -349,6 +369,14 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str):
 def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
     try:
         wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
+
+
+def wait_for_same_commit(peer_api_uris: [str]):
+    try:
+        wait_for(all_nodes_have_same_commit, peer_api_uris)
     except Exception as e:
         print_clusters_info(peer_api_uris)
         raise e

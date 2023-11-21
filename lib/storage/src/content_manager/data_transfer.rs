@@ -3,9 +3,10 @@ use std::time::Duration;
 
 use collection::collection::Collection;
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointStruct, WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
-use collection::operations::types::{CollectionError, CollectionResult, ScrollRequest};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::types::{CollectionError, CollectionResult, ScrollRequestInternal};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
@@ -77,7 +78,7 @@ async fn replicate_shard_data(
     let limit = MIGRATION_BATCH_SIZE;
 
     loop {
-        let request = ScrollRequest {
+        let request = ScrollRequestInternal {
             offset,
             limit: Some(limit),
             filter: None,
@@ -91,7 +92,7 @@ async fn replicate_shard_data(
             handle_get_collection(collections_read.get(source_collection_name))?;
         let _updates_guard = source_collection.lock_updates().await;
         let scroll_result = source_collection
-            .scroll_by(request, None, Some(shard_id))
+            .scroll_by(request, None, &ShardSelectorInternal::ShardId(shard_id))
             .await?;
 
         offset = scroll_result.next_page_offset;
@@ -111,14 +112,14 @@ async fn replicate_shard_data(
             .collect();
 
         let upsert_request = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::PointsList(records)),
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(records)),
         );
 
         let target_collection =
             handle_get_collection(collections_read.get(target_collection_name))?;
 
         target_collection
-            .update_from_client(upsert_request, false, WriteOrdering::default())
+            .update_from_client_simple(upsert_request, false, WriteOrdering::default())
             .await?;
 
         if offset.is_none() {
@@ -209,7 +210,7 @@ pub async fn transfer_indexes(
 
     wait_all_shards_active(collections.clone(), target_collection).await?;
 
-    let collection_info = collection.info(None).await?;
+    let collection_info = collection.info(&ShardSelectorInternal::All).await?;
 
     let target_collection = handle_get_collection(collections_read.get(target_collection))?;
     for (payload_name, schema) in collection_info.payload_schema {
@@ -220,7 +221,7 @@ pub async fn transfer_indexes(
             }),
         );
         target_collection
-            .update_from_client(request, false, WriteOrdering::default())
+            .update_from_client_simple(request, false, WriteOrdering::default())
             .await?;
     }
 

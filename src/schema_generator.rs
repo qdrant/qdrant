@@ -3,25 +3,31 @@ use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
-use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
+use collection::operations::snapshot_ops::{
+    ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
+};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
-    CountRequest, CountResult, GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult,
-    SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
+    CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch, GroupsResult, PointGroup,
+    PointRequest, RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch, Record,
+    ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
+    UpdateResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
+use segment::data_types::vectors::{NamedSparseVector, Vector};
+use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::ScoredPoint;
 use serde::{Deserialize, Serialize};
+use sparse::common::sparse_vector::SparseVector;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 use storage::types::ClusterStatus;
 
 use crate::common::helpers::LocksOption;
-use crate::common::points::CreateFieldIndex;
+use crate::common::points::{CreateFieldIndex, UpdateOperations};
 use crate::common::telemetry::TelemetryData;
 
 mod actix;
@@ -71,6 +77,14 @@ struct AllDefinitions {
     b5: SearchGroupsRequest,
     b6: RecommendGroupsRequest,
     b7: GroupsResult,
+    b8: UpdateOperations,
+    b9: ShardSnapshotRecover,
+    ba: DiscoverRequest,
+    bb: DiscoverRequestBatch,
+    bc: SparseVector,
+    bd: SparseIndexConfig,
+    be: Vector,
+    bf: NamedSparseVector,
 }
 
 fn save_schema<T: JsonSchema>() {

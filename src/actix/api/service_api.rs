@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use crate::actix::helpers::process_response;
 use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
+use crate::common::stacktrace::get_stack_trace;
 use crate::common::telemetry::TelemetryCollector;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -87,10 +88,43 @@ async fn get_locks(toc: web::Data<TableOfContent>) -> impl Responder {
     process_response(Ok(result), timing)
 }
 
+#[get("/stacktrace")]
+async fn get_stacktrace() -> impl Responder {
+    let timing = Instant::now();
+    let result = get_stack_trace();
+    process_response(Ok(result), timing)
+}
+
+#[get("/healthz")]
+async fn healthz() -> impl Responder {
+    kubernetes_healthz().await
+}
+
+#[get("/livez")]
+async fn livez() -> impl Responder {
+    kubernetes_healthz().await
+}
+
+#[get("/readyz")]
+async fn readyz() -> impl Responder {
+    kubernetes_healthz().await
+}
+
+/// Basic Kubernetes healthz endpoint
+async fn kubernetes_healthz() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .body("healthz check passed")
+}
+
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
         .service(metrics)
         .service(put_locks)
-        .service(get_locks);
+        .service(get_locks)
+        .service(get_stacktrace)
+        .service(healthz)
+        .service(livez)
+        .service(readyz);
 }

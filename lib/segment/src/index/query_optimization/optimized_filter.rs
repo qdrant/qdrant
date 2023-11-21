@@ -1,4 +1,4 @@
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
 
 pub type ConditionCheckerFn<'a> = Box<dyn Fn(PointOffsetType) -> bool + 'a>;
 

@@ -4,11 +4,11 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{default_quantization_ignore_value, default_quantization_rescore_value};
+use segment::types::default_quantization_ignore_value;
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{CompressionRatio, GroupId};
+use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -18,13 +18,14 @@ use crate::grpc::qdrant::value::Kind;
 use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
-    with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
-    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
-    HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match,
-    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
-    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig,
-    QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization,
-    ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
+    shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
+    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
+    HasIdCondition, HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition,
+    ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
+    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
+    PayloadSchemaType, PointId, ProductQuantization, QuantizationConfig, QuantizationSearchParams,
+    QuantizationType, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint,
+    SearchParams, ShardKey, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
     Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
@@ -109,6 +110,44 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
     }
 }
 
+pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {
+    match value {
+        segment::types::ShardKey::Keyword(keyword) => ShardKey {
+            key: Some(shard_key::Key::Keyword(keyword)),
+        },
+        segment::types::ShardKey::Number(number) => ShardKey {
+            key: Some(shard_key::Key::Number(number)),
+        },
+    }
+}
+
+pub fn convert_shard_key_from_grpc(value: ShardKey) -> Option<segment::types::ShardKey> {
+    match value.key {
+        None => None,
+        Some(key) => match key {
+            shard_key::Key::Keyword(keyword) => Some(segment::types::ShardKey::Keyword(keyword)),
+            shard_key::Key::Number(number) => Some(segment::types::ShardKey::Number(number)),
+        },
+    }
+}
+
+pub fn convert_shard_key_from_grpc_opt(
+    value: Option<ShardKey>,
+) -> Option<segment::types::ShardKey> {
+    match value {
+        None => None,
+        Some(key) => match key.key {
+            None => None,
+            Some(key) => match key {
+                shard_key::Key::Keyword(keyword) => {
+                    Some(segment::types::ShardKey::Keyword(keyword))
+                }
+                shard_key::Key::Number(number) => Some(segment::types::ShardKey::Number(number)),
+            },
+        },
+    }
+}
+
 impl From<VersionInfo> for HealthCheckReply {
     fn from(info: VersionInfo) -> Self {
         HealthCheckReply {
@@ -138,6 +177,9 @@ impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
         match tokenizer_type {
             segment::data_types::text_index::TokenizerType::Prefix => TokenizerType::Prefix,
             segment::data_types::text_index::TokenizerType::Whitespace => TokenizerType::Whitespace,
+            segment::data_types::text_index::TokenizerType::Multilingual => {
+                TokenizerType::Multilingual
+            }
             segment::data_types::text_index::TokenizerType::Word => TokenizerType::Word,
         }
     }
@@ -185,6 +227,9 @@ impl TryFrom<TokenizerType> for segment::data_types::text_index::TokenizerType {
         match tokenizer_type {
             TokenizerType::Unknown => Err(Status::invalid_argument("unknown tokenizer type")),
             TokenizerType::Prefix => Ok(segment::data_types::text_index::TokenizerType::Prefix),
+            TokenizerType::Multilingual => {
+                Ok(segment::data_types::text_index::TokenizerType::Multilingual)
+            }
             TokenizerType::Whitespace => {
                 Ok(segment::data_types::text_index::TokenizerType::Whitespace)
             }
@@ -336,9 +381,7 @@ impl From<QuantizationSearchParams> for segment::types::QuantizationSearchParams
     fn from(params: QuantizationSearchParams) -> Self {
         Self {
             ignore: params.ignore.unwrap_or(default_quantization_ignore_value()),
-            rescore: params
-                .rescore
-                .unwrap_or(default_quantization_rescore_value()),
+            rescore: params.rescore,
             oversampling: params.oversampling,
         }
     }
@@ -348,7 +391,7 @@ impl From<segment::types::QuantizationSearchParams> for QuantizationSearchParams
     fn from(params: segment::types::QuantizationSearchParams) -> Self {
         Self {
             ignore: Some(params.ignore),
-            rescore: Some(params.rescore),
+            rescore: params.rescore,
             oversampling: params.oversampling,
         }
     }
@@ -360,6 +403,7 @@ impl From<SearchParams> for segment::types::SearchParams {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
             exact: params.exact.unwrap_or(false),
             quantization: params.quantization.map(|q| q.into()),
+            indexed_only: params.indexed_only.unwrap_or(false),
         }
     }
 }
@@ -370,6 +414,7 @@ impl From<segment::types::SearchParams> for SearchParams {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
             exact: Some(params.exact),
             quantization: params.quantization.map(|q| q.into()),
+            indexed_only: Some(params.indexed_only),
         }
     }
 }
@@ -391,6 +436,15 @@ impl From<segment::data_types::vectors::VectorType> for Vector {
     }
 }
 
+impl From<segment::data_types::vectors::Vector> for Vector {
+    fn from(vector: segment::data_types::vectors::Vector) -> Self {
+        match vector {
+            segment::data_types::vectors::Vector::Dense(vector) => Self { data: vector },
+            segment::data_types::vectors::Vector::Sparse(_) => todo!(), // TODO(sparse) grpc conversion
+        }
+    }
+}
+
 impl From<HashMap<String, Vec<VectorElementType>>> for NamedVectors {
     fn from(vectors: HashMap<String, Vec<VectorElementType>>) -> Self {
         Self {
@@ -409,7 +463,13 @@ impl From<segment::data_types::vectors::VectorStruct> for Vectors {
                 vectors_options: Some(VectorsOptions::Vector(vector.into())),
             },
             segment::data_types::vectors::VectorStruct::Multi(vectors) => Self {
-                vectors_options: Some(VectorsOptions::Vectors(vectors.into())),
+                vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
+                    vectors: HashMap::from_iter(
+                        vectors
+                            .iter()
+                            .map(|(name, vector)| (name.clone(), vector.clone().into())),
+                    ),
+                })),
             },
         }
     }
@@ -423,6 +483,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score: point.score,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
+            shard_key: point.shard_key.map(convert_shard_key_to_grpc),
         }
     }
 }
@@ -449,6 +510,16 @@ impl From<NamedVectors> for HashMap<String, Vec<VectorElementType>> {
             .vectors
             .into_iter()
             .map(|(name, vector)| (name, vector.data))
+            .collect()
+    }
+}
+
+impl From<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector> {
+    fn from(vectors: NamedVectors) -> Self {
+        vectors
+            .vectors
+            .into_iter()
+            .map(|(name, vector)| (name, vector.data.into()))
             .collect()
     }
 }
@@ -517,38 +588,117 @@ impl TryFrom<PointId> for segment::types::PointIdType {
     }
 }
 
+impl From<segment::types::ScalarQuantization> for ScalarQuantization {
+    fn from(value: segment::types::ScalarQuantization) -> Self {
+        let config = value.scalar;
+        ScalarQuantization {
+            r#type: match config.r#type {
+                segment::types::ScalarType::Int8 => {
+                    crate::grpc::qdrant::QuantizationType::Int8 as i32
+                }
+            },
+            quantile: config.quantile,
+            always_ram: config.always_ram,
+        }
+    }
+}
+
+impl TryFrom<ScalarQuantization> for segment::types::ScalarQuantization {
+    type Error = Status;
+
+    fn try_from(value: ScalarQuantization) -> Result<Self, Self::Error> {
+        Ok(segment::types::ScalarQuantization {
+            scalar: segment::types::ScalarQuantizationConfig {
+                r#type: match QuantizationType::from_i32(value.r#type) {
+                    Some(QuantizationType::Int8) => segment::types::ScalarType::Int8,
+                    Some(QuantizationType::UnknownQuantization) | None => {
+                        return Err(Status::invalid_argument("Unknown quantization type"))
+                    }
+                },
+                quantile: value.quantile,
+                always_ram: value.always_ram,
+            },
+        })
+    }
+}
+
+impl From<segment::types::ProductQuantization> for ProductQuantization {
+    fn from(value: segment::types::ProductQuantization) -> Self {
+        let config = value.product;
+        ProductQuantization {
+            compression: match config.compression {
+                segment::types::CompressionRatio::X4 => CompressionRatio::X4 as i32,
+                segment::types::CompressionRatio::X8 => CompressionRatio::X8 as i32,
+                segment::types::CompressionRatio::X16 => CompressionRatio::X16 as i32,
+                segment::types::CompressionRatio::X32 => CompressionRatio::X32 as i32,
+                segment::types::CompressionRatio::X64 => CompressionRatio::X64 as i32,
+            },
+            always_ram: config.always_ram,
+        }
+    }
+}
+
+impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
+    type Error = Status;
+
+    fn try_from(value: ProductQuantization) -> Result<Self, Self::Error> {
+        Ok(segment::types::ProductQuantization {
+            product: segment::types::ProductQuantizationConfig {
+                compression: match CompressionRatio::from_i32(value.compression) {
+                    None => {
+                        return Err(Status::invalid_argument(
+                            "Unknown compression ratio".to_string(),
+                        ))
+                    }
+                    Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
+                    Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
+                    Some(CompressionRatio::X16) => segment::types::CompressionRatio::X16,
+                    Some(CompressionRatio::X32) => segment::types::CompressionRatio::X32,
+                    Some(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
+                },
+                always_ram: value.always_ram,
+            },
+        })
+    }
+}
+
+impl From<segment::types::BinaryQuantization> for BinaryQuantization {
+    fn from(value: segment::types::BinaryQuantization) -> Self {
+        let config = value.binary;
+        BinaryQuantization {
+            always_ram: config.always_ram,
+        }
+    }
+}
+
+impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
+    type Error = Status;
+
+    fn try_from(value: BinaryQuantization) -> Result<Self, Self::Error> {
+        Ok(segment::types::BinaryQuantization {
+            binary: segment::types::BinaryQuantizationConfig {
+                always_ram: value.always_ram,
+            },
+        })
+    }
+}
+
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
-            segment::types::QuantizationConfig::Scalar(segment::types::ScalarQuantization {
-                scalar: config,
-            }) => Self {
+            segment::types::QuantizationConfig::Scalar(scalar) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Scalar(
-                    ScalarQuantization {
-                        r#type: match config.r#type {
-                            segment::types::ScalarType::Int8 => {
-                                crate::grpc::qdrant::QuantizationType::Int8 as i32
-                            }
-                        },
-                        quantile: config.quantile,
-                        always_ram: config.always_ram,
-                    },
+                    scalar.into(),
                 )),
             },
-            segment::types::QuantizationConfig::Product(segment::types::ProductQuantization {
-                product: config,
-            }) => Self {
+            segment::types::QuantizationConfig::Product(product) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Product(
-                    super::qdrant::ProductQuantization {
-                        compression: match config.compression {
-                            segment::types::CompressionRatio::X4 => CompressionRatio::X4 as i32,
-                            segment::types::CompressionRatio::X8 => CompressionRatio::X8 as i32,
-                            segment::types::CompressionRatio::X16 => CompressionRatio::X16 as i32,
-                            segment::types::CompressionRatio::X32 => CompressionRatio::X32 as i32,
-                            segment::types::CompressionRatio::X64 => CompressionRatio::X64 as i32,
-                        },
-                        always_ram: config.always_ram,
-                    },
+                    product.into(),
+                )),
+            },
+            segment::types::QuantizationConfig::Binary(binary) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Binary(
+                    binary.into(),
                 )),
             },
         }
@@ -563,46 +713,14 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             .quantization
             .ok_or_else(|| Status::invalid_argument("Unable to convert quantization config"))?;
         match value {
-            super::qdrant::quantization_config::Quantization::Scalar(config) => {
-                Ok(segment::types::ScalarQuantizationConfig {
-                    r#type: match crate::grpc::qdrant::QuantizationType::from_i32(config.r#type) {
-                        None => {
-                            return Err(Status::invalid_argument(
-                                "Error converting quantization type: None",
-                            ));
-                        }
-                        Some(crate::grpc::qdrant::QuantizationType::UnknownQuantization) => {
-                            return Err(Status::invalid_argument(
-                                "Error converting quantization type: UnknownQuantization",
-                            ));
-                        }
-                        Some(crate::grpc::qdrant::QuantizationType::Int8) => {
-                            segment::types::ScalarType::Int8
-                        }
-                    },
-                    quantile: config.quantile,
-                    always_ram: config.always_ram,
-                }
-                .into())
-            }
+            super::qdrant::quantization_config::Quantization::Scalar(config) => Ok(
+                segment::types::QuantizationConfig::Scalar(config.try_into()?),
+            ),
             super::qdrant::quantization_config::Quantization::Product(config) => Ok(
-                segment::types::QuantizationConfig::Product(segment::types::ProductQuantization {
-                    product: segment::types::ProductQuantizationConfig {
-                        compression: match CompressionRatio::from_i32(config.compression) {
-                            None => {
-                                return Err(Status::invalid_argument(
-                                    "Error converting compression ratio: None",
-                                ));
-                            }
-                            Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
-                            Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
-                            Some(CompressionRatio::X16) => segment::types::CompressionRatio::X16,
-                            Some(CompressionRatio::X32) => segment::types::CompressionRatio::X32,
-                            Some(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
-                        },
-                        always_ram: config.always_ram,
-                    },
-                }),
+                segment::types::QuantizationConfig::Product(config.try_into()?),
+            ),
+            super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
+                segment::types::QuantizationConfig::Binary(config.try_into()?),
             ),
         }
     }
@@ -796,18 +914,21 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_bounding_box,
             geo_radius,
             values_count,
+            geo_polygon,
         } = value;
 
         let geo_bounding_box =
             geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
+        let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         Ok(Self {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
-            range: range.map(|r| r.into()),
+            range: range.map(Into::into),
             geo_bounding_box,
             geo_radius,
-            values_count: values_count.map(|r| r.into()),
+            geo_polygon,
+            values_count: values_count.map(Into::into),
         })
     }
 }
@@ -820,18 +941,21 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             range,
             geo_bounding_box,
             geo_radius,
+            geo_polygon,
             values_count,
         } = value;
 
-        let geo_bounding_box = geo_bounding_box.map(|g| g.into());
-        let geo_radius = geo_radius.map(|g| g.into());
+        let geo_bounding_box = geo_bounding_box.map(Into::into);
+        let geo_radius = geo_radius.map(Into::into);
+        let geo_polygon = geo_polygon.map(Into::into);
         Self {
             key,
-            r#match: r#match.map(|m| m.into()),
-            range: range.map(|r| r.into()),
+            r#match: r#match.map(Into::into),
+            range: range.map(Into::into),
             geo_bounding_box,
             geo_radius,
-            values_count: values_count.map(|r| r.into()),
+            geo_polygon,
+            values_count: values_count.map(Into::into),
         }
     }
 }
@@ -888,11 +1012,58 @@ impl From<segment::types::GeoRadius> for GeoRadius {
     }
 }
 
+impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
+    type Error = Status;
+
+    fn try_from(value: GeoPolygon) -> Result<Self, Self::Error> {
+        match value {
+            GeoPolygon {
+                exterior: Some(e),
+                interiors,
+            } => Ok(Self {
+                exterior: e.into(),
+                interiors: Some(interiors.into_iter().map(Into::into).collect()),
+            }),
+            _ => Err(Status::invalid_argument("Malformed GeoPolygon type")),
+        }
+    }
+}
+
+impl From<segment::types::GeoPolygon> for GeoPolygon {
+    fn from(value: segment::types::GeoPolygon) -> Self {
+        Self {
+            exterior: Some(value.exterior.into()),
+            interiors: value
+                .interiors
+                .unwrap_or_default()
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        }
+    }
+}
+
 impl From<GeoPoint> for segment::types::GeoPoint {
     fn from(value: GeoPoint) -> Self {
         Self {
             lon: value.lon,
             lat: value.lat,
+        }
+    }
+}
+
+impl From<GeoLineString> for segment::types::GeoLineString {
+    fn from(value: GeoLineString) -> Self {
+        Self {
+            points: value.points.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<segment::types::GeoLineString> for GeoLineString {
+    fn from(value: segment::types::GeoLineString) -> Self {
+        Self {
+            points: value.points.into_iter().map(Into::into).collect(),
         }
     }
 }

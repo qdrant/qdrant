@@ -3,8 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use parking_lot::{RwLock, RwLockWriteGuard};
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,
@@ -12,7 +13,7 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::vector_ops::{PointVectors, VectorOperations};
 use crate::operations::FieldIndexOperations;
@@ -98,8 +99,7 @@ pub(crate) fn overwrite_payload(
 ) -> CollectionResult<usize> {
     let updated_points =
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.set_full_payload(op_num, id, payload)?;
-            Ok(true)
+            write_segment.set_full_payload(op_num, id, payload)
         })?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -124,8 +124,7 @@ pub(crate) fn set_payload(
 ) -> CollectionResult<usize> {
     let updated_points =
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.set_payload(op_num, id, payload)?;
-            Ok(true)
+            write_segment.set_payload(op_num, id, payload)
         })?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -404,9 +403,9 @@ pub(crate) fn process_point_operation(
         PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
-                PointInsertOperations::PointsBatch(batch) => {
+                PointInsertOperationsInternal::PointsBatch(batch) => {
                     let all_vectors = batch.vectors.into_all_vectors(batch.ids.len());
-                    let vectors_iter = batch.ids.into_iter().zip(all_vectors.into_iter());
+                    let vectors_iter = batch.ids.into_iter().zip(all_vectors);
                     match batch.payloads {
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
@@ -416,7 +415,7 @@ pub(crate) fn process_point_operation(
                             })
                             .collect(),
                         Some(payloads) => vectors_iter
-                            .zip(payloads.into_iter())
+                            .zip(payloads)
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
                                 vector: vectors.into(),
@@ -425,7 +424,7 @@ pub(crate) fn process_point_operation(
                             .collect(),
                     }
                 }
-                PointInsertOperations::PointsList(points) => points,
+                PointInsertOperationsInternal::PointsList(points) => points,
             };
             let res = upsert_points(&segments.read(), op_num, points.iter())?;
             Ok(res)

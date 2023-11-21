@@ -1,6 +1,11 @@
+use std::env;
+use std::path::PathBuf;
+
 use tonic_build::Builder;
 
 fn main() -> std::io::Result<()> {
+    let build_out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
     // Build gRPC bits from proto file
     tonic_build::configure()
         // Because we want to attach all validation rules to the generated gRPC types, we must do
@@ -8,6 +13,7 @@ fn main() -> std::io::Result<()> {
         // `Validation` for all these types and seems to be the best approach. The line below
         // configures all attributes.
         .configure_validation()
+        .file_descriptor_set_path(build_out_dir.join("qdrant_descriptor.bin"))
         .out_dir("src/grpc/") // saves generated structures at this location
         .compile(
             &["src/grpc/proto/qdrant.proto"], // proto entry point
@@ -80,7 +86,7 @@ fn configure_validation(builder: Builder) -> Builder {
         // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),
-            ("CreateCollection.collection_name", "length(min = 1, max = 255), custom = \"crate::grpc::validate::validate_collection_name\""),
+            ("CreateCollection.collection_name", "length(min = 1, max = 255), custom = \"common::validation::validate_collection_name\""),
             ("CreateCollection.hnsw_config", ""),
             ("CreateCollection.wal_config", ""),
             ("CreateCollection.optimizers_config", ""),
@@ -90,6 +96,9 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollection.optimizers_config", ""),
             ("UpdateCollection.params", ""),
             ("UpdateCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("UpdateCollection.hnsw_config", ""),
+            ("UpdateCollection.vectors_config", ""),
+            ("UpdateCollection.quantization_config", ""),
             ("DeleteCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("CollectionConfig.params", ""),
@@ -104,12 +113,19 @@ fn configure_validation(builder: Builder) -> Builder {
             ("OptimizersConfigDiff.deleted_threshold", "custom = \"crate::grpc::validate::validate_f64_range_1\""),
             ("OptimizersConfigDiff.vacuum_min_vector_number", "custom = \"crate::grpc::validate::validate_u64_range_min_100\""),
             ("VectorsConfig.config", ""),
-            ("VectorParams.size", "range(min = 1)"),
+            ("VectorsConfigDiff.config", ""),
+            ("VectorParams.size", "range(min = 1, max = 65536)"),
             ("VectorParams.hnsw_config", ""),
             ("VectorParams.quantization_config", ""),
-            ("QuantizationConfig.quantization", ""),
-            ("ScalarQuantization.quantile", "custom = \"crate::grpc::validate::validate_f32_range_min_0_5_max_1\""),
             ("VectorParamsMap.map", ""),
+            ("VectorParamsDiff.hnsw_config", ""),
+            ("VectorParamsDiff.quantization_config", ""),
+            ("VectorParamsDiffMap.map", ""),
+            ("QuantizationConfig.quantization", ""),
+            ("QuantizationConfigDiff.quantization", ""),
+            ("ScalarQuantization.quantile", "custom = \"crate::grpc::validate::validate_f32_range_min_0_5_max_1\""),
+            ("UpdateCollectionClusterSetupRequest.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("UpdateCollectionClusterSetupRequest.operation", ""),
         ], &[
             "ListCollectionsRequest",
             "CollectionParamsDiff",
@@ -117,11 +133,18 @@ fn configure_validation(builder: Builder) -> Builder {
             "CollectionClusterInfoRequest",
             "UpdateCollectionClusterSetupRequest",
             "ProductQuantization",
+            "BinaryQuantization",
+            "Disabled",
+            "QuantizationConfigDiff",
+            "quantization_config_diff::Quantization",
+            "Replica",
         ])
         // Service: collections_internal.proto
         .validates(&[
             ("GetCollectionInfoRequestInternal.get_collection_info_request", ""),
             ("InitiateShardTransferRequest.collection_name", "length(min = 1, max = 255)"),
+            ("WaitForShardStateRequest.collection_name", "length(min = 1, max = 255)"),
+            ("WaitForShardStateRequest.timeout", "range(min = 1)"),
         ], &[])
         // Service: points.proto
         .validates(&[
@@ -135,37 +158,65 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SetPayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("ClearPayloadPoints.collection_name", "length(min = 1, max = 255)"),
+            ("UpdateBatchPoints.collection_name", "length(min = 1, max = 255)"),
+            ("UpdateBatchPoints.operations", "length(min = 1)"),
             ("CreateFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("CreateFieldIndexCollection.field_name", "length(min = 1)"),
             ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
             ("SearchPoints.collection_name", "length(min = 1, max = 255)"),
+            ("SearchPoints.filter", ""),
             ("SearchPoints.limit", "range(min = 1)"),
             ("SearchPoints.params", ""),
-            ("SearchPoints.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
+            ("SearchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
+            ("SearchBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("SearchPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("SearchPointGroups.group_by", "length(min = 1)"),
+            ("SearchPointGroups.filter", ""),
             ("SearchPointGroups.params", ""),
-            ("SearchPointGroups.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
             ("SearchPointGroups.group_size", "range(min = 1)"),
             ("SearchPointGroups.limit", "range(min = 1)"),
+            ("SearchPointGroups.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("SearchParams.quantization", ""),
             ("QuantizationSearchParams.oversampling", "custom = \"crate::grpc::validate::validate_f64_range_min_1\""),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255)"),
+            ("ScrollPoints.filter", ""),
             ("ScrollPoints.limit", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
             ("RecommendPoints.collection_name", "length(min = 1, max = 255)"),
+            ("RecommendPoints.filter", ""),
             ("RecommendPoints.params", ""),
+            ("RecommendPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("RecommendBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("RecommendBatchPoints.recommend_points", ""),
+            ("RecommendBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("RecommendPointGroups.collection_name", "length(min = 1, max = 255)"),
+            ("RecommendPointGroups.filter", ""),
             ("RecommendPointGroups.group_by", "length(min = 1)"),
             ("RecommendPointGroups.group_size", "range(min = 1)"),
             ("RecommendPointGroups.limit", "range(min = 1)"),
             ("RecommendPointGroups.params", ""),
+            ("RecommendPointGroups.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("DiscoverPoints.collection_name", "length(min = 1, max = 255)"),
+            ("DiscoverPoints.filter", ""),
+            ("DiscoverPoints.params", ""),
+            ("DiscoverPoints.limit", "range(min = 1)"),
+            ("DiscoverPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("DiscoverBatchPoints.collection_name", "length(min = 1, max = 255)"),
+            ("DiscoverBatchPoints.discover_points", ""),
+            ("DiscoverBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
+            ("CountPoints.filter", ""),
+            ("GeoPolygon.exterior", "custom = \"crate::grpc::validate::validate_geo_polygon_exterior\""),
+            ("GeoPolygon.interiors", "custom = \"crate::grpc::validate::validate_geo_polygon_interiors\""),
+            ("Filter.should", ""),
+            ("Filter.must", ""),
+            ("Filter.must_not", ""),
+            ("NestedCondition.filter", ""),
+            ("Condition.condition_one_of", "")
         ], &[])
+        .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
             ("UpsertPointsInternal.upsert_points", ""),
@@ -180,6 +231,12 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPointsInternal.search_points", ""),
             ("SearchBatchPointsInternal.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPointsInternal.search_points", ""),
+            ("CoreSearchPoints.collection_name", "length(min = 1, max = 255)"),
+            ("CoreSearchPoints.filter", ""),
+            ("CoreSearchPoints.limit", "range(min = 1)"),
+            ("CoreSearchPoints.params", ""),
+            ("CoreSearchBatchPointsInternal.collection_name", "length(min = 1, max = 255)"),
+            ("CoreSearchBatchPointsInternal.search_points", ""),
             ("RecommendPointsInternal.recommend_points", ""),
             ("ScrollPointsInternal.scroll_points", ""),
             ("GetPointsInternal.get_points", ""),
@@ -189,7 +246,7 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[])
         // Service: raft_service.proto
         .validates(&[
-            ("AddPeerToKnownMessage.uri", "custom = \"crate::grpc::validate::validate_not_empty\""),
+            ("AddPeerToKnownMessage.uri", "custom = \"common::validation::validate_not_empty\""),
             ("AddPeerToKnownMessage.port", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
         ], &[])
         // Service: snapshot_service.proto
@@ -199,10 +256,17 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("DeleteSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("DeleteFullSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("CreateShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
+            ("ListShardSnapshotsRequest.collection_name", "length(min = 1, max = 255)"),
+            ("DeleteShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
+            ("DeleteShardSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("RecoverShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
+            ("RecoverShardSnapshotRequest.snapshot_name", "length(min = 1)"),
         ], &[
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",
         ])
+        .field_attribute("SnapshotDescription.creation_time", "#[serde(skip)]")
 }
 
 fn append_to_file(path: &str, line: &str) {

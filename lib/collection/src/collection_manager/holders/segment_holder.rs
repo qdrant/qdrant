@@ -1,20 +1,23 @@
 use std::cmp::{max, min};
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::ops::{Deref, Mul};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
+use itertools::Itertools;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
-use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
+use crate::shards::update_tracker::UpdateTracker;
 
 pub type SegmentId = usize;
 
@@ -26,6 +29,25 @@ const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub enum LockedSegment {
     Original(Arc<RwLock<Segment>>),
     Proxy(Arc<RwLock<ProxySegment>>),
+}
+
+/// Internal structure for deduplication of points. Used for BinaryHeap
+#[derive(Eq, PartialEq)]
+struct DedupPoint {
+    point_id: PointIdType,
+    segment_id: SegmentId,
+}
+
+impl Ord for DedupPoint {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.point_id.cmp(&other.point_id).reverse()
+    }
+}
+
+impl PartialOrd for DedupPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 fn try_unwrap_with_timeout<T>(
@@ -117,6 +139,9 @@ impl From<ProxySegment> for LockedSegment {
 #[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
+
+    update_tracker: UpdateTracker,
+
     /// Seq number of the first un-recovered operation.
     /// If there are no failed operation - None
     pub failed_operation: BTreeSet<SeqNumberType>,
@@ -138,6 +163,10 @@ impl<'s> SegmentHolder {
 
     pub fn is_empty(&self) -> bool {
         self.segments.is_empty()
+    }
+
+    pub fn update_tracker(&self) -> UpdateTracker {
+        self.update_tracker.clone()
     }
 
     fn generate_new_key(&self) -> SegmentId {
@@ -251,6 +280,8 @@ impl<'s> SegmentHolder {
     where
         F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
     {
+        let _update_guard = self.update_tracker.update();
+
         let mut processed_segments = 0;
         for segment in self.segments.values() {
             let is_applied = f(&mut segment.get().write())?;
@@ -267,6 +298,8 @@ impl<'s> SegmentHolder {
             &mut RwLockWriteGuard<dyn SegmentEntry>,
         ) -> OperationResult<bool>,
     {
+        let _update_guard = self.update_tracker.update();
+
         let mut applied_points = 0;
         for (idx, segment) in &self.segments {
             // Collect affected points first, we want to lock segment for writing as rare as possible
@@ -282,6 +315,25 @@ impl<'s> SegmentHolder {
             }
         }
         Ok(applied_points)
+    }
+
+    /// Try to acquire read lock over the given segment with increasing wait time.
+    /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
+    fn aloha_lock_segment_read<'a>(
+        &'a self,
+        segment: &'a Arc<RwLock<dyn SegmentEntry>>,
+    ) -> RwLockReadGuard<dyn SegmentEntry> {
+        let mut interval = Duration::from_nanos(100);
+        loop {
+            if let Some(guard) = segment.try_read_for(interval) {
+                return guard;
+            }
+
+            interval = interval.saturating_mul(2);
+            if interval.as_secs() >= 10 {
+                log::warn!("Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.");
+            }
+        }
     }
 
     /// Try to acquire write lock over random segment with increasing wait time.
@@ -319,18 +371,9 @@ impl<'s> SegmentHolder {
         }
 
         let mut rng = rand::thread_rng();
-        let mut timeout = Duration::from_nanos(100);
-        loop {
-            let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
-            let opt_segment_guard = segment_lock.try_write_for(timeout);
-
-            match opt_segment_guard {
-                None => timeout = timeout.mul(2), // Wait longer next time
-                Some(mut lock) => {
-                    return apply(*segment_id, &mut lock);
-                }
-            }
-        }
+        let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+        let mut segment_write = segment_lock.write();
+        apply(*segment_id, &mut segment_write)
     }
 
     /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
@@ -345,6 +388,8 @@ impl<'s> SegmentHolder {
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
+        let _update_guard = self.update_tracker.update();
+
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments();
 
@@ -409,22 +454,65 @@ impl<'s> SegmentHolder {
 
         appendable_segments
             .into_iter()
-            .chain(non_appendable_segments.into_iter())
+            .chain(non_appendable_segments)
     }
 
     /// Flushes all segments and returns maximum version to persist
     ///
+    /// Before flushing, this read-locks all segments. It prevents writes to all not-yet-flushed
+    /// segments during flushing. All locked segments are flushed and released one by one.
+    ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool) -> OperationResult<SeqNumberType> {
+        // Grab and keep to segment RwLock's until the end of this function
+        let segments = self.segment_locks(self.segment_flush_ordering())?;
+
+        // Read-lock all segments before flushing any, must prevent any writes to any segment
+        // That is to prevent any copy-on-write operation on two segments from occurring in between
+        // flushing the two segments. If that would happen, segments could end up in an
+        // inconsistent state on disk that is not recoverable after a crash.
+        //
+        // E.g.: we have a point on an immutable segment. If we use a set-payload operation, we do
+        // copy-on-write. The point from immutable segment A is deleted, the updated point is
+        // stored on appendable segment B.
+        // Because of flush ordering segment B (appendable) is flushed before segment A
+        // (not-appendable). If the copy-on-write operation happens in between, the point is
+        // deleted from A but the new point in B is not persisted. We cannot recover this by
+        // replaying the WAL in case of a crash because the point in A does not exist anymore,
+        // making copy-on-write impossible.
+        // Locking all segments prevents copy-on-write operations from occurring in between
+        // flushes.
+        //
+        // WARNING: Ordering is very important here. Specifically:
+        // - We MUST lock non-appendable first, then appendable.
+        // - We MUST flush appendable first, then non-appendable
+        // Because of this, two rev(erse) calls are used below here.
+        //
+        // Locking must happen in this order because `apply_points_to_appendable` can take two
+        // write locks, also in this order. If we'd use different ordering we will eventually end
+        // up with a deadlock.
+        let mut segment_reads: Vec<_> = segments
+            .iter()
+            .rev()
+            .map(|segment| self.aloha_lock_segment_read(segment))
+            .collect();
+        segment_reads.reverse();
+
+        // Assert we flush appendable segments first
+        debug_assert!(
+            segment_reads
+                .windows(2)
+                .all(|s| s[0].is_appendable() || !s[1].is_appendable()),
+            "Must flush appendable segments first",
+        );
+
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
 
-        for segment_id in self.segment_flush_ordering() {
-            let segment = self.segments.get(&segment_id).unwrap();
-            let segment_lock = segment.get();
-            let read_segment = segment_lock.read();
+        // Flush and release each segment
+        for read_segment in segment_reads {
             let segment_version = read_segment.version();
             let segment_persisted_version = read_segment.flush(sync)?;
 
@@ -433,13 +521,35 @@ impl<'s> SegmentHolder {
                 min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
             }
 
-            max_persisted_version = max(max_persisted_version, segment_persisted_version)
+            max_persisted_version = max(max_persisted_version, segment_persisted_version);
+
+            // Release read-lock immediately after flush, explicit to make this more clear
+            drop(read_segment);
         }
+
         if has_unsaved {
             Ok(min_unsaved_version)
         } else {
             Ok(max_persisted_version)
         }
+    }
+
+    /// Grab the RwLock's for all the given segment IDs.
+    fn segment_locks(
+        &self,
+        segment_ids: impl IntoIterator<Item = SegmentId>,
+    ) -> OperationResult<Vec<Arc<RwLock<dyn SegmentEntry>>>> {
+        segment_ids
+            .into_iter()
+            .map(|segment_id| {
+                self.segments
+                    .get(&segment_id)
+                    .ok_or_else(|| {
+                        OperationError::service_error(format!("No segment with ID {segment_id}"))
+                    })
+                    .map(LockedSegment::get)
+            })
+            .collect()
     }
 
     /// Take a snapshot of all segments into `snapshot_dir_path`
@@ -459,6 +569,8 @@ impl<'s> SegmentHolder {
     }
 
     pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
+        // Save only the first error
+        // If is more likely to be the real cause of all further problems
         if self.optimizer_errors.is_none() {
             self.optimizer_errors = Some(error.into());
         }
@@ -474,44 +586,7 @@ impl<'s> SegmentHolder {
     ///
     /// Deduplication works with plain segments only.
     pub fn deduplicate_points(&self) -> OperationResult<usize> {
-        let mut seen_points: HashMap<PointIdType, (SegmentId, SeqNumberType)> = Default::default();
-        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
-        let all_segment_ids: Vec<SegmentId> = self.segments.keys().cloned().collect();
-        for segment_id in all_segment_ids {
-            let locked_segment = self.segments.get(&segment_id).unwrap();
-            let segment_arc = locked_segment.get();
-            let read_segment = segment_arc.read();
-            for point_id in read_segment.iter_points() {
-                let point_version_opt = read_segment.point_version(point_id);
-                let seen = seen_points.get(&point_id).cloned();
-
-                // Ignore points without version, those are partially updated and will be overwritten
-                if let Some(point_version) = point_version_opt {
-                    if let Some((seen_segment_id, seen_version)) = seen {
-                        // Other version exists
-                        if seen_version > point_version {
-                            // Other version is newer
-                            // Remove this point
-                            points_to_remove
-                                .entry(segment_id)
-                                .or_default()
-                                .push(point_id);
-                        } else {
-                            // This version is newer
-                            // Remove point from other segment and update seen
-                            seen_points.insert(point_id, (segment_id, point_version));
-                            points_to_remove
-                                .entry(seen_segment_id)
-                                .or_default()
-                                .push(point_id);
-                        }
-                    } else {
-                        // No other version exists
-                        seen_points.insert(point_id, (segment_id, point_version));
-                    }
-                }
-            }
-        }
+        let points_to_remove = self.find_duplicated_points()?;
 
         let mut removed_points = 0;
         for (segment_id, points) in points_to_remove {
@@ -527,12 +602,91 @@ impl<'s> SegmentHolder {
         }
         Ok(removed_points)
     }
+
+    fn find_duplicated_points(&self) -> OperationResult<HashMap<SegmentId, Vec<PointIdType>>> {
+        let segments = self
+            .segments
+            .iter()
+            .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
+            .collect_vec();
+        let locked_segments = BTreeMap::from_iter(
+            segments
+                .iter()
+                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read())),
+        );
+        let mut iterators = BTreeMap::from_iter(
+            locked_segments
+                .iter()
+                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points())),
+        );
+
+        // heap contains the current iterable point id from each segment
+        let mut heap = iterators
+            .iter_mut()
+            .filter_map(|(&segment_id, iter)| {
+                iter.next().map(|point_id| DedupPoint {
+                    segment_id,
+                    point_id,
+                })
+            })
+            .collect::<BinaryHeap<_>>();
+
+        let mut last_point_id_opt = None;
+        let mut last_segment_id_opt = None;
+        let mut last_point_version_opt = None;
+        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
+
+        while let Some(entry) = heap.pop() {
+            let point_id = entry.point_id;
+            let segment_id = entry.segment_id;
+            if let Some(next_point_id) = iterators.get_mut(&segment_id).and_then(|i| i.next()) {
+                heap.push(DedupPoint {
+                    segment_id,
+                    point_id: next_point_id,
+                });
+            }
+
+            if last_point_id_opt == Some(point_id) {
+                let last_point_id = last_point_id_opt.unwrap();
+                let last_segment_id = last_segment_id_opt.unwrap();
+
+                let point_version = locked_segments[&segment_id].point_version(point_id);
+                let last_point_version = if let Some(last_point_version) = last_point_version_opt {
+                    last_point_version
+                } else {
+                    let version = locked_segments[&last_segment_id].point_version(last_point_id);
+                    last_point_version_opt = Some(version);
+                    version
+                };
+
+                // choose newer version between point_id and last_point_id
+                if point_version < last_point_version {
+                    points_to_remove
+                        .entry(segment_id)
+                        .or_default()
+                        .push(point_id);
+                } else {
+                    last_point_id_opt = Some(point_id);
+                    last_segment_id_opt = Some(segment_id);
+                    last_point_version_opt = Some(point_version);
+                    points_to_remove
+                        .entry(last_segment_id)
+                        .or_default()
+                        .push(last_point_id);
+                }
+            } else {
+                last_point_id_opt = Some(point_id);
+                last_segment_id_opt = Some(segment_id);
+            }
+        }
+
+        Ok(points_to_remove)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs::read_dir;
-    use std::{thread, time};
 
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
@@ -561,41 +715,6 @@ mod tests {
         replaced_segments
             .into_iter()
             .for_each(|s| s.drop_data().unwrap());
-    }
-
-    #[test]
-    fn test_aloha_locking() {
-        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-        let segment1 = build_segment_1(dir.path());
-        let segment2 = build_segment_2(dir.path());
-
-        let mut holder = SegmentHolder::default();
-
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(segment2);
-
-        let locked_segment1 = holder.get(sid1).unwrap().get();
-        let locked_segment2 = holder.get(sid2).unwrap().clone();
-
-        let _read_lock_1 = locked_segment1.read();
-
-        let handler = thread::spawn(move || {
-            let lc = locked_segment2.get();
-            let _guard = lc.read();
-            thread::sleep(time::Duration::from_millis(100));
-        });
-
-        thread::sleep(time::Duration::from_millis(10));
-
-        holder
-            .aloha_random_write(&[sid1, sid2], |idx, _seg| {
-                assert_eq!(idx, sid2);
-                Ok(true)
-            })
-            .unwrap();
-
-        handler.join().unwrap();
     }
 
     #[test]

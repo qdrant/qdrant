@@ -1,15 +1,16 @@
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::text_index::TextIndexParams;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::{
     Document, InvertedIndex, ParsedQuery,
 };
@@ -18,7 +19,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, PayloadKeyType, PointOffsetType};
+use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub struct FullTextIndex {
     inverted_index: InvertedIndex,
@@ -203,23 +204,27 @@ impl PayloadFieldIndex for FullTextIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(self.inverted_index.filter(&parsed_query));
+            return Ok(self.inverted_index.filter(&parsed_query));
         }
-        None
+        Err(OperationError::service_error("failed to filter"))
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(
-                self.inverted_index
-                    .estimate_cardinality(&parsed_query, condition),
-            );
+            return Ok(self
+                .inverted_index
+                .estimate_cardinality(&parsed_query, condition));
         }
-        None
+        Err(OperationError::service_error(
+            "failed to estimate cardinality",
+        ))
     }
 
     fn payload_blocks(
@@ -251,6 +256,7 @@ mod tests {
             geo_bounding_box: None,
             geo_radius: None,
             values_count: None,
+            geo_polygon: None,
         }
     }
 

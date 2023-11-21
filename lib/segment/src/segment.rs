@@ -2,26 +2,30 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
+use common::types::{PointOffsetType, ScoredPointOffset};
+use io::file_operations::{atomic_save_json, read_json};
+use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
 use uuid::Uuid;
 
-use crate::common::file_operations::{atomic_save_json, read_json};
+use crate::common::operation_error::OperationError::TypeInferenceError;
+use crate::common::operation_error::{
+    get_service_error, OperationError, OperationResult, SegmentFailedState,
+};
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
-    check_named_vectors, check_vector, check_vector_name, check_vectors, mmap_ops,
+    check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationError::TypeInferenceError;
-use crate::entry::entry_point::{
-    get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
-};
+use crate::data_types::vectors::{QueryVector, Vector};
+use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -30,12 +34,13 @@ use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
+    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
-use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -87,16 +92,10 @@ pub struct Segment {
 pub struct VectorData {
     pub vector_index: Arc<AtomicRefCell<VectorIndexEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    pub quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
 }
 
 impl VectorData {
-    /// Whether this vector data can be appended to
-    ///
-    /// This requires an index and storage type that both support appending.
-    pub fn is_appendable(&self) -> bool {
-        self.vector_index.borrow().is_appendable() && self.vector_storage.borrow().is_appendable()
-    }
-
     pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
         let index_task = match &*self.vector_index.borrow() {
             VectorIndexEnum::HnswMmap(index) => index.prefault_mmap_pages(),
@@ -139,6 +138,8 @@ impl Segment {
                 Some(vector) => {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     vector_storage.insert_vector(internal_id, vector)?;
+                    let mut vector_index = vector_data.vector_index.borrow_mut();
+                    vector_index.update_vector(internal_id)?;
                 }
                 None => {
                     // No vector provided, so we remove it
@@ -172,10 +173,15 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
+            let new_vector = new_vector.as_vec_ref();
             vector_data
                 .vector_storage
                 .borrow_mut()
-                .insert_vector(internal_id, new_vector.as_ref())?;
+                .insert_vector(internal_id, new_vector)?;
+            vector_data
+                .vector_index
+                .borrow_mut()
+                .update_vector(internal_id)?;
         }
         Ok(())
     }
@@ -196,14 +202,19 @@ impl Segment {
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
+            let mut vector_index = vector_data.vector_index.borrow_mut();
             match vector_opt {
                 None => {
+                    // TODO(sparse) check if vector_storage is sparse and insert sparse vector
                     let dim = vector_storage.vector_dim();
-                    vector_storage.insert_vector(new_index, &vec![1.0; dim])?;
+                    let vector = vec![1.0; dim];
+                    vector_storage.insert_vector(new_index, vector.as_slice().into())?;
                     vector_storage.delete_vector(new_index)?;
+                    vector_index.update_vector(new_index)?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec)?;
+                    vector_index.update_vector(new_index)?;
                 }
             }
         }
@@ -359,7 +370,13 @@ impl Segment {
 
     pub fn load_state(current_path: &Path) -> OperationResult<SegmentState> {
         let state_path = current_path.join(SEGMENT_STATE_FILE);
-        Ok(read_json(&state_path)?)
+        read_json(&state_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to read segment state {} error: {}",
+                current_path.display(),
+                err
+            ))
+        })
     }
 
     /// Retrieve vector by internal ID
@@ -370,7 +387,7 @@ impl Segment {
         &self,
         vector_name: &str,
         point_offset: PointOffsetType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    ) -> OperationResult<Option<Vector>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let is_vector_deleted = vector_data
@@ -394,7 +411,7 @@ impl Segment {
                     ),
                 })
             } else {
-                Ok(Some(vector_storage.get_vector(point_offset).to_vec()))
+                Ok(Some(vector_storage.get_vector(point_offset).to_owned()))
             }
         } else {
             Ok(None)
@@ -412,14 +429,10 @@ impl Segment {
                 .borrow()
                 .is_deleted_vector(point_offset);
             if !is_vector_deleted {
-                vectors.insert(
-                    vector_name.clone(),
-                    vector_data
-                        .vector_storage
-                        .borrow()
-                        .get_vector(point_offset)
-                        .to_vec(),
-                );
+                let vector_storage = vector_data.vector_storage.borrow();
+                // TODO(sparse) remove unwrap after NamedVectors changes
+                let vector: &[_] = vector_storage.get_vector(point_offset).try_into().unwrap();
+                vectors.insert(vector_name.clone(), vector.to_vec().into());
             }
         }
         Ok(vectors)
@@ -592,6 +605,7 @@ impl Segment {
                     score: scored_point_offset.score,
                     payload,
                     vector,
+                    shard_key: None,
                 })
             })
             .collect()
@@ -731,40 +745,50 @@ impl SegmentEntry for Segment {
     fn search(
         &self,
         vector_name: &str,
-        vector: &[VectorElementType],
+        vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         check_vector(vector_name, vector, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let internal_result =
-            &vector_data
-                .vector_index
-                .borrow()
-                .search(&[vector], filter, top, params)[0];
+        let internal_result = &vector_data.vector_index.borrow().search(
+            &[vector],
+            filter,
+            top,
+            params,
+            is_stopped,
+        )?[0];
 
+        check_stopped(is_stopped)?;
         self.process_search_result(internal_result, with_payload, with_vector)
     }
 
     fn search_batch(
         &self,
         vector_name: &str,
-        vectors: &[&[VectorElementType]],
+        query_vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        check_vectors(vector_name, vectors, &self.segment_config)?;
+        check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let internal_results = vector_data
-            .vector_index
-            .borrow()
-            .search(vectors, filter, top, params);
+        let internal_results = vector_data.vector_index.borrow().search(
+            query_vectors,
+            filter,
+            top,
+            params,
+            is_stopped,
+        )?;
+
+        check_stopped(is_stopped)?;
 
         let res = internal_results
             .iter()
@@ -784,7 +808,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
+        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
@@ -812,11 +836,17 @@ impl SegmentEntry for Segment {
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
 
-                    // Propagate point deletion to all its vectors
-                    for vector_data in segment.vector_data.values() {
-                        let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                        vector_storage.delete_vector(internal_id)?;
-                    }
+                    // Before, we propagated point deletions to also delete its vectors. This turns
+                    // out to be problematic because this sometimes makes us loose vector data
+                    // because we cannot control the order of segment flushes.
+                    // Disabled until we properly fix it or find a better way to clean up old
+                    // vectors.
+                    //
+                    // // Propagate point deletion to all its vectors
+                    // for vector_data in segment.vector_data.values() {
+                    //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    //     vector_storage.delete_vector(internal_id)?;
+                    // }
 
                     Ok((true, Some(internal_id)))
                 })
@@ -831,7 +861,7 @@ impl SegmentEntry for Segment {
         mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.vector_data[name].distance);
+        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {
@@ -953,11 +983,7 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn vector(
-        &self,
-        vector_name: &str,
-        point_id: PointIdType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
@@ -1098,26 +1124,51 @@ impl SegmentEntry for Segment {
                 (key, PayloadIndexInfo::new(index_schema, points_count))
             })
             .collect();
+
         let num_vectors = self
             .vector_data
             .values()
             .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
+        let vector_data_info = self
+            .vector_data
+            .iter()
+            .map(|(key, vector_data)| {
+                let vector_storage = vector_data.vector_storage.borrow();
+                let num_vectors = vector_storage.available_vector_count();
+                let is_indexed = vector_data.vector_index.borrow().is_index();
+                let vector_data_info = VectorDataInfo {
+                    num_vectors,
+                    num_indexed_vectors: if is_indexed { num_vectors } else { 0 },
+                    num_deleted_vectors: vector_storage.deleted_vector_count(),
+                };
+                (key.to_string(), vector_data_info)
+            })
+            .collect();
+
+        let num_indexed_vectors = if self.segment_type == SegmentType::Indexed {
+            num_vectors
+        } else {
+            0
+        };
+
         SegmentInfo {
             segment_type: self.segment_type,
             num_vectors,
+            num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
             index_schema: schema,
+            vector_data: vector_data_info,
         }
     }
 
-    fn config(&self) -> SegmentConfig {
-        self.segment_config.clone()
+    fn config(&self) -> &SegmentConfig {
+        &self.segment_config
     }
 
     fn is_appendable(&self) -> bool {
@@ -1239,7 +1290,7 @@ impl SegmentEntry for Segment {
             flush_op()
         } else {
             *background_flush_lock = Some(
-                std::thread::Builder::new()
+                thread::Builder::new()
                     .name("background_flush".to_string())
                     .spawn(flush_op)
                     .unwrap(),
@@ -1326,15 +1377,21 @@ impl SegmentEntry for Segment {
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data_config = &self.segment_config.vector_data[vector_name];
-        Ok(vector_data_config.size)
+        Ok(self.vector_data[vector_name]
+            .vector_storage
+            .borrow()
+            .vector_dim())
     }
 
     fn vector_dims(&self) -> HashMap<String, usize> {
-        self.segment_config
-            .vector_data
+        self.vector_data
             .iter()
-            .map(|(vector_name, vector_config)| (vector_name.clone(), vector_config.size))
+            .map(|(vector_name, vector_data)| {
+                (
+                    vector_name.clone(),
+                    vector_data.vector_storage.borrow().vector_dim(),
+                )
+            })
             .collect()
     }
 
@@ -1364,7 +1421,8 @@ impl SegmentEntry for Segment {
         // flush segment to capture latest state
         self.flush(true)?;
 
-        let temp_path = temp_path.join(format!("snapshot-{}", Uuid::new_v4()));
+        // use temp_path for intermediary files
+        let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
         let db_backup_path = temp_path.join(DB_BACKUP_PATH);
         let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
 
@@ -1418,6 +1476,17 @@ impl SegmentEntry for Segment {
                     &files,
                 )?;
             }
+
+            if let Some(quantized_vectors) = &vector_data.quantized_vectors {
+                for file in quantized_vectors.borrow().files() {
+                    utils::tar::append_file_relative_to_base(
+                        &mut builder,
+                        &self.current_path,
+                        &file,
+                        &files,
+                    )?;
+                }
+            }
         }
 
         for file in self.payload_index.borrow().files() {
@@ -1444,8 +1513,8 @@ impl SegmentEntry for Segment {
         builder.finish()?;
 
         // remove tmp directory in background
-        let _ = std::thread::spawn(move || {
-            let res = std::fs::remove_dir_all(&temp_path);
+        let _ = thread::spawn(move || {
+            let res = fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
                     "Failed to remove tmp directory at {}: {:?}",
@@ -1471,7 +1540,7 @@ impl SegmentEntry for Segment {
 
         SegmentTelemetry {
             info: self.info(),
-            config: self.config(),
+            config: self.config().clone(),
             vector_index_searches,
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
@@ -1489,8 +1558,8 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::operation_error::OperationError::PointIdError;
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
-    use crate::entry::entry_point::OperationError::PointIdError;
     use crate::segment_constructor::{build_segment, load_segment};
     use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 
@@ -1557,7 +1626,7 @@ mod tests {
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -1567,6 +1636,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
         eprintln!("search_result = {search_result:#?}");
@@ -1580,6 +1650,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -1654,12 +1725,13 @@ mod tests {
         let results_with_valid_filter = segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &[1.0, 1.0],
+                &[1.0, 1.0].into(),
                 &WithPayload::default(),
                 &false.into(),
                 Some(&filter_valid),
                 1,
                 None,
+                &false.into(),
             )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
@@ -1667,12 +1739,13 @@ mod tests {
         let results_with_invalid_filter = segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &[1.0, 1.0],
+                &[1.0, 1.0].into(),
                 &WithPayload::default(),
                 &false.into(),
                 Some(&filter_invalid),
                 1,
                 None,
+                &false.into(),
             )
             .unwrap();
         assert!(results_with_invalid_filter.is_empty());
@@ -1840,7 +1913,7 @@ mod tests {
         // first pass on consistent data
         segment.check_consistency_and_repair().unwrap();
 
-        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -1850,6 +1923,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -1857,10 +1931,7 @@ mod tests {
         assert_eq!(search_result[0].id, 6.into());
         assert_eq!(search_result[1].id, 4.into());
 
-        assert!(matches!(
-            segment.vector(DEFAULT_VECTOR_NAME, 6.into()),
-            Ok(_)
-        ));
+        assert!(segment.vector(DEFAULT_VECTOR_NAME, 6.into()).is_ok());
 
         let internal_id = segment.lookup_internal_id(6.into()).unwrap();
 
@@ -1876,6 +1947,7 @@ mod tests {
                 None,
                 10,
                 None,
+                &false.into(),
             )
             .unwrap();
 
@@ -1934,25 +2006,25 @@ mod tests {
         assert_eq!(segment_info.num_points, 2);
         assert_eq!(segment_info.num_vectors, 2);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         segment.delete_point(102, 1.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 2);
         assert_eq!(segment_info.num_vectors, 2);
 
-        // Delete point 4, counts should derease by 1
+        // Delete point 4, counts should decrease by 1
         segment.delete_point(103, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 1);
-        assert_eq!(segment_info.num_vectors, 1);
+        assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
 
-        // Delete vector of point 6, vector count should now be zero
-        segment
-            .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
-            .unwrap();
-        let segment_info = segment.info();
-        assert_eq!(segment_info.num_points, 1);
-        assert_eq!(segment_info.num_vectors, 0);
+        // // Delete vector of point 6, vector count should now be zero
+        // segment
+        //     .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
+        //     .unwrap();
+        // let segment_info = segment.info();
+        // assert_eq!(segment_info.num_points, 1);
+        // assert_eq!(segment_info.num_vectors, 1);
     }
 
     #[test]
@@ -2015,29 +2087,29 @@ mod tests {
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete non-existent point, counts should remain the same
+        // Delete nonexistent point, counts should remain the same
         segment.delete_point(104, 1.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
-        // Delete point 4, counts should derease by 1
+        // Delete point 4, counts should decrease by 1
         segment.delete_point(105, 4.into()).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 4);
+        assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
         // Delete vector 'a' of point 6, vector count should decrease by 1
         segment.delete_vector(106, 6.into(), "a").unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Deleting it again shouldn't chain anything
         segment.delete_vector(107, 6.into(), "a").unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Replace vector 'a' for point 8, counts should remain the same
         let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
@@ -2046,7 +2118,7 @@ mod tests {
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 3);
+        assert_eq!(segment_info.num_vectors, 5);
 
         // Replace both vectors for point 8, adding a new vector
         segment
@@ -2057,7 +2129,7 @@ mod tests {
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
-        assert_eq!(segment_info.num_vectors, 4);
+        assert_eq!(segment_info.num_vectors, 6);
     }
 
     /// Tests segment functions to ensure invalid requests do error
@@ -2120,12 +2192,12 @@ mod tests {
         ];
         let wrong_vectors_multi = vec![
             // Incorrect dimensionality
-            NamedVectors::from_ref("a", &[]),
-            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0]),
-            NamedVectors::from_ref("a", &[0.0, 1.0, 0.0, 1.0, 0.0]),
-            NamedVectors::from_ref("b", &[]),
-            NamedVectors::from_ref("b", &[0.5]),
-            NamedVectors::from_ref("b", &[0.0, 0.1, 0.2, 0.3]),
+            NamedVectors::from_ref("a", [].as_slice().into()),
+            NamedVectors::from_ref("a", [0.0, 1.0, 0.0].as_slice().into()),
+            NamedVectors::from_ref("a", [0.0, 1.0, 0.0, 1.0, 0.0].as_slice().into()),
+            NamedVectors::from_ref("b", [].as_slice().into()),
+            NamedVectors::from_ref("b", [0.5].as_slice().into()),
+            NamedVectors::from_ref("b", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
             NamedVectors::from([
                 ("a".into(), vec![0.1, 0.2, 0.3]),
                 ("b".into(), vec![1.0, 0.9]),
@@ -2135,8 +2207,8 @@ mod tests {
                 ("b".into(), vec![1.0, 0.9, 0.0]),
             ]),
             // Incorrect names
-            NamedVectors::from_ref("aa", &[0.0, 0.1, 0.2, 0.3]),
-            NamedVectors::from_ref("bb", &[0.0, 0.1]),
+            NamedVectors::from_ref("aa", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
+            NamedVectors::from_ref("bb", [0.0, 0.1].as_slice().into()),
             NamedVectors::from([
                 ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
                 ("b".into(), vec![1.0, 0.9]),
@@ -2149,11 +2221,14 @@ mod tests {
         let wrong_names = vec!["aa", "bb", ""];
 
         for (vector_name, vector) in wrong_vectors_single.iter() {
-            check_vector(vector_name, vector, &config).err().unwrap();
+            let query_vector = vector.to_owned().into();
+            check_vector(vector_name, &query_vector, &config)
+                .err()
+                .unwrap();
             segment
                 .search(
                     vector_name,
-                    vector,
+                    &query_vector,
                     &WithPayload {
                         enable: false,
                         payload_selector: None,
@@ -2162,13 +2237,14 @@ mod tests {
                     None,
                     1,
                     None,
+                    &false.into(),
                 )
                 .err()
                 .unwrap();
             segment
                 .search_batch(
                     vector_name,
-                    &[vector, vector],
+                    &[&query_vector, &query_vector],
                     &WithPayload {
                         enable: false,
                         payload_selector: None,
@@ -2177,6 +2253,7 @@ mod tests {
                     None,
                     1,
                     None,
+                    &false.into(),
                 )
                 .err()
                 .unwrap();

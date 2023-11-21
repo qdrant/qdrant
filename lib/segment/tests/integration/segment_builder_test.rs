@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
+use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
-use segment::entry::entry_point::{OperationError, SegmentEntry};
+use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
@@ -19,9 +20,6 @@ fn test_building_new_segment() {
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
     let stopped = AtomicBool::new(false);
-
-    // let segment1_dir = dir.path().join("segment_1");
-    // let segment2_dir = dir.path().join("segment_2");
 
     let segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_2(dir.path());
@@ -72,7 +70,7 @@ fn test_building_new_segment() {
     assert_eq!(merged_segment.point_version(3.into()), Some(100));
 }
 
-fn estimate_build_time(segment: &Segment, stop_timeout_millis: u64) -> (u64, bool) {
+fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool) {
     let stopped = Arc::new(AtomicBool::new(false));
 
     let dir = Builder::new().prefix("segment_dir1").tempdir().unwrap();
@@ -103,7 +101,7 @@ fn estimate_build_time(segment: &Segment, stop_timeout_millis: u64) -> (u64, boo
     std::thread::Builder::new()
         .name("build_estimator_timeout".to_string())
         .spawn(move || {
-            std::thread::sleep(Duration::from_millis(stop_timeout_millis));
+            std::thread::sleep(Duration::from_millis(stop_delay_millis));
             stopped_t.store(true, Ordering::Release);
         })
         .unwrap();
@@ -127,27 +125,63 @@ fn estimate_build_time(segment: &Segment, stop_timeout_millis: u64) -> (u64, boo
 
 #[test]
 fn test_building_cancellation() {
+    let baseline_dir = Builder::new()
+        .prefix("segment_dir_baseline")
+        .tempdir()
+        .unwrap();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dir_2 = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
 
+    let mut baseline_segment = empty_segment(baseline_dir.path());
     let mut segment = empty_segment(dir.path());
+    let mut segment_2 = empty_segment(dir_2.path());
 
-    for idx in 0..1000 {
+    for idx in 0..2000 {
+        baseline_segment
+            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .unwrap();
         segment
+            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .unwrap();
+        segment_2
             .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
     }
 
-    // Checks that optimization with longed cancellation timeout will also finishes fast
-    let (time_fast, is_stopped_fast) = estimate_build_time(&segment, 20);
-    let (time_long, is_stopped_long) = estimate_build_time(&segment, 200);
+    // Get normal build time
+    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
+    assert!(!was_cancelled_baseline);
+    eprintln!("baseline time: {}", time_baseline);
 
-    assert!(is_stopped_fast);
+    // Checks that optimization with longer cancellation delay will also finish fast
+    let early_stop_delay = time_baseline / 20;
+    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, early_stop_delay);
+    let late_stop_delay = time_baseline / 5;
+    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, late_stop_delay);
+
+    let acceptable_stopping_delay = 600; // millis
+
+    assert!(was_cancelled_early);
+    assert!(
+        time_fast < early_stop_delay + acceptable_stopping_delay,
+        "time_early: {}, early_stop_delay: {}",
+        time_fast,
+        early_stop_delay
+    );
+
+    assert!(was_cancelled_later);
+    assert!(
+        time_long < late_stop_delay + acceptable_stopping_delay,
+        "time_later: {}, late_stop_delay: {}",
+        time_long,
+        late_stop_delay
+    );
 
     assert!(
         time_fast < time_long,
-        "time_fast: {}, time_long: {}, is_stopped_long: {}",
+        "time_early: {}, time_later: {}, was_cancelled_later: {}",
         time_fast,
         time_long,
-        is_stopped_long
+        was_cancelled_later,
     );
 }

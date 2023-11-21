@@ -1,4 +1,3 @@
-debug: false
 log_level: INFO
 
 storage:
@@ -17,6 +16,10 @@ storage:
   # This setting saves RAM by (slightly) increasing the response time.
   # Note: those payload values that are involved in filtering and are indexed - remain in RAM.
   on_disk_payload: true
+
+  # Maximum number of concurrent updates to shard replicas
+  # If `null` - maximum concurrency is used.
+  update_concurrency: null
 
   # Write-ahead-log related configuration
   wal:
@@ -40,6 +43,12 @@ storage:
     # Note: Each optimization thread will also use `max_indexing_threads` for index building.
     # So total number of threads used for optimization will be `max_optimization_threads * max_indexing_threads`
     max_optimization_threads: 1
+
+    # Prevent DDoS of too many concurrent updates in distributed mode.
+    # One external update usually triggers multiple internal updates, which breaks internal
+    # timings. For example, the health check timing and consensus timing.
+    # If null - auto selection.
+    update_rate_limit: null
 
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
@@ -109,6 +118,7 @@ storage:
     on_disk: false
     # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     payload_m: null
+
 
 service:
 

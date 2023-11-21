@@ -1,14 +1,21 @@
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
+use api::grpc::qdrant::qdrant_client::QdrantClient;
+use api::grpc::qdrant::shard_snapshot_location::Location;
+use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
-    CollectionOperationResponse, CountPoints, CountPointsInternal, GetCollectionInfoRequest,
-    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, InitiateShardTransferRequest,
-    ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal,
+    CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
+    GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
+    HealthCheckRequest, InitiateShardTransferRequest, RecoverShardSnapshotRequest,
+    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation,
+    WaitForShardStateRequest,
 };
+use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
@@ -18,18 +25,23 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
+use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
+use url::Url;
 
 use super::conversions::{
     internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
 };
+use super::replica_set::ReplicaState;
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
+use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequest, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, SearchRequestInternal,
+    UpdateResult,
 };
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
@@ -45,9 +57,13 @@ use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;
 use crate::shards::CollectionId;
 
+/// Timeout for transferring and recovering a shard snapshot on a remote peer.
+const SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT: Duration = MAX_GRPC_CHANNEL_TIMEOUT;
+
 /// RemoteShard
 ///
 /// Remote Shard is a representation of a shard that is located on a remote peer.
+#[derive(Clone)]
 pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,
@@ -93,7 +109,7 @@ impl RemoteShard {
 
     async fn with_points_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(PointsInternalClient<Channel>) -> O,
+        f: impl Fn(PointsInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -109,7 +125,7 @@ impl RemoteShard {
 
     async fn with_collections_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl Fn(CollectionsInternalClient<Channel>) -> O,
+        f: impl Fn(CollectionsInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -117,6 +133,44 @@ impl RemoteShard {
             .with_channel(&current_address, |channel| {
                 let client = CollectionsInternalClient::new(channel);
                 let client = client.max_decoding_message_size(usize::MAX);
+                f(client)
+            })
+            .await
+            .map_err(|err| err.into())
+    }
+
+    async fn with_shard_snapshots_client_timeout<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        f: impl Fn(ShardSnapshotsClient<InterceptedService<Channel, AddTimeout>>) -> O,
+        timeout: Option<Duration>,
+        retries: usize,
+    ) -> CollectionResult<T> {
+        let current_address = self.current_address()?;
+        self.channel_service
+            .channel_pool
+            .with_channel_timeout(
+                &current_address,
+                |channel| {
+                    let client = ShardSnapshotsClient::new(channel);
+                    let client = client.max_decoding_message_size(usize::MAX);
+                    f(client)
+                },
+                timeout,
+                retries,
+            )
+            .await
+            .map_err(|err| err.into())
+    }
+
+    async fn with_qdrant_client<T, Fut: Future<Output = Result<T, Status>>>(
+        &self,
+        f: impl Fn(QdrantClient<InterceptedService<Channel, AddTimeout>>) -> Fut,
+    ) -> CollectionResult<T> {
+        let current_address = self.current_address()?;
+        self.channel_service
+            .channel_pool
+            .with_channel(&current_address, |channel| {
+                let client = QdrantClient::new(channel);
                 f(client)
             })
             .await
@@ -153,9 +207,8 @@ impl RemoteShard {
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
-        // the target shard is None because the operation is forwarded as if it came from the client
         self.execute_update_operation(
-            None,
+            Some(self.id),
             self.collection_id.clone(),
             operation,
             wait,
@@ -401,10 +454,86 @@ impl RemoteShard {
             Some(update_result) => update_result.try_into().map_err(|e: Status| e.into()),
         }
     }
+
+    /// Recover a shard at the remote from the given public `url`.
+    ///
+    /// # Warning
+    ///
+    /// This method specifies a timeout of 24 hours.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn recover_shard_snapshot_from_url(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+        url: &Url,
+        snapshot_priority: SnapshotPriority,
+    ) -> CollectionResult<RecoverSnapshotResponse> {
+        let res = self
+            .with_shard_snapshots_client_timeout(
+                |mut client| async move {
+                    client
+                        .recover_shard(RecoverShardSnapshotRequest {
+                            collection_name: collection_name.into(),
+                            shard_id,
+                            snapshot_location: Some(ShardSnapshotLocation {
+                                location: Some(Location::Url(url.to_string())),
+                            }),
+                            snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
+                                snapshot_priority,
+                            ) as i32,
+                        })
+                        .await
+                },
+                Some(SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT),
+                api::grpc::transport_channel_pool::DEFAULT_RETRIES,
+            )
+            .await?
+            .into_inner();
+        Ok(res)
+    }
+
+    /// Wait for a local shard on the remote to get into a certain state
+    pub async fn wait_for_shard_state(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+        state: ReplicaState,
+        timeout: Duration,
+    ) -> CollectionResult<CollectionOperationResponse> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .wait_for_shard_state(WaitForShardStateRequest {
+                        collection_name: collection_name.into(),
+                        shard_id,
+                        state: api::grpc::qdrant::ReplicaState::from(state) as i32,
+                        timeout: timeout.as_secs_f32().ceil() as u64,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+        Ok(res)
+    }
+
+    pub async fn health_check(&self) -> CollectionResult<()> {
+        let _ = self
+            .with_qdrant_client(|mut client| async move {
+                client.health_check(HealthCheckRequest {}).await
+            })
+            .await?
+            .into_inner();
+
+        Ok(())
+    }
 }
 
 // New-type to own the type in the crate for conversions via From
-pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequest));
+pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequestInternal));
+pub struct CollectionCoreSearchRequest<'a>(pub(crate) (CollectionId, &'a CoreSearchRequest));
 
 #[async_trait]
 #[allow(unused_variables)]
@@ -437,6 +566,7 @@ impl ShardOperation for RemoteShard {
             with_payload: Some(with_payload_interface.clone().into()),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
+            shard_key_selector: None,
         };
         let request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
@@ -477,11 +607,11 @@ impl ShardOperation for RemoteShard {
         let result: Result<CollectionInfo, Status> = get_collection_response.try_into();
         result.map_err(|e| e.into())
     }
-
-    async fn search(
+    async fn core_search(
         &self,
-        batch_request: Arc<SearchRequestBatch>,
+        batch_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
@@ -489,19 +619,24 @@ impl ShardOperation for RemoteShard {
         let search_points = batch_request
             .searches
             .iter()
-            .map(|s| CollectionSearchRequest((self.collection_id.clone(), s)).into())
+            .map(|s| CollectionCoreSearchRequest((self.collection_id.clone(), s)).into())
             .collect();
 
-        let request = &SearchBatchPointsInternal {
+        let request = &CoreSearchBatchPointsInternal {
             collection_name: self.collection_id.clone(),
             search_points,
             shard_id: Some(self.id),
+            timeout: timeout.map(|t| t.as_secs()),
         };
         let search_batch_response = self
             .with_points_client(|mut client| async move {
-                client
-                    .search_batch(tonic::Request::new(request.clone()))
-                    .await
+                let mut request = tonic::Request::new(request.clone());
+
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+
+                client.core_search_batch(request).await
             })
             .await?
             .into_inner();
@@ -530,11 +665,13 @@ impl ShardOperation for RemoteShard {
         result
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
             filter: request.filter.clone().map(|f| f.into()),
             exact: Some(request.exact),
+            read_consistency: None,
+            shard_key_selector: None,
         };
 
         let request = &CountPointsInternal {
@@ -559,7 +696,7 @@ impl ShardOperation for RemoteShard {
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
@@ -569,6 +706,7 @@ impl ShardOperation for RemoteShard {
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
+            shard_key_selector: None,
         };
         let request = &GetPointsInternal {
             get_points: Some(get_points),

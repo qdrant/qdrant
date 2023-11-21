@@ -1,26 +1,37 @@
 use std::cmp::min;
 use std::collections::HashSet;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
-use segment::entry::entry_point::OperationResult;
+use parking_lot::Mutex;
+use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
-use tokio::time::Duration;
+use tokio::time::error::Elapsed;
+use tokio::time::{timeout, Duration};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
-use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
+use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
+use crate::common::stoppable_task::{
+    panic_payload_into_string, spawn_stoppable, StoppableTaskHandle,
+};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
+
+/// Interval at which the optimizer worker cleans up old optimization handles
+///
+/// The longer the duration, the longer it  takes for panicked tasks to be reported.
+const OPTIMIZER_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -66,6 +77,8 @@ pub struct UpdateHandler {
     shared_storage_config: Arc<SharedStorageConfig>,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
+    /// Log of optimizer statuses
+    optimizers_log: Arc<Mutex<TrackerLog>>,
     /// How frequent can we flush data
     pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
@@ -80,14 +93,21 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: LockedWal,
+    /// Maximum version to acknowledge to WAL to prevent truncating too early
+    /// This is used when another part still relies on part of the WAL, such as the queue proxy
+    /// shard.
+    /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
+    pub(super) max_ack_version: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
 }
 
 impl UpdateHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         shared_storage_config: Arc<SharedStorageConfig>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: LockedWal,
@@ -100,10 +120,12 @@ impl UpdateHandler {
             segments,
             update_worker: None,
             optimizer_worker: None,
+            optimizers_log,
             flush_worker: None,
             flush_stop: None,
             runtime_handle,
             wal,
+            max_ack_version: Arc::new(u64::MAX.into()),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
@@ -119,6 +141,7 @@ impl UpdateHandler {
             self.segments.clone(),
             self.wal.clone(),
             self.optimization_handles.clone(),
+            self.optimizers_log.clone(),
             self.max_optimization_threads,
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
@@ -131,6 +154,7 @@ impl UpdateHandler {
         self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
             self.segments.clone(),
             self.wal.clone(),
+            self.max_ack_version.clone(),
             self.flush_interval_sec,
             flush_rx,
         )));
@@ -197,6 +221,7 @@ impl UpdateHandler {
     /// Returns handles for started tasks
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         segments: LockedSegmentHolder,
         callback: F,
     ) -> Vec<StoppableTaskHandle<bool>>
@@ -213,42 +238,73 @@ impl UpdateHandler {
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
                     break;
-                } else {
-                    let optim = optimizer.clone();
-                    let segs = segments.clone();
-                    let nsi = nonoptimal_segment_ids.clone();
-                    for sid in &nsi {
-                        scheduled_segment_ids.insert(*sid);
-                    }
-                    let callback_cloned = callback.clone();
-
-                    handles.push(spawn_stoppable(move |stopped| {
-                        match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
-                            Ok(result) => {
-                                callback_cloned(result); // Perform some actions when optimization if finished
-                                result
-                            }
-                            Err(error) => match error {
-                                CollectionError::Cancelled { description } => {
-                                    log::debug!("Optimization cancelled - {}", description);
-                                    false
-                                }
-                                _ => {
-                                    // Save only the first error
-                                    // If is more likely to be the real cause of all further problems
-                                    segs.write().report_optimizer_error(error.clone());
-
-                                    // Error of the optimization can not be handled by API user
-                                    // It is only possible to fix after full restart,
-                                    // so the best available action here is to stop whole
-                                    // optimization thread and log the error
-                                    log::error!("Optimization error: {}", error);
-                                    panic!("Optimization error: {error}");
-                                }
-                            },
-                        }
-                    }));
                 }
+
+                let optimizer = optimizer.clone();
+                let optimizers_log = optimizers_log.clone();
+                let segments = segments.clone();
+                let nsi = nonoptimal_segment_ids.clone();
+                scheduled_segment_ids.extend(&nsi);
+                let callback = callback.clone();
+
+                let handle = spawn_stoppable(
+                    // Stoppable task
+                    {
+                        let segments = segments.clone();
+                        move |stopped| {
+                            // Track optimizer status
+                            let tracker = Tracker::start(optimizer.as_ref().name(), nsi.clone());
+                            let tracker_handle = tracker.handle();
+                            optimizers_log.lock().register(tracker);
+
+                            // Optimize and handle result
+                            match optimizer.as_ref().optimize(segments.clone(), nsi, stopped) {
+                                // Perform some actions when optimization if finished
+                                Ok(result) => {
+                                    tracker_handle.update(TrackerStatus::Done);
+                                    callback(result);
+                                    result
+                                }
+                                // Handle and report errors
+                                Err(error) => match error {
+                                    CollectionError::Cancelled { description } => {
+                                        debug!("Optimization cancelled - {}", description);
+                                        tracker_handle
+                                            .update(TrackerStatus::Cancelled(description));
+                                        false
+                                    }
+                                    _ => {
+                                        segments.write().report_optimizer_error(error.clone());
+
+                                        // Error of the optimization can not be handled by API user
+                                        // It is only possible to fix after full restart,
+                                        // so the best available action here is to stop whole
+                                        // optimization thread and log the error
+                                        log::error!("Optimization error: {}", error);
+
+                                        tracker_handle
+                                            .update(TrackerStatus::Error(error.to_string()));
+
+                                        panic!("Optimization error: {error}");
+                                    }
+                                },
+                            }
+                        }
+                    },
+                    // Panic handler
+                    Some(Box::new(move |panic_payload| {
+                        let panic_msg = panic_payload_into_string(panic_payload);
+                        warn!(
+                            "Optimization task panicked, collection may be in unstable state: {panic_msg}"
+                        );
+                        segments
+                            .write()
+                            .report_optimizer_error(CollectionError::service_error(format!(
+                                "Optimization task panicked: {panic_msg}"
+                            )));
+                    })),
+                );
+                handles.push(handle);
             }
         }
         handles
@@ -258,10 +314,12 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         sender: Sender<OptimizerSignal>,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
+            optimizers_log,
             segments.clone(),
             move |_optimization_result| {
                 // After optimization is finished, we still need to check if there are
@@ -273,9 +331,36 @@ impl UpdateHandler {
         );
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
-        handles.retain(|h| !h.is_finished())
     }
 
+    /// Cleanup finalized optimization task handles
+    ///
+    /// This finds and removes completed tasks from our list of optimization handles.
+    /// It also propagates any panics (and unknown errors) so we properly handle them if desired.
+    ///
+    /// It is essential to call this every once in a while for handling panics in time.
+    async fn cleanup_optimization_handles(
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+    ) {
+        // Remove finished handles
+        let finished_handles: Vec<_> = {
+            let mut handles = optimization_handles.lock().await;
+            (0..handles.len())
+                .filter(|i| handles[*i].is_finished())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .map(|i| handles.remove(i))
+                .collect()
+        };
+
+        // Finalize all finished handles to propagate panics
+        for handle in finished_handles {
+            handle.join_and_handle_panic().await;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         sender: Sender<OptimizerSignal>,
@@ -283,20 +368,30 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimizers_log: Arc<Mutex<TrackerLog>>,
         max_handles: usize,
     ) {
-        while let Some(signal) = receiver.recv().await {
-            match signal {
-                OptimizerSignal::Nop | OptimizerSignal::Operation(_) => {
+        loop {
+            let receiver = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv());
+            let result = receiver.await;
+
+            // Always clean up on any signal
+            Self::cleanup_optimization_handles(optimization_handles.clone()).await;
+
+            match result {
+                // Channel closed or stop signal
+                Ok(None | Some(OptimizerSignal::Stop)) => break,
+                // Clean up interval
+                Err(Elapsed { .. }) => continue,
+                // Optimizer signal
+                Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
+                    // If not forcing with Nop, wait on next signal if we have too many handles
                     if signal != OptimizerSignal::Nop
                         && optimization_handles.lock().await.len() >= max_handles
                     {
-                        let mut handles = optimization_handles.lock().await;
-                        handles.retain(|h| !h.is_finished());
                         continue;
                     }
-                    // We skip the check for number of optimization handles here
-                    // Because `Nop` usually means that we need to force the optimization
+
                     if Self::try_recover(segments.clone(), wal.clone())
                         .await
                         .is_err()
@@ -307,12 +402,11 @@ impl UpdateHandler {
                         optimizers.clone(),
                         segments.clone(),
                         optimization_handles.clone(),
+                        optimizers_log.clone(),
                         sender.clone(),
                     )
                     .await;
                 }
-
-                OptimizerSignal::Stop => break,
             }
         }
     }
@@ -395,6 +489,7 @@ impl UpdateHandler {
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,
+        max_ack: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
     ) {
@@ -431,7 +526,18 @@ impl UpdateHandler {
                     continue;
                 }
             };
-            if let Err(err) = wal.lock().ack(confirmed_version) {
+
+            // Acknowledge confirmed version in WAL, but don't exceed specified maximum
+            // This is to prevent truncating WAL entries that may still be used by other things
+            // such as the queue proxy shard.
+            // Default maximum ack version is `u64::MAX` to allow acknowledging all confirmed.
+            let max_ack = max_ack.load(std::sync::atomic::Ordering::Relaxed);
+            if confirmed_version > max_ack {
+                trace!("Acknowledging message {max_ack} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
+            }
+            let ack = confirmed_version.min(max_ack);
+
+            if let Err(err) = wal.lock().ack(ack) {
                 segments.write().report_optimizer_error(err);
             }
         }

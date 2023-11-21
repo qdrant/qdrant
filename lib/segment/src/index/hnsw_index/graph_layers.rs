@@ -1,22 +1,22 @@
 use std::cmp::max;
 use std::path::{Path, PathBuf};
 
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::{PointOffsetType, ScoredPointOffset};
+use io::file_operations::{atomic_save_bin, read_bin, FileStorageError};
 use itertools::Itertools;
+use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
+use super::entry_points::EntryPoint;
 use super::graph_links::{GraphLinks, GraphLinksMmap};
-use crate::common::file_operations::{atomic_save_bin, read_bin, FileStorageError};
-use crate::common::mmap_ops;
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::rev_range;
-use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
-use crate::index::visited_pool::{VisitedList, VisitedPool};
-use crate::spaces::tools::FixedLengthPriorityQueue;
-use crate::types::PointOffsetType;
-use crate::vector_storage::ScoredPointOffset;
+use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LinkContainerRef<'a> = &'a [PointOffsetType];
@@ -50,9 +50,7 @@ pub struct GraphLayers<TGraphLinks: GraphLinks> {
 }
 
 pub trait GraphLayersBase {
-    fn get_visited_list_from_pool(&self) -> VisitedList;
-
-    fn return_visited_list_to_pool(&self, visited_list: VisitedList);
+    fn get_visited_list_from_pool(&self) -> VisitedListHandle;
 
     fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
@@ -66,7 +64,7 @@ pub trait GraphLayersBase {
         &self,
         searcher: &mut SearchContext,
         level: usize,
-        visited_list: &mut VisitedList,
+        visited_list: &mut VisitedListHandle,
         points_scorer: &mut FilteredScorer,
     ) {
         let limit = self.get_m(level);
@@ -79,16 +77,16 @@ pub trait GraphLayersBase {
 
             points_ids.clear();
             self.links_map(candidate.idx, level, |link| {
-                if !visited_list.check_and_update_visited(link) {
+                if !visited_list.check(link) {
                     points_ids.push(link);
                 }
             });
 
             let scores = points_scorer.score_points(&mut points_ids, limit);
-            scores
-                .iter()
-                .copied()
-                .for_each(|score_point| searcher.process_candidate(score_point));
+            scores.iter().copied().for_each(|score_point| {
+                searcher.process_candidate(score_point);
+                visited_list.check_and_update_visited(score_point.idx);
+            });
         }
     }
 
@@ -104,8 +102,6 @@ pub trait GraphLayersBase {
         let mut search_context = SearchContext::new(level_entry, ef);
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-
-        self.return_visited_list_to_pool(visited_list);
         search_context.nearest
     }
 
@@ -150,12 +146,8 @@ pub trait GraphLayersBase {
 }
 
 impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
-    fn get_visited_list_from_pool(&self) -> VisitedList {
+    fn get_visited_list_from_pool(&self) -> VisitedListHandle {
         self.visited_pool.get(self.links.num_points())
-    }
-
-    fn return_visited_list_to_pool(&self, visited_list: VisitedList) {
-        self.visited_pool.return_back(visited_list);
     }
 
     fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
@@ -180,8 +172,33 @@ impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
 ///
 /// Assume all scores are similarities. Larger score = closer points
 impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
+    /// Returns the highest level this point is included in
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
         self.links.point_level(point_id)
+    }
+
+    fn get_entry_point(
+        &self,
+        points_scorer: &FilteredScorer,
+        custom_entry_points: Option<&[PointOffsetType]>,
+    ) -> Option<EntryPoint> {
+        // Try to get it from custom entry points
+        custom_entry_points
+            .and_then(|custom_entry_points| {
+                custom_entry_points
+                    .iter()
+                    .filter(|&&point_id| points_scorer.check_vector(point_id))
+                    .map(|&point_id| {
+                        let level = self.point_level(point_id);
+                        EntryPoint { point_id, level }
+                    })
+                    .max_by_key(|ep| ep.level)
+            })
+            .or_else(|| {
+                // Otherwise use normal entry points
+                self.entry_points
+                    .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+            })
     }
 
     pub fn search(
@@ -189,13 +206,10 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
         top: usize,
         ef: usize,
         mut points_scorer: FilteredScorer,
+        custom_entry_points: Option<&[PointOffsetType]>,
     ) -> Vec<ScoredPointOffset> {
-        let entry_point = match self
-            .entry_points
-            .get_entry_point(|point_id| points_scorer.check_vector(point_id))
-        {
-            None => return vec![],
-            Some(ep) => ep,
+        let Some(entry_point) = self.get_entry_point(&points_scorer, custom_entry_points) else {
+            return Vec::default();
         };
 
         let zero_level_entry = self.search_entry(
@@ -204,7 +218,6 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
             0,
             &mut points_scorer,
         );
-
         let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
         nearest.into_iter().take(top).collect_vec()
     }
@@ -305,10 +318,10 @@ mod tests {
         graph: &GraphLayers<TGraphLinks>,
     ) -> Vec<ScoredPointOffset> {
         let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
+        let raw_scorer = vector_storage.get_raw_scorer(query.to_owned()).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        graph.search(top, ef, scorer)
+        graph.search(top, ef, scorer, None)
     }
 
     const M: usize = 8;
@@ -345,7 +358,7 @@ mod tests {
 
         let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder.vectors.get(linking_idx).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector);
+        let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
         let nearest_on_level = graph_layers.search_on_level(
@@ -438,7 +451,7 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = M::preprocess(&query).unwrap_or_else(|| query.clone());
+        let processed_query = M::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
             let vec = &vector_holder.vectors.get(idx);

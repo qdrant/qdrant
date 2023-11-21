@@ -8,6 +8,8 @@ cd "$(dirname "$0")/../"
 
 # Apply `ytt` template engine to obtain OpenAPI definitions for REST endpoints
 
+docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-shards.ytt.yaml > ./openapi/openapi-shards.yaml
+
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-service.ytt.yaml > ./openapi/openapi-service.yaml
 
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-cluster.ytt.yaml > ./openapi/openapi-cluster.yaml
@@ -15,6 +17,8 @@ docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml 
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-collections.ytt.yaml > ./openapi/openapi-collections.yaml
 
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-snapshots.ytt.yaml > ./openapi/openapi-snapshots.yaml
+
+docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-shard-snapshots.ytt.yaml > ./openapi/openapi-shard-snapshots.yaml
 
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-points.ytt.yaml > ./openapi/openapi-points.yaml
 
@@ -36,10 +40,12 @@ docker run --rm -i mikefarah/yq eval -P - <./openapi/models.json > ./openapi/mod
 
 # Merge all *.yaml files together into a single-file OpenAPI definition
 docker run --rm -v "${PWD}":/workdir mikefarah/yq eval-all '. as $item ireduce ({}; . *+ $item)' \
+  ./openapi/openapi-shards.yaml \
   ./openapi/openapi-service.yaml \
   ./openapi/openapi-cluster.yaml \
   ./openapi/openapi-collections.yaml \
   ./openapi/openapi-snapshots.yaml \
+  ./openapi/openapi-shard-snapshots.yaml \
   ./openapi/openapi-points.yaml \
   ./openapi/openapi-main.yaml \
   ./openapi/models.yaml > ./openapi/openapi-merged.yaml

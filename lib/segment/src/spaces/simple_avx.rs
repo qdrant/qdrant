@@ -1,7 +1,8 @@
 use std::arch::x86_64::*;
 
-use crate::data_types::vectors::VectorElementType;
-use crate::types::ScoreType;
+use common::types::ScoreType;
+
+use crate::data_types::vectors::{VectorElementType, VectorType};
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
@@ -61,9 +62,7 @@ pub(crate) unsafe fn euclid_similarity_avx(
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub(crate) unsafe fn cosine_preprocess_avx(
-    vector: &[VectorElementType],
-) -> Option<Vec<VectorElementType>> {
+pub(crate) unsafe fn cosine_preprocess_avx(vector: VectorType) -> VectorType {
     let n = vector.len();
     let m = n - (n % 32);
     let mut ptr: *const f32 = vector.as_ptr();
@@ -97,10 +96,10 @@ pub(crate) unsafe fn cosine_preprocess_avx(
         length += (*ptr.add(i)).powi(2);
     }
     if length < f32::EPSILON {
-        return None;
+        return vector;
     }
     length = length.sqrt();
-    Some(vector.iter().map(|x| x / length).collect())
+    vector.into_iter().map(|x| x / length).collect()
 }
 
 #[target_feature(enable = "avx")]
@@ -183,8 +182,8 @@ mod tests {
             let dot = dot_similarity(&v1, &v2);
             assert_eq!(dot_simd, dot);
 
-            let cosine_simd = unsafe { cosine_preprocess_avx(&v1) };
-            let cosine = cosine_preprocess(&v1);
+            let cosine_simd = unsafe { cosine_preprocess_avx(v1.clone()) };
+            let cosine = cosine_preprocess(v1);
             assert_eq!(cosine_simd, cosine);
         } else {
             println!("avx test skipped");

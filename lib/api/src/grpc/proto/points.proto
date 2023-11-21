@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "json_with_int.proto";
 import "collections.proto";
@@ -45,6 +46,14 @@ message Vector {
 }
 
 // ---------------------------------------------
+// ----------------- ShardKeySelector ----------
+// ---------------------------------------------
+message ShardKeySelector {
+  repeated ShardKey shard_keys = 1; // List of shard keys which should be used in the request
+}
+
+
+// ---------------------------------------------
 // ---------------- RPC Requests ---------------
 // ---------------------------------------------
 
@@ -53,6 +62,7 @@ message UpsertPoints {
   optional bool wait = 2; // Wait until the changes have been applied?
   repeated PointStruct points = 3;
   optional WriteOrdering ordering = 4; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
 }
 
 message DeletePoints {
@@ -60,6 +70,7 @@ message DeletePoints {
   optional bool wait = 2; // Wait until the changes have been applied?
   PointsSelector points = 3; // Affected points
   optional WriteOrdering ordering = 4; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
 }
 
 message GetPoints {
@@ -69,6 +80,7 @@ message GetPoints {
   WithPayloadSelector with_payload = 4; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 5; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
+  optional ShardKeySelector shard_key_selector = 7; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message UpdatePointVectors {
@@ -76,6 +88,7 @@ message UpdatePointVectors {
   optional bool wait = 2; // Wait until the changes have been applied?
   repeated PointVectors points = 3; // List of points and vectors to update
   optional WriteOrdering ordering = 4; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
 }
 
 message PointVectors {
@@ -89,6 +102,7 @@ message DeletePointVectors {
   PointsSelector points_selector = 3; // Affected points
   VectorsSelector vectors = 4; // List of vector names to delete
   optional WriteOrdering ordering = 5; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 6; // Option for custom sharding to specify used shard keys
 }
 
 message SetPayloadPoints {
@@ -98,6 +112,7 @@ message SetPayloadPoints {
   reserved 4; // List of point to modify, deprecated
   optional PointsSelector points_selector = 5; // Affected points
   optional WriteOrdering ordering = 6; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 7; // Option for custom sharding to specify used shard keys
 }
 
 message DeletePayloadPoints {
@@ -107,6 +122,7 @@ message DeletePayloadPoints {
   reserved 4; // Affected points, deprecated
   optional PointsSelector points_selector = 5; // Affected points
   optional WriteOrdering ordering = 6; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 7; // Option for custom sharding to specify used shard keys
 }
 
 message ClearPayloadPoints {
@@ -114,6 +130,7 @@ message ClearPayloadPoints {
   optional bool wait = 2; // Wait until the changes have been applied?
   PointsSelector points = 3; // Affected points
   optional WriteOrdering ordering = 4; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
 }
 
 enum FieldType {
@@ -186,7 +203,7 @@ message QuantizationSearchParams {
   optional bool ignore = 1;
 
   /*
-  If true, use original vectors to re-score top-k results. Default is true.
+  If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not.
    */
   optional bool rescore = 2;
 
@@ -218,6 +235,12 @@ message SearchParams {
   If set to true, search will ignore quantized vector data 
   */
   optional QuantizationSearchParams quantization = 3;
+  /*
+  If enabled, the engine will only perform search among indexed or small segments.
+  Using this option prevents slow searches in case of delayed index, but does not
+  guarantee that all uploaded vectors will be included in search results
+   */
+  optional bool indexed_only = 4;
 }
 
 message SearchPoints {
@@ -233,12 +256,15 @@ message SearchPoints {
   optional string vector_name = 10; // Which vector to use for search, if not specified - use default vector
   optional WithVectorsSelector with_vectors = 11; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 14; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message SearchBatchPoints {
   string collection_name = 1; // Name of the collection
   repeated SearchPoints search_points = 2;
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message WithLookup {
@@ -262,6 +288,8 @@ message SearchPointGroups {
   uint32 group_size = 11; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
   optional WithLookup with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
+  optional uint64 timeout = 14; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 15; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message ScrollPoints {
@@ -273,17 +301,31 @@ message ScrollPoints {
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 7; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
+  optional ShardKeySelector shard_key_selector = 9; // Specify in which shards to look for the points, if not specified - look in all shards
+}
+
+// How to use positive and negative vectors to find the results, default is `AverageVector`:
+enum RecommendStrategy {
+  // Average positive and negative vectors and create a single query with the formula 
+  // `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
+  AverageVector = 0;
+
+  // Uses custom search objective. Each candidate is compared against all 
+  // examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. 
+  // If the `max_neg_score` is chosen then it is squared and negated.
+  BestScore = 1;
 }
 
 message LookupLocation {
   string collection_name = 1;
   optional string vector_name = 2; // Which vector to use for search, if not specified - use default vector
+  optional ShardKeySelector shard_key_selector = 3; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message RecommendPoints {
   string collection_name = 1; // name of the collection
-  repeated PointId positive = 2; // Look for vectors closest to those
-  repeated PointId negative = 3; // Try to avoid vectors like this
+  repeated PointId positive = 2; // Look for vectors closest to the vectors from these points
+  repeated PointId negative = 3; // Try to avoid vectors like the vector from these points
   Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
   uint64 limit = 5; // Max number of result
   reserved 6; // deprecated "with_vector" field
@@ -295,18 +337,24 @@ message RecommendPoints {
   optional WithVectorsSelector with_vectors = 12; // Options for specifying which vectors to include into response
   optional LookupLocation lookup_from = 13; // Name of the collection to use for points lookup, if not specified - use current collection
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
+  optional RecommendStrategy strategy = 16; // How to use the example vectors to find the results
+  repeated Vector positive_vectors = 17; // Look for vectors closest to those
+  repeated Vector negative_vectors = 18; // Try to avoid vectors like this
+  optional uint64 timeout = 19; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 20; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message RecommendBatchPoints {
   string collection_name = 1; // Name of the collection
   repeated RecommendPoints recommend_points = 2;
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message RecommendPointGroups {
   string collection_name = 1; // Name of the collection
-  repeated PointId positive = 2; // Look for vectors closest to those
-  repeated PointId negative = 3; // Try to avoid vectors like this
+  repeated PointId positive = 2; // Look for vectors closest to the vectors from these points
+  repeated PointId negative = 3; // Try to avoid vectors like the vector from these points
   Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
   uint32 limit = 5; // Max number of groups in result
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
@@ -319,12 +367,117 @@ message RecommendPointGroups {
   uint32 group_size = 13; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
   optional WithLookup with_lookup = 15; // Options for specifying how to use the group id to lookup points in another collection
+  optional RecommendStrategy strategy = 17; // How to use the example vectors to find the results
+  repeated Vector positive_vectors = 18; // Look for vectors closest to those
+  repeated Vector negative_vectors = 19; // Try to avoid vectors like this
+  optional uint64 timeout = 20; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 21; // Specify in which shards to look for the points, if not specified - look in all shards
+}
+
+message TargetVector {
+  oneof target {
+    VectorExample single = 1;
+    
+    // leaving extensibility for possibly adding multi-target
+  }
+}
+
+message VectorExample {
+  oneof example {
+    PointId id = 1;
+    Vector vector = 2;
+  }
+}
+
+message ContextExamplePair {
+  VectorExample positive = 1;
+  VectorExample negative = 2;
+}
+
+message DiscoverPoints {
+  string collection_name = 1; // name of the collection
+  TargetVector target = 2; // Use this as the primary search objective
+  repeated ContextExamplePair context = 3; // Search will be constrained by these pairs of examples
+  Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
+  uint64 limit = 5; // Max number of result
+  WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
+  SearchParams params = 7; // Search config
+  optional uint64 offset = 8; // Offset of the result
+  optional string using = 9; // Define which vector to use for recommendation, if not specified - default vector
+  optional WithVectorsSelector with_vectors = 10; // Options for specifying which vectors to include into response
+  optional LookupLocation lookup_from = 11; // Name of the collection to use for points lookup, if not specified - use current collection
+  optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 14; // Specify in which shards to look for the points, if not specified - look in all shards
+}
+
+message DiscoverBatchPoints {
+  string collection_name = 1; // Name of the collection
+  repeated DiscoverPoints discover_points = 2;
+  optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message CountPoints {
   string collection_name = 1; // name of the collection
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
   optional bool exact = 3; // If `true` - return exact count, if `false` - return approximate count
+  optional ReadConsistency read_consistency = 4; // Options for specifying read consistency guarantees
+  optional ShardKeySelector shard_key_selector = 5; // Specify in which shards to look for the points, if not specified - look in all shards
+}
+
+message PointsUpdateOperation {
+  message PointStructList {
+    repeated PointStruct points = 1;
+    optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+  }
+  message SetPayload {
+      map<string, Value> payload = 1;
+      optional PointsSelector points_selector = 2; // Affected points
+      optional ShardKeySelector shard_key_selector = 3; // Option for custom sharding to specify used shard keys
+  }
+  message DeletePayload {
+      repeated string keys = 1;
+      optional PointsSelector points_selector = 2; // Affected points
+      optional ShardKeySelector shard_key_selector = 3; // Option for custom sharding to specify used shard keys
+  }
+  message UpdateVectors {
+    repeated PointVectors points = 1; // List of points and vectors to update
+    optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+  }
+  message DeleteVectors {
+    PointsSelector points_selector = 1; // Affected points
+    VectorsSelector vectors = 2; // List of vector names to delete
+    optional ShardKeySelector shard_key_selector = 3; // Option for custom sharding to specify used shard keys
+  }
+  message DeletePoints {
+    PointsSelector points = 1; // Affected points
+    optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+  }
+  message ClearPayload {
+    PointsSelector points = 1; // Affected points
+    optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+  }
+
+  oneof operation {
+    PointStructList upsert = 1;
+    PointsSelector delete_deprecated = 2 [deprecated=true];
+    SetPayload set_payload = 3;
+    SetPayload overwrite_payload = 4;
+    DeletePayload delete_payload = 5;
+    PointsSelector clear_payload_deprecated = 6 [deprecated=true];
+    UpdateVectors update_vectors = 7;
+    DeleteVectors delete_vectors = 8;
+    DeletePoints delete_points = 9;
+    ClearPayload clear_payload = 10;
+  }
+}
+
+message UpdateBatchPoints {
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  repeated PointsUpdateOperation operations = 3;
+  optional WriteOrdering ordering = 4; // Write ordering guarantees
 }
 
 // ---------------------------------------------
@@ -337,7 +490,7 @@ message PointsOperationResponse {
 }
 
 message UpdateResult {
-  uint64 operation_id = 1; // Number of operation
+  optional uint64 operation_id = 1; // Number of operation
   UpdateStatus status = 2; // Operation status
 }
 
@@ -354,6 +507,7 @@ message ScoredPoint {
   reserved 4; // deprecated "vector" field
   uint64 version = 5; // Last update operation applied to this point
   optional Vectors vectors = 6; // Vectors to search
+  optional ShardKey shard_key = 7; // Shard key
 }
 
 message GroupId {
@@ -416,6 +570,7 @@ message RetrievedPoint {
   map<string, Value> payload = 2;
   reserved 3; // deprecated "vector" field
   optional Vectors vectors = 4;
+  optional ShardKey shard_key = 5; // Shard key
 }
 
 message GetResponse {
@@ -433,8 +588,23 @@ message RecommendBatchResponse {
   double time = 2; // Time spent to process
 }
 
+message DiscoverResponse {
+  repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
+}
+
+message DiscoverBatchResponse {
+  repeated BatchResult result = 1;
+  double time = 2; // Time spent to process
+}
+
 message RecommendGroupsResponse {
   GroupsResult result = 1;
+  double time = 2; // Time spent to process
+}
+
+message UpdateBatchResponse {
+  repeated UpdateResult result = 1;
   double time = 2; // Time spent to process
 }
 
@@ -483,6 +653,7 @@ message FieldCondition {
   GeoBoundingBox geo_bounding_box = 4; // Check if points geolocation lies in a given area
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
   ValuesCount values_count = 6; // Check number of values for a specific field
+  GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
 }
 
 message Match {
@@ -521,6 +692,17 @@ message GeoBoundingBox {
 message GeoRadius {
   GeoPoint center = 1; // Center of the circle
   float radius = 2; // In meters
+}
+
+message GeoLineString {
+  repeated GeoPoint points = 1;  // Ordered sequence of GeoPoints representing the line
+}
+
+// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
+// Additionally, the first and last points of each GeoLineString must be the same.
+message GeoPolygon {
+  GeoLineString exterior = 1; // The exterior line bounds the surface
+  repeated GeoLineString interiors = 2; // Interior lines (if present) bound holes within the surface
 }
 
 message ValuesCount {

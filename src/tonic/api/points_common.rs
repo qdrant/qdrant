@@ -1,41 +1,66 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::payload_index_params::IndexParams;
+use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
-    BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, FieldType,
-    GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponse,
+    points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
+    CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
+    DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
+    FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponse, PointsSelector,
     ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
     RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
     SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, SyncPoints, UpdatePointVectors, UpsertPoints,
+    SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
+    UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::conversions::write_ordering_from_proto;
+use collection::operations::conversions::{
+    try_discover_request_from_grpc, try_points_selector_from_grpc, write_ordering_from_proto,
+};
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
+    self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
 };
+use collection::operations::shard_key_selector::ShardKeySelector;
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
-    SearchRequestBatch,
+    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
+    QueryEnum, RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
 use segment::data_types::vectors::NamedVector;
-use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
+use segment::types::{
+    ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+};
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use tonic::{Response, Status};
 
 use crate::common::points::{
-    do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
+    do_clear_payload, do_core_search_points, do_count_points, do_create_index,
+    do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
     do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
-    do_search_batch_points, do_search_points, do_set_payload, do_update_vectors, do_upsert_points,
-    CreateFieldIndex,
+    do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
+
+fn extract_points_selector(
+    points_selector: Option<PointsSelector>,
+) -> Result<(Option<Vec<ExtendedPointId>>, Option<Filter>), Status> {
+    let (points, filter) = if let Some(points_selector) = points_selector {
+        let points_selector = try_points_selector_from_grpc(points_selector, None)?;
+        match points_selector {
+            point_ops::PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
+            point_ops::PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
+        }
+    } else {
+        return Err(Status::invalid_argument("points_selector is expected"));
+    };
+    Ok((points, filter))
+}
 
 pub fn points_operation_response(
     timing: Instant,
@@ -44,6 +69,24 @@ pub fn points_operation_response(
     PointsOperationResponse {
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
+    }
+}
+
+pub(crate) fn convert_shard_selector_for_read(
+    shard_id_selector: Option<ShardId>,
+    shard_key_selector: Option<api::grpc::qdrant::ShardKeySelector>,
+) -> ShardSelectorInternal {
+    match (shard_id_selector, shard_key_selector) {
+        (Some(shard_id), None) => ShardSelectorInternal::ShardId(shard_id),
+        (None, Some(shard_key_selector)) => ShardSelectorInternal::from(shard_key_selector),
+        (None, None) => ShardSelectorInternal::All,
+        (Some(shard_id), Some(_)) => {
+            debug_assert!(
+                false,
+                "Shard selection and shard key selector are mutually exclusive"
+            );
+            ShardSelectorInternal::ShardId(shard_id)
+        }
     }
 }
 
@@ -57,12 +100,16 @@ pub async fn upsert(
         wait,
         points,
         ordering,
+        shard_key_selector,
     } = upsert_points;
     let points = points
         .into_iter()
         .map(|point| point.try_into())
         .collect::<Result<_, _>>()?;
-    let operation = PointInsertOperations::PointsList(points);
+    let operation = PointInsertOperations::PointsList(PointsList {
+        points,
+        shard_key: shard_key_selector.map(ShardKeySelector::from),
+    });
     let timing = Instant::now();
     let result = do_upsert_points(
         toc,
@@ -107,13 +154,21 @@ pub async fn sync(
     };
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
+
+    let shard_selector = if let Some(shard_selection) = shard_selection {
+        ShardSelectorInternal::ShardId(shard_selection)
+    } else {
+        debug_assert!(false, "Sync operation is supposed to select shard directly");
+        ShardSelectorInternal::Empty
+    };
+
     let result = toc
         .update(
             &collection_name,
             collection_operation,
-            shard_selection,
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
+            shard_selector,
         )
         .await
         .map_err(error_to_status)?;
@@ -132,11 +187,12 @@ pub async fn delete(
         wait,
         points,
         ordering,
+        shard_key_selector,
     } = delete_points;
 
     let points_selector = match points {
         None => return Err(Status::invalid_argument("PointSelector is missing")),
-        Some(p) => p.try_into()?,
+        Some(p) => try_points_selector_from_grpc(p, shard_key_selector)?,
     };
 
     let timing = Instant::now();
@@ -165,6 +221,7 @@ pub async fn update_vectors(
         wait,
         points,
         ordering,
+        shard_key_selector,
     } = update_point_vectors;
 
     // Build list of operation points
@@ -181,7 +238,10 @@ pub async fn update_vectors(
         op_points.push(PointVectors { id, vector });
     }
 
-    let operation = UpdateVectors { points: op_points };
+    let operation = UpdateVectors {
+        points: op_points,
+        shard_key: shard_key_selector.map(ShardKeySelector::from),
+    };
 
     let timing = Instant::now();
     let result = do_update_vectors(
@@ -210,18 +270,10 @@ pub async fn delete_vectors(
         points_selector,
         vectors,
         ordering,
+        shard_key_selector,
     } = delete_point_vectors;
 
-    let (points, filter) = if let Some(points_selector) = points_selector {
-        let points_selector: PointsSelector = points_selector.try_into()?;
-        match points_selector {
-            PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
-            PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
-        }
-    } else {
-        return Err(Status::invalid_argument("points_selector is expected"));
-    };
-
+    let (points, filter) = extract_points_selector(points_selector)?;
     let vector_names = match vectors {
         Some(vectors) => vectors.names,
         None => return Err(Status::invalid_argument("vectors is expected")),
@@ -231,6 +283,7 @@ pub async fn delete_vectors(
         points,
         filter,
         vector: vector_names.into_iter().collect(),
+        shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
     let timing = Instant::now();
@@ -260,22 +313,15 @@ pub async fn set_payload(
         payload,
         points_selector,
         ordering,
+        shard_key_selector,
     } = set_payload_points;
 
-    let (points, filter) = if let Some(points_selector) = points_selector {
-        let points_selector: PointsSelector = points_selector.try_into()?;
-        match points_selector {
-            PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
-            PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
-        }
-    } else {
-        return Err(Status::invalid_argument("points_selector is expected"));
-    };
-
+    let (points, filter) = extract_points_selector(points_selector)?;
     let operation = collection::operations::payload_ops::SetPayload {
         payload: proto_to_payloads(payload)?,
         points,
         filter,
+        shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
     let timing = Instant::now();
@@ -305,22 +351,15 @@ pub async fn overwrite_payload(
         payload,
         points_selector,
         ordering,
+        shard_key_selector,
     } = set_payload_points;
 
-    let (points, filter) = if let Some(points_selector) = points_selector {
-        let points_selector: PointsSelector = points_selector.try_into()?;
-        match points_selector {
-            PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
-            PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
-        }
-    } else {
-        return Err(Status::invalid_argument("points_selector is expected"));
-    };
-
+    let (points, filter) = extract_points_selector(points_selector)?;
     let operation = collection::operations::payload_ops::SetPayload {
         payload: proto_to_payloads(payload)?,
         points,
         filter,
+        shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
     let timing = Instant::now();
@@ -350,22 +389,15 @@ pub async fn delete_payload(
         keys,
         points_selector,
         ordering,
+        shard_key_selector,
     } = delete_payload_points;
 
-    let (points, filter) = if let Some(points_selector) = points_selector {
-        let points_selector: PointsSelector = points_selector.try_into()?;
-        match points_selector {
-            PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
-            PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
-        }
-    } else {
-        return Err(Status::invalid_argument("points_selector is expected"));
-    };
-
+    let (points, filter) = extract_points_selector(points_selector)?;
     let operation = DeletePayload {
         keys,
         points,
         filter,
+        shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
     let timing = Instant::now();
@@ -394,11 +426,12 @@ pub async fn clear_payload(
         wait,
         points,
         ordering,
+        shard_key_selector,
     } = clear_payload_points;
 
     let points_selector = match points {
         None => return Err(Status::invalid_argument("PointSelector is missing")),
-        Some(p) => p.try_into()?,
+        Some(p) => try_points_selector_from_grpc(p, shard_key_selector)?,
     };
 
     let timing = Instant::now();
@@ -417,20 +450,225 @@ pub async fn clear_payload(
     Ok(Response::new(response))
 }
 
-pub async fn create_field_index(
+pub async fn update_batch(
     toc: &TableOfContent,
-    create_field_index_collection: CreateFieldIndexCollection,
+    update_batch_points: UpdateBatchPoints,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
-    let CreateFieldIndexCollection {
+) -> Result<Response<UpdateBatchResponse>, Status> {
+    let UpdateBatchPoints {
         collection_name,
         wait,
-        field_name,
-        field_type,
-        field_index_params,
+        operations,
         ordering,
-    } = create_field_index_collection;
+    } = update_batch_points;
 
+    let timing = Instant::now();
+    let mut results = Vec::with_capacity(operations.len());
+    for op in operations {
+        let operation = op
+            .operation
+            .ok_or(Status::invalid_argument("Operation is missing"))?;
+        let collection_name = collection_name.clone();
+        let ordering = ordering.clone();
+        let result = match operation {
+            points_update_operation::Operation::Upsert(PointStructList {
+                points,
+                shard_key_selector,
+            }) => {
+                upsert(
+                    toc,
+                    UpsertPoints {
+                        collection_name,
+                        points,
+                        wait,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::DeleteDeprecated(points) => {
+                delete(
+                    toc,
+                    DeletePoints {
+                        collection_name,
+                        wait,
+                        points: Some(points),
+                        ordering,
+                        shard_key_selector: None,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::SetPayload(
+                points_update_operation::SetPayload {
+                    payload,
+                    points_selector,
+                    shard_key_selector,
+                },
+            ) => {
+                set_payload(
+                    toc,
+                    SetPayloadPoints {
+                        collection_name,
+                        wait,
+                        payload,
+                        points_selector,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::OverwritePayload(
+                points_update_operation::SetPayload {
+                    payload,
+                    points_selector,
+                    shard_key_selector,
+                },
+            ) => {
+                overwrite_payload(
+                    toc,
+                    SetPayloadPoints {
+                        collection_name,
+                        wait,
+                        payload,
+                        points_selector,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::DeletePayload(
+                points_update_operation::DeletePayload {
+                    keys,
+                    points_selector,
+                    shard_key_selector,
+                },
+            ) => {
+                delete_payload(
+                    toc,
+                    DeletePayloadPoints {
+                        collection_name,
+                        wait,
+                        keys,
+                        points_selector,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::ClearPayload(ClearPayload {
+                points,
+                shard_key_selector,
+            }) => {
+                clear_payload(
+                    toc,
+                    ClearPayloadPoints {
+                        collection_name,
+                        wait,
+                        points,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::UpdateVectors(
+                points_update_operation::UpdateVectors {
+                    points,
+                    shard_key_selector,
+                },
+            ) => {
+                update_vectors(
+                    toc,
+                    UpdatePointVectors {
+                        collection_name,
+                        wait,
+                        points,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            points_update_operation::Operation::DeleteVectors(
+                points_update_operation::DeleteVectors {
+                    points_selector,
+                    vectors,
+                    shard_key_selector,
+                },
+            ) => {
+                delete_vectors(
+                    toc,
+                    DeletePointVectors {
+                        collection_name,
+                        wait,
+                        points_selector,
+                        vectors,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            Operation::ClearPayloadDeprecated(selector) => {
+                clear_payload(
+                    toc,
+                    ClearPayloadPoints {
+                        collection_name,
+                        wait,
+                        points: Some(selector),
+                        ordering,
+                        shard_key_selector: None,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+            Operation::DeletePoints(points_update_operation::DeletePoints {
+                points,
+                shard_key_selector,
+            }) => {
+                delete(
+                    toc,
+                    DeletePoints {
+                        collection_name,
+                        wait,
+                        points,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    shard_selection,
+                )
+                .await
+            }
+        }?;
+        results.push(result);
+    }
+    Ok(Response::new(UpdateBatchResponse {
+        result: results
+            .into_iter()
+            .map(|response| response.into_inner().result.unwrap())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    }))
+}
+
+fn convert_field_type(
+    field_type: Option<i32>,
+    field_index_params: Option<PayloadIndexParams>,
+) -> Result<Option<PayloadFieldSchema>, Status> {
     let field_type_parsed = field_type
         .map(FieldType::from_i32)
         .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
@@ -463,6 +701,25 @@ pub async fn create_field_index(
         (None, None) => None,
     };
 
+    Ok(field_schema)
+}
+
+pub async fn create_field_index(
+    toc: &Dispatcher,
+    create_field_index_collection: CreateFieldIndexCollection,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let CreateFieldIndexCollection {
+        collection_name,
+        wait,
+        field_name,
+        field_type,
+        field_index_params,
+        ordering,
+    } = create_field_index_collection;
+
+    let field_schema = convert_field_type(field_type, field_index_params)?;
+
     let operation = CreateFieldIndex {
         field_name,
         field_schema,
@@ -484,8 +741,41 @@ pub async fn create_field_index(
     Ok(Response::new(response))
 }
 
-pub async fn delete_field_index(
+pub async fn create_field_index_internal(
     toc: &TableOfContent,
+    create_field_index_collection: CreateFieldIndexCollection,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let CreateFieldIndexCollection {
+        collection_name,
+        wait,
+        field_name,
+        field_type,
+        field_index_params,
+        ordering,
+    } = create_field_index_collection;
+
+    let field_schema = convert_field_type(field_type, field_index_params)?;
+
+    let timing = Instant::now();
+    let result = do_create_index_internal(
+        toc,
+        &collection_name,
+        field_name,
+        field_schema,
+        shard_selection,
+        wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn delete_field_index(
+    toc: &Dispatcher,
     delete_field_index_collection: DeleteFieldIndexCollection,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -498,6 +788,34 @@ pub async fn delete_field_index(
 
     let timing = Instant::now();
     let result = do_delete_index(
+        toc,
+        &collection_name,
+        field_name,
+        shard_selection,
+        wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn delete_field_index_internal(
+    toc: &TableOfContent,
+    delete_field_index_collection: DeleteFieldIndexCollection,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let DeleteFieldIndexCollection {
+        collection_name,
+        wait,
+        field_name,
+        ordering,
+    } = delete_field_index_collection;
+
+    let timing = Instant::now();
+    let result = do_delete_index_internal(
         toc,
         &collection_name,
         field_name,
@@ -529,13 +847,19 @@ pub async fn search(
         vector_name,
         with_vectors,
         read_consistency,
+        timeout,
+        shard_key_selector,
     } = search_points;
 
-    let search_request = SearchRequest {
-        vector: match vector_name {
-            None => vector.into(),
-            Some(name) => NamedVector { name, vector }.into(),
-        },
+    let vector_struct = match vector_name {
+        None => vector.into(),
+        Some(name) => NamedVector { name, vector }.into(),
+    };
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
+    let search_request = CoreSearchRequest {
+        query: QueryEnum::Nearest(vector_struct),
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
@@ -552,12 +876,13 @@ pub async fn search(
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
-    let scored_points = do_search_points(
+    let scored_points = do_core_search_points(
         toc,
         &collection_name,
         search_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;
@@ -573,34 +898,74 @@ pub async fn search(
     Ok(Response::new(response))
 }
 
-pub async fn search_batch(
+pub async fn core_search_batch(
     toc: &TableOfContent,
     collection_name: String,
-    search_points: Vec<SearchPoints>,
+    requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
+    read_consistency: Option<ReadConsistencyGrpc>,
+    timeout: Option<Duration>,
+) -> Result<Response<SearchBatchResponse>, Status> {
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+
+    let scored_points =
+        do_search_batch_points(toc, &collection_name, requests, read_consistency, timeout)
+            .await
+            .map_err(error_to_status)?;
+
+    let response = SearchBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn core_search_list(
+    toc: &TableOfContent,
+    collection_name: String,
+    search_points: Vec<CoreSearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
-    let searches: Result<Vec<_>, Status> = search_points
-        .into_iter()
-        .map(|search_point| search_point.try_into())
-        .collect();
+    let searches: Result<Vec<_>, Status> =
+        search_points.into_iter().map(TryInto::try_into).collect();
 
-    let search_requests = SearchRequestBatch {
+    let request = CoreSearchRequestBatch {
         searches: searches?,
+    };
+
+    let timing = Instant::now();
+
+    // As this function is handling an internal request,
+    // we can assume that shard_key is already resolved
+    let shard_selection = match shard_selection {
+        None => {
+            debug_assert!(false, "Shard selection is expected for internal request");
+            ShardSelectorInternal::All
+        }
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let timing = Instant::now();
-    let scored_points = do_search_batch_points(
-        toc,
-        &collection_name,
-        search_requests,
-        read_consistency,
-        shard_selection,
-    )
-    .await
-    .map_err(error_to_status)?;
+    let scored_points = toc
+        .core_search_batch(
+            &collection_name,
+            request,
+            read_consistency,
+            shard_selection,
+            timeout,
+        )
+        .await
+        .map_err(error_to_status)?;
 
     let response = SearchBatchResponse {
         result: scored_points
@@ -625,10 +990,14 @@ pub async fn search_groups(
     let SearchPointGroups {
         collection_name,
         read_consistency,
+        timeout,
+        shard_key_selector,
         ..
     } = search_point_groups;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_search_point_groups(
@@ -636,7 +1005,8 @@ pub async fn search_groups(
         &collection_name,
         search_groups_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;
@@ -653,10 +1023,14 @@ pub async fn recommend(
     toc: &TableOfContent,
     recommend_points: RecommendPoints,
 ) -> Result<Response<RecommendResponse>, Status> {
+    // TODO(luis): check if we can make this into a From impl
     let RecommendPoints {
         collection_name,
         positive,
         negative,
+        positive_vectors,
+        negative_vectors,
+        strategy,
         filter,
         limit,
         offset,
@@ -667,17 +1041,33 @@ pub async fn recommend(
         with_vectors,
         lookup_from,
         read_consistency,
+        timeout,
+        shard_key_selector,
     } = recommend_points;
 
-    let request = collection::operations::types::RecommendRequest {
-        positive: positive
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
-        negative: negative
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
+    let timeout = timeout.map(Duration::from_secs);
+
+    let positive_ids = positive
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<Vec<RecommendExample>, Status>>()?;
+    let positive_vectors = positive_vectors.into_iter().map(Into::into).collect();
+    let positive = [positive_ids, positive_vectors].concat();
+
+    let negative_ids = negative
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<Vec<RecommendExample>, Status>>()?;
+    let negative_vectors = negative_vectors
+        .into_iter()
+        .map(|v| RecommendExample::Vector(v.data))
+        .collect();
+    let negative = [negative_ids, negative_vectors].concat();
+
+    let request = collection::operations::types::RecommendRequestInternal {
+        positive,
+        negative,
+        strategy: strategy.map(|s| s.try_into()).transpose()?,
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
@@ -695,9 +1085,17 @@ pub async fn recommend(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+
     let timing = Instant::now();
     let recommended_points = toc
-        .recommend(&collection_name, request, read_consistency)
+        .recommend(
+            &collection_name,
+            request,
+            read_consistency,
+            shard_selector,
+            timeout,
+        )
         .await
         .map_err(error_to_status)?;
 
@@ -717,20 +1115,23 @@ pub async fn recommend_batch(
     collection_name: String,
     recommend_points: Vec<RecommendPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
+    timeout: Option<Duration>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
-    let searches: Result<Vec<_>, Status> = recommend_points
-        .into_iter()
-        .map(|recommend_point| recommend_point.try_into())
-        .collect();
-    let recommend_batch = RecommendRequestBatch {
-        searches: searches?,
-    };
+    let mut requests = Vec::with_capacity(recommend_points.len());
+
+    for mut request in recommend_points {
+        let shard_selector =
+            convert_shard_selector_for_read(None, request.shard_key_selector.take());
+        let internal_request: collection::operations::types::RecommendRequestInternal =
+            request.try_into()?;
+        requests.push((internal_request, shard_selector));
+    }
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
     let scored_points = toc
-        .recommend_batch(&collection_name, recommend_batch, read_consistency)
+        .recommend_batch(&collection_name, requests, read_consistency, timeout)
         .await
         .map_err(error_to_status)?;
 
@@ -756,10 +1157,14 @@ pub async fn recommend_groups(
     let RecommendPointGroups {
         collection_name,
         read_consistency,
+        timeout,
+        shard_key_selector,
         ..
     } = recommend_point_groups;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_recommend_point_groups(
@@ -767,12 +1172,84 @@ pub async fn recommend_groups(
         &collection_name,
         recommend_groups_request,
         read_consistency,
+        shard_selector,
+        timeout.map(Duration::from_secs),
     )
     .await
     .map_err(error_to_status)?;
 
     let response = RecommendGroupsResponse {
         result: Some(groups_result.into()),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn discover(
+    toc: &TableOfContent,
+    discover_points: DiscoverPoints,
+) -> Result<Response<DiscoverResponse>, Status> {
+    let (request, collection_name, read_consistency, timeout, shard_key_selector) =
+        try_discover_request_from_grpc(discover_points)?;
+
+    let timing = Instant::now();
+
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+
+    let discovered_points = toc
+        .discover(
+            &collection_name,
+            request,
+            read_consistency,
+            shard_selector,
+            timeout,
+        )
+        .await
+        .map_err(error_to_status)?;
+
+    let response = DiscoverResponse {
+        result: discovered_points
+            .into_iter()
+            .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn discover_batch(
+    toc: &TableOfContent,
+    collection_name: String,
+    discover_points: Vec<DiscoverPoints>,
+    read_consistency: Option<ReadConsistencyGrpc>,
+    timeout: Option<Duration>,
+) -> Result<Response<DiscoverBatchResponse>, Status> {
+    let mut requests = Vec::with_capacity(discover_points.len());
+
+    for discovery_request in discover_points {
+        let (internal_request, _collection_name, _consistency, _timeout, shard_key_selector) =
+            try_discover_request_from_grpc(discovery_request)?;
+        let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+        requests.push((internal_request, shard_selector));
+    }
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let scored_points = toc
+        .discover_batch(&collection_name, requests, read_consistency, timeout)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = DiscoverBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
+            .collect(),
         time: timing.elapsed().as_secs_f64(),
     };
 
@@ -791,9 +1268,10 @@ pub async fn scroll(
         with_payload,
         with_vectors,
         read_consistency,
+        shard_key_selector,
     } = scroll_points;
 
-    let scroll_request = ScrollRequest {
+    let scroll_request = ScrollRequestInternal {
         offset: offset.map(|o| o.try_into()).transpose()?,
         limit: limit.map(|l| l as usize),
         filter: filter.map(|f| f.try_into()).transpose()?,
@@ -805,13 +1283,15 @@ pub async fn scroll(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
     let timing = Instant::now();
     let scrolled_points = do_scroll_points(
         toc,
         &collection_name,
         scroll_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
     )
     .await
     .map_err(error_to_status)?;
@@ -838,17 +1318,29 @@ pub async fn count(
         collection_name,
         filter,
         exact,
+        read_consistency,
+        shard_key_selector,
     } = count_points;
 
-    let count_request = collection::operations::types::CountRequest {
+    let count_request = collection::operations::types::CountRequestInternal {
         filter: filter.map(|f| f.try_into()).transpose()?,
         exact: exact.unwrap_or_else(default_exact_count),
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
     let timing = Instant::now();
-    let count_result = do_count_points(toc, &collection_name, count_request, shard_selection)
-        .await
-        .map_err(error_to_status)?;
+    let count_result = do_count_points(
+        toc,
+        &collection_name,
+        count_request,
+        read_consistency,
+        shard_selector,
+    )
+    .await
+    .map_err(error_to_status)?;
 
     let response = CountResponse {
         result: Some(count_result.into()),
@@ -869,9 +1361,10 @@ pub async fn get(
         with_payload,
         with_vectors,
         read_consistency,
+        shard_key_selector,
     } = get_points;
 
-    let point_request = PointRequest {
+    let point_request = PointRequestInternal {
         ids: ids
             .into_iter()
             .map(|p| p.try_into())
@@ -884,6 +1377,8 @@ pub async fn get(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
     let timing = Instant::now();
 
     let records = do_get_points(
@@ -891,7 +1386,7 @@ pub async fn get(
         &collection_name,
         point_request,
         read_consistency,
-        shard_selection,
+        shard_selector,
     )
     .await
     .map_err(error_to_status)?;

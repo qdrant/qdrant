@@ -1,7 +1,7 @@
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
 pub mod api;
-pub mod api_key;
+mod api_key;
 mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
@@ -22,14 +22,17 @@ use storage::dispatcher::Dispatcher;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
+use crate::actix::api::discovery_api::config_discovery_api;
 use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
 use crate::actix::api::service_api::config_service_api;
+use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::actix::api_key::ApiKey;
+use crate::actix::api_key::{ApiKey, WhitelistItem};
 use crate::common::auth::AuthKeys;
+use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
@@ -56,6 +59,7 @@ pub fn init(
             .actix_telemetry_collector
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
+        let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let auth_keys = AuthKeys::try_create(&settings.service);
         let static_folder = settings
             .service
@@ -82,11 +86,18 @@ pub fn init(
             // not enabled
             false
         };
-        let skip_api_key_prefixes = if web_ui_available {
-            vec![WEB_UI_PATH.to_string()]
-        } else {
-            vec![]
-        };
+
+        let mut api_key_whitelist = vec![
+            WhitelistItem::exact("/"),
+            WhitelistItem::exact("/healthz"),
+            WhitelistItem::prefix("/readyz"),
+            WhitelistItem::prefix("/livez"),
+        ];
+        if web_ui_available {
+            api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
+        }
+
+        let upload_dir = dispatcher_data.upload_dir().unwrap();
 
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()
@@ -107,7 +118,7 @@ pub fn init(
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(Condition::new(
                     auth_keys.is_some(),
-                    ApiKey::new(auth_keys.clone(), skip_api_key_prefixes.clone()),
+                    ApiKey::new(auth_keys.clone(), api_key_whitelist.clone()),
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests
@@ -117,12 +128,11 @@ pub fn init(
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
+                .app_data(http_client.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)
-                .app_data(
-                    TempFileConfig::default().directory(dispatcher_data.temp_snapshots_path()),
-                )
+                .app_data(TempFileConfig::default().directory(&upload_dir))
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
                 .service(index)
                 .configure(config_collections_api)
@@ -132,6 +142,8 @@ pub fn init(
                 .configure(config_service_api)
                 .configure(config_search_api)
                 .configure(config_recommend_api)
+                .configure(config_discovery_api)
+                .configure(config_shards_api)
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)
@@ -163,7 +175,7 @@ pub fn init(
 
             let config = certificate_helpers::actix_tls_server_config(&settings)
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-            server.bind_rustls(bind_addr, config)?
+            server.bind_rustls_021(bind_addr, config)?
         } else {
             log::info!("TLS disabled for REST API");
 

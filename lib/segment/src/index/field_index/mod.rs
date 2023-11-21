@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::types::{FieldCondition, IsEmptyCondition, IsNullCondition, PointOffsetType};
+use common::types::PointOffsetType;
+
+use crate::types::{FieldCondition, IsEmptyCondition, IsNullCondition};
 
 mod field_index_base;
 pub mod full_text_index;
@@ -15,6 +17,7 @@ mod stat_tools;
 pub mod binary_index;
 #[cfg(test)]
 mod tests;
+mod utils;
 
 pub use field_index_base::*;
 
@@ -46,7 +49,6 @@ pub struct CardinalityEstimation {
 }
 
 impl CardinalityEstimation {
-    #[allow(dead_code)]
     pub fn exact(count: usize) -> Self {
         CardinalityEstimation {
             primary_clauses: vec![],

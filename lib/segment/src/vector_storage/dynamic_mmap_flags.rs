@@ -5,14 +5,13 @@ use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use crate::common::mmap_type::{MmapBitSlice, MmapType};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::vector_storage::div_ceil;
 
 #[cfg(debug_assertions)]
 const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
@@ -72,7 +71,8 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
         let mmap = open_write_mmap(&status_file)?;
         Ok(mmap)
     } else {
-        open_write_mmap(&status_file)
+        let mmap = open_write_mmap(&status_file)?;
+        Ok(mmap)
     }
 }
 
@@ -87,7 +87,7 @@ pub struct DynamicMmapFlags {
 
 /// Based on the number of flags determines the size of the mmap file.
 fn mmap_capacity_bytes(num_flags: usize) -> usize {
-    let number_of_bytes = div_ceil(num_flags, 8);
+    let number_of_bytes = num_flags.div_ceil(8);
 
     max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())
 }

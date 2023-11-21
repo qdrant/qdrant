@@ -1,12 +1,16 @@
 use std::collections::HashSet;
+use std::fs::File;
 
-use collection::operations::payload_ops::{PayloadOps, SetPayload};
+use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{Batch, PointOperations, PointStruct, WriteOrdering};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
+    CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
+    SearchRequestInternal, UpdateStatus,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
+use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
@@ -47,7 +51,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
     );
 
     let insert_result = collection
-        .update_from_client(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await;
 
     match insert_result {
@@ -57,7 +61,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         Err(err) => panic!("operation failed: {err:?}"),
     }
 
-    let search_request = SearchRequest {
+    let search_request = SearchRequestInternal {
         vector: vec![1.0, 1.0, 1.0, 1.0].into(),
         with_payload: None,
         with_vector: None,
@@ -68,7 +72,14 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let search_res = collection.search(search_request, None, None).await;
+    let search_res = collection
+        .search(
+            search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
+        .await;
 
     match search_res {
         Ok(res) => {
@@ -104,7 +115,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     );
 
     let insert_result = collection
-        .update_from_client(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await;
 
     match insert_result {
@@ -114,7 +125,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         Err(err) => panic!("operation failed: {err:?}"),
     }
 
-    let search_request = SearchRequest {
+    let search_request = SearchRequestInternal {
         vector: vec![1.0, 0.0, 1.0, 1.0].into(),
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: Some(true.into()),
@@ -125,7 +136,14 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
-    let search_res = collection.search(search_request, None, None).await;
+    let search_res = collection
+        .search(
+            search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
+        .await;
 
     match search_res {
         Ok(res) => {
@@ -140,7 +158,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         Err(err) => panic!("search failed: {err:?}"),
     }
 
-    let count_request = CountRequest {
+    let count_request = CountRequestInternal {
         filter: Some(Filter::new_must(Condition::Field(FieldCondition {
             key: "k".to_string(),
             r#match: Some(serde_json::from_str(r#"{ "value": "v2" }"#).unwrap()),
@@ -148,15 +166,19 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             geo_bounding_box: None,
             geo_radius: None,
             values_count: None,
+            geo_polygon: None,
         }))),
         exact: true,
     };
 
-    let count_res = collection.count(count_request, None).await.unwrap();
+    let count_res = collection
+        .count(count_request, None, &ShardSelectorInternal::All)
+        .await
+        .unwrap();
     assert_eq!(count_res.count, 1);
 }
 
-// FIXME: dos not work
+// FIXME: does not work
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_loading() {
     test_collection_loading_with_shards(1).await;
@@ -188,21 +210,21 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         );
 
         collection
-            .update_from_client(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
 
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
         let assign_payload =
-            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayload {
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
                 payload,
                 points: Some(vec![2.into(), 3.into()]),
                 filter: None,
             }));
 
         collection
-            .update_from_client(assign_payload, true, WriteOrdering::default())
+            .update_from_client_simple(assign_payload, true, WriteOrdering::default())
             .await
             .unwrap();
     }
@@ -214,13 +236,13 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         &collection_path.join("snapshots"),
     )
     .await;
-    let request = PointRequest {
+    let request = PointRequestInternal {
         ids: vec![1.into(), 2.into()],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true.into(),
     };
     let retrieved = loaded_collection
-        .retrieve(request, None, None)
+        .retrieve(request, None, &ShardSelectorInternal::All)
         .await
         .unwrap();
 
@@ -317,11 +339,11 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
     );
 
     collection
-        .update_from_client(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
     let result = recommend_by(
-        RecommendRequest {
+        RecommendRequestInternal {
             positive: vec![0.into()],
             negative: vec![8.into()],
             limit: 5,
@@ -329,6 +351,8 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("Should not be called in this test") },
+        None,
+        ShardSelectorInternal::All,
         None,
     )
     .await
@@ -373,13 +397,13 @@ async fn test_read_api_with_shards(shard_number: u32) {
     ));
 
     collection
-        .update_from_client(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
     let result = collection
         .scroll_by(
-            ScrollRequest {
+            ScrollRequestInternal {
                 offset: None,
                 limit: Some(2),
                 filter: None,
@@ -387,7 +411,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 with_vector: false.into(),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();
@@ -427,7 +451,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     );
 
     let insert_result = collection
-        .update_from_client(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await;
 
     match insert_result {
@@ -450,7 +474,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     );
 
     let delete_result = collection
-        .update_from_client(delete_points, true, WriteOrdering::default())
+        .update_from_client_simple(delete_points, true, WriteOrdering::default())
         .await;
 
     match delete_result {
@@ -462,7 +486,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 
     let result = collection
         .scroll_by(
-            ScrollRequest {
+            ScrollRequestInternal {
                 offset: None,
                 limit: Some(10),
                 filter: None,
@@ -470,7 +494,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 with_vector: false.into(),
             },
             None,
-            None,
+            &ShardSelectorInternal::All,
         )
         .await
         .unwrap();
@@ -480,4 +504,46 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     assert_eq!(result.points.get(0).unwrap().id, 1.into());
     assert_eq!(result.points.get(1).unwrap().id, 2.into());
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_collection_local_load_initializing_not_stuck() {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+
+    // Create and unload collection
+    simple_collection_fixture(collection_dir.path(), 1).await;
+
+    // Modify replica state file on disk, set state to Initializing
+    // This is to simulate a situation where a collection was not fully created, we cannot create
+    // this situation through our collection interface
+    {
+        let replica_state_path = collection_dir.path().join("0/replica_state.json");
+        let replica_state_file = File::open(&replica_state_path).unwrap();
+        let mut replica_set_state: ReplicaSetState =
+            serde_json::from_reader(replica_state_file).unwrap();
+
+        for peer_id in replica_set_state.peers().into_keys() {
+            replica_set_state.set_peer_state(peer_id, ReplicaState::Initializing);
+        }
+
+        let replica_state_file = File::create(&replica_state_path).unwrap();
+        serde_json::to_writer(replica_state_file, &replica_set_state).unwrap();
+    }
+
+    // Reload collection
+    let collection_path = collection_dir.path();
+    let loaded_collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
+
+    // Local replica must be in Active state after loading (all replicas are local)
+    let loaded_state = loaded_collection.state().await;
+    for shard_info in loaded_state.shards.values() {
+        for replica_state in shard_info.replicas.values() {
+            assert_eq!(replica_state, &ReplicaState::Active);
+        }
+    }
 }

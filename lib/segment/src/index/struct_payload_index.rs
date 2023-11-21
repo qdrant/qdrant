@@ -5,16 +5,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
 use crate::common::Flusher;
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{
@@ -32,7 +33,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
     IsEmptyCondition, IsNullCondition, Payload, PayloadContainer, PayloadField, PayloadFieldSchema,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -66,14 +67,10 @@ impl StructPayloadIndex {
                 key: full_path.path,
                 ..condition.clone()
             };
-            let mut result_estimation: Option<CardinalityEstimation> = None;
-            for index in indexes {
-                result_estimation = index.estimate_cardinality(&full_path_condition);
-                if result_estimation.is_some() {
-                    break;
-                }
-            }
-            result_estimation
+
+            indexes
+                .iter()
+                .find_map(|index| index.estimate_cardinality(&full_path_condition).ok())
         })
     }
 
@@ -87,8 +84,7 @@ impl StructPayloadIndex {
             .and_then(|indexes| {
                 indexes
                     .iter()
-                    .map(|field_index| field_index.filter(field_condition))
-                    .find_map(|filter_iter| filter_iter)
+                    .find_map(|field_index| field_index.filter(field_condition).ok())
             });
         indexes
     }
@@ -102,11 +98,11 @@ impl StructPayloadIndex {
         self.config.save(&config_path)
     }
 
-    fn load_all_fields(&mut self) -> OperationResult<()> {
+    fn load_all_fields(&mut self, is_appendable: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
         for (field, payload_schema) in &self.config.indexed_fields {
-            let field_index = self.load_from_db(field, payload_schema.to_owned())?;
+            let field_index = self.load_from_db(field, payload_schema.to_owned(), is_appendable)?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -117,8 +113,9 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
+        is_appendable: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let mut indexes = index_selector(field, &payload_schema, self.db.clone());
+        let mut indexes = index_selector(field, &payload_schema, self.db.clone(), is_appendable);
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
@@ -129,6 +126,7 @@ impl StructPayloadIndex {
         }
         if !is_loaded {
             debug!("Index for `{field}` was not loaded. Building...");
+            // todo(ivan): decide what to do with indexes, which were not loaded
             indexes = self.build_field_indexes(field, payload_schema)?;
         }
 
@@ -139,6 +137,7 @@ impl StructPayloadIndex {
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
+        is_appendable: bool,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -166,7 +165,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields()?;
+        index.load_all_fields(is_appendable)?;
 
         Ok(index)
     }
@@ -177,7 +176,7 @@ impl StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut field_indexes = index_selector(field, &payload_schema, self.db.clone());
+        let mut field_indexes = index_selector(field, &payload_schema, self.db.clone(), true);
         for index in &field_indexes {
             index.recreate()?;
         }
@@ -437,9 +436,6 @@ impl PayloadIndex for StructPayloadIndex {
                 .filter(|&id| !visited_list.check_and_update_visited(id))
                 .filter(move |&i| struct_filtered_context.check(i))
                 .collect();
-
-            self.visited_pool.return_back(visited_list);
-
             preselected
         }
     }
@@ -511,16 +507,6 @@ impl PayloadIndex for StructPayloadIndex {
             }
         }
         self.payload.borrow_mut().drop(point_id)
-    }
-
-    fn wipe(&mut self) -> OperationResult<()> {
-        self.payload.borrow_mut().wipe()?;
-        for (_, field_indexes) in self.field_indexes.iter_mut() {
-            for index in field_indexes.drain(..) {
-                index.clear()?;
-            }
-        }
-        self.load_all_fields()
     }
 
     fn flusher(&self) -> Flusher {

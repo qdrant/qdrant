@@ -55,4 +55,39 @@ impl<T: Hash + Copy> HashRing<T> {
             HashRing::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            HashRing::Raw(ring) => ring.len(),
+            HashRing::Fair { ring, .. } => ring.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            HashRing::Raw(ring) => ring.is_empty(),
+            HashRing::Fair { ring, .. } => ring.is_empty(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_non_seq_keys() {
+        let mut ring = HashRing::fair(100);
+        ring.add(5);
+        ring.add(7);
+        ring.add(8);
+        ring.add(20);
+
+        for i in 0..20 {
+            match ring.get(&i) {
+                None => panic!("Key {i} has no shard"),
+                Some(x) => assert!([5, 7, 8, 20].contains(x)),
+            }
+        }
+    }
 }

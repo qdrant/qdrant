@@ -7,7 +7,7 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
 # Utilizing Docker layer caching with `cargo-chef`.
 #
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
-FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.70.0 AS chef
+FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.74.0 AS chef
 
 
 FROM chef AS planner
@@ -40,7 +40,7 @@ RUN apt-get update \
 ARG BUILDPLATFORM
 ENV BUILDPLATFORM=${BUILDPLATFORM:-linux/amd64}
 
-ARG MOLD_VERSION=1.11.0
+ARG MOLD_VERSION=2.3.2
 
 RUN case "$BUILDPLATFORM" in \
         */amd64 ) PLATFORM=x86_64 ;; \
@@ -62,7 +62,7 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-RUN xx-apt-get install -y gcc g++ libc6-dev
+RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
 ARG PROFILE=release
@@ -77,42 +77,70 @@ ARG RUSTFLAGS
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
-RUN PATH="$PATH:/opt/mold/bin" \
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+#
+# https://github.com/tonistiigi/xx/issues/107
+# https://github.com/tonistiigi/xx/pull/108
+RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
+    PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --recipe-path recipe.json
+    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
 
 COPY . .
-RUN PATH="$PATH:/opt/mold/bin" \
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+#
+# https://github.com/tonistiigi/xx/issues/107
+# https://github.com/tonistiigi/xx/pull/108
+RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
+    PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --bin qdrant \
+    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --bin qdrant \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
-
 
 # Download and extract web UI
 RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
 
+
 FROM debian:12-slim AS qdrant
 
 RUN apt-get update \
-    && apt-get install -y ca-certificates tzdata \
+    && apt-get install -y ca-certificates tzdata libunwind8 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG APP=/qdrant
 
-RUN mkdir -p ${APP}
+RUN mkdir -p "$APP"
 
-COPY --from=builder /qdrant/qdrant ${APP}/qdrant
-COPY --from=builder /qdrant/config ${APP}/config
-COPY --from=builder /qdrant/tools/entrypoint.sh ${APP}/entrypoint.sh
-COPY --from=builder /static ${APP}/static
+COPY --from=builder /qdrant/qdrant "$APP"/qdrant
+COPY --from=builder /qdrant/config "$APP"/config
+COPY --from=builder /qdrant/tools/entrypoint.sh "$APP"/entrypoint.sh
+COPY --from=builder /static "$APP"/static
 
-WORKDIR ${APP}
+WORKDIR "$APP"
+
+ARG USER_ID=0
+
+RUN if [ "$USER_ID" != 0 ]; then \
+        groupadd --gid "$USER_ID" qdrant; \
+        useradd --uid "$USER_ID" --gid "$USER_ID" -m qdrant; \
+        mkdir -p "$APP"/storage "$APP"/snapshots; \
+        chown -R "$USER_ID:$USER_ID" "$APP"; \
+    fi
+
+USER "$USER_ID:$USER_ID"
 
 ENV TZ=Etc/UTC \
     RUN_MODE=production
 
 EXPOSE 6333
 EXPOSE 6334
+
+LABEL org.opencontainers.image.title="Qdrant"
+LABEL org.opencontainers.image.description="Official Qdrant image"
+LABEL org.opencontainers.image.url="https://qdrant.com/"
+LABEL org.opencontainers.image.documentation="https://qdrant.com/docs"
+LABEL org.opencontainers.image.source="https://github.com/qdrant/qdrant"
+LABEL org.opencontainers.image.vendor="Qdrant"
 
 CMD ["./entrypoint.sh"]

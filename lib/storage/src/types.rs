@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::config::WalConfig;
@@ -6,9 +8,9 @@ use collection::operations::shared_storage_config::SharedStorageConfig;
 use collection::operations::types::NodeType;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
+use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::madvise;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -23,6 +25,8 @@ pub struct PerformanceConfig {
     pub max_optimization_threads: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_rate_limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_timeout_sec: Option<usize>,
 }
 
 const fn default_max_optimization_threads() -> usize {
@@ -66,15 +70,22 @@ pub struct StorageConfig {
     /// Provided value will be used error message for unavailable requests.
     #[serde(default)]
     pub recovery_mode: Option<String>,
+    #[serde(default)]
+    pub update_concurrency: Option<NonZeroUsize>,
 }
 
 impl StorageConfig {
-    pub fn to_shared_storage_config(&self) -> SharedStorageConfig {
+    pub fn to_shared_storage_config(&self, is_distributed: bool) -> SharedStorageConfig {
         SharedStorageConfig::new(
             self.update_queue_size,
             self.node_type,
             self.handle_collection_load_errors,
             self.recovery_mode.clone(),
+            self.performance
+                .search_timeout_sec
+                .map(|x| Duration::from_secs(x as u64)),
+            self.update_concurrency,
+            is_distributed,
         )
     }
 }

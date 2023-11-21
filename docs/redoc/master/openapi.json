@@ -1,5 +1,179 @@
 {
   "paths": {
+    "/collections/{collection_name}/shards": {
+      "put": {
+        "tags": [
+          "collections",
+          "cluster"
+        ],
+        "summary": "Create shard key",
+        "operationId": "create_shard_key",
+        "requestBody": {
+          "description": "Shard key configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShardingKey"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to create shards for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/shards/delete": {
+      "post": {
+        "tags": [
+          "collections",
+          "cluster"
+        ],
+        "summary": "Delete shard key",
+        "operationId": "delete_shard_key",
+        "requestBody": {
+          "description": "Select shard key to delete",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DropShardingKey"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to create shards for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/telemetry": {
       "get": {
         "summary": "Collect telemetry data",
@@ -226,6 +400,84 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Kubernetes healthz endpoint",
+        "description": "An endpoint for health checking used in Kubernetes.",
+        "operationId": "healthz",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "200": {
+            "description": "Healthz response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "healthz check passed"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error"
+          }
+        }
+      }
+    },
+    "/livez": {
+      "get": {
+        "summary": "Kubernetes livez endpoint",
+        "description": "An endpoint for health checking used in Kubernetes.",
+        "operationId": "livez",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "200": {
+            "description": "Healthz response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "healthz check passed"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Kubernetes readyz endpoint",
+        "description": "An endpoint for health checking used in Kubernetes.",
+        "operationId": "readyz",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "200": {
+            "description": "Healthz response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "healthz check passed"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error"
           }
         }
       }
@@ -2236,6 +2488,645 @@
         }
       }
     },
+    "/collections/{collection_name}/shards/{shard_id}/snapshots/upload": {
+      "post": {
+        "tags": [
+          "snapshots",
+          "collections"
+        ],
+        "summary": "Recover shard from an uploaded snapshot",
+        "description": "Recover shard of a local collection from an uploaded snapshot. This will overwrite any data, stored on this node, for the collection shard.",
+        "operationId": "recover_shard_from_uploaded_snapshot",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shard_id",
+            "in": "path",
+            "description": "Id of the shard to recover",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "Defines source of truth for snapshot recovery",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnapshotPriority"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Snapshot to recover from",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "snapshot": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/shards/{shard_id}/snapshots/recover": {
+      "put": {
+        "tags": [
+          "snapshots",
+          "collections"
+        ],
+        "summary": "Recover from a snapshot",
+        "description": "Recover shard of a local collection data from a snapshot. This will overwrite any data, stored in this shard, for the collection.",
+        "operationId": "recover_shard_from_snapshot",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shard_id",
+            "in": "path",
+            "description": "Id of the shard to recover",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Snapshot to recover from",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShardSnapshotRecover"
+              }
+            }
+          }
+        },
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/shards/{shard_id}/snapshots": {
+      "get": {
+        "tags": [
+          "snapshots",
+          "collections"
+        ],
+        "summary": "List shards snapshots for a collection",
+        "description": "Get list of snapshots for a shard of a collection",
+        "operationId": "list_shard_snapshots",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shard_id",
+            "in": "path",
+            "description": "Id of the shard",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SnapshotDescription"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "snapshots",
+          "collections"
+        ],
+        "summary": "Create shard snapshot",
+        "description": "Create new snapshot of a shard for a collection",
+        "operationId": "create_shard_snapshot",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection for which to create a snapshot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shard_id",
+            "in": "path",
+            "description": "Id of the shard",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/SnapshotDescription"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": {
+      "delete": {
+        "tags": [
+          "snapshots",
+          "collections"
+        ],
+        "summary": "Delete shard snapshot",
+        "description": "Delete snapshot of a shard for a collection",
+        "operationId": "delete_shard_snapshot",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection for which to delete a snapshot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shard_id",
+            "in": "path",
+            "description": "Id of the shard",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "snapshot_name",
+            "in": "path",
+            "description": "Name of the snapshot to delete",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "snapshots",
+          "collections"
+        ],
+        "summary": "Download collection snapshot",
+        "description": "Download specified snapshot of a shard from a collection as a file",
+        "operationId": "get_shard_snapshot",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shard_id",
+            "in": "path",
+            "description": "Id of the shard",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "snapshot_name",
+            "in": "path",
+            "description": "Name of the snapshot to download",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Snapshot file",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/{id}": {
       "get": {
         "tags": [
@@ -3186,6 +4077,106 @@
         }
       }
     },
+    "/collections/{collection_name}/points/batch": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Batch update points",
+        "description": "Apply a series of update operations for points, vectors and payloads",
+        "operationId": "batch_update",
+        "requestBody": {
+          "description": "update operations",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOperations"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to apply operations on",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ordering",
+            "in": "query",
+            "description": "define ordering guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WriteOrdering"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UpdateResult"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/scroll": {
       "post": {
         "tags": [
@@ -3310,6 +4301,16 @@
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -3400,6 +4401,16 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -3495,6 +4506,16 @@
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -3582,6 +4603,16 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -3673,6 +4704,16 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -3768,6 +4809,16 @@
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -3811,6 +4862,211 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/GroupsResult"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/points/discover": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Discover points",
+        "description": "Use context and a target to find the most similar points to the target, constrained by the context.\nWhen using only the context (without a target), a special search - called context search - is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair.\nSince the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have a score of 0.0.\nWhen using target (with or without context), the score behaves a little different: The  integer part of the score represents the rank with respect to the context, while the decimal part of the score relates to the distance to the target. The context part of the score for  each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair,  and -1 otherwise.\n",
+        "operationId": "discover_points",
+        "requestBody": {
+          "description": "Request points based on {positive, negative} pairs of examples, and/or a target",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ScoredPoint"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/points/discover/batch": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Discover batch points",
+        "description": "Look for points based on target and/or positive and negative example pairs, in batch.",
+        "operationId": "discover_batch_points",
+        "requestBody": {
+          "description": "Batch request points based on { positive, negative } pairs of examples, and/or a target.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverRequestBatch"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/ScoredPoint"
+                        }
+                      }
                     }
                   }
                 }
@@ -4146,6 +5402,17 @@
             "format": "uint32",
             "minimum": 1
           },
+          "sharding_method": {
+            "description": "Sharding method Default is Auto - points are distributed across all available shards Custom - points are distributed across shards according to shard key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardingMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "replication_factor": {
             "description": "Number of replicas for each shard",
             "default": 1,
@@ -4159,6 +5426,13 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 1
+          },
+          "read_fan_out_factor": {
+            "description": "Defines how many additional replicas should be processing read request at the same time. Default value is Auto, which means that fan-out will be determined automatically based on the busyness of the local replica. Having more than 0 might be useful to smooth latency spikes of individual nodes.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
           },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
@@ -4288,6 +5562,9 @@
           },
           {
             "$ref": "#/components/schemas/ProductQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/BinaryQuantization"
           }
         ]
       },
@@ -4366,6 +5643,33 @@
           "x16",
           "x32",
           "x64"
+        ]
+      },
+      "BinaryQuantization": {
+        "type": "object",
+        "required": [
+          "binary"
+        ],
+        "properties": {
+          "binary": {
+            "$ref": "#/components/schemas/BinaryQuantizationConfig"
+          }
+        }
+      },
+      "BinaryQuantizationConfig": {
+        "type": "object",
+        "properties": {
+          "always_ram": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "ShardingMethod": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "custom"
         ]
       },
       "HnswConfig": {
@@ -4595,7 +5899,8 @@
         "enum": [
           "prefix",
           "whitespace",
-          "word"
+          "word",
+          "multilingual"
         ]
       },
       "PointRequest": {
@@ -4604,6 +5909,17 @@
           "ids"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "ids": {
             "description": "Look for points with ids",
             "type": "array",
@@ -4626,6 +5942,31 @@
             "$ref": "#/components/schemas/WithVector"
           }
         }
+      },
+      "ShardKeySelector": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ShardKey"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardKey"
+            }
+          }
+        ]
+      },
+      "ShardKey": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        ]
       },
       "ExtendedPointId": {
         "description": "Type, used for specifying point ID in user interface",
@@ -4750,6 +6091,17 @@
                 "nullable": true
               }
             ]
+          },
+          "shard_key": {
+            "description": "Shard Key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -4770,14 +6122,49 @@
           {
             "type": "object",
             "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "number",
-                "format": "float"
-              }
+              "$ref": "#/components/schemas/Vector"
             }
           }
         ]
+      },
+      "Vector": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
+          }
+        ]
+      },
+      "SparseVector": {
+        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length",
+        "type": "object",
+        "required": [
+          "indices",
+          "values"
+        ],
+        "properties": {
+          "indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        }
       },
       "SearchRequest": {
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
@@ -4787,6 +6174,17 @@
           "vector"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "vector": {
             "$ref": "#/components/schemas/NamedVectorStruct"
           },
@@ -4857,7 +6255,7 @@
         }
       },
       "NamedVectorStruct": {
-        "description": "Vector data separator for named and unnamed modes Unanmed mode:\n\n{ \"vector\": [1.0, 2.0, 3.0] }\n\nor named mode:\n\n{ \"vector\": { \"vector\": [1.0, 2.0, 3.0], \"name\": \"image-embeddings\" } }",
+        "description": "Vector data separator for named and unnamed modes Unnamed mode:\n\n{ \"vector\": [1.0, 2.0, 3.0] }\n\nor named mode:\n\n{ \"vector\": { \"vector\": [1.0, 2.0, 3.0], \"name\": \"image-embeddings\" } }",
         "anyOf": [
           {
             "type": "array",
@@ -4868,6 +6266,9 @@
           },
           {
             "$ref": "#/components/schemas/NamedVector"
+          },
+          {
+            "$ref": "#/components/schemas/NamedSparseVector"
           }
         ]
       },
@@ -4890,6 +6291,23 @@
               "type": "number",
               "format": "float"
             }
+          }
+        }
+      },
+      "NamedSparseVector": {
+        "description": "Sparse vector data with name",
+        "type": "object",
+        "required": [
+          "name",
+          "vector"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name of vector data",
+            "type": "string"
+          },
+          "vector": {
+            "$ref": "#/components/schemas/SparseVector"
           }
         }
       },
@@ -4994,6 +6412,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/GeoRadius"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "geo_polygon": {
+            "description": "Check if geo point is within a given polygon",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoPolygon"
               },
               {
                 "nullable": true
@@ -5191,6 +6620,41 @@
           }
         }
       },
+      "GeoPolygon": {
+        "description": "Geo filter request\n\nMatches coordinates inside the polygon, defined by `exterior` and `interiors`",
+        "type": "object",
+        "required": [
+          "exterior"
+        ],
+        "properties": {
+          "exterior": {
+            "$ref": "#/components/schemas/GeoLineString"
+          },
+          "interiors": {
+            "description": "Interior lines (if present) bound holes within the surface each GeoLineString must consist of a minimum of 4 points, and the first and last points must be the same.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoLineString"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "GeoLineString": {
+        "description": "Ordered sequence of GeoPoints representing the line",
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoPoint"
+            }
+          }
+        }
+      },
       "ValuesCount": {
         "description": "Values count filter request",
         "type": "object",
@@ -5332,6 +6796,11 @@
                 "nullable": true
               }
             ]
+          },
+          "indexed_only": {
+            "description": "If enabled, the engine will only perform search among indexed or small segments. Using this option prevents slow searches in case of delayed index, but does not guarantee that all uploaded vectors will be included in search results",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
@@ -5345,9 +6814,10 @@
             "type": "boolean"
           },
           "rescore": {
-            "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. Default is false.",
-            "default": false,
-            "type": "boolean"
+            "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. If not set, qdrant decides automatically apply rescoring or not.",
+            "default": null,
+            "type": "boolean",
+            "nullable": true
           },
           "oversampling": {
             "description": "Oversampling factor for quantization. Default is 1.0.\n\nDefines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.\n\nFor example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring.",
@@ -5403,13 +6873,23 @@
                 "nullable": true
               }
             ]
+          },
+          "shard_key": {
+            "description": "Shard Key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
       "UpdateResult": {
         "type": "object",
         "required": [
-          "operation_id",
           "status"
         ],
         "properties": {
@@ -5417,7 +6897,8 @@
             "description": "Sequential number of the operation",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "status": {
             "$ref": "#/components/schemas/UpdateStatus"
@@ -5433,18 +6914,29 @@
         ]
       },
       "RecommendRequest": {
-        "description": "Recommendation request. Provides positive and negative examples of the vectors, which are already stored in the collection.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.",
+        "description": "Recommendation request. Provides positive and negative examples of the vectors, which can be ids of points that are already stored in the collection, raw vectors, or even ids and vectors combined.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to the `strategy` chosen.",
         "type": "object",
         "required": [
-          "limit",
-          "positive"
+          "limit"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "positive": {
             "description": "Look for vectors closest to those",
+            "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
           },
           "negative": {
@@ -5452,8 +6944,19 @@
             "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
+          },
+          "strategy": {
+            "description": "How to use positive and negative examples to find the results",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendStrategy"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
@@ -5545,6 +7048,28 @@
           }
         }
       },
+      "RecommendExample": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        ]
+      },
+      "RecommendStrategy": {
+        "description": "How to use positive and negative examples to find the results, default is `average_vector`:\n\n* `average_vector` - Average positive and negative vectors and create a single query with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.\n\n* `best_score` - Uses custom search objective. Each candidate is compared against all examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just the `max_pos_score`.",
+        "type": "string",
+        "enum": [
+          "average_vector",
+          "best_score"
+        ]
+      },
       "UsingVector": {
         "anyOf": [
           {
@@ -5568,6 +7093,17 @@
             "default": null,
             "type": "string",
             "nullable": true
+          },
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -5575,6 +7111,17 @@
         "description": "Scroll request - paginate over all points which matches given condition",
         "type": "object",
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "offset": {
             "description": "Start ID to read points from.",
             "anyOf": [
@@ -5658,19 +7205,31 @@
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
-            "description": "Number of shards in collection. Default is 1 for standalone, otherwise equal to the number of nodes Minimum is 1",
+            "description": "For auto sharding: Number of shards in collection. - Default is 1 for standalone, otherwise equal to the number of nodes - Minimum is 1 For custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
+          },
+          "sharding_method": {
+            "description": "Sharding method Default is Auto - points are distributed across all available shards Custom - points are distributed across shards according to shard key",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardingMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "replication_factor": {
             "description": "Number of shards replicas. Default is 1 Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "write_consistency_factor": {
@@ -5678,7 +7237,7 @@
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "on_disk_payload": {
@@ -5841,8 +7400,19 @@
         "description": "Operation for updating parameters of the existing collection",
         "type": "object",
         "properties": {
+          "vectors": {
+            "description": "Map of vector data parameters to update for each named vector. To update parameters in a collection having a single unnamed vector, use an empty string as name.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorsConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "optimizers_config": {
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
+            "description": "Custom params for Optimizers.  If none - it is left unchanged. This operation is blocking, it will only proceed once all current optimizations are complete",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OptimizersConfigDiff"
@@ -5853,7 +7423,7 @@
             ]
           },
           "params": {
-            "description": "Collection base params.  If none - values from service configuration file are used.",
+            "description": "Collection base params. If none - it is left unchanged.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CollectionParamsDiff"
@@ -5862,8 +7432,92 @@
                 "nullable": true
               }
             ]
+          },
+          "hnsw_config": {
+            "description": "HNSW parameters to update for the collection index. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantization_config": {
+            "description": "Quantization parameters to update. If none - it is left unchanged.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "VectorsConfigDiff": {
+        "description": "Vector update params for multiple vectors\n\n{ \"vector_name\": { \"hnsw_config\": { \"m\": 8 } } }",
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/VectorParamsDiff"
+        }
+      },
+      "VectorParamsDiff": {
+        "type": "object",
+        "properties": {
+          "hnsw_config": {
+            "description": "Update params for HNSW index. If empty object - it will be unset.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantization_config": {
+            "description": "Update params for quantization. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "on_disk": {
+            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "QuantizationConfigDiff": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ScalarQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/ProductQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/BinaryQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/Disabled"
+          }
+        ]
+      },
+      "Disabled": {
+        "type": "string",
+        "enum": [
+          "Disabled"
+        ]
       },
       "CollectionParamsDiff": {
         "type": "object",
@@ -5880,6 +7534,19 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 1,
+            "nullable": true
+          },
+          "read_fan_out_factor": {
+            "description": "Fan-out every read request to these many additional remote nodes (and return first available response)",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
+          "on_disk_payload": {
+            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
+            "default": null,
+            "type": "boolean",
             "nullable": true
           }
         }
@@ -6044,6 +7711,16 @@
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
             }
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6055,11 +7732,21 @@
         "properties": {
           "filter": {
             "$ref": "#/components/schemas/Filter"
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
       "PointInsertOperations": {
-        "oneOf": [
+        "anyOf": [
           {
             "$ref": "#/components/schemas/PointsBatch"
           },
@@ -6068,51 +7755,19 @@
           }
         ]
       },
-      "BatchVectorStruct": {
-        "anyOf": [
-          {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "number",
-                "format": "float"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "float"
-                }
-              }
-            }
-          }
-        ]
-      },
-      "PointStruct": {
+      "PointsBatch": {
         "type": "object",
         "required": [
-          "id",
-          "vector"
+          "batch"
         ],
         "properties": {
-          "id": {
-            "$ref": "#/components/schemas/ExtendedPointId"
+          "batch": {
+            "$ref": "#/components/schemas/Batch"
           },
-          "vector": {
-            "$ref": "#/components/schemas/VectorStruct"
-          },
-          "payload": {
-            "description": "Payload values (optional)",
+          "shard_key": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Payload"
+                "$ref": "#/components/schemas/ShardKeySelector"
               },
               {
                 "nullable": true
@@ -6153,15 +7808,28 @@
           }
         }
       },
-      "PointsBatch": {
-        "required": [
-          "batch"
-        ],
-        "properties": {
-          "batch": {
-            "$ref": "#/components/schemas/Batch"
+      "BatchVectorStruct": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Vector"
+              }
+            }
           }
-        }
+        ]
       },
       "PointsList": {
         "type": "object",
@@ -6174,10 +7842,47 @@
             "items": {
               "$ref": "#/components/schemas/PointStruct"
             }
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "PointStruct": {
+        "type": "object",
+        "required": [
+          "id",
+          "vector"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          "vector": {
+            "$ref": "#/components/schemas/VectorStruct"
+          },
+          "payload": {
+            "description": "Payload values (optional)",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
       "SetPayload": {
+        "description": "This data structure is used in API interface and applied across multiple shards",
         "type": "object",
         "required": [
           "payload"
@@ -6204,10 +7909,21 @@
                 "nullable": true
               }
             ]
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
       "DeletePayload": {
+        "description": "This data structure is used in API interface and applied across multiple shards",
         "type": "object",
         "required": [
           "keys"
@@ -6233,6 +7949,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
               },
               {
                 "nullable": true
@@ -6480,6 +8206,17 @@
         "description": "Count Request Counts the number of points which satisfy the given filter. If filter is not provided, the count of all points in the collection will be returned.",
         "type": "object",
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
             "anyOf": [
@@ -6572,6 +8309,17 @@
             "format": "uint32",
             "minimum": 0
           },
+          "shard_key": {
+            "description": "User-defined sharding key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "points_count": {
             "description": "Number of points in the shard",
             "type": "integer",
@@ -6591,7 +8339,8 @@
           "Dead",
           "Partial",
           "Initializing",
-          "Listener"
+          "Listener",
+          "PartialSnapshot"
         ]
       },
       "RemoteShardInfo": {
@@ -6607,6 +8356,17 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
+          },
+          "shard_key": {
+            "description": "User-defined sharding key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "peer_id": {
             "description": "Remote peer id",
@@ -6646,8 +8406,37 @@
           "sync": {
             "description": "If `true` transfer is a synchronization of a replicas If `false` transfer is a moving of a shard from one peer to another",
             "type": "boolean"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardTransferMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "ShardTransferMethod": {
+        "description": "Methods for transferring a shard from one node to another.",
+        "oneOf": [
+          {
+            "description": "Stream all shard records in batches until the whole shard is transferred.",
+            "type": "string",
+            "enum": [
+              "stream_records"
+            ]
+          },
+          {
+            "description": "Snapshot the shard, transfer and restore it on the receiver.",
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        ]
       },
       "TelemetryData": {
         "type": "object",
@@ -6941,10 +8730,12 @@
           "index_schema",
           "is_appendable",
           "num_deleted_vectors",
+          "num_indexed_vectors",
           "num_points",
           "num_vectors",
           "ram_usage_bytes",
-          "segment_type"
+          "segment_type",
+          "vector_data"
         ],
         "properties": {
           "segment_type": {
@@ -6956,6 +8747,11 @@
             "minimum": 0
           },
           "num_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_indexed_vectors": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -6983,6 +8779,12 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadIndexInfo"
             }
+          },
+          "vector_data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/VectorDataInfo"
+            }
           }
         }
       },
@@ -6994,6 +8796,31 @@
           "indexed",
           "special"
         ]
+      },
+      "VectorDataInfo": {
+        "type": "object",
+        "required": [
+          "num_deleted_vectors",
+          "num_indexed_vectors",
+          "num_vectors"
+        ],
+        "properties": {
+          "num_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_indexed_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_deleted_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
       },
       "SegmentConfig": {
         "type": "object",
@@ -7160,9 +8987,11 @@
           "filtered_large_cardinality",
           "filtered_plain",
           "filtered_small_cardinality",
+          "filtered_sparse",
           "unfiltered_exact",
           "unfiltered_hnsw",
-          "unfiltered_plain"
+          "unfiltered_plain",
+          "unfiltered_sparse"
         ],
         "properties": {
           "index_name": {
@@ -7175,6 +9004,9 @@
           "unfiltered_hnsw": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
+          "unfiltered_sparse": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
           "filtered_plain": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
@@ -7185,6 +9017,9 @@
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "filtered_exact": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_sparse": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "unfiltered_exact": {
@@ -7262,6 +9097,7 @@
       "OptimizerTelemetry": {
         "type": "object",
         "required": [
+          "log",
           "optimizations",
           "status"
         ],
@@ -7271,8 +9107,89 @@
           },
           "optimizations": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrackerTelemetry"
+            }
           }
         }
+      },
+      "TrackerTelemetry": {
+        "description": "Tracker object used in telemetry",
+        "type": "object",
+        "required": [
+          "name",
+          "segment_ids",
+          "start_at",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name of the optimizer",
+            "type": "string"
+          },
+          "segment_ids": {
+            "description": "Segment IDs being optimized",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrackerStatus"
+          },
+          "start_at": {
+            "description": "Start time of the optimizer",
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_at": {
+            "description": "End time of the optimizer",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TrackerStatus": {
+        "description": "Represents the current state of the optimizer being tracked",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "optimizing",
+              "done"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "cancelled"
+            ],
+            "properties": {
+              "cancelled": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "RemoteShardTelemetry": {
         "type": "object",
@@ -7526,6 +9443,12 @@
           },
           {
             "$ref": "#/components/schemas/DropReplicaOperation"
+          },
+          {
+            "$ref": "#/components/schemas/CreateShardingKeyOperation"
+          },
+          {
+            "$ref": "#/components/schemas/DropShardingKeyOperation"
           }
         ]
       },
@@ -7562,6 +9485,17 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "method": {
+            "description": "Method for transferring the shard from one node to another",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardTransferMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7614,6 +9548,74 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          }
+        }
+      },
+      "CreateShardingKeyOperation": {
+        "type": "object",
+        "required": [
+          "create_sharding_key"
+        ],
+        "properties": {
+          "create_sharding_key": {
+            "$ref": "#/components/schemas/CreateShardingKey"
+          }
+        }
+      },
+      "CreateShardingKey": {
+        "type": "object",
+        "required": [
+          "shard_key"
+        ],
+        "properties": {
+          "shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
+          },
+          "shards_number": {
+            "description": "How many shards to create for this key If not specified, will use the default value from config",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1,
+            "nullable": true
+          },
+          "replication_factor": {
+            "description": "How many replicas to create for each shard If not specified, will use the default value from config",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1,
+            "nullable": true
+          },
+          "placement": {
+            "description": "Placement of shards for this key List of peer ids, that can be used to place shards for this key If not specified, will be randomly placed among all peers",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DropShardingKeyOperation": {
+        "type": "object",
+        "required": [
+          "drop_sharding_key"
+        ],
+        "properties": {
+          "drop_sharding_key": {
+            "$ref": "#/components/schemas/DropShardingKey"
+          }
+        }
+      },
+      "DropShardingKey": {
+        "type": "object",
+        "required": [
+          "shard_key"
+        ],
+        "properties": {
+          "shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
           }
         }
       },
@@ -7686,9 +9688,10 @@
         }
       },
       "SnapshotPriority": {
-        "description": "Defines source of truth for snapshot recovery `Snapshot` means - prefer snapshot data over the current state `Replica` means - prefer existing data over the snapshot",
+        "description": "Defines source of truth for snapshot recovery: `NoSync` means - restore snapshot without *any* additional synchronization. `Snapshot` means - prefer snapshot data over the current state. `Replica` means - prefer existing data over the snapshot.",
         "type": "string",
         "enum": [
+          "no_sync",
           "snapshot",
           "replica"
         ]
@@ -7766,6 +9769,16 @@
               "$ref": "#/components/schemas/PointVectors"
             },
             "minItems": 1
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7817,6 +9830,16 @@
             },
             "minItems": 1,
             "uniqueItems": true
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7876,6 +9899,17 @@
           "vector"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "vector": {
             "$ref": "#/components/schemas/NamedVectorStruct"
           },
@@ -8011,15 +10045,26 @@
         "required": [
           "group_by",
           "group_size",
-          "limit",
-          "positive"
+          "limit"
         ],
         "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "positive": {
             "description": "Look for vectors closest to those",
+            "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
           },
           "negative": {
@@ -8027,8 +10072,20 @@
             "default": [],
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
+              "$ref": "#/components/schemas/RecommendExample"
             }
+          },
+          "strategy": {
+            "description": "How to use positive and negative examples to find the results",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendStrategy"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
@@ -8146,6 +10203,337 @@
             "items": {
               "$ref": "#/components/schemas/PointGroup"
             }
+          }
+        }
+      },
+      "UpdateOperations": {
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpdateOperation"
+            }
+          }
+        }
+      },
+      "UpdateOperation": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/UpsertOperation"
+          },
+          {
+            "$ref": "#/components/schemas/DeleteOperation"
+          },
+          {
+            "$ref": "#/components/schemas/SetPayloadOperation"
+          },
+          {
+            "$ref": "#/components/schemas/OverwritePayloadOperation"
+          },
+          {
+            "$ref": "#/components/schemas/DeletePayloadOperation"
+          },
+          {
+            "$ref": "#/components/schemas/ClearPayloadOperation"
+          },
+          {
+            "$ref": "#/components/schemas/UpdateVectorsOperation"
+          },
+          {
+            "$ref": "#/components/schemas/DeleteVectorsOperation"
+          }
+        ]
+      },
+      "UpsertOperation": {
+        "type": "object",
+        "required": [
+          "upsert"
+        ],
+        "properties": {
+          "upsert": {
+            "$ref": "#/components/schemas/PointInsertOperations"
+          }
+        }
+      },
+      "DeleteOperation": {
+        "type": "object",
+        "required": [
+          "delete"
+        ],
+        "properties": {
+          "delete": {
+            "$ref": "#/components/schemas/PointsSelector"
+          }
+        }
+      },
+      "SetPayloadOperation": {
+        "type": "object",
+        "required": [
+          "set_payload"
+        ],
+        "properties": {
+          "set_payload": {
+            "$ref": "#/components/schemas/SetPayload"
+          }
+        }
+      },
+      "OverwritePayloadOperation": {
+        "type": "object",
+        "required": [
+          "overwrite_payload"
+        ],
+        "properties": {
+          "overwrite_payload": {
+            "$ref": "#/components/schemas/SetPayload"
+          }
+        }
+      },
+      "DeletePayloadOperation": {
+        "type": "object",
+        "required": [
+          "delete_payload"
+        ],
+        "properties": {
+          "delete_payload": {
+            "$ref": "#/components/schemas/DeletePayload"
+          }
+        }
+      },
+      "ClearPayloadOperation": {
+        "type": "object",
+        "required": [
+          "clear_payload"
+        ],
+        "properties": {
+          "clear_payload": {
+            "$ref": "#/components/schemas/PointsSelector"
+          }
+        }
+      },
+      "UpdateVectorsOperation": {
+        "type": "object",
+        "required": [
+          "update_vectors"
+        ],
+        "properties": {
+          "update_vectors": {
+            "$ref": "#/components/schemas/UpdateVectors"
+          }
+        }
+      },
+      "DeleteVectorsOperation": {
+        "type": "object",
+        "required": [
+          "delete_vectors"
+        ],
+        "properties": {
+          "delete_vectors": {
+            "$ref": "#/components/schemas/DeleteVectors"
+          }
+        }
+      },
+      "ShardSnapshotRecover": {
+        "type": "object",
+        "required": [
+          "location"
+        ],
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/ShardSnapshotLocation"
+          },
+          "priority": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotPriority"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "ShardSnapshotLocation": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "uri"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "DiscoverRequest": {
+        "description": "Use context and a target to find the most similar points, constrained by the context.",
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "target": {
+            "description": "Look for vectors closest to this.\n\nWhen using the target (with or without context), the integer part of the score represents the rank with respect to the context, while the decimal part of the score relates to the distance to the target.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendExample"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "context": {
+            "description": "Pairs of { positive, negative } examples to constrain the search.\n\nWhen using only the context (without a target), a special search - called context search - is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair.\n\nSince the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have a score of 0.0.\n\nFor discovery search (when including a target), the context part of the score for each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair, and -1 otherwise.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextExamplePair"
+            },
+            "nullable": true
+          },
+          "filter": {
+            "description": "Look only for points which satisfies this conditions",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "params": {
+            "description": "Additional search params",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "limit": {
+            "description": "Max number of result to return",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
+          },
+          "offset": {
+            "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
+            "default": 0,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "with_payload": {
+            "description": "Select which payload to return with the response. Default: None",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "using": {
+            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsingVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "lookup_from": {
+            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LookupLocation"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "ContextExamplePair": {
+        "type": "object",
+        "required": [
+          "negative",
+          "positive"
+        ],
+        "properties": {
+          "positive": {
+            "$ref": "#/components/schemas/RecommendExample"
+          },
+          "negative": {
+            "$ref": "#/components/schemas/RecommendExample"
+          }
+        }
+      },
+      "DiscoverRequestBatch": {
+        "type": "object",
+        "required": [
+          "searches"
+        ],
+        "properties": {
+          "searches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoverRequest"
+            }
+          }
+        }
+      },
+      "SparseIndexConfig": {
+        "type": "object",
+        "required": [
+          "full_scan_threshold"
+        ],
+        "properties": {
+          "full_scan_threshold": {
+            "description": "We prefer a full scan search upto (excluding) this number of vectors.\n\nNote: this is number of vectors, not KiloBytes.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "on_disk": {
+            "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "type": "boolean",
+            "nullable": true
           }
         }
       }

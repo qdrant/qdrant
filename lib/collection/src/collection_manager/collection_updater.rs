@@ -3,7 +3,7 @@ use segment::types::SeqNumberType;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::segments_updater::*;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
 
 /// Implementation of the update operation
@@ -30,16 +30,15 @@ impl CollectionUpdater {
                     }
                 }
             }
-            Err(collection_error) => match collection_error {
-                CollectionError::ServiceError { error, .. } => {
+            Err(collection_error) => {
+                if collection_error.is_transient() {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
-                    log::error!("Update operation failed: {}", error)
-                }
-                _ => {
+                    log::error!("Update operation failed: {}", collection_error)
+                } else {
                     log::warn!("Update operation declined: {}", collection_error)
                 }
-            },
+            }
         }
     }
 
@@ -82,7 +81,7 @@ mod tests {
     use crate::collection_manager::fixtures::build_test_holder;
     use crate::collection_manager::segments_searcher::SegmentsSearcher;
     use crate::collection_manager::segments_updater::upsert_points;
-    use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
+    use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     use crate::operations::point_ops::{PointOperations, PointStruct};
 
     #[test]
@@ -166,11 +165,13 @@ mod tests {
         for record in records {
             let v = record.vector.unwrap();
 
+            let v1 = vec![2., 2., 2., 2.];
             if record.id == 1.into() {
-                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 2., 2., 2.]))
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some((&v1).into()))
             }
+            let v2 = vec![2., 0., 2., 0.];
             if record.id == 500.into() {
-                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 0., 2., 0.]))
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some((&v2).into()))
             }
         }
 
@@ -209,7 +210,7 @@ mod tests {
         process_payload_operation(
             &segments,
             100,
-            PayloadOps::SetPayload(SetPayload {
+            PayloadOps::SetPayload(SetPayloadOp {
                 payload,
                 points: Some(points.clone()),
                 filter: None,
@@ -237,7 +238,7 @@ mod tests {
         process_payload_operation(
             &segments,
             101,
-            PayloadOps::DeletePayload(DeletePayload {
+            PayloadOps::DeletePayload(DeletePayloadOp {
                 points: Some(vec![3.into()]),
                 keys: vec!["color".to_string(), "empty".to_string()],
                 filter: None,

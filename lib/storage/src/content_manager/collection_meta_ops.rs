@@ -1,14 +1,15 @@
-use collection::config::CollectionConfig;
+use collection::config::{CollectionConfig, ShardingMethod};
 use collection::operations::config_diff::{
-    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+    WalConfigDiff,
 };
-use collection::operations::types::VectorsConfig;
+use collection::operations::types::{VectorsConfig, VectorsConfigDiff};
 use collection::shards::replica_set::ReplicaState;
-use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
+use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
+use collection::shards::transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
-use segment::types::QuantizationConfig;
+use segment::types::{PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -103,21 +104,34 @@ pub struct CreateCollection {
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
     #[validate]
     pub vectors: VectorsConfig,
+    /// For auto sharding:
     /// Number of shards in collection.
-    /// Default is 1 for standalone, otherwise equal to the number of nodes
-    /// Minimum is 1
+    ///  - Default is 1 for standalone, otherwise equal to the number of nodes
+    ///  - Minimum is 1
+    /// For custom sharding:
+    /// Number of shards in collection per shard group.
+    ///  - Default is 1, meaning that each shard key will be mapped to a single shard
+    ///  - Minimum is 1
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub shard_number: Option<u32>,
+    /// Sharding method
+    /// Default is Auto - points are distributed across all available shards
+    /// Custom - points are distributed across shards according to shard key
+    #[serde(default)]
+    pub sharding_method: Option<ShardingMethod>,
     /// Number of shards replicas.
     /// Default is 1
     /// Minimum is 1
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub replication_factor: Option<u32>,
     /// Defines how many replicas should apply the operation for us to consider it successful.
     /// Increasing this number will make the collection more resilient to inconsistencies, but will
     /// also make it fail if not enough replicas are available.
     /// Does not have any performance impact.
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub write_consistency_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
@@ -179,12 +193,23 @@ impl CreateCollectionOperation {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
-    /// Custom params for Optimizers.  If none - values from service configuration file are used.
-    /// This operation is blocking, it will only proceed ones all current optimizations are complete
+    /// Map of vector data parameters to update for each named vector.
+    /// To update parameters in a collection having a single unnamed vector, use an empty string as name.
+    #[validate]
+    pub vectors: Option<VectorsConfigDiff>,
+    /// Custom params for Optimizers.  If none - it is left unchanged.
+    /// This operation is blocking, it will only proceed once all current optimizations are complete
     #[serde(alias = "optimizer_config")]
-    pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
-    /// Collection base params.  If none - values from service configuration file are used.
+    pub optimizers_config: Option<OptimizersConfigDiff>, // TODO: Allow updates for other configuration params as well
+    /// Collection base params. If none - it is left unchanged.
     pub params: Option<CollectionParamsDiff>,
+    /// HNSW parameters to update for the collection index. If none - it is left unchanged.
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
+    /// Quantization parameters to update. If none - it is left unchanged.
+    #[serde(default, alias = "quantization")]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfigDiff>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -201,8 +226,11 @@ impl UpdateCollectionOperation {
         Self {
             collection_name,
             update_collection: UpdateCollection {
-                optimizers_config: None,
+                vectors: None,
+                hnsw_config: None,
                 params: None,
+                optimizers_config: None,
+                quantization_config: None,
             },
             shard_replica_changes: None,
         }
@@ -255,6 +283,11 @@ pub struct DeleteCollectionOperation(pub String);
 pub enum ShardTransferOperations {
     Start(ShardTransfer),
     Finish(ShardTransfer),
+    /// Used in `ShardTransferMethod::Snapshot`
+    ///
+    /// Called when the snapshot has successfully been recovered on the remote, brings the transfer
+    /// to the next stage.
+    SnapshotRecovered(ShardTransferKey),
     Abort {
         transfer: ShardTransferKey,
         reason: String,
@@ -278,6 +311,32 @@ pub struct SetShardReplicaState {
     pub from_state: Option<ReplicaState>,
 }
 
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct CreateShardKey {
+    pub collection_name: String,
+    pub shard_key: ShardKey,
+    pub placement: ShardsPlacement,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct DropShardKey {
+    pub collection_name: String,
+    pub shard_key: ShardKey,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct CreatePayloadIndex {
+    pub collection_name: String,
+    pub field_name: PayloadKeyType,
+    pub field_schema: PayloadFieldSchema,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct DropPayloadIndex {
+    pub collection_name: String,
+    pub field_name: PayloadKeyType,
+}
+
 /// Enumeration of all possible collection update operations
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -288,6 +347,10 @@ pub enum CollectionMetaOperations {
     ChangeAliases(ChangeAliasesOperation),
     TransferShard(CollectionId, ShardTransferOperations),
     SetShardReplicaState(SetShardReplicaState),
+    CreateShardKey(CreateShardKey),
+    DropShardKey(DropShardKey),
+    CreatePayloadIndex(CreatePayloadIndex),
+    DropPayloadIndex(DropPayloadIndex),
     Nop { token: usize }, // Empty operation
 }
 
@@ -298,6 +361,7 @@ impl From<CollectionConfig> for CreateCollection {
         Self {
             vectors: value.params.vectors,
             shard_number: Some(value.params.shard_number.get()),
+            sharding_method: value.params.sharding_method,
             replication_factor: Some(value.params.replication_factor.get()),
             write_consistency_factor: Some(value.params.write_consistency_factor.get()),
             on_disk_payload: Some(value.params.on_disk_payload),

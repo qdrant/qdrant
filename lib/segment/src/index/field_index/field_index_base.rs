@@ -1,18 +1,19 @@
+use common::types::PointOffsetType;
 use serde_json::Value;
+use smol_str::SmolStr;
 
+use super::map_index::MapIndex;
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
-use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText, PayloadKeyType,
-    PointOffsetType,
 };
 
 pub trait PayloadFieldIndex {
@@ -33,10 +34,13 @@ pub trait PayloadFieldIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     /// Return estimation of points amount which satisfy given condition
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
@@ -69,9 +73,9 @@ pub trait ValueIndexer<T> {
         id: PointOffsetType,
         payload: &MultiValue<&Value>,
     ) -> OperationResult<()> {
+        self.remove_point(id)?;
         match payload {
             MultiValue::Multiple(values) => {
-                self.remove_point(id)?;
                 let mut flatten_values: Vec<_> = vec![];
 
                 for value in values {
@@ -89,12 +93,10 @@ pub trait ValueIndexer<T> {
                 self.add_many(id, flatten_values)
             }
             MultiValue::Single(Some(Value::Array(values))) => {
-                self.remove_point(id)?;
                 self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())
             }
             MultiValue::Single(Some(value)) => {
                 if let Some(x) = self.get_value(value) {
-                    self.remove_point(id)?;
                     self.add_many(id, vec![x])
                 } else {
                     Ok(())
@@ -115,7 +117,7 @@ pub trait ValueIndexer<T> {
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
     IntMapIndex(MapIndex<IntPayloadType>),
-    KeywordIndex(MapIndex<String>),
+    KeywordIndex(MapIndex<SmolStr>),
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
@@ -230,14 +232,14 @@ impl FieldIndex {
     pub fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         self.get_payload_field_index().filter(condition)
     }
 
     pub fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<CardinalityEstimation> {
         self.get_payload_field_index()
             .estimate_cardinality(condition)
     }

@@ -1,5 +1,6 @@
 use std::cmp::max;
 
+use common::types::ScoredPointOffset;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -11,7 +12,6 @@ use crate::index::hnsw_index::graph_links::GraphLinksRam;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
 use crate::spaces::simple::CosineMetric;
-use crate::vector_storage::ScoredPointOffset;
 
 fn search_in_builder(
     builder: &GraphLayersBuilder,
@@ -60,7 +60,7 @@ fn test_compact_graph_layers() {
     let reference_results = queries
         .iter()
         .map(|query| {
-            let raw_scorer = vector_holder.get_raw_scorer(query.clone());
+            let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
             search_in_builder(&graph_layers_builder, top, ef, scorer)
         })
@@ -73,9 +73,9 @@ fn test_compact_graph_layers() {
     let results = queries
         .iter()
         .map(|query| {
-            let raw_scorer = vector_holder.get_raw_scorer(query.clone());
+            let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            graph_layers.search(top, ef, scorer)
+            graph_layers.search(top, ef, scorer, None)
         })
         .collect_vec();
 

@@ -1,9 +1,8 @@
 use std::cmp::Ordering;
 
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
-
-use crate::spaces::tools::FixedLengthPriorityQueue;
-use crate::types::PointOffsetType;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntryPoint {
@@ -38,7 +37,6 @@ impl EntryPoints {
             extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
         }
     }
-
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
         // Do not merge `extra_entry_points` to prevent duplications

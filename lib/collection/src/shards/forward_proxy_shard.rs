@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use segment::types::{
@@ -9,10 +10,11 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
+use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
@@ -44,9 +46,14 @@ impl ForwardProxyShard {
     }
 
     /// Create payload indexes in the remote shard same as in the wrapped shard.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn transfer_indexes(&self) -> CollectionResult<()> {
         let _update_lock = self.update_lock.lock().await;
         for (index_key, index_type) in self.wrapped_shard.info().await?.payload_schema {
+            // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
             self.remote_shard
                 .update(
                     CollectionUpdateOperations::FieldIndexOperation(
@@ -64,6 +71,10 @@ impl ForwardProxyShard {
 
     /// Move batch of points to the remote shard.
     /// Returns an offset of the next batch to be transferred.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn transfer_batch(
         &self,
         offset: Option<PointIdType>,
@@ -110,6 +121,8 @@ impl ForwardProxyShard {
 
         // We only need to wait for the last batch.
         let wait = next_page_offset.is_none();
+
+        // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
         self.remote_shard
             .update(insert_points_operation, wait)
             .await?;
@@ -139,6 +152,10 @@ impl ForwardProxyShard {
 
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         self.wrapped_shard.get_telemetry_data()
+    }
+
+    pub fn update_tracker(&self) -> &UpdateTracker {
+        self.wrapped_shard.update_tracker()
     }
 }
 
@@ -189,24 +206,26 @@ impl ShardOperation for ForwardProxyShard {
         let local_shard = &self.wrapped_shard;
         local_shard.info().await
     }
-
-    async fn search(
+    async fn core_search(
         &self,
-        request: Arc<SearchRequestBatch>,
+        request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
-        local_shard.search(request, search_runtime_handle).await
+        local_shard
+            .core_search(request, search_runtime_handle, timeout)
+            .await
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard.count(request).await
     }
 
     async fn retrieve(
         &self,
-        request: Arc<PointRequest>,
+        request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {

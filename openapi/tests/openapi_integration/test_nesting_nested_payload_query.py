@@ -1,12 +1,12 @@
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import drop_collection
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_nesting_nested_payload_query'
 
 
-def nesting_nested_payload_collection_setup(collection_name, on_disk_payload=False):
+def nesting_nested_payload_collection_setup(collection_name, on_disk_vectors, on_disk_payload):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -21,9 +21,10 @@ def nesting_nested_payload_collection_setup(collection_name, on_disk_payload=Fal
         body={
             "vectors": {
                 "size": 4,
-                "distance": "Dot"
+                "distance": "Dot",
+                "on_disk": on_disk_vectors,
             },
-            "on_disk_payload": on_disk_payload
+            "on_disk_payload": on_disk_payload,
         }
     )
     assert response.ok
@@ -88,8 +89,8 @@ def nesting_nested_payload_collection_setup(collection_name, on_disk_payload=Fal
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    nesting_nested_payload_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors, on_disk_payload):
+    nesting_nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload)
     yield
     drop_collection(collection_name=collection_name)
 

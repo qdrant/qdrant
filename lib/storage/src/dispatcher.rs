@@ -3,11 +3,16 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use collection::config::ShardingMethod;
+use common::defaults::CONSENSUS_META_OP_WAIT;
+
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
 };
 
+#[derive(Clone)]
 pub struct Dispatcher {
     toc: Arc<TableOfContent>,
     consensus_state: Option<ConsensusStateRef>,
@@ -52,32 +57,48 @@ impl Dispatcher {
                 CollectionMetaOperations::CreateCollection(mut op) => {
                     self.toc.check_write_lock()?;
                     if !op.is_distribution_set() {
-                        // Suggest even distribution of shards across nodes
-                        let number_of_peers = state.0.peer_count();
-                        let shard_distribution = self
-                            .toc
-                            .suggest_shard_distribution(
-                                &op,
-                                NonZeroU32::new(number_of_peers as u32)
-                                    .expect("Peer count should be always >= 1"),
-                            )
-                            .await;
+                        match op.create_collection.sharding_method.unwrap_or_default() {
+                            ShardingMethod::Auto => {
+                                // Suggest even distribution of shards across nodes
+                                let number_of_peers = state.0.peer_count();
+                                let shard_distribution = self
+                                    .toc
+                                    .suggest_shard_distribution(
+                                        &op,
+                                        NonZeroU32::new(number_of_peers as u32)
+                                            .expect("Peer count should be always >= 1"),
+                                    )
+                                    .await;
 
-                        // Expect all replicas to become active eventually
-                        for (shard_id, peer_ids) in &shard_distribution.distribution {
-                            for peer_id in peer_ids {
-                                expect_operations.push(ConsensusOperations::initialize_replica(
-                                    op.collection_name.clone(),
-                                    *shard_id,
-                                    *peer_id,
-                                ));
+                                // Expect all replicas to become active eventually
+                                for (shard_id, peer_ids) in &shard_distribution.distribution {
+                                    for peer_id in peer_ids {
+                                        expect_operations.push(
+                                            ConsensusOperations::initialize_replica(
+                                                op.collection_name.clone(),
+                                                *shard_id,
+                                                *peer_id,
+                                            ),
+                                        );
+                                    }
+                                }
+
+                                op.set_distribution(shard_distribution);
+                            }
+                            ShardingMethod::Custom => {
+                                // If custom sharding is used - we don't create any shards in advance
+                                let empty_distribution = ShardDistributionProposal::empty();
+                                op.set_distribution(empty_distribution);
                             }
                         }
-
-                        op.set_distribution(shard_distribution);
                     }
                     CollectionMetaOperations::CreateCollection(op)
                 }
+                CollectionMetaOperations::CreateShardKey(op) => {
+                    self.toc.check_write_lock()?;
+                    CollectionMetaOperations::CreateShardKey(op)
+                }
+
                 op => op,
             };
 
@@ -124,6 +145,29 @@ impl Dispatcher {
             None => ClusterStatus::Disabled,
         }
     }
+
+    pub async fn await_consensus_sync(
+        &self,
+        timeout: Option<Duration>,
+    ) -> Result<(), StorageError> {
+        let timeout = timeout.unwrap_or(CONSENSUS_META_OP_WAIT);
+
+        if let Some(state) = self.consensus_state.as_ref() {
+            let state = state.hard_state();
+            let term = state.term;
+            let commit = state.commit;
+            let channel_service = self.toc.get_channel_service();
+            let this_peer_id = self.toc.this_peer_id;
+
+            channel_service
+                .await_commit_on_all_peers(this_peer_id, commit, term, timeout)
+                .await?;
+
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Deref for Dispatcher {
@@ -131,14 +175,5 @@ impl Deref for Dispatcher {
 
     fn deref(&self) -> &Self::Target {
         self.toc.deref()
-    }
-}
-
-impl Clone for Dispatcher {
-    fn clone(&self) -> Self {
-        Self {
-            toc: self.toc.clone(),
-            consensus_state: self.consensus_state.clone(),
-        }
     }
 }

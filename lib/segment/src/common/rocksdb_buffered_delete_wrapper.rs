@@ -3,9 +3,9 @@ use std::mem;
 
 use parking_lot::Mutex;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 
 /// Wrapper around `DatabaseColumnWrapper` that ensures, that keys that were removed from the
 /// database are only persisted on flush explicitly.

@@ -10,7 +10,7 @@ use collection::operations::types::{CollectionError, VectorParams};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::{ChangePeerState, ReplicaState};
+use collection::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
 use collection::shards::CollectionId;
 use segment::types::Distance;
 
@@ -19,6 +19,8 @@ use segment::types::Distance;
 /// See https://github.com/qdrant/qdrant/issues/379
 #[allow(dead_code)]
 pub const N_SHARDS: u32 = 3;
+
+pub const REST_PORT: u16 = 6333;
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
@@ -49,9 +51,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         }
         .into(),
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
-        replication_factor: NonZeroU32::new(1).unwrap(),
-        write_consistency_factor: NonZeroU32::new(1).unwrap(),
-        on_disk_payload: false,
+        ..CollectionParams::empty()
     };
 
     let collection_config = CollectionConfig {
@@ -83,6 +83,10 @@ pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
     Arc::new(move |_transfer| {})
 }
 
+pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+    Arc::new(|_transfer, _reason| {})
+}
+
 /// Default to a collection with all the shards local
 #[cfg(test)]
 pub async fn new_local_collection(
@@ -99,9 +103,10 @@ pub async fn new_local_collection(
         config,
         Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )
@@ -131,9 +136,10 @@ pub async fn load_local_collection(
         path,
         snapshots_path,
         Default::default(),
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )

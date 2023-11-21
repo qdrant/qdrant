@@ -2,18 +2,18 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerSS};
-use crate::types::{
-    Distance, PointIdType, PointOffsetType, QuantizationConfig, ScalarQuantizationConfig,
-};
+use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points = vec![
@@ -32,7 +32,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     for (i, vec) in points.iter().enumerate() {
         borrowed_storage
-            .insert_vector(i as PointOffsetType, vec)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
@@ -52,12 +52,14 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "2 vectors must be deleted"
     );
 
-    let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+    let vector = vec![0.0, 1.0, 1.1, 1.0];
+    let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -77,12 +79,14 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "3 vectors must be deleted"
     );
 
-    let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+    let vector = vec![1.0, 0.0, 0.0, 0.0];
+    let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
@@ -101,12 +105,14 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "all vectors must be deleted"
     );
 
-    let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+    let vector = vec![1.0, 0.0, 0.0, 0.0];
+    let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_all(5);
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
@@ -133,7 +139,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
             let mut borrowed_storage2 = storage2.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
                 borrowed_storage2
-                    .insert_vector(i as PointOffsetType, vec)
+                    .insert_vector(i as PointOffsetType, vec.as_slice().into())
                     .unwrap();
                 if delete_mask[i] {
                     borrowed_storage2
@@ -157,12 +163,15 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         "2 vectors must be deleted from other storage"
     );
 
-    let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+    let vector = vec![0.0, 1.0, 1.1, 1.0];
+    let query = vector.as_slice().into();
+
     let closest = new_raw_scorer(
         query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -201,17 +210,18 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     for (i, vec) in points.iter().enumerate() {
         borrowed_storage
-            .insert_vector(i as PointOffsetType, vec)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
-    let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+    let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into();
 
     let closest = new_raw_scorer(
         query.clone(),
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+    .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
     let top_idx = match closest.get(0) {
@@ -230,7 +240,8 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    );
+    )
+    .unwrap();
     let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
     let query_points = vec![0, 1, 2, 3, 4];
@@ -275,7 +286,7 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     for (i, vec) in points.iter().enumerate() {
         borrowed_storage
-            .insert_vector(i as PointOffsetType, vec)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
@@ -292,23 +303,27 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         .unwrap();
 
     let stopped = AtomicBool::new(false);
-    borrowed_storage
-        .quantize(dir.path(), &config, 1, &stopped)
-        .unwrap();
+    let quantized_vectors =
+        QuantizedVectors::create(&borrowed_storage, &config, dir.path(), 1, &stopped).unwrap();
 
-    let query = vec![0.5, 0.5, 0.5, 0.5];
+    let query: QueryVector = vec![0.5, 0.5, 0.5, 0.5].into();
 
     {
-        let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-            &query,
-            borrowed_id_tracker.deleted_point_bitslice(),
-            borrowed_storage.deleted_vector_bitslice(),
-        );
+        let borrowed_quantized_vectors = quantized_vectors.borrow();
+        let scorer_quant = borrowed_quantized_vectors
+            .raw_scorer(
+                query.clone(),
+                borrowed_id_tracker.deleted_point_bitslice(),
+                borrowed_storage.deleted_vector_bitslice(),
+                &stopped,
+            )
+            .unwrap();
         let scorer_orig = new_raw_scorer(
             query.clone(),
             &borrowed_storage,
             borrowed_id_tracker.deleted_point_bitslice(),
-        );
+        )
+        .unwrap();
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
             let orig = scorer_orig.score_point(i);
@@ -320,21 +335,28 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         }
     }
     let files = borrowed_storage.files();
+    let quantization_files = quantized_vectors.borrow().files();
 
     // test save-load
-    borrowed_storage.load_quantization(dir.path()).unwrap();
+    let quantized_vectors = QuantizedVectors::load(&borrowed_storage, dir.path()).unwrap();
     assert_eq!(files, borrowed_storage.files());
+    assert_eq!(quantization_files, quantized_vectors.borrow().files());
 
-    let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
-        &query,
-        borrowed_id_tracker.deleted_point_bitslice(),
-        borrowed_storage.deleted_vector_bitslice(),
-    );
+    let borrowed_quantized_vectors = quantized_vectors.borrow();
+    let scorer_quant = borrowed_quantized_vectors
+        .raw_scorer(
+            query.clone(),
+            borrowed_id_tracker.deleted_point_bitslice(),
+            borrowed_storage.deleted_vector_bitslice(),
+            &stopped,
+        )
+        .unwrap();
     let scorer_orig = new_raw_scorer(
-        query.clone(),
+        query,
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    );
+    )
+    .unwrap();
     for i in 0..5 {
         let quant = scorer_quant.score_point(i);
         let orig = scorer_orig.score_point(i);

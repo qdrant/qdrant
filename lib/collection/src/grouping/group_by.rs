@@ -1,73 +1,35 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::time::Duration;
 
 use itertools::Itertools;
-use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
-    WithVector,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
 
 use super::aggregator::GroupsAggregator;
+use super::types::CoreGroupRequest;
 use crate::collection::Collection;
+use crate::common::fetch_vectors;
 use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionError, CollectionResult, PointGroup, RecommendGroupsRequest,
-    RecommendRequest, SearchGroupsRequest, SearchRequest, UsingVector,
+    BaseGroupRequest, CollectionError, CollectionResult, PointGroup,
+    RecommendGroupsRequestInternal, RecommendRequestInternal, SearchGroupsRequestInternal,
+    SearchRequestInternal,
 };
-use crate::recommendations::recommend_by;
-use crate::shards::shard::ShardId;
+use crate::recommendations::recommend_into_core_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
 const MAX_GROUP_FILLING_REQUESTS: usize = 5;
 
 #[derive(Clone, Debug)]
 pub enum SourceRequest {
-    Search(SearchRequest),
-    Recommend(RecommendRequest),
-}
-
-impl SourceRequest {
-    fn vector_field_name(&self) -> &str {
-        match self {
-            SourceRequest::Search(request) => request.vector.get_name(),
-            SourceRequest::Recommend(request) => {
-                if let Some(UsingVector::Name(name)) = &request.using {
-                    name
-                } else {
-                    DEFAULT_VECTOR_NAME
-                }
-            }
-        }
-    }
-
-    fn merge_filter(&mut self, filter: &Filter) {
-        match self {
-            SourceRequest::Search(request) => {
-                request.filter = Some(request.filter.clone().unwrap_or_default().merge(filter))
-            }
-            SourceRequest::Recommend(request) => {
-                request.filter = Some(request.filter.clone().unwrap_or_default().merge(filter))
-            }
-        }
-    }
-
-    fn with_payload(&self) -> Option<WithPayloadInterface> {
-        match self {
-            SourceRequest::Search(request) => request.with_payload.clone(),
-            SourceRequest::Recommend(request) => request.with_payload.clone(),
-        }
-    }
-
-    fn with_vector(&self) -> Option<WithVector> {
-        match self {
-            SourceRequest::Search(request) => request.with_vector.clone(),
-            SourceRequest::Recommend(request) => request.with_vector.clone(),
-        }
-    }
+    Search(SearchRequestInternal),
+    Recommend(RecommendRequestInternal),
 }
 
 #[derive(Clone)]
@@ -107,6 +69,43 @@ impl GroupRequest {
         }
     }
 
+    pub async fn into_core_group_request<'a, F, Fut>(
+        self,
+        collection: &Collection,
+        collection_by_name: F,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: ShardSelectorInternal,
+    ) -> CollectionResult<CoreGroupRequest>
+    where
+        F: Fn(String) -> Fut,
+        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    {
+        let core_search = match self.source {
+            SourceRequest::Search(search_req) => search_req.into(),
+            SourceRequest::Recommend(recommend_req) => {
+                let referenced_vectors = fetch_vectors::resolve_referenced_vectors_batch(
+                    &[(recommend_req.clone(), shard_selection)],
+                    collection,
+                    collection_by_name,
+                    read_consistency,
+                )
+                .await?;
+
+                recommend_into_core_search(recommend_req, &referenced_vectors)?
+            }
+        };
+
+        Ok(CoreGroupRequest {
+            source: core_search,
+            group_by: self.group_by,
+            group_size: self.group_size,
+            limit: self.limit,
+            with_lookup: self.with_lookup,
+        })
+    }
+}
+
+impl CoreGroupRequest {
     /// Apply a bunch of hacks to make `group_by` field selector work with as `with_payload`.
     fn _group_by_to_payload_selector(&self, group_by: &str) -> CollectionResult<String> {
         // Hack 1: `with_payload` only works with top-level fields. (ToDo: maybe fix this?)
@@ -125,56 +124,38 @@ impl GroupRequest {
         )
     }
 
-    async fn r#do<'a, F, Fut>(
+    async fn r#do(
         &self,
         collection: &Collection,
-        // only used for recommend
-        collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<ScoredPoint>>
-    where
-        F: Fn(String) -> Fut,
-        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
-    {
+        shard_selection: ShardSelectorInternal,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
         let include_group_by = self._group_by_to_payload_selector(&self.group_by)?;
 
         let only_group_by_key = Some(WithPayloadInterface::Fields(vec![include_group_by]));
 
         let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
 
-        match self.source.clone() {
-            SourceRequest::Search(mut request) => {
-                request.limit = self.limit * self.group_size;
+        let mut request = self.source.clone();
 
-                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
+        request.limit = self.limit * self.group_size;
 
-                // We're enriching the final results at the end, so we'll keep this minimal
-                request.with_payload = only_group_by_key;
-                request.with_vector = None;
+        request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
 
-                collection
-                    .search(request, read_consistency, shard_selection)
-                    .await
-            }
-            SourceRequest::Recommend(mut request) => {
-                request.limit = self.limit * self.group_size;
+        // We're enriching the final results at the end, so we'll keep this minimal
+        request.with_payload = only_group_by_key;
+        request.with_vector = None;
 
-                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
-
-                // We're enriching the final results at the end, so we'll keep this minimal
-                request.with_payload = only_group_by_key;
-                request.with_vector = None;
-
-                recommend_by(request, collection, collection_by_name, read_consistency).await
-            }
-        }
+        collection
+            .search(request, read_consistency, &shard_selection, timeout)
+            .await
     }
 }
 
-impl From<SearchGroupsRequest> for GroupRequest {
-    fn from(request: SearchGroupsRequest) -> Self {
-        let SearchGroupsRequest {
+impl From<SearchGroupsRequestInternal> for GroupRequest {
+    fn from(request: SearchGroupsRequestInternal) -> Self {
+        let SearchGroupsRequestInternal {
             vector,
             filter,
             params,
@@ -190,7 +171,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
                 },
         } = request;
 
-        let search = SearchRequest {
+        let search = SearchRequestInternal {
             vector,
             filter,
             params,
@@ -211,11 +192,12 @@ impl From<SearchGroupsRequest> for GroupRequest {
     }
 }
 
-impl From<RecommendGroupsRequest> for GroupRequest {
-    fn from(request: RecommendGroupsRequest) -> Self {
-        let RecommendGroupsRequest {
+impl From<RecommendGroupsRequestInternal> for GroupRequest {
+    fn from(request: RecommendGroupsRequestInternal) -> Self {
+        let RecommendGroupsRequestInternal {
             positive,
             negative,
+            strategy,
             filter,
             params,
             with_payload,
@@ -232,9 +214,10 @@ impl From<RecommendGroupsRequest> for GroupRequest {
                 },
         } = request;
 
-        let recommend = RecommendRequest {
+        let recommend = RecommendRequestInternal {
             positive,
             negative,
+            strategy,
             filter,
             params,
             limit: 0,
@@ -257,23 +240,18 @@ impl From<RecommendGroupsRequest> for GroupRequest {
 }
 
 /// Uses the request to fill up groups of points.
-pub async fn group_by<'a, F, Fut>(
-    request: GroupRequest,
+pub async fn group_by(
+    request: CoreGroupRequest,
     collection: &Collection,
-    // Obligatory for recommend
-    collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
-) -> CollectionResult<Vec<PointGroup>>
-where
-    F: Fn(String) -> Fut + Clone,
-    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
-{
+    shard_selection: ShardSelectorInternal,
+    timeout: Option<Duration>,
+) -> CollectionResult<Vec<PointGroup>> {
     let score_ordering = {
-        let vector_name = request.source.vector_field_name();
+        let vector_name = request.source.query.get_vector_name();
         let collection_params = collection.collection_config.read().await;
-        let vector_params = collection_params.params.get_vector_params(vector_name)?;
-        vector_params.distance.distance_order()
+        let distance = collection_params.params.get_distance(vector_name)?;
+        distance.distance_order()
     };
 
     let mut aggregator = GroupsAggregator::new(
@@ -290,7 +268,7 @@ where
 
         let source = &mut request.source;
 
-        // construct filter to exclude already found groups
+        // Construct filter to exclude already found groups
         let full_groups = aggregator.keys_of_filled_groups();
         if !full_groups.is_empty() {
             let except_any = except_on(&request.group_by, full_groups);
@@ -299,23 +277,36 @@ where
                     must: Some(except_any),
                     ..Default::default()
                 };
-                source.merge_filter(&exclude_groups);
+                source.filter = Some(
+                    source
+                        .filter
+                        .as_ref()
+                        .map(|filter| filter.merge(&exclude_groups))
+                        .unwrap_or(exclude_groups),
+                );
             }
         }
 
-        // exclude already aggregated points
+        // Exclude already aggregated points
         let ids = aggregator.ids().clone();
         if !ids.is_empty() {
             let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
-            source.merge_filter(&exclude_ids);
+            source.filter = Some(
+                source
+                    .filter
+                    .as_ref()
+                    .map(|filter| filter.merge(&exclude_ids))
+                    .unwrap_or(exclude_ids),
+            );
         }
 
+        // Make request
         let points = request
             .r#do(
                 collection,
-                collection_by_name.clone(),
                 read_consistency,
-                shard_selection,
+                shard_selection.clone(),
+                timeout,
             )
             .await?;
 
@@ -339,7 +330,7 @@ where
 
             let source = &mut request.source;
 
-            // construct filter to only include unsatisfied groups
+            // Construct filter to only include unsatisfied groups
             let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
             let match_any = match_on(&request.group_by, unsatisfied_groups);
             if !match_any.is_empty() {
@@ -347,22 +338,35 @@ where
                     must: Some(match_any),
                     ..Default::default()
                 };
-                source.merge_filter(&include_groups);
+                source.filter = Some(
+                    source
+                        .filter
+                        .as_ref()
+                        .map(|filter| filter.merge(&include_groups))
+                        .unwrap_or(include_groups),
+                );
             }
 
-            // exclude already aggregated points
+            // Exclude already aggregated points
             let ids = aggregator.ids().clone();
             if !ids.is_empty() {
                 let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
-                source.merge_filter(&exclude_ids);
+                source.filter = Some(
+                    source
+                        .filter
+                        .as_ref()
+                        .map(|filter| filter.merge(&exclude_ids))
+                        .unwrap_or(exclude_ids),
+                );
             }
 
+            // Make request
             let points = request
                 .r#do(
                     collection,
-                    collection_by_name.clone(),
                     read_consistency,
-                    shard_selection,
+                    shard_selection.clone(),
+                    timeout,
                 )
                 .await?;
 
@@ -392,10 +396,10 @@ where
     let enriched_points: HashMap<_, _> = collection
         .fill_search_result_with_payload(
             bare_points,
-            request.source.with_payload(),
-            request.source.with_vector().unwrap_or_default(),
+            request.source.with_payload,
+            request.source.with_vector.unwrap_or_default(),
             read_consistency,
-            None,
+            &shard_selection,
         )
         .await?
         .into_iter()
@@ -480,6 +484,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                     ScoredPoint {
                         id: 2.into(),
@@ -487,6 +492,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                 ],
             ),
@@ -499,6 +505,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                     ScoredPoint {
                         id: 4.into(),
@@ -506,6 +513,7 @@ mod tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
+                        shard_key: None,
                     },
                 ],
             ),
@@ -529,6 +537,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_a.clone()),
                 vector: None,
+                shard_key: None,
             },
             ScoredPoint {
                 id: 2.into(),
@@ -536,6 +545,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_a.clone()),
                 vector: None,
+                shard_key: None,
             },
             ScoredPoint {
                 id: 3.into(),
@@ -543,6 +553,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_b.clone()),
                 vector: None,
+                shard_key: None,
             },
             ScoredPoint {
                 id: 4.into(),
@@ -550,6 +561,7 @@ mod tests {
                 score: 1.0,
                 payload: Some(payload_b.clone()),
                 vector: None,
+                shard_key: None,
             },
         ];
 

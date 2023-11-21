@@ -5,13 +5,14 @@ use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB};
 
-use crate::common::Flusher;
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::Flusher;
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_MAX_LOG_SIZE: usize = 1024 * 1024; // 1 mb
 const DB_MAX_OPEN_FILES: usize = 256;
+const DB_DELETE_OBSOLETE_FILES_PERIOD: u64 = 3 * 60 * 1_000_000; // 3 minutes in microseconds
 
 pub const DB_VECTOR_CF: &str = "vector";
 pub const DB_PAYLOAD_CF: &str = "payload";
@@ -40,8 +41,10 @@ pub fn db_options() -> Options {
     options.set_write_buffer_size(DB_CACHE_SIZE);
     options.create_if_missing(true);
     options.set_log_level(LogLevel::Error);
-    options.set_recycle_log_file_num(2);
+    options.set_recycle_log_file_num(1);
+    options.set_keep_log_file_num(1); // must be greater than zero
     options.set_max_log_file_size(DB_MAX_LOG_SIZE);
+    options.set_delete_obsolete_files_period_micros(DB_DELETE_OBSOLETE_FILES_PERIOD);
     options.create_missing_column_families(true);
     options.set_max_open_files(DB_MAX_OPEN_FILES as i32);
     #[cfg(debug_assertions)]
@@ -53,10 +56,10 @@ pub fn db_options() -> Options {
 
 pub fn open_db<T: AsRef<str>>(
     path: &Path,
-    vector_pathes: &[T],
+    vector_paths: &[T],
 ) -> Result<Arc<RwLock<DB>>, rocksdb::Error> {
     let mut column_families = vec![DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF];
-    for vector_path in vector_pathes {
+    for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
     let db = DB::open_cf(&db_options(), path, column_families)?;

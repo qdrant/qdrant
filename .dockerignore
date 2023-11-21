@@ -9,3 +9,4 @@ lib/storage/target
 openapi/tests/
 *.tar
 .git
+.github/

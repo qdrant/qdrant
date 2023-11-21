@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
@@ -12,8 +13,7 @@ use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
-    PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
-    VectorStorageType,
+    Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use serde_json::json;
 use tempfile::Builder;
@@ -87,6 +87,9 @@ fn exact_search_test() {
         segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .clone(),
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .quantized_vectors
+            .clone(),
         payload_index_ptr.clone(),
         hnsw_config,
     )
@@ -137,22 +140,26 @@ fn exact_search_test() {
     let top = 3;
     let attempts = 50;
     for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim);
+        let query = random_vector(&mut rnd, dim).into();
 
-        let index_result = hnsw_index.search(
-            &[&query],
-            None,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                exact: true,
-                ..Default::default()
-            }),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                None,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: true,
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None);
+            .search(&[&query], None, top, None, &false.into())
+            .unwrap();
 
         assert_eq!(
             index_result, plain_result,
@@ -174,20 +181,24 @@ fn exact_search_test() {
         )));
 
         let filter_query = Some(&filter);
-        let index_result = hnsw_index.search(
-            &[&query],
-            filter_query,
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                exact: true,
-                ..Default::default()
-            }),
-        );
+        let index_result = hnsw_index
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: true,
+                    ..Default::default()
+                }),
+                &false.into(),
+            )
+            .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None);
+            .search(&[&query], filter_query, top, None, &false.into())
+            .unwrap();
 
         assert_eq!(
             index_result, plain_result,

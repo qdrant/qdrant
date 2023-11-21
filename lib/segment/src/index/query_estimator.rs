@@ -274,6 +274,7 @@ mod tests {
             geo_bounding_box: None,
             geo_radius: None,
             values_count: None,
+            geo_polygon: None,
         })
     }
 
@@ -463,7 +464,7 @@ mod tests {
         assert_eq!(estimation.primary_clauses.len(), 2);
         estimation.primary_clauses.iter().for_each(|x| match x {
             PrimaryCondition::Condition(field) => {
-                assert!(vec!["price".to_owned(), "size".to_owned(),].contains(&field.key))
+                assert!(["price".to_owned(), "size".to_owned()].contains(&field.key))
             }
             _ => panic!("Should not go here"),
         });

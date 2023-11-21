@@ -3,12 +3,13 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
+use common::types::PointOffsetType;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
 use super::payload_fixtures::BOOL_KEY;
+use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
     generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY,
 };
@@ -19,7 +20,7 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberType};
+use crate::types::{PayloadSchemaType, PointIdType, SeqNumberType};
 
 /// Warn: Use for tests only
 ///
@@ -225,7 +226,7 @@ pub fn create_struct_payload_index(
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
-    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path).unwrap();
+    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path, true).unwrap();
 
     index
         .set_indexed(STR_KEY, PayloadSchemaType::Keyword.into())

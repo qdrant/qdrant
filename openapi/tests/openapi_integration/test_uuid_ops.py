@@ -7,8 +7,8 @@ collection_name = 'test_collection_uuid'
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    basic_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 

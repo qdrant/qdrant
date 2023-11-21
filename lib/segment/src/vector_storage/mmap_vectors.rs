@@ -2,25 +2,23 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{self, size_of, transmute};
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::types::PointOffsetType;
 use memmap2::Mmap;
+use memory::mmap_ops;
 use parking_lot::Mutex;
 
-use super::div_ceil;
 use crate::common::error_logging::LogError;
 use crate::common::mmap_type::MmapBitSlice;
-use crate::common::{mmap_ops, Flusher};
+use crate::common::operation_error::OperationResult;
+use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
@@ -36,16 +34,20 @@ pub struct MmapVectors {
     mmap: Arc<Mmap>,
     /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Mutex<UringReader>,
+    uring_reader: Mutex<Option<UringReader>>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
-    pub quantized_vectors: Option<QuantizedVectors>,
 }
 
 impl MmapVectors {
-    pub fn open(vectors_path: &Path, deleted_path: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open(
+        vectors_path: &Path,
+        deleted_path: &Path,
+        dim: usize,
+        with_async_io: bool,
+    ) -> OperationResult<Self> {
         // Allocate/open vectors mmap
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
@@ -69,10 +71,14 @@ impl MmapVectors {
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        // Keep file handle open for async IO
-        let vectors_file = File::open(vectors_path)?;
-        let raw_size = dim * size_of::<VectorElementType>();
-        let uring_reader = UringReader::new(vectors_file, raw_size, HEADER_SIZE)?;
+        let uring_reader = if with_async_io {
+            // Keep file handle open for async IO
+            let vectors_file = File::open(vectors_path)?;
+            let raw_size = dim * size_of::<VectorElementType>();
+            Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
+        } else {
+            None
+        };
 
         Ok(MmapVectors {
             dim,
@@ -81,63 +87,15 @@ impl MmapVectors {
             uring_reader: Mutex::new(uring_reader),
             deleted,
             deleted_count,
-            quantized_vectors: None,
         })
+    }
+
+    pub fn has_async_reader(&self) -> bool {
+        self.uring_reader.lock().is_some()
     }
 
     pub fn flusher(&self) -> Flusher {
         self.deleted.flusher()
-    }
-
-    pub fn quantize(
-        &mut self,
-        distance: Distance,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-        max_threads: usize,
-        stopped: &AtomicBool,
-    ) -> OperationResult<()> {
-        // In theory, we can lock deleted flags here, as we assume that it is the hottest data. We
-        // can use mlock to achieve that. Docker (and some other systems) has a very low default
-        // limit for lockable memory however, which is causing lock errors. Since this is the
-        // default configuration it is hard to make practical use of this. Additionally, the
-        // speedup is not measured explicitly.
-        // See <https://github.com/qdrant/qdrant/pull/1885#issuecomment-1547408116>
-
-        let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
-            let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
-            self.raw_vector_offset(offset)
-        });
-        self.quantized_vectors = Some(QuantizedVectors::create(
-            vector_data_iterator,
-            quantization_config,
-            distance,
-            self.dim,
-            self.num_vectors,
-            data_path,
-            true,
-            max_threads,
-            stopped,
-        )?);
-        Ok(())
-    }
-
-    pub fn load_quantization(
-        &mut self,
-        data_path: &Path,
-        distance: Distance,
-    ) -> OperationResult<()> {
-        if QuantizedVectors::config_exists(data_path) {
-            // In theory, we can lock deleted flags here, as we assume that it is the hottest data. We
-            // can use mlock to achieve that. Docker (and some other systems) has a very low default
-            // limit for lockable memory however, which is causing lock errors. Since this is the
-            // default configuration it is hard to make practical use of this. Additionally, the
-            // speedup is not measured explicitly.
-            // See <https://github.com/qdrant/qdrant/pull/1885#issuecomment-1547408116>
-
-            self.quantized_vectors = Some(QuantizedVectors::load(data_path, true, distance)?);
-        }
-        Ok(())
     }
 
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
@@ -199,7 +157,11 @@ impl MmapVectors {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        self.uring_reader.lock().read_stream(points, callback)
+        self.uring_reader
+            .lock()
+            .as_mut()
+            .expect("io_uring reader should be initialized")
+            .read_stream(points, callback)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -266,7 +228,7 @@ fn ensure_mmap_file_size(path: &Path, header: &[u8], size: Option<u64>) -> Opera
 #[inline]
 const fn deleted_mmap_data_start() -> usize {
     let align = mem::align_of::<usize>();
-    div_ceil(HEADER_SIZE, align) * align
+    HEADER_SIZE.div_ceil(align) * align
 }
 
 /// Calculate size for deleted mmap to hold the given number of vectors.
@@ -274,8 +236,8 @@ const fn deleted_mmap_data_start() -> usize {
 /// The mmap will hold a file header and an aligned `BitSlice`.
 fn deleted_mmap_size(num: usize) -> usize {
     let unit_size = mem::size_of::<usize>();
-    let num_bytes = div_ceil(num, 8);
-    let num_usizes = div_ceil(num_bytes, unit_size);
+    let num_bytes = num.div_ceil(8);
+    let num_usizes = num_bytes.div_ceil(unit_size);
     let data_size = num_usizes * unit_size;
     deleted_mmap_data_start() + data_size
 }

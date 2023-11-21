@@ -2,16 +2,13 @@ use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use reqwest;
+use tempfile::TempPath;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use url::Url;
 use uuid::Uuid;
 
 use crate::StorageError;
-
-pub fn downloaded_snapshots_dir(snapshots_dir: &str) -> PathBuf {
-    Path::new(snapshots_dir).join("downloaded-snapshots")
-}
 
 fn random_name() -> String {
     format!("{}.snapshot", Uuid::new_v4())
@@ -26,13 +23,23 @@ fn snapshot_name(url: &Url) -> String {
         .unwrap_or_else(random_name)
 }
 
-async fn download_file(url: &Url, path: &Path) -> Result<(), StorageError> {
+/// Download a remote file from `url` to `path`
+///
+/// Returns a `TempPath` that will delete the downloaded file once it is dropped.
+/// To persist the file, use `download_file(...).keep()`.
+#[must_use = "returns a TempPath, if dropped the downloaded file is deleted"]
+async fn download_file(
+    client: &reqwest::Client,
+    url: &Url,
+    path: &Path,
+) -> Result<TempPath, StorageError> {
+    let temp_path = TempPath::from_path(path);
     let mut file = File::create(path).await?;
 
-    let response = reqwest::get(url.clone()).await?;
+    let response = client.get(url.clone()).send().await?;
 
     if !response.status().is_success() {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Failed to download snapshot from {}: status - {}",
             url,
             response.status()
@@ -48,27 +55,40 @@ async fn download_file(url: &Url, path: &Path) -> Result<(), StorageError> {
 
     file.flush().await?;
 
-    Ok(())
+    Ok(temp_path)
 }
 
-pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf, StorageError> {
+/// Download a snapshot from the given URI.
+///
+/// May returen a `TempPath` if a file was downloaded from a remote source. If it is dropped the
+/// downloaded file is deleted automatically. To keep the file `keep()` may be used.
+#[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
+pub async fn download_snapshot(
+    client: &reqwest::Client,
+    url: Url,
+    snapshots_dir: &Path,
+) -> Result<(PathBuf, Option<TempPath>), StorageError> {
     match url.scheme() {
         "file" => {
-            let local_file_path = Path::new(url.path());
-            if !local_file_path.exists() {
-                return Err(StorageError::bad_request(&format!(
-                    "Snapshot file {local_file_path:?} does not exist"
+            let local_path = url.to_file_path().map_err(|_| {
+                StorageError::bad_request(
+                    "Invalid snapshot URI, file path must be absolute or on localhost",
+                )
+            })?;
+            if !local_path.exists() {
+                return Err(StorageError::bad_request(format!(
+                    "Snapshot file {local_path:?} does not exist"
                 )));
             }
-            Ok(local_file_path.to_path_buf())
+            Ok((local_path, None))
         }
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));
 
-            download_file(&url, &download_to).await?;
-            Ok(download_to)
+            let temp_path = download_file(client, &url, &download_to).await?;
+            Ok((download_to, Some(temp_path)))
         }
-        _ => Err(StorageError::bad_request(&format!(
+        _ => Err(StorageError::bad_request(format!(
             "URL {} with schema {} is not supported",
             url,
             url.scheme()

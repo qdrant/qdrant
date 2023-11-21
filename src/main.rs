@@ -28,6 +28,7 @@ use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
+use storage::content_manager::toc::transfer::ShardTransferDispatcher;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
@@ -43,7 +44,7 @@ use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
-use crate::startup::{remove_started_file_indicator, setup_logger, touch_started_file_indicator};
+use crate::startup::{remove_started_file_indicator, touch_started_file_indicator};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -104,25 +105,38 @@ struct Args {
     /// Read more: <https://qdrant.tech/documentation/guides/telemetry>
     #[arg(long, action, default_value_t = false)]
     disable_telemetry: bool,
+
+    /// Run stacktrace collector. Used for debugging.
+    #[arg(long, action, default_value_t = false)]
+    stacktrace: bool,
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing::setup()?;
+    let args = Args::parse();
+
+    // Run backtrace collector, expected to used by `rstack` crate
+    if args.stacktrace {
+        #[cfg(all(target_os = "linux", feature = "stacktrace"))]
+        {
+            let _ = rstack_self::child();
+        }
+        return Ok(());
+    }
 
     remove_started_file_indicator();
 
-    let args = Args::parse();
     let settings = Settings::new(args.config_path)?;
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
 
-    setup_logger(&settings.log_level);
+    tracing::setup(&settings.log_level)?;
+
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
-    segment::madvise::set_global(settings.storage.mmap_advice);
-    segment::vector_storage::raw_scorer::set_async_scorer(settings.storage.async_scorer);
+    memory::madvise::set_global(settings.storage.mmap_advice);
+    segment::vector_storage::common::set_async_scorer(settings.storage.async_scorer);
 
     welcome(&settings);
 
@@ -193,9 +207,9 @@ fn main() -> anyhow::Result<()> {
 
     // Channel service is used to manage connections between peers.
     // It allocates required number of channels and manages proper reconnection handling
-    let mut channel_service = ChannelService::default();
+    let mut channel_service = ChannelService::new(settings.service.http_port);
 
-    if settings.cluster.enabled {
+    if is_distributed_deployment {
         // We only need channel_service in case if cluster is enabled.
         // So we initialize it with real values here
         let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
@@ -224,6 +238,8 @@ fn main() -> anyhow::Result<()> {
         propose_operation_sender.clone(),
     );
 
+    toc.clear_all_tmp_directories()?;
+
     // Here we load all stored collections.
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
@@ -241,7 +257,7 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, dispatcher_arc) = if settings.cluster.enabled {
+    let (telemetry_collector, dispatcher_arc) = if is_distributed_deployment {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
             toc_arc.clone(),
@@ -252,6 +268,10 @@ fn main() -> anyhow::Result<()> {
         let is_new_deployment = consensus_state.is_new_deployment();
 
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
+
+        let shard_transfer_dispatcher =
+            ShardTransferDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
+        toc_arc.with_shard_transfer_dispatcher(shard_transfer_dispatcher);
 
         let dispatcher_arc = Arc::new(dispatcher);
 

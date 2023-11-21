@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
@@ -52,7 +53,8 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     /// Wait for a condition on data to be true.
     ///
     /// Returns `true` if condition is true, `false` if timed out.
-    pub fn wait_for<F>(&self, check: F, timeout: std::time::Duration) -> bool
+    #[must_use]
+    pub fn wait_for<F>(&self, check: F, timeout: Duration) -> bool
     where
         F: Fn(&T) -> bool,
     {
@@ -71,6 +73,24 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             });
         }
         false
+    }
+
+    /// Perform an operation over the stored data,
+    /// persisting the result to disk if the operation returns `Some`.
+    ///
+    /// If the operation returns `None`, assumes that data has not changed
+    pub fn write_optional(&self, f: impl FnOnce(&T) -> Option<T>) -> Result<bool, Error> {
+        let read_data = self.data.upgradable_read();
+        let output_opt = f(&read_data);
+        if let Some(output) = output_opt {
+            Self::save_data_to(&self.path, &output)?;
+            let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
+            *write_data = output;
+            self.change_notification.notify_all();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn write<O>(&self, f: impl FnOnce(&mut T) -> O) -> Result<O, Error> {
@@ -167,14 +187,14 @@ mod tests {
             Arc::new(SaveOnDisk::load_or_init(counter_file).unwrap());
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
-            sleep(Duration::from_millis(100));
+            sleep(Duration::from_millis(200));
             counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(100));
+            sleep(Duration::from_millis(200));
             counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(100));
+            sleep(Duration::from_millis(200));
         });
 
-        assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(1)));
+        assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(2)));
         handle.join().unwrap();
     }
 

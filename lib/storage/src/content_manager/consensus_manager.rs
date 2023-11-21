@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
 use chrono::Utc;
@@ -12,6 +12,7 @@ use collection::collection_state;
 use collection::common::is_ready::IsReady;
 use collection::shards::shard::PeerId;
 use collection::shards::CollectionId;
+use common::defaults;
 use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
@@ -34,8 +35,6 @@ use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
     PeerInfo, RaftInfo,
 };
-
-pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
@@ -136,7 +135,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let mut message_send_failures = self.message_send_failures.write();
         let entry = message_send_failures
             .entry(peer_address.to_string())
-            .or_insert_with(Default::default);
+            .or_default();
         // Log only first error
         if entry.count == 0 {
             log::warn!("Failed to send message to {peer_address} with error: {error}")
@@ -570,9 +569,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         async move {
             let await_for_all = join_all(receivers.iter_mut().map(|receiver| receiver.recv()));
-            let results =
-                tokio::time::timeout(wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT), await_for_all)
-                    .await?;
+            let results = tokio::time::timeout(
+                wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
+                await_for_all,
+            )
+            .await?;
             for result in results {
                 match result {
                     Ok(response_res) => match response_res {
@@ -586,22 +587,56 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
     }
 
+    /// Wait and block until consensus reaches a `commit` and `term`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if we have diverged commit/term for example.
+    pub async fn wait_for_consensus_commit(
+        &self,
+        commit: u64,
+        term: u64,
+        consensus_tick: Duration,
+        timeout: Duration,
+    ) -> Result<(), ()> {
+        let start = Instant::now();
+
+        // TODO: naive approach with spinlock for waiting on commit/term, find better way
+        while start.elapsed() < timeout {
+            let state = &self.hard_state();
+
+            // Okay if on the same term and have at least the specified commit
+            let is_ok = state.term == term && state.commit >= commit;
+            if is_ok {
+                return Ok(());
+            }
+
+            // Fail if on a newer term
+            let is_fail = state.term > term;
+            if is_fail {
+                return Err(());
+            }
+
+            tokio::time::sleep(consensus_tick).await
+        }
+
+        // Fail on timeout
+        Err(())
+    }
+
     /// Send operation to the consensus thread and listen for the result.
     ///
     /// # Arguments
     ///
     /// * `operation` - operation to propose
     /// * `wait_timeout` - How long do we need to wait for the confirmation
-    /// * `with_confirmation` - If `true` - additional empty operation will be sent to the consensus thread.
-    ///   This is needed to ensure that the operation is committed and applied on majority of the nodes.
-    ///   We can not wait for all nodes confirmation, because it is not guaranteed that all nodes will be online.
     ///
     pub async fn propose_consensus_op_with_await(
         &self,
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
+        let wait_timeout = wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT);
 
         let is_leader_established = self.is_leader_established.clone();
 

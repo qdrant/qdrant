@@ -1,21 +1,19 @@
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
 use self::memory::{BinaryItem, BinaryMemory};
 use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::entry::entry_point::OperationResult;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    FieldCondition, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants,
-};
+use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 
 mod memory {
     use bitvec::vec::BitVec;
-
-    use crate::types::PointOffsetType;
+    use common::types::PointOffsetType;
 
     pub struct BinaryItem {
         value: u8,
@@ -201,6 +199,16 @@ impl BinaryIndex {
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         self.values_count(point_id) == 0
     }
+
+    /// Check if the point has a true value
+    pub fn values_has_true(&self, point_id: PointOffsetType) -> bool {
+        self.memory.get(point_id).has_true()
+    }
+
+    /// Check if the point has a false value
+    pub fn values_has_false(&self, point_id: PointOffsetType) -> bool {
+        self.memory.get(point_id).has_false()
+    }
 }
 
 impl PayloadFieldIndex for BinaryIndex {
@@ -231,22 +239,25 @@ impl PayloadFieldIndex for BinaryIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
                 if *value {
-                    Some(Box::new(self.memory.iter_has_true()))
+                    Ok(Box::new(self.memory.iter_has_true()))
                 } else {
-                    Some(Box::new(self.memory.iter_has_false()))
+                    Ok(Box::new(self.memory.iter_has_false()))
                 }
             }
-            _ => None,
+            _ => Err(OperationError::service_error("failed to filter")),
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
@@ -260,9 +271,11 @@ impl PayloadFieldIndex for BinaryIndex {
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(condition.clone()));
 
-                Some(estimation)
+                Ok(estimation)
             }
-            _ => None,
+            _ => Err(OperationError::service_error(
+                "failed to estimate cardinality",
+            )),
         }
     }
 
@@ -325,10 +338,7 @@ impl ValueIndexer<bool> for BinaryIndex {
         value.as_bool()
     }
 
-    fn remove_point(
-        &mut self,
-        id: PointOffsetType,
-    ) -> crate::entry::entry_point::OperationResult<()> {
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         self.memory.remove(id);
         self.db_wrapper.remove(id.to_be_bytes())?;
         Ok(())

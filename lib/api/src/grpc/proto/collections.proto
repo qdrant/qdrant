@@ -1,5 +1,6 @@
 syntax = "proto3";
 package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
 
 message VectorParams {
   uint64 size = 1; // Size of the vectors
@@ -9,14 +10,31 @@ message VectorParams {
   optional bool on_disk = 5; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
 }
 
+message VectorParamsDiff {
+  optional HnswConfigDiff hnsw_config = 1; // Update params for HNSW index. If empty object - it will be unset
+  optional QuantizationConfigDiff quantization_config = 2; // Update quantization params. If none - it is left unchanged.
+  optional bool on_disk = 3; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+}
+
 message VectorParamsMap {
   map<string, VectorParams> map = 1;
+}
+
+message VectorParamsDiffMap {
+  map<string, VectorParamsDiff> map = 1;
 }
 
 message VectorsConfig {
   oneof config {
     VectorParams params = 1;
     VectorParamsMap params_map = 2;
+  }
+}
+
+message VectorsConfigDiff {
+  oneof config {
+    VectorParamsDiff params = 1;
+    VectorParamsDiffMap params_map = 2;
   }
 }
 
@@ -191,11 +209,34 @@ message ProductQuantization {
   optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
+message BinaryQuantization {
+  optional bool always_ram = 1; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+}
+
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
     ProductQuantization product = 2;
+    BinaryQuantization binary = 3;
   }
+}
+
+message Disabled {
+
+}
+
+message QuantizationConfigDiff {
+  oneof quantization {
+    ScalarQuantization scalar = 1;
+    ProductQuantization product = 2;
+    Disabled disabled = 3;
+    BinaryQuantization binary = 4;
+  }
+}
+
+enum ShardingMethod {
+  Auto = 0; // Auto-sharding based on record ids
+  Custom = 1; // Shard by user-defined key
 }
 
 message CreateCollection {
@@ -213,13 +254,17 @@ message CreateCollection {
   optional uint32 write_consistency_factor = 12; // How many replicas should apply the operation for us to consider it successful, default = 1
   optional string init_from_collection = 13; // Specify name of the other collection to copy data from
   optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
+  optional ShardingMethod sharding_method = 15; // Sharding method
 }
 
 message UpdateCollection {
   string collection_name = 1; // Name of the collection
-  optional OptimizersConfigDiff optimizers_config = 2; // New configuration parameters for the collection
-  optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+  optional OptimizersConfigDiff optimizers_config = 2; // New configuration parameters for the collection. This operation is blocking, it will only proceed once all current optimizations are complete
+  optional uint64 timeout = 3; // Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
   optional CollectionParamsDiff params = 4; // New configuration parameters for the collection
+  optional HnswConfigDiff hnsw_config = 5; // New HNSW parameters for the collection index
+  optional VectorsConfigDiff vectors_config = 6; // New vector parameters
+  optional QuantizationConfigDiff quantization_config = 7; // Quantization configuration of vector
 }
 
 message DeleteCollection {
@@ -240,11 +285,15 @@ message CollectionParams {
   optional VectorsConfig vectors_config = 5; // Configuration for vectors
   optional uint32 replication_factor = 6; // Number of replicas of each shard that network tries to maintain
   optional uint32 write_consistency_factor = 7; // How many replicas should apply the operation for us to consider it successful
+  optional uint32 read_fan_out_factor = 8; // Fan-out every read request to these many additional remote nodes (and return first available response)
+  optional ShardingMethod sharding_method = 9; // Sharding method
 }
 
 message CollectionParamsDiff {
   optional uint32 replication_factor = 1; // Number of replicas of each shard that network tries to maintain
   optional uint32 write_consistency_factor = 2; // How many replicas should apply the operation for us to consider it successful
+  optional bool on_disk_payload = 3; // If true - point's payload will not be stored in memory
+  optional uint32 read_fan_out_factor = 4; // Fan-out every read request to these many additional remote nodes (and return first available response)
 }
 
 message CollectionConfig {
@@ -260,6 +309,7 @@ enum TokenizerType {
   Prefix = 1;
   Whitespace = 2;
   Word = 3;
+  Multilingual = 4;
 }
 
 message TextIndexParams {
@@ -348,18 +398,28 @@ enum ReplicaState {
   Partial = 2; // The shard is partially loaded and is currently receiving data from other shards
   Initializing = 3; // Collection is being created
   Listener = 4; // A shard which receives data, but is not used for search; Useful for backup shards
+  PartialSnapshot = 5; // Snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard
+}
+
+message ShardKey {
+  oneof key {
+    string keyword = 1; // String key
+    uint64 number = 2; // Number key
+  }
 }
 
 message LocalShardInfo {
   uint32 shard_id = 1; // Local shard id
   uint64 points_count = 2; // Number of points in the shard
   ReplicaState state = 3;  // Is replica active
+  optional ShardKey shard_key = 4; // User-defined shard key
 }
 
 message RemoteShardInfo {
   uint32 shard_id = 1; // Local shard id
   uint64 peer_id = 2; // Remote peer id
   ReplicaState state = 3; // Is replica active
+  optional ShardKey shard_key = 4; // User-defined shard key
 }
 
 message ShardTransferInfo {
@@ -381,11 +441,28 @@ message MoveShard {
   uint32 shard_id = 1; // Local shard id
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
+  optional ShardTransferMethod method = 4;
+}
+
+enum ShardTransferMethod {
+  StreamRecords = 0;
+  Snapshot = 1;
 }
 
 message Replica {
-  uint32 shard_id = 1; 
-  uint64 peer_id = 2; 
+  uint32 shard_id = 1;
+  uint64 peer_id = 2;
+}
+
+message CreateShardKey {
+    ShardKey shard_key = 1; // User-defined shard key
+    optional uint32 shards_number = 2; // Number of shards to create per shard key
+    optional uint32 replication_factor = 3; // Number of replicas of each shard to create
+    repeated uint64 placement = 4; // List of peer ids, allowed to create shards. If empty - all peers are allowed
+}
+
+message DeleteShardKey {
+    ShardKey shard_key = 1; // Shard key to delete
 }
 
 message UpdateCollectionClusterSetupRequest {
@@ -395,10 +472,32 @@ message UpdateCollectionClusterSetupRequest {
     MoveShard replicate_shard = 3;
     MoveShard abort_transfer = 4;
     Replica drop_replica = 5;
+    CreateShardKey create_shard_key = 7;
+    DeleteShardKey delete_shard_key = 8;
   }
   optional uint64 timeout = 6; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
 message UpdateCollectionClusterSetupResponse {
   bool result = 1;
+}
+
+message CreateShardKeyRequest {
+    string collection_name = 1; // Name of the collection
+    CreateShardKey request = 2; // Request to create shard key
+    optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+}
+
+message DeleteShardKeyRequest {
+    string collection_name = 1; // Name of the collection
+    DeleteShardKey request = 2; // Request to delete shard key
+    optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+}
+
+message CreateShardKeyResponse {
+    bool result = 1;
+}
+
+message DeleteShardKeyResponse {
+    bool result = 1;
 }

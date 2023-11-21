@@ -1,13 +1,18 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::operations::types::{SearchGroupsRequest, SearchRequest, SearchRequestBatch};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::types::{
+    CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
+};
 use storage::content_manager::toc::TableOfContent;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::helpers::process_response;
-use crate::common::points::{do_search_batch_points, do_search_point_groups, do_search_points};
+use crate::common::points::{
+    do_core_search_points, do_search_batch_points, do_search_point_groups,
+};
 
 #[post("/collections/{name}/points/search")]
 async fn search_points(
@@ -18,12 +23,23 @@ async fn search_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = do_search_points(
+    let SearchRequest {
+        search_request,
+        shard_key,
+    } = request.into_inner();
+
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
+
+    let response = do_core_search_points(
         toc.get_ref(),
         &collection.name,
-        request.into_inner(),
+        search_request.into(),
         params.consistency,
-        None,
+        shard_selection,
+        params.timeout(),
     )
     .await;
 
@@ -39,12 +55,31 @@ async fn batch_search_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
+    let request = request.into_inner();
+    let requests = request
+        .searches
+        .into_iter()
+        .map(|req| {
+            let SearchRequest {
+                search_request,
+                shard_key,
+            } = req;
+            let shard_selection = match shard_key {
+                None => ShardSelectorInternal::All,
+                Some(shard_keys) => shard_keys.into(),
+            };
+            let core_request: CoreSearchRequest = search_request.into();
+
+            (core_request, shard_selection)
+        })
+        .collect();
+
     let response = do_search_batch_points(
         toc.get_ref(),
         &collection.name,
-        request.into_inner(),
+        requests,
         params.consistency,
-        None,
+        params.timeout(),
     )
     .await;
 
@@ -60,12 +95,23 @@ async fn search_point_groups(
 ) -> impl Responder {
     let timing = Instant::now();
 
+    let SearchGroupsRequest {
+        search_group_request,
+        shard_key,
+    } = request.into_inner();
+
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
+
     let response = do_search_point_groups(
         toc.get_ref(),
         &collection.name,
-        request.into_inner(),
+        search_group_request,
         params.consistency,
-        None,
+        shard_selection,
+        params.timeout(),
     )
     .await;
 

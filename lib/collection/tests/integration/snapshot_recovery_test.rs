@@ -1,13 +1,14 @@
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointStruct, WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::shared_storage_config::SharedStorageConfig;
-use collection::operations::types::{NodeType, SearchRequest, VectorParams, VectorsConfig};
+use collection::operations::types::{NodeType, SearchRequestInternal, VectorParams, VectorsConfig};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -16,7 +17,8 @@ use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
 use crate::common::{
-    dummy_on_replica_failure, dummy_request_shard_transfer, TEST_OPTIMIZERS_CONFIG,
+    dummy_abort_shard_transfer, dummy_on_replica_failure, dummy_request_shard_transfer, REST_PORT,
+    TEST_OPTIMIZERS_CONFIG,
 };
 
 async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
@@ -33,10 +35,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             quantization_config: None,
             on_disk: None,
         }),
-        shard_number: NonZeroU32::new(1).unwrap(),
-        replication_factor: NonZeroU32::new(1).unwrap(),
-        write_consistency_factor: NonZeroU32::new(1).unwrap(),
-        on_disk_payload: false,
+        ..CollectionParams::empty()
     };
 
     let config = CollectionConfig {
@@ -75,9 +74,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         &config,
         Arc::new(storage_config),
         shard_distribution,
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )
@@ -102,10 +102,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         });
     }
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperations::PointsList(points),
+        PointInsertOperationsInternal::PointsList(points),
     ));
     collection
-        .update_from_client(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -131,9 +131,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         recover_dir.path(),
         snapshots_path.path(),
         Default::default(),
-        ChannelService::default(),
+        ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
         None,
         None,
     )
@@ -141,7 +142,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
 
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
 
-    let full_search_request = SearchRequest {
+    let full_search_request = SearchRequestInternal {
         vector: query_vector.clone().into(),
         filter: None,
         limit: 100,
@@ -153,12 +154,22 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     };
 
     let reference_result = collection
-        .search(full_search_request.clone(), None, None)
+        .search(
+            full_search_request.clone().into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await
         .unwrap();
 
     let recovered_result = recovered_collection
-        .search(full_search_request, None, None)
+        .search(
+            full_search_request.into(),
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
         .await
         .unwrap();
 

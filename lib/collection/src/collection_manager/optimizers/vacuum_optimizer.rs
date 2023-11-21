@@ -71,6 +71,7 @@ impl VacuumOptimizer {
         let segments_read_guard = segments.read();
         segments_read_guard
             .iter()
+            // Excluded externally, might already be scheduled for optimization
             .filter(|(idx, _segment)| !excluded_ids.contains(idx))
             .flat_map(|(idx, segment)| {
                 // Calculate littered ratio for segment and named vectors
@@ -164,6 +165,10 @@ impl VacuumOptimizer {
 }
 
 impl SegmentOptimizer for VacuumOptimizer {
+    fn name(&self) -> &str {
+        "vacuum"
+    }
+
     fn collection_path(&self) -> &Path {
         self.segments_path.as_path()
     }
@@ -211,7 +216,7 @@ impl SegmentOptimizer for VacuumOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::num::{NonZeroU32, NonZeroU64};
+    use std::num::NonZeroU64;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
@@ -306,10 +311,7 @@ mod tests {
                     quantization_config: None,
                     on_disk: None,
                 }),
-                shard_number: NonZeroU32::new(1).unwrap(),
-                on_disk_payload: false,
-                replication_factor: NonZeroU32::new(1).unwrap(),
-                write_consistency_factor: NonZeroU32::new(1).unwrap(),
+                ..CollectionParams::empty()
             },
             Default::default(),
             Default::default(),
@@ -411,10 +413,7 @@ mod tests {
                     },
                 ),
             ])),
-            shard_number: 1.try_into().unwrap(),
-            on_disk_payload: false,
-            replication_factor: 1.try_into().unwrap(),
-            write_consistency_factor: 1.try_into().unwrap(),
+            ..CollectionParams::empty()
         };
 
         // Base segment

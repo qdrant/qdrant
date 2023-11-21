@@ -1,8 +1,9 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
-    ClearPayloadPointsInternal, CountPointsInternal, CountResponse,
+    ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
     GetResponse, PointsOperationResponse, RecommendPointsInternal, RecommendResponse,
@@ -13,11 +14,12 @@ use api::grpc::qdrant::{
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
+use super::points_common::core_search_list;
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload,
-    delete_vectors, get, overwrite_payload, recommend, scroll, search, search_batch, set_payload,
-    sync, update_vectors, upsert,
+    clear_payload, count, create_field_index_internal, delete, delete_field_index_internal,
+    delete_payload, delete_vectors, get, overwrite_payload, recommend, scroll, set_payload, sync,
+    update_vectors, upsert,
 };
 
 /// This API is intended for P2P communication within a distributed deployment.
@@ -156,7 +158,8 @@ impl PointsInternal for PointsInternalService {
         let create_field_index_collection = create_field_index_collection
             .ok_or_else(|| Status::invalid_argument("CreateFieldIndexCollection is missing"))?;
 
-        create_field_index(self.toc.as_ref(), create_field_index_collection, shard_id).await
+        create_field_index_internal(self.toc.as_ref(), create_field_index_collection, shard_id)
+            .await
     }
 
     async fn delete_field_index(
@@ -172,50 +175,57 @@ impl PointsInternal for PointsInternalService {
         let delete_field_index_collection = delete_field_index_collection
             .ok_or_else(|| Status::invalid_argument("DeleteFieldIndexCollection is missing"))?;
 
-        delete_field_index(self.toc.as_ref(), delete_field_index_collection, shard_id).await
+        delete_field_index_internal(self.toc.as_ref(), delete_field_index_collection, shard_id)
+            .await
     }
 
     async fn search(
         &self,
-        request: Request<SearchPointsInternal>,
+        _request: Request<SearchPointsInternal>,
     ) -> Result<Response<SearchResponse>, Status> {
-        validate_and_log(request.get_ref());
-        let SearchPointsInternal {
-            search_points,
-            shard_id,
-        } = request.into_inner();
-
-        let mut search_points =
-            search_points.ok_or_else(|| Status::invalid_argument("SearchPoints is missing"))?;
-
-        search_points.read_consistency = None; // *Have* to be `None`!
-
-        search(self.toc.as_ref(), search_points, shard_id).await
+        return Err(Status::unimplemented(
+            "search API was deprecated and removed, use core_search_batch instead. \
+        Please make sure versions of your cluster is consistent",
+        ));
     }
 
     async fn search_batch(
         &self,
-        request: Request<SearchBatchPointsInternal>,
+        _request: Request<SearchBatchPointsInternal>,
+    ) -> Result<Response<SearchBatchResponse>, Status> {
+        return Err(Status::unimplemented(
+            "search_batch API was deprecated and removed, use core_search_batch instead. \
+        Please make sure versions of your cluster is consistent",
+        ));
+    }
+
+    async fn core_search_batch(
+        &self,
+        request: Request<CoreSearchBatchPointsInternal>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
         validate_and_log(request.get_ref());
-        let SearchBatchPointsInternal {
+        let CoreSearchBatchPointsInternal {
             collection_name,
             search_points,
             shard_id,
+            timeout,
         } = request.into_inner();
 
-        // Individual `read_consistency` values are ignored by `search_batch`...
+        let timeout = timeout.map(Duration::from_secs);
+
+        // Individual `read_consistency` values are ignored by `core_search_batch`...
         //
         // search_points
         //     .iter_mut()
         //     .for_each(|search_points| search_points.read_consistency = None);
 
-        search_batch(
+        core_search_list(
             self.toc.as_ref(),
             collection_name,
             search_points,
-            None, // *Have* to be `None`!
+            None, // *Has* to be `None`!
             shard_id,
+            timeout,
         )
         .await
     }

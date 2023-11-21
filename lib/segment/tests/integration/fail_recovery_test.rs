@@ -1,5 +1,6 @@
+use segment::common::operation_error::{OperationError, SegmentFailedState};
 use segment::data_types::vectors::only_default_vector;
-use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
+use segment::entry::entry_point::SegmentEntry;
 use serde_json::json;
 use tempfile::Builder;
 
@@ -51,7 +52,7 @@ fn test_insert_fail_recovery() {
     assert!(ok_res.is_ok());
     assert!(segment.error_status.is_some());
 
-    // Perform operation anf recover the error - operation is fixed now
+    // Perform operation and recover the error - operation is fixed now
     let recover_res = segment.set_payload(
         2,
         1.into(),

@@ -5,8 +5,9 @@ use std::io::{Read, Write};
 use std::mem;
 use std::path::Path;
 
-use super::div_ceil;
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
+
+use crate::common::vector_utils::TrySetCapacityExact;
 
 // chunk size in bytes
 const CHUNK_SIZE: usize = 32 * 1024 * 1024;
@@ -15,9 +16,14 @@ const CHUNK_SIZE: usize = 32 * 1024 * 1024;
 const MIN_CHUNK_CAPACITY: usize = 16;
 
 pub struct ChunkedVectors<T> {
+    /// Vector's dimension.
+    ///
+    /// Each vector will consume `size_of::<T>() * dim` bytes.
     dim: usize,
-    len: usize,            // amount of stored vectors
-    chunk_capacity: usize, // max amount of vectors in each chunk
+    /// Number of stored vectors in all chunks.
+    len: usize,
+    /// Maximum number of vectors in each chunk.
+    chunk_capacity: usize,
     chunks: Vec<Vec<T>>,
 }
 
@@ -58,45 +64,38 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         Ok(new_id)
     }
 
-    pub fn try_reserve_exact(&mut self, num_vectors: usize) -> Result<(), TryReserveError> {
-        let num_chunks = div_ceil(num_vectors, self.chunk_capacity);
-        let last_chunk_idx = num_vectors / self.chunk_capacity;
-        self.chunks.try_reserve_exact(num_chunks)?;
-        self.chunks.resize(num_chunks, vec![]);
-        for chunk_idx in 0..num_chunks {
-            if chunk_idx == last_chunk_idx {
-                self.chunks[chunk_idx]
-                    .try_reserve_exact((num_vectors % self.chunk_capacity) * self.dim)?;
-            } else {
-                self.chunks[chunk_idx].try_reserve_exact(self.chunk_capacity * self.dim)?;
-            }
-        }
-        Ok(())
-    }
-
     pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> Result<(), TryReserveError> {
         let key = key as usize;
         self.len = max(self.len, key + 1);
         self.chunks
-            .resize(div_ceil(self.len, self.chunk_capacity), vec![]);
+            .resize_with(self.len.div_ceil(self.chunk_capacity), Vec::new);
 
         let chunk_idx = key / self.chunk_capacity;
         let chunk_data = &mut self.chunks[chunk_idx];
         let idx = (key % self.chunk_capacity) * self.dim;
+
+        // Grow the current chunk if needed to fit the new vector.
+        //
+        // All chunks are dynamically resized to fit their vectors in it.
+        // Chunks have a size of zero by default. It's grown with zeroes to fit new vectors.
+        //
+        // The capacity for the first chunk is allocated normally to keep the memory footprint as
+        // small as possible, see
+        // <https://doc.rust-lang.org/std/vec/struct.Vec.html#capacity-and-reallocation>).
+        // All other chunks allocate their capacity in full on first use to prevent expensive
+        // reallocations when their data grows.
         if chunk_data.len() < idx + self.dim {
-            if chunk_idx == 0 {
-                // Do not overallocate the first chunk, because it is likely to be small
-                // and we don't want to waste memory.
-                chunk_data.try_reserve(idx + self.dim)?;
-            } else {
-                // Once we have more than one chunk, we don't want to overallocate
-                // and we keep the exact capacity of each chunk.
-                chunk_data.try_reserve_exact(self.chunk_capacity * self.dim)?;
+            // If the chunk is not the first one, allocate it fully on first use
+            if chunk_idx != 0 {
+                let desired_capacity = self.chunk_capacity * self.dim;
+                chunk_data.try_set_capacity_exact(desired_capacity)?;
             }
-            chunk_data.resize(idx + self.dim, T::default());
+            chunk_data.resize_with(idx + self.dim, T::default);
         }
+
         let data = &mut chunk_data[idx..idx + self.dim];
         data.copy_from_slice(vector);
+
         Ok(())
     }
 }
@@ -112,12 +111,14 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         vectors_count: usize,
     ) -> std::io::Result<Self> {
         let mut vectors = Self::new(quantized_vector_size);
-        vectors.try_reserve_exact(vectors_count).map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::OutOfMemory,
-                format!("Failed to load quantized vectors from file: {err}"),
-            )
-        })?;
+        vectors
+            .try_set_capacity_exact(vectors_count)
+            .map_err(|err| {
+                std::io::Error::new(
+                    std::io::ErrorKind::OutOfMemory,
+                    format!("Failed to load quantized vectors from file: {err}"),
+                )
+            })?;
         let mut file = File::open(path)?;
         let mut buffer = vec![0u8; quantized_vector_size];
         while file.read_exact(&mut buffer).is_ok() {
@@ -147,6 +148,25 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
             buffer.write_all(self.get(i))?;
         }
         buffer.flush()?;
+        Ok(())
+    }
+}
+
+impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {
+    fn try_set_capacity_exact(&mut self, capacity: usize) -> Result<(), TryReserveError> {
+        let num_chunks = capacity.div_ceil(self.chunk_capacity);
+        let last_chunk_idx = capacity / self.chunk_capacity;
+        self.chunks.try_set_capacity_exact(num_chunks)?;
+        self.chunks.resize_with(num_chunks, Vec::new);
+        for chunk_idx in 0..num_chunks {
+            if chunk_idx == last_chunk_idx {
+                let desired_capacity = (capacity % self.chunk_capacity) * self.dim;
+                self.chunks[chunk_idx].try_set_capacity_exact(desired_capacity)?;
+            } else {
+                let desired_capacity = self.chunk_capacity * self.dim;
+                self.chunks[chunk_idx].try_set_capacity_exact(desired_capacity)?;
+            }
+        }
         Ok(())
     }
 }

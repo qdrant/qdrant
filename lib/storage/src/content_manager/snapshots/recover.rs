@@ -9,11 +9,11 @@ use collection::shards::shard_versioning::latest_shard_paths;
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
 };
-use crate::content_manager::snapshots::download::{download_snapshot, downloaded_snapshots_dir};
+use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
 use crate::{StorageError, TableOfContent};
 
-async fn activate_shard(
+pub async fn activate_shard(
     toc: &TableOfContent,
     collection: &Collection,
     peer_id: PeerId,
@@ -50,13 +50,13 @@ pub async fn do_recover_from_snapshot(
     collection_name: &str,
     source: SnapshotRecover,
     wait: bool,
+    client: reqwest::Client,
 ) -> Result<bool, StorageError> {
     let dispatch = dispatcher.clone();
     let collection_name = collection_name.to_string();
-    let recovery =
-        tokio::spawn(
-            async move { _do_recover_from_snapshot(dispatch, &collection_name, source).await },
-        );
+    let recovery = tokio::spawn(async move {
+        _do_recover_from_snapshot(dispatch, &collection_name, source, &client).await
+    });
     if wait {
         Ok(recovery.await??)
     } else {
@@ -68,6 +68,7 @@ async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
+    client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover { location, priority } = source;
     let toc = dispatcher.toc();
@@ -76,38 +77,35 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
-    tokio::fs::create_dir_all(&snapshot_download_path).await?;
+    let download_dir = toc.snapshots_download_tempdir()?;
 
     log::debug!(
-        "Downloading snapshot from {} to {}",
-        location,
-        snapshot_download_path.display()
+        "Downloading snapshot from {location} to {}",
+        download_dir.path().display(),
     );
 
-    let snapshot_path = download_snapshot(location, &snapshot_download_path).await?;
+    let (snapshot_path, snapshot_temp_path) =
+        download_snapshot(client, location, download_dir.path()).await?;
 
     log::debug!("Snapshot downloaded to {}", snapshot_path.display());
 
-    let tmp_collection_dir = toc
-        .temp_storage_path()
-        .join("tmp_collections")
-        .join(collection_name);
+    let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
+
+    let tmp_collection_dir = tempfile::Builder::new()
+        .prefix(&format!("col-{collection_name}-recovery-"))
+        .tempdir_in(temp_storage_path)?;
 
     log::debug!(
-        "Recovering collection {} from snapshot {}",
-        collection_name,
-        snapshot_path.display()
+        "Recovering collection {collection_name} from snapshot {}",
+        snapshot_path.display(),
     );
 
-    if tmp_collection_dir.exists() {
-        tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
-    }
-    tokio::fs::create_dir_all(&tmp_collection_dir).await?;
+    log::debug!(
+        "Unpacking snapshot to {}",
+        tmp_collection_dir.path().display(),
+    );
 
-    log::debug!("Unpacking snapshot to {}", tmp_collection_dir.display());
-
-    let tmp_collection_dir_clone = tmp_collection_dir.clone();
+    let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
     let restoring = tokio::task::spawn_blocking(move || {
         // Unpack snapshot collection to the target folder
         Collection::restore_snapshot(
@@ -119,7 +117,7 @@ async fn _do_recover_from_snapshot(
     });
     restoring.await??;
 
-    let snapshot_config = CollectionConfig::load(&tmp_collection_dir)?;
+    let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
     let collection = match toc.get_collection(collection_name).await.ok() {
@@ -143,14 +141,14 @@ async fn _do_recover_from_snapshot(
     // Check config compatibility
     // Check vectors config
     if snapshot_config.params.vectors != state.config.params.vectors {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Snapshot is not compatible with existing collection: Collection vectors: {:?} Snapshot Vectors: {:?}",
             state.config.params.vectors, snapshot_config.params.vectors
         )));
     }
     // Check shard number
     if snapshot_config.params.shard_number != state.config.params.shard_number {
-        return Err(StorageError::bad_input(&format!(
+        return Err(StorageError::bad_input(format!(
             "Snapshot is not compatible with existing collection: Collection shard number: {:?} Snapshot shard number: {:?}",
             state.config.params.shard_number, snapshot_config.params.shard_number
         )));
@@ -179,7 +177,7 @@ async fn _do_recover_from_snapshot(
 
     // Recover shards from the snapshot
     for (shard_id, shard_info) in &state.shards {
-        let shards = latest_shard_paths(&tmp_collection_dir, *shard_id).await?;
+        let shards = latest_shard_paths(tmp_collection_dir.path(), *shard_id).await?;
 
         let snapshot_shard_path = shards
             .into_iter()
@@ -200,8 +198,17 @@ async fn _do_recover_from_snapshot(
                 snapshot_shard_path.display()
             );
 
+            // TODO:
+            //   `_do_recover_from_snapshot` is not *yet* analyzed/organized for cancel safety,
+            //   but `recover_local_shard_from` requires `cancel::CanellationToken` argument *now*,
+            //   so we provide a token that is never triggered (in this case `recover_local_shard_from`
+            //   works *exactly* as before the `cancel::CancellationToken` parameter was added to it)
             let recovered = collection
-                .recover_local_shard_from(&snapshot_shard_path, *shard_id)
+                .recover_local_shard_from(
+                    &snapshot_shard_path,
+                    *shard_id,
+                    cancel::CancellationToken::new(),
+                )
                 .await?;
 
             if !recovered {
@@ -225,6 +232,10 @@ async fn _do_recover_from_snapshot(
                 activate_shard(toc, &collection, this_peer_id, shard_id).await?;
             } else {
                 match priority {
+                    SnapshotPriority::NoSync => {
+                        activate_shard(toc, &collection, this_peer_id, shard_id).await?;
+                    }
+
                     SnapshotPriority::Snapshot => {
                         // Snapshot is the source of truth, we need to remove all other replicas
                         activate_shard(toc, &collection, this_peer_id, shard_id).await?;
@@ -256,6 +267,7 @@ async fn _do_recover_from_snapshot(
                             }
                         }
                     }
+
                     SnapshotPriority::Replica => {
                         // Replica is the source of truth, we need to sync recovered data with this replica
                         let (replica_peer_id, _state) =
@@ -274,8 +286,13 @@ async fn _do_recover_from_snapshot(
                             *replica_peer_id,
                             this_peer_id,
                             true,
+                            None,
                         )?;
                     }
+
+                    // `ShardTransfer` is only used during snapshot *shard transfer*.
+                    // It is only exposed in internal gRPC API and only used for *shard* snapshot recovery.
+                    SnapshotPriority::ShardTransfer => unreachable!(),
                 }
             }
         }
@@ -283,6 +300,13 @@ async fn _do_recover_from_snapshot(
 
     // Remove tmp collection dir
     tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
+
+    // Remove snapshot after recovery if downloaded
+    if let Some(path) = snapshot_temp_path {
+        if let Err(err) = path.close() {
+            log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
+        }
+    }
 
     Ok(true)
 }
