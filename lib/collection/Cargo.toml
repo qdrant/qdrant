@@ -33,7 +33,7 @@ ordered-float = "4.1"
 hashring = "0.3.2"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 
-tokio = {version = "~1.32", features = ["full"]}
+tokio = {version = "~1.34", features = ["full"]}
 tokio-util = "0.7"
 futures = "0.3.28"
 atomicwrites = "0.4.1"
