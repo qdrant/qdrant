@@ -18,12 +18,11 @@ use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::VectorIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use segment::types::Distance;
 use segment::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use segment::vector_storage::{VectorStorage, VectorStorageEnum};
 use serde_json::{Deserializer, Value};
 use sparse::common::sparse_vector::SparseVector;
-use sparse::common::sparse_vector_fixture::random_sparse_vector;
+use sparse::common::sparse_vector_fixture::random_positive_sparse_vector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use tempfile::Builder;
 
@@ -57,8 +56,7 @@ fn sparse_vector_index_splade_benchmark(c: &mut Criterion) {
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let vector_storage =
-        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, Distance::Dot).unwrap();
+    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
     let mut borrowed_storage = vector_storage.borrow_mut();
 
     // check file size
@@ -78,7 +76,7 @@ fn sparse_vector_index_splade_benchmark(c: &mut Criterion) {
     drop(borrowed_storage);
 
     // save index config to disk
-    let index_config = SparseIndexConfig::new(10_000);
+    let index_config = SparseIndexConfig::new(10_000, None);
 
     // build once to reuse in mmap conversion benchmark
     let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
@@ -92,7 +90,7 @@ fn sparse_vector_index_splade_benchmark(c: &mut Criterion) {
 
     sparse_vector_index.build_index(&stopped).unwrap();
 
-    let sparse_vector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
+    let sparse_vector = random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
     println!(
         "query sparse vector size = {:#?}",
         sparse_vector.values.len()
@@ -133,20 +131,6 @@ pub fn load_splade_embeddings(path: &str, storage: &mut VectorStorageEnum) {
                     indices.push(key.parse::<u32>().unwrap());
                     values.push(value.as_f64().unwrap() as f32);
                 }
-
-                // sort indices and values
-                let mut indexed_values: Vec<(u32, f32)> = indices
-                    .iter()
-                    .zip(values.iter())
-                    .map(|(&i, &v)| (i, v))
-                    .collect();
-
-                // Sort the vector of tuples by indices
-                indexed_values.sort_by_key(|&(i, _)| i);
-
-                // Update the indices and values vectors based on the sorted tuples
-                indices = indexed_values.iter().map(|&(i, _)| i).collect();
-                values = indexed_values.iter().map(|&(_, v)| v).collect();
 
                 let vec = &SparseVector::new(indices, values).unwrap();
                 storage
