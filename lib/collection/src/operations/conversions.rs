@@ -95,14 +95,14 @@ pub fn write_ordering_from_proto(
     let ordering_parsed = match ordering {
         None => api::grpc::qdrant::WriteOrderingType::Weak,
         Some(write_ordering) => {
-            match api::grpc::qdrant::WriteOrderingType::from_i32(write_ordering.r#type) {
-                None => {
+            match api::grpc::qdrant::WriteOrderingType::try_from(write_ordering.r#type) {
+                Err(_) => {
                     return Err(Status::invalid_argument(format!(
                         "cannot convert ordering: {}",
                         write_ordering.r#type
                     )))
                 }
-                Some(res) => res,
+                Ok(res) => res,
             }
         }
     };
@@ -1265,8 +1265,8 @@ impl TryFrom<i32> for ReplicaState {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        let replica_state = api::grpc::qdrant::ReplicaState::from_i32(value)
-            .ok_or_else(|| Status::invalid_argument(format!("Unknown replica state: {}", value)))?;
+        let replica_state = api::grpc::qdrant::ReplicaState::try_from(value)
+            .map_err(|_| Status::invalid_argument(format!("Unknown replica state: {}", value)))?;
         Ok(replica_state.into())
     }
 }
@@ -1301,7 +1301,7 @@ impl TryFrom<i32> for RecommendStrategy {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        let strategy = api::grpc::qdrant::RecommendStrategy::from_i32(value).ok_or_else(|| {
+        let strategy = api::grpc::qdrant::RecommendStrategy::try_from(value).map_err(|_| {
             Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
         })?;
         Ok(strategy.into())
@@ -1556,9 +1556,9 @@ impl TryFrom<i32> for ShardTransferMethod {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        api::grpc::qdrant::ShardTransferMethod::from_i32(value)
+        api::grpc::qdrant::ShardTransferMethod::try_from(value)
             .map(Into::into)
-            .ok_or_else(|| {
+            .map_err(|_| {
                 Status::invalid_argument(format!("Unknown shard transfer method: {value}"))
             })
     }
