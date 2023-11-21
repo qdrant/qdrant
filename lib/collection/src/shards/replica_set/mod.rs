@@ -1,4 +1,5 @@
 mod execute_read_operation;
+mod locally_disabled_peers;
 mod read_ops;
 mod shard_transfer;
 mod snapshots;
@@ -78,7 +79,7 @@ pub struct ShardReplicaSet {
     /// List is checked on each consensus round and submitted to the consensus.
     /// If the state of the peer is changed in the consensus, it is removed from the list.
     /// Update and read operations are not performed on the peers marked as dead.
-    locally_disabled_peers: parking_lot::RwLock<HashSet<PeerId>>,
+    locally_disabled_peers: parking_lot::RwLock<locally_disabled_peers::Registry>,
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
     notify_peer_failure_cb: ChangePeerState,
@@ -285,7 +286,7 @@ impl ShardReplicaSet {
             replica_set
                 .locally_disabled_peers
                 .write()
-                .insert(this_peer_id);
+                .disable_peer(this_peer_id);
         }
 
         replica_set
@@ -662,11 +663,18 @@ impl ShardReplicaSet {
 
     /// Check if the are any locally disabled peers
     /// And if so, report them to the consensus
-    pub async fn sync_local_state<F>(&self, get_shard_transfers: F) -> CollectionResult<()>
+    pub fn sync_local_state<F>(&self, get_shard_transfers: F) -> CollectionResult<()>
     where
         F: Fn(ShardId, PeerId) -> Vec<ShardTransfer>,
     {
-        for &failed_peer in self.locally_disabled_peers.read().iter() {
+        let peers_to_notify: Vec<_> = self
+            .locally_disabled_peers
+            .write()
+            .notify_elapsed()
+            .collect();
+
+        for failed_peer in peers_to_notify {
+            // TODO: Only `notify_peer_failure` if `failed_peer` is *not* the last `Active` peer? 🤔
             self.notify_peer_failure(failed_peer);
 
             for transfer in get_shard_transfers(self.shard_id, failed_peer) {
@@ -679,6 +687,7 @@ impl ShardReplicaSet {
                 );
             }
         }
+
         Ok(())
     }
 
@@ -743,7 +752,17 @@ impl ShardReplicaSet {
     }
 
     fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
-        self.locally_disabled_peers.read().contains(peer_id)
+        self.locally_disabled_peers.read().is_disabled(*peer_id)
+    }
+
+    fn add_locally_disabled(&self, peer_id: PeerId) {
+        if self
+            .locally_disabled_peers
+            .write()
+            .disable_peer_and_notify_if_elapsed(peer_id)
+        {
+            self.notify_peer_failure(peer_id);
+        }
     }
 
     // Make sure that locally disabled peers do not contradict the consensus
@@ -751,19 +770,21 @@ impl ShardReplicaSet {
         // Check that we are not trying to disable the last active peer
         let peers = self.peers();
 
-        let active_peers: HashSet<_> = peers
-            .iter()
-            .filter(|(_, state)| **state == ReplicaState::Active)
-            .map(|(peer, _)| *peer)
-            .collect();
+        let active_peers = peers.iter().filter_map(|(&peer_id, &state)| {
+            if state == ReplicaState::Active {
+                Some(peer_id)
+            } else {
+                None
+            }
+        });
 
-        let mut locally_disabled = self.locally_disabled_peers.write();
+        let mut locally_disabled_peers = self.locally_disabled_peers.write();
 
-        locally_disabled.remove(&peer_id_to_remove);
-
-        if active_peers.is_subset(&locally_disabled) {
+        if locally_disabled_peers.is_all_disabled(active_peers) {
             log::warn!("Resolving consensus/local state inconsistency");
-            locally_disabled.clear();
+            locally_disabled_peers.clear();
+        } else {
+            locally_disabled_peers.enable_peer(peer_id_to_remove);
         }
     }
 

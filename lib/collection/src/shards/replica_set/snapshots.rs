@@ -136,12 +136,14 @@ impl ShardReplicaSet {
 
                 // ...if this peer is *not* the last active replica
                 if has_other_active_peers {
-                    self.locally_disabled_peers
+                    let notify = self
+                        .locally_disabled_peers
                         .write()
-                        .insert(self.this_peer_id()); // TODO: Blocking `write` call in async context
+                        .disable_peer_and_notify_if_elapsed(self.this_peer_id());
 
-                    // Notify peer failure
-                    self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
+                    if notify {
+                        self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
+                    }
                 }
 
                 // Remove shard directory, so we don't leave empty directory/corrupted data
