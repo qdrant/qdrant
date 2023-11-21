@@ -3139,9 +3139,18 @@ pub mod point_id {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ValuesIndices {
+    #[prost(uint32, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
+    #[prost(message, optional, tag = "2")]
+    pub indices: ::core::option::Option<ValuesIndices>,
 }
 /// ---------------------------------------------
 /// ----------------- ShardKeySelector ----------
@@ -3591,6 +3600,8 @@ pub struct SearchPoints {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "14")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    #[prost(message, optional, tag = "15")]
+    pub indices: ::core::option::Option<ValuesIndices>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3683,6 +3694,8 @@ pub struct SearchPointGroups {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "15")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    #[prost(message, optional, tag = "16")]
+    pub indices: ::core::option::Option<ValuesIndices>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -7059,6 +7059,9 @@
               "type": "number",
               "format": "float"
             }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
           }
         ]
       },
