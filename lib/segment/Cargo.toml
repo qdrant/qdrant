@@ -43,7 +43,7 @@ thiserror = "1.0"
 atomic_refcell = "0.1.11"
 atomicwrites = "0.4.1"
 memmap2 = "0.9.0"
-schemars = { version = "0.8.15", features = ["uuid1", "preserve_order", "chrono"] }
+schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
 log = "0.4"
 geo = "0.26.0"
 geohash = "0.13.0"
