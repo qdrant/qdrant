@@ -1,6 +1,7 @@
 use std::fmt::Write as _;
 use std::str::FromStr as _;
 
+use colored::control::ShouldColorize;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, fmt};
 
@@ -34,7 +35,8 @@ pub fn setup(user_filters: &str) -> anyhow::Result<()> {
 
     let reg = tracing_subscriber::registry().with(
         fmt::layer()
-            .with_ansi(true)
+            // Only use ANSI if we should colorize
+            .with_ansi(ShouldColorize::from_env().should_colorize())
             .with_span_events(fmt::format::FmtSpan::NEW)
             .with_filter(
                 filter::EnvFilter::builder()
