@@ -165,11 +165,13 @@ mod tests {
         for record in records {
             let v = record.vector.unwrap();
 
+            let v1 = vec![2., 2., 2., 2.];
             if record.id == 1.into() {
-                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 2., 2., 2.]))
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some((&v1).into()))
             }
+            let v2 = vec![2., 0., 2., 0.];
             if record.id == 500.into() {
-                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 0., 2., 0.]))
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some((&v2).into()))
             }
         }
 

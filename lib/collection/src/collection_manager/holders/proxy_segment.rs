@@ -7,7 +7,7 @@ use std::sync::Arc;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{QueryVector, VectorElementType};
+use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::telemetry::SegmentTelemetry;
@@ -404,11 +404,7 @@ impl SegmentEntry for ProxySegment {
             .clear_payload(op_num, point_id)
     }
 
-    fn vector(
-        &self,
-        vector_name: &str,
-        point_id: PointIdType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>> {
+    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment
                 .get()
@@ -440,7 +436,7 @@ impl SegmentEntry for ProxySegment {
             .keys()
         {
             if let Some(vector) = self.vector(vector_name, point_id)? {
-                result.insert(vector_name.clone(), vector.into());
+                result.insert(vector_name.clone(), vector);
             }
         }
         Ok(result)

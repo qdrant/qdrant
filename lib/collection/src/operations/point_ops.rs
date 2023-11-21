@@ -5,9 +5,7 @@ use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{
-    only_default_vector, BatchVectorStruct, Vector, VectorStruct, VectorType,
-};
+use segment::data_types::vectors::{BatchVectorStruct, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -359,7 +357,10 @@ impl SplitByShard for Batch {
                             payloads: Some(vec![]),
                         });
                         batch.ids.push(id);
-                        batch.vectors.single().push(vector);
+                        match &mut batch.vectors {
+                            BatchVectorStruct::Single(vectors) => vectors.push(vector),
+                            _ => unreachable!(), // TODO(sparse) propagate error
+                        }
                         batch.payloads.as_mut().unwrap().push(payload);
                     }
                 }
@@ -377,13 +378,15 @@ impl SplitByShard for Batch {
                             payloads: Some(vec![]),
                         });
                         batch.ids.push(id);
-                        let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
                             let vector: Vector = vector.to_owned();
-                            // TODO(sparse) remove this unwrap after sparse vectors are supported in `Batch`
-                            let vector: VectorType = vector.try_into().unwrap();
-                            batch_vectors.entry(name).or_default().push(vector);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::Multi(batch_vectors) => {
+                                    batch_vectors.entry(name).or_default().push(vector)
+                                }
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
                         }
                         batch.payloads.as_mut().unwrap().push(payload);
                     }
@@ -400,7 +403,10 @@ impl SplitByShard for Batch {
                             payloads: None,
                         });
                         batch.ids.push(id);
-                        batch.vectors.single().push(vector);
+                        match &mut batch.vectors {
+                            BatchVectorStruct::Single(vectors) => vectors.push(vector),
+                            _ => unreachable!(), // TODO(sparse) propagate error
+                        }
                     }
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
@@ -417,13 +423,15 @@ impl SplitByShard for Batch {
                             payloads: None,
                         });
                         batch.ids.push(id);
-                        let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
                             let name = name.into_owned();
                             let vector: Vector = vector.to_owned();
-                            // TODO(sparse) remove this unwrap after sparse vectors are supported in `Batch`
-                            let vector: VectorType = vector.try_into().unwrap();
-                            batch_vectors.entry(name).or_default().push(vector);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::Multi(batch_vectors) => {
+                                    batch_vectors.entry(name).or_default().push(vector)
+                                }
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
                         }
                     }
                 }
@@ -475,10 +483,18 @@ impl From<Vec<PointStruct>> for PointOperations {
 
 impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
+        let mut named_vectors = NamedVectors::default();
         match &self.vector {
-            VectorStruct::Single(vector) => only_default_vector(vector),
-            VectorStruct::Multi(vectors) => NamedVectors::from_map_ref(vectors),
+            VectorStruct::Single(vector) => {
+                named_vectors.insert(DEFAULT_VECTOR_NAME.to_string(), vector.clone().into())
+            }
+            VectorStruct::Multi(vectors) => {
+                for (name, vector) in vectors {
+                    named_vectors.insert(name.clone(), vector.clone());
+                }
+            }
         }
+        named_vectors
     }
 }
 

@@ -11,7 +11,8 @@ use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
     Dense(VectorType),
     Sparse(SparseVector),
@@ -68,6 +69,7 @@ impl From<NamedVectorStruct> for Vector {
         match value {
             NamedVectorStruct::Default(v) => Vector::Dense(v),
             NamedVectorStruct::Named(v) => Vector::Dense(v.vector),
+            NamedVectorStruct::Sparse(v) => Vector::Sparse(v.vector),
         }
     }
 }
@@ -162,6 +164,28 @@ impl<'a> VectorRef<'a> {
     }
 }
 
+impl<'a> TryInto<&'a [VectorElementType]> for &'a Vector {
+    type Error = OperationError;
+
+    fn try_into(self) -> Result<&'a [VectorElementType], Self::Error> {
+        match self {
+            Vector::Dense(v) => Ok(v),
+            Vector::Sparse(_) => Err(OperationError::WrongSparse),
+        }
+    }
+}
+
+impl<'a> TryInto<&'a SparseVector> for &'a Vector {
+    type Error = OperationError;
+
+    fn try_into(self) -> Result<&'a SparseVector, Self::Error> {
+        match self {
+            Vector::Dense(_) => Err(OperationError::WrongSparse),
+            Vector::Sparse(v) => Ok(v),
+        }
+    }
+}
+
 pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
     NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
 }
@@ -175,7 +199,7 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
     Single(VectorType),
-    Multi(HashMap<String, VectorType>),
+    Multi(HashMap<String, Vector>),
 }
 
 impl VectorStruct {
@@ -183,7 +207,10 @@ impl VectorStruct {
     pub fn is_empty(&self) -> bool {
         match self {
             VectorStruct::Single(vector) => vector.is_empty(),
-            VectorStruct::Multi(vectors) => vectors.values().all(|v| v.is_empty()),
+            VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
+                Vector::Dense(vector) => vector.is_empty(),
+                Vector::Sparse(vector) => vector.indices.is_empty(),
+            }),
         }
     }
 }
@@ -206,22 +233,16 @@ impl<'a> From<NamedVectors<'a>> for VectorStruct {
             let vector: &[_] = v.get(DEFAULT_VECTOR_NAME).unwrap().try_into().unwrap();
             VectorStruct::Single(vector.to_owned())
         } else {
-            VectorStruct::Multi(
-                v.into_owned_map()
-                    .into_iter()
-                    // TODO(sparse) remove unwrap after sparse integration into `VectorStruct`
-                    .map(|(k, v)| (k, v.try_into().unwrap()))
-                    .collect(),
-            )
+            VectorStruct::Multi(v.into_owned_map())
         }
     }
 }
 
 impl VectorStruct {
-    pub fn get(&self, name: &str) -> Option<&VectorType> {
+    pub fn get(&self, name: &str) -> Option<VectorRef> {
         match self {
-            VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(v),
-            VectorStruct::Multi(v) => v.get(name),
+            VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(v.into()),
+            VectorStruct::Multi(v) => v.get(name).map(|v| v.into()),
         }
     }
 
@@ -241,6 +262,16 @@ pub struct NamedVector {
     pub name: String,
     /// Vector data
     pub vector: VectorType,
+}
+
+/// Sparse vector data with name
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct NamedSparseVector {
+    /// Name of vector data
+    pub name: String,
+    /// Vector data
+    pub vector: SparseVector,
 }
 
 /// Vector data separator for named and unnamed modes
@@ -264,6 +295,7 @@ pub struct NamedVector {
 pub enum NamedVectorStruct {
     Default(VectorType),
     Named(NamedVector),
+    Sparse(NamedSparseVector),
 }
 
 impl From<VectorType> for NamedVectorStruct {
@@ -272,23 +304,18 @@ impl From<VectorType> for NamedVectorStruct {
     }
 }
 
-impl From<NamedVectorStruct> for NamedVector {
-    fn from(v: NamedVectorStruct) -> Self {
-        match v {
-            NamedVectorStruct::Default(v) => NamedVector {
-                name: DEFAULT_VECTOR_NAME.to_owned(),
-                vector: v,
-            },
-            NamedVectorStruct::Named(v) => v,
-        }
-    }
-}
-
 impl From<NamedVector> for NamedVectorStruct {
     fn from(v: NamedVector) -> Self {
         NamedVectorStruct::Named(v)
     }
 }
+
+impl From<NamedSparseVector> for NamedVectorStruct {
+    fn from(v: NamedSparseVector) -> Self {
+        NamedVectorStruct::Sparse(v)
+    }
+}
+
 pub trait Named {
     fn get_name(&self) -> &str;
 }
@@ -298,6 +325,7 @@ impl Named for NamedVectorStruct {
         match self {
             NamedVectorStruct::Default(_) => DEFAULT_VECTOR_NAME,
             NamedVectorStruct::Named(v) => &v.name,
+            NamedVectorStruct::Sparse(v) => &v.name,
         }
     }
 }
@@ -306,24 +334,23 @@ impl NamedVectorStruct {
     pub fn new_from_vector(vector: Vector, name: String) -> Self {
         match vector {
             Vector::Dense(vector) => NamedVectorStruct::Named(NamedVector { name, vector }),
-            Vector::Sparse(_vector) => {
-                // TODO(sparse): add after sparse integration into `NamedVectorStruct`
-                todo!()
-            }
+            Vector::Sparse(vector) => NamedVectorStruct::Sparse(NamedSparseVector { name, vector }),
         }
     }
 
-    pub fn get_vector(&self) -> &VectorType {
+    pub fn get_vector(&self) -> VectorRef {
         match self {
-            NamedVectorStruct::Default(v) => v,
-            NamedVectorStruct::Named(v) => &v.vector,
+            NamedVectorStruct::Default(v) => v.as_slice().into(),
+            NamedVectorStruct::Named(v) => v.vector.as_slice().into(),
+            NamedVectorStruct::Sparse(v) => (&v.vector).into(),
         }
     }
 
-    pub fn to_vector(self) -> VectorType {
+    pub fn to_vector(self) -> Vector {
         match self {
-            NamedVectorStruct::Default(v) => v,
-            NamedVectorStruct::Named(v) => v.vector,
+            NamedVectorStruct::Default(v) => v.into(),
+            NamedVectorStruct::Named(v) => v.vector.into(),
+            NamedVectorStruct::Sparse(v) => v.vector.into(),
         }
     }
 }
@@ -333,7 +360,7 @@ impl NamedVectorStruct {
 #[serde(untagged)]
 pub enum BatchVectorStruct {
     Single(Vec<VectorType>),
-    Multi(HashMap<String, Vec<VectorType>>),
+    Multi(HashMap<String, Vec<Vector>>),
 }
 
 impl From<Vec<VectorType>> for BatchVectorStruct {
@@ -342,31 +369,7 @@ impl From<Vec<VectorType>> for BatchVectorStruct {
     }
 }
 
-impl From<HashMap<String, Vec<VectorType>>> for BatchVectorStruct {
-    fn from(v: HashMap<String, Vec<VectorType>>) -> Self {
-        if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
-            BatchVectorStruct::Single(v.into_iter().next().unwrap().1)
-        } else {
-            BatchVectorStruct::Multi(v)
-        }
-    }
-}
-
 impl BatchVectorStruct {
-    pub fn single(&mut self) -> &mut Vec<VectorType> {
-        match self {
-            BatchVectorStruct::Single(v) => v,
-            BatchVectorStruct::Multi(v) => v.get_mut(DEFAULT_VECTOR_NAME).unwrap(),
-        }
-    }
-
-    pub fn multi(&mut self) -> &mut HashMap<String, Vec<VectorType>> {
-        match self {
-            BatchVectorStruct::Single(_) => panic!("BatchVectorStruct is not Single"),
-            BatchVectorStruct::Multi(v) => v,
-        }
-    }
-
     pub fn into_all_vectors(self, num_records: usize) -> Vec<NamedVectors<'static>> {
         match self {
             BatchVectorStruct::Single(vectors) => vectors.into_iter().map(default_vector).collect(),
@@ -415,13 +418,20 @@ impl<'a> From<&'a [VectorElementType]> for QueryVector {
 
 impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
     fn from(vec: [VectorElementType; N]) -> Self {
-        Self::Nearest(Vector::Dense(vec.to_vec()))
+        let vec: VectorRef = vec.as_slice().into();
+        Self::Nearest(vec.to_owned())
     }
 }
 
 impl<'a> From<VectorRef<'a>> for QueryVector {
     fn from(vec: VectorRef<'a>) -> Self {
         Self::Nearest(vec.to_vec())
+    }
+}
+
+impl From<Vector> for QueryVector {
+    fn from(vec: Vector) -> Self {
+        Self::Nearest(vec)
     }
 }
 

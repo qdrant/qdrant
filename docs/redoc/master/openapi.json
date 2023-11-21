@@ -6122,14 +6122,49 @@
           {
             "type": "object",
             "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "number",
-                "format": "float"
-              }
+              "$ref": "#/components/schemas/Vector"
             }
           }
         ]
+      },
+      "Vector": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
+          }
+        ]
+      },
+      "SparseVector": {
+        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length - indices and values to be non-empty",
+        "type": "object",
+        "required": [
+          "indices",
+          "values"
+        ],
+        "properties": {
+          "indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        }
       },
       "SearchRequest": {
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
@@ -6231,6 +6266,9 @@
           },
           {
             "$ref": "#/components/schemas/NamedVector"
+          },
+          {
+            "$ref": "#/components/schemas/NamedSparseVector"
           }
         ]
       },
@@ -6253,6 +6291,23 @@
               "type": "number",
               "format": "float"
             }
+          }
+        }
+      },
+      "NamedSparseVector": {
+        "description": "Sparse vector data with name",
+        "type": "object",
+        "required": [
+          "name",
+          "vector"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name of vector data",
+            "type": "string"
+          },
+          "vector": {
+            "$ref": "#/components/schemas/SparseVector"
           }
         }
       },
@@ -7770,11 +7825,7 @@
             "additionalProperties": {
               "type": "array",
               "items": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "float"
-                }
+                "$ref": "#/components/schemas/Vector"
               }
             }
           }
@@ -10463,31 +10514,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DiscoverRequest"
-            }
-          }
-        }
-      },
-      "SparseVector": {
-        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length - indices and values to be non-empty",
-        "type": "object",
-        "required": [
-          "indices",
-          "values"
-        ],
-        "properties": {
-          "indices": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0
-            }
-          },
-          "values": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
             }
           }
         }

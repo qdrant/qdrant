@@ -5,9 +5,9 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::vectors::{VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage};
+use crate::vector_storage::DenseVectorStorage;
 
-pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
+pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> {
     vector_storage: &'a TVectorStorage,
     query: Vec<VectorElementType>,
     metric: PhantomData<TMetric>,

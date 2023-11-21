@@ -325,7 +325,7 @@ impl SegmentsSearcher {
                                 let mut selected_vectors = NamedVectors::default();
                                 for vector_name in vector_names {
                                     if let Some(vector) = segment.vector(vector_name, id)? {
-                                        selected_vectors.insert(vector_name.into(), vector.into());
+                                        selected_vectors.insert(vector_name.into(), vector);
                                     }
                                 }
                                 Some(selected_vectors.into())

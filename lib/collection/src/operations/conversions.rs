@@ -14,7 +14,8 @@ use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    Named, NamedQuery, NamedVector, NamedVectorStruct, Vector, VectorStruct, DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVector, NamedVectorStruct, Vector, VectorStruct, VectorType,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -891,10 +892,10 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
-
+        let vector: VectorType = request.vector.get_vector().to_owned().try_into().unwrap(); // TODO(sparse): grpc conversion
         Self {
             collection_name: collection_id,
-            vector: request.vector.get_vector().to_vec(),
+            vector,
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
             with_vectors: request.with_vector.clone().map(|wv| wv.into()),

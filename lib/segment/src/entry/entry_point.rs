@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -104,11 +104,7 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
-    fn vector(
-        &self,
-        vector_name: &str,
-        point_id: PointIdType,
-    ) -> OperationResult<Option<Vec<VectorElementType>>>;
+    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>>;
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
 
