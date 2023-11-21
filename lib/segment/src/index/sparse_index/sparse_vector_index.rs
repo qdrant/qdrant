@@ -261,7 +261,10 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     fn update_vector(&mut self, id: PointOffsetType) -> OperationResult<()> {
         let vector_storage = self.vector_storage.borrow();
         let vector: &SparseVector = vector_storage.get_vector(id).try_into()?;
-        self.inverted_index.upsert(id, vector.clone());
+        // do not upsert empty vectors into the index
+        if !vector.is_empty() {
+            self.inverted_index.upsert(id, vector.clone());
+        }
         Ok(())
     }
 }

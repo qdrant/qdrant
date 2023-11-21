@@ -69,13 +69,7 @@ impl InvertedIndexRam {
     }
 
     /// Upsert a vector into the inverted index.
-    ///
-    /// Empty vectors are ignored.
     pub fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
-        // do not upsert empty vectors
-        if vector.is_empty() {
-            return;
-        }
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
