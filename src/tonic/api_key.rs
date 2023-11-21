@@ -12,13 +12,20 @@ use tower_layer::Layer;
 use crate::common::auth::AuthKeys;
 use crate::common::strings::ct_eq;
 
-const READ_ONLY_RPC_PATHS: [&str; 6] = [
+const READ_ONLY_RPC_PATHS: [&str; 13] = [
     "/qdrant.Collections/List",
     "/qdrant.Collections/Get",
-    "/qdrant.Points/Search",
     "/qdrant.Points/Scroll",
     "/qdrant.Points/Get",
+    "/qdrant.Points/Count",
+    "/qdrant.Points/Search",
+    "/qdrant.Points/SearchGroups",
+    "/qdrant.Points/SearchBatch",
     "/qdrant.Points/Recommend",
+    "/qdrant.Points/RecommendGroups",
+    "/qdrant.Points/RecommendBatch",
+    "/qdrant.Points/Discover",
+    "/qdrant.Points/DiscoverBatch",
 ];
 
 #[derive(Clone)]
