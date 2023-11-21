@@ -147,9 +147,7 @@ impl TryFrom<Option<api::grpc::qdrant::ShardSnapshotLocation>> for ShardSnapshot
         snapshot_location: Option<api::grpc::qdrant::ShardSnapshotLocation>,
     ) -> Result<Self, Self::Error> {
         let Some(snapshot_location) = snapshot_location else {
-            return Err(tonic::Status::invalid_argument(
-                "Malformed shard snapshot location",
-            ));
+            return Err(tonic::Status::invalid_argument("Malformed shard snapshot location"));
         };
 
         snapshot_location.try_into()
@@ -163,17 +161,15 @@ impl TryFrom<api::grpc::qdrant::ShardSnapshotLocation> for ShardSnapshotLocation
         use api::grpc::qdrant::shard_snapshot_location;
 
         let Some(location) = location.location else {
-            return Err(tonic::Status::invalid_argument(
-                "Malformed shard snapshot location",
-            ));
+            return Err(tonic::Status::invalid_argument("Malformed shard snapshot location"));
         };
 
         let location = match location {
             shard_snapshot_location::Location::Url(url) => {
                 let url = Url::parse(&url).map_err(|err| {
-                    tonic::Status::invalid_argument(format!(
-                        "Invalid shard snapshot URL {url}: {err}",
-                    ))
+                    tonic::Status::invalid_argument(
+                        format!("Invalid shard snapshot URL {url}: {err}",)
+                    )
                 })?;
 
                 Self::Url(url)

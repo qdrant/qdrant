@@ -427,11 +427,12 @@ impl GraphLinksRam {
 
 impl GraphLinks for GraphLinksRam {
     fn load_from_file(path: &Path) -> OperationResult<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(path)?;
+        let file =
+            OpenOptions::new()
+                .read(true)
+                .write(false)
+                .create(false)
+                .open(path)?;
 
         let mmap = unsafe { Mmap::map(&file)? };
 
@@ -516,11 +517,12 @@ impl GraphLinksMmap {
 
 impl GraphLinks for GraphLinksMmap {
     fn load_from_file(path: &Path) -> OperationResult<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(path)?;
+        let file =
+            OpenOptions::new()
+                .read(true)
+                .write(false)
+                .create(false)
+                .open(path)?;
 
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;

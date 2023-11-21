@@ -166,10 +166,7 @@ mod tests {
     async fn use_item(item: CountedItem<Arc<AtomicUsize>>) {
         item.item().fetch_add(1, Ordering::SeqCst);
         // Sleep for 1-100 ms
-        tokio::time::sleep(std::time::Duration::from_millis(
-            rand::random::<u64>() % 100 + 1,
-        ))
-        .await;
+        tokio::time::sleep(std::time::Duration::from_millis(rand::random::<u64>() % 100 + 1)).await;
         item.item().fetch_sub(1, Ordering::SeqCst);
         item.report_success();
         drop(item);

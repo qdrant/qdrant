@@ -83,9 +83,7 @@ impl TryFrom<api::grpc::qdrant::DeleteCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::DeleteCollection) -> Result<Self, Self::Error> {
-        Ok(Self::DeleteCollection(DeleteCollectionOperation(
-            value.collection_name,
-        )))
+        Ok(Self::DeleteCollection(DeleteCollectionOperation(value.collection_name)))
     }
 }
 

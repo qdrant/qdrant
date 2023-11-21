@@ -35,7 +35,5 @@ pub fn append_file(
 
 /// Create "failed to append `<path>` to the archive" error.
 pub fn failed_to_append_error(path: &Path, err: impl fmt::Display) -> OperationError {
-    OperationError::service_error(format!(
-        "failed to append {path:?} path to the archive: {err}"
-    ))
+    OperationError::service_error(format!("failed to append {path:?} path to the archive: {err}"))
 }

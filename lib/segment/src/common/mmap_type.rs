@@ -481,11 +481,12 @@ mod tests {
     use super::*;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
-        let tempfile = Builder::new()
-            .prefix("test.")
-            .suffix(".mmap")
-            .tempfile()
-            .unwrap();
+        let tempfile =
+            Builder::new()
+                .prefix("test.")
+                .suffix(".mmap")
+                .tempfile()
+                .unwrap();
         tempfile.as_file().set_len(len as u64).unwrap();
         tempfile
     }

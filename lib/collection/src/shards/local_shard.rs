@@ -247,16 +247,17 @@ impl LocalShard {
 
         drop(collection_config_read); // release `shared_config` from borrow checker
 
-        let collection = LocalShard::new(
-            segment_holder,
-            collection_config,
-            shared_storage_config,
-            wal,
-            optimizers,
-            shard_path,
-            update_runtime,
-        )
-        .await;
+        let collection =
+            LocalShard::new(
+                segment_holder,
+                collection_config,
+                shared_storage_config,
+                wal,
+                optimizers,
+                shard_path,
+                update_runtime,
+            )
+            .await;
 
         collection.load_from_wal(collection_id)?;
 
@@ -341,9 +342,9 @@ impl LocalShard {
         let segments_path = shard_path.join("segments");
 
         create_dir_all(&segments_path).await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't create shard segments directory. Error: {err}"
-            ))
+            CollectionError::service_error(
+                format!("Can't create shard segments directory. Error: {err}")
+            )
         })?;
 
         let mut segment_holder = SegmentHolder::default();
@@ -354,14 +355,15 @@ impl LocalShard {
 
         for _sid in 0..segment_number {
             let path_clone = segments_path.clone();
-            let segment_config = SegmentConfig {
-                vector_data: vector_params.clone(),
-                payload_storage_type: if config.params.on_disk_payload {
-                    PayloadStorageType::OnDisk
-                } else {
-                    PayloadStorageType::InMemory
-                },
-            };
+            let segment_config =
+                SegmentConfig {
+                    vector_data: vector_params.clone(),
+                    payload_storage_type: if config.params.on_disk_payload {
+                        PayloadStorageType::OnDisk
+                    } else {
+                        PayloadStorageType::InMemory
+                    },
+                };
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))
                 .spawn(move || build_segment(&path_clone, &segment_config, true))
@@ -401,16 +403,17 @@ impl LocalShard {
 
         drop(config); // release `shared_config` from borrow checker
 
-        let collection = LocalShard::new(
-            segment_holder,
-            collection_config,
-            shared_storage_config,
-            wal,
-            optimizers,
-            shard_path,
-            update_runtime,
-        )
-        .await;
+        let collection =
+            LocalShard::new(
+                segment_holder,
+                collection_config,
+                shared_storage_config,
+                wal,
+                optimizers,
+                shard_path,
+                update_runtime,
+            )
+            .await;
 
         Ok(collection)
     }
@@ -538,9 +541,7 @@ impl LocalShard {
                     .file_stem()
                     .map(|s| s.to_str().unwrap().to_owned());
                 if segment_id_opt.is_none() {
-                    return Err(CollectionError::service_error(
-                        "Segment ID is empty".to_string(),
-                    ));
+                    return Err(CollectionError::service_error("Segment ID is empty".to_string()));
                 }
                 let segment_id = segment_id_opt.unwrap();
                 Segment::restore_snapshot(&entry_path, &segment_id)?;
@@ -627,9 +628,9 @@ impl LocalShard {
             },
             latest_op_num,
         )
-        .map_err(|err| {
-            CollectionError::service_error(format!("Error while create empty WAL: {err}"))
-        })
+        .map_err(
+            |err| CollectionError::service_error(format!("Error while create empty WAL: {err}"))
+        )
     }
 
     /// snapshot WAL
@@ -642,9 +643,9 @@ impl LocalShard {
         let source_wal_path = wal_guard.path();
         let options = fs_extra::dir::CopyOptions::new();
         fs_extra::dir::copy(source_wal_path, snapshot_shard_path, &options).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Error while copy WAL {snapshot_shard_path:?} {err}"
-            ))
+            CollectionError::service_error(
+                format!("Error while copy WAL {snapshot_shard_path:?} {err}")
+            )
         })?;
         Ok(())
     }
@@ -659,17 +660,18 @@ impl LocalShard {
         if some_segment.is_none() {
             return Ok(CardinalityEstimation::exact(0));
         }
-        let cardinality = segments
-            .iter()
-            .map(|(_id, segment)| segment.get().read().estimate_point_count(filter))
-            .fold(CardinalityEstimation::exact(0), |acc, x| {
-                CardinalityEstimation {
-                    primary_clauses: vec![],
-                    min: acc.min + x.min,
-                    exp: acc.exp + x.exp,
-                    max: acc.max + x.max,
-                }
-            });
+        let cardinality =
+            segments
+                .iter()
+                .map(|(_id, segment)| segment.get().read().estimate_point_count(filter))
+                .fold(CardinalityEstimation::exact(0), |acc, x| {
+                    CardinalityEstimation {
+                        primary_clauses: vec![],
+                        min: acc.min + x.min,
+                        exp: acc.exp + x.exp,
+                        max: acc.max + x.max,
+                    }
+                });
         Ok(cardinality)
     }
 
@@ -723,35 +725,35 @@ impl LocalShard {
     async fn estimate_vector_data_size(&self) -> usize {
         let info = self.local_shard_info().await;
 
-        let vector_size: usize = info
-            .config
-            .params
-            .vectors
-            .params_iter()
-            .map(|(_, value)| {
-                let vector_size = value.size.get() as usize;
+        let vector_size: usize =
+            info.config
+                .params
+                .vectors
+                .params_iter()
+                .map(|(_, value)| {
+                    let vector_size = value.size.get() as usize;
 
-                let quantization_config = value
-                    .quantization_config
-                    .as_ref()
-                    .or(info.config.quantization_config.as_ref());
+                    let quantization_config = value
+                        .quantization_config
+                        .as_ref()
+                        .or(info.config.quantization_config.as_ref());
 
-                let quantized_size_bytes = match quantization_config {
-                    None => 0,
-                    Some(QuantizationConfig::Scalar(_)) => vector_size,
-                    Some(QuantizationConfig::Product(pq)) => match pq.product.compression {
-                        CompressionRatio::X4 => vector_size,
-                        CompressionRatio::X8 => vector_size / 2,
-                        CompressionRatio::X16 => vector_size / 4,
-                        CompressionRatio::X32 => vector_size / 8,
-                        CompressionRatio::X64 => vector_size / 16,
-                    },
-                    Some(QuantizationConfig::Binary(_)) => vector_size / 8,
-                };
+                    let quantized_size_bytes = match quantization_config {
+                        None => 0,
+                        Some(QuantizationConfig::Scalar(_)) => vector_size,
+                        Some(QuantizationConfig::Product(pq)) => match pq.product.compression {
+                            CompressionRatio::X4 => vector_size,
+                            CompressionRatio::X8 => vector_size / 2,
+                            CompressionRatio::X16 => vector_size / 4,
+                            CompressionRatio::X32 => vector_size / 8,
+                            CompressionRatio::X64 => vector_size / 16,
+                        },
+                        Some(QuantizationConfig::Binary(_)) => vector_size / 8,
+                    };
 
-                vector_size * size_of::<VectorElementType>() + quantized_size_bytes
-            })
-            .sum();
+                    vector_size * size_of::<VectorElementType>() + quantized_size_bytes
+                })
+                .sum();
 
         vector_size * info.points_count
     }

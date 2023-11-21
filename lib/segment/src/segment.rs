@@ -256,9 +256,9 @@ impl Segment {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
             if *failed_version < op_num {
-                return Err(OperationError::service_error(format!(
-                    "Not recovered from previous error: {error}"
-                )));
+                return Err(OperationError::service_error(
+                    format!("Not recovered from previous error: {error}")
+                ));
             } // else: Re-try operation
         }
 
@@ -270,9 +270,10 @@ impl Segment {
                 match &self.error_status {
                     None => {} // all good
                     Some(error) => {
-                        let point_id = op_point_offset.and_then(|point_offset| {
-                            self.id_tracker.borrow().external_id(point_offset)
-                        });
+                        let point_id =
+                            op_point_offset.and_then(|point_offset| {
+                                self.id_tracker.borrow().external_id(point_offset)
+                            });
                         if error.point_id == point_id {
                             // Fixed
                             log::info!("Recovered from error: {}", error.error);
@@ -460,17 +461,17 @@ impl Segment {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
 
         let archive_file = File::open(snapshot_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to open segment snapshot archive {snapshot_path:?}: {err}"
-            ))
+            OperationError::service_error(
+                format!("failed to open segment snapshot archive {snapshot_path:?}: {err}")
+            )
         })?;
 
         tar::Archive::new(archive_file)
             .unpack(&segment_path)
             .map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to unpack segment snapshot archive {snapshot_path:?}: {err}"
-                ))
+                OperationError::service_error(
+                    format!("failed to unpack segment snapshot archive {snapshot_path:?}: {err}")
+                )
             })?;
 
         let snapshot_path = segment_path.join(SNAPSHOT_PATH);
@@ -500,9 +501,9 @@ impl Segment {
             utils::fs::move_all(&files_path, &segment_path)?;
 
             fs::remove_dir_all(&snapshot_path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to remove {snapshot_path:?} directory: {err}"
-                ))
+                OperationError::service_error(
+                    format!("failed to remove {snapshot_path:?} directory: {err}")
+                )
             })?;
         } else {
             log::info!("Attempt to restore legacy snapshot format");
@@ -566,17 +567,18 @@ impl Segment {
             .map(|(point_id, scored_point_offset)| {
                 let point_offset = scored_point_offset.idx;
                 let point_version = id_tracker.internal_version(point_offset).ok_or_else(|| {
-                    OperationError::service_error(format!(
-                        "Corrupter id_tracker, no version for point {point_id}"
-                    ))
+                    OperationError::service_error(
+                        format!("Corrupter id_tracker, no version for point {point_id}")
+                    )
                 })?;
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload_by_offset(point_offset)?;
-                    let processed_payload = if let Some(i) = &with_payload.payload_selector {
-                        i.process(initial_payload)
-                    } else {
-                        initial_payload
-                    };
+                    let processed_payload =
+                        if let Some(i) = &with_payload.payload_selector {
+                            i.process(initial_payload)
+                        } else {
+                            initial_payload
+                        };
                     Some(processed_payload)
                 } else {
                     None
@@ -720,10 +722,7 @@ impl Segment {
             .collect();
 
         let _ = thread::Builder::new()
-            .name(format!(
-                "segment-{:?}-prefault-mmap-pages",
-                self.current_path,
-            ))
+            .name(format!("segment-{:?}-prefault-mmap-pages", self.current_path,))
             .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
 }
@@ -1131,21 +1130,21 @@ impl SegmentEntry for Segment {
             .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
-        let vector_data_info = self
-            .vector_data
-            .iter()
-            .map(|(key, vector_data)| {
-                let vector_storage = vector_data.vector_storage.borrow();
-                let num_vectors = vector_storage.available_vector_count();
-                let is_indexed = vector_data.vector_index.borrow().is_index();
-                let vector_data_info = VectorDataInfo {
-                    num_vectors,
-                    num_indexed_vectors: if is_indexed { num_vectors } else { 0 },
-                    num_deleted_vectors: vector_storage.deleted_vector_count(),
-                };
-                (key.to_string(), vector_data_info)
-            })
-            .collect();
+        let vector_data_info =
+            self.vector_data
+                .iter()
+                .map(|(key, vector_data)| {
+                    let vector_storage = vector_data.vector_storage.borrow();
+                    let num_vectors = vector_storage.available_vector_count();
+                    let is_indexed = vector_data.vector_index.borrow().is_index();
+                    let vector_data_info = VectorDataInfo {
+                        num_vectors,
+                        num_indexed_vectors: if is_indexed { num_vectors } else { 0 },
+                        num_deleted_vectors: vector_storage.deleted_vector_count(),
+                    };
+                    (key.to_string(), vector_data_info)
+                })
+                .collect();
 
         let num_indexed_vectors = if self.segment_type == SegmentType::Indexed {
             num_vectors
@@ -1255,46 +1254,54 @@ impl SegmentEntry for Segment {
         //
         //  400
 
-        let flush_op = move || {
-            // Flush mapping first to prevent having orphan internal ids.
-            id_tracker_mapping_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush id_tracker mapping: {err}"))
-            })?;
-            for vector_storage_flusher in vector_storage_flushers {
-                vector_storage_flusher().map_err(|err| {
-                    OperationError::service_error(format!("Failed to flush vector_storage: {err}"))
+        let flush_op =
+            move || {
+                // Flush mapping first to prevent having orphan internal ids.
+                id_tracker_mapping_flusher().map_err(|err| {
+                    OperationError::service_error(
+                        format!("Failed to flush id_tracker mapping: {err}")
+                    )
                 })?;
-            }
-            payload_index_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush payload_index: {err}"))
-            })?;
-            // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
-            // This is because vector_storage and payload_index flush are not atomic.
-            // If payload or vector flush fails, we will be able to recover data from WAL.
-            // If Id Tracker flush fails, we are also able to recover data from WAL
-            //  by simply overriding data in vector and payload storages.
-            // Once versions are saved - points are considered persisted.
-            id_tracker_versions_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush id_tracker versions: {err}"))
-            })?;
-            Self::save_state(&state, &current_path).map_err(|err| {
-                OperationError::service_error(format!("Failed to flush segment state: {err}"))
-            })?;
-            *persisted_version.lock() = state.version;
+                for vector_storage_flusher in vector_storage_flushers {
+                    vector_storage_flusher().map_err(|err| {
+                        OperationError::service_error(
+                            format!("Failed to flush vector_storage: {err}")
+                        )
+                    })?;
+                }
+                payload_index_flusher().map_err(|err| {
+                    OperationError::service_error(format!("Failed to flush payload_index: {err}"))
+                })?;
+                // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
+                // This is because vector_storage and payload_index flush are not atomic.
+                // If payload or vector flush fails, we will be able to recover data from WAL.
+                // If Id Tracker flush fails, we are also able to recover data from WAL
+                //  by simply overriding data in vector and payload storages.
+                // Once versions are saved - points are considered persisted.
+                id_tracker_versions_flusher().map_err(|err| {
+                    OperationError::service_error(
+                        format!("Failed to flush id_tracker versions: {err}")
+                    )
+                })?;
+                Self::save_state(&state, &current_path).map_err(|err| {
+                    OperationError::service_error(format!("Failed to flush segment state: {err}"))
+                })?;
+                *persisted_version.lock() = state.version;
 
-            debug_assert!(state.version.is_some());
-            Ok(state.version.unwrap_or(0))
-        };
+                debug_assert!(state.version.is_some());
+                Ok(state.version.unwrap_or(0))
+            };
 
         if sync {
             flush_op()
         } else {
-            *background_flush_lock = Some(
-                thread::Builder::new()
-                    .name("background_flush".to_string())
-                    .spawn(flush_op)
-                    .unwrap(),
-            );
+            *background_flush_lock =
+                Some(
+                    thread::Builder::new()
+                        .name("background_flush".to_string())
+                        .spawn(flush_op)
+                        .unwrap(),
+                );
             Ok(current_persisted_version.unwrap_or(0))
         }
     }
@@ -1407,15 +1414,15 @@ impl SegmentEntry for Segment {
         );
 
         if !snapshot_dir_path.exists() {
-            return Err(OperationError::service_error(format!(
-                "the snapshot path {snapshot_dir_path:?} does not exist"
-            )));
+            return Err(OperationError::service_error(
+                format!("the snapshot path {snapshot_dir_path:?} does not exist")
+            ));
         }
 
         if !snapshot_dir_path.is_dir() {
-            return Err(OperationError::service_error(format!(
-                "the snapshot path {snapshot_dir_path:?} is not a directory",
-            )));
+            return Err(OperationError::service_error(
+                format!("the snapshot path {snapshot_dir_path:?} is not a directory",)
+            ));
         }
 
         // flush segment to capture latest state
@@ -1445,9 +1452,9 @@ impl SegmentEntry for Segment {
 
         // If `archive_path` exists, we still want to overwrite it
         let file = File::create(&archive_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to create segment snapshot archive {archive_path:?}: {err}"
-            ))
+            OperationError::service_error(
+                format!("failed to create segment snapshot archive {archive_path:?}: {err}")
+            )
         })?;
 
         let mut builder = Builder::new(file);
@@ -1627,18 +1634,19 @@ mod tests {
         segment.delete_point(102, 1.into()).unwrap();
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
-        let search_result = segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                None,
-                10,
-                None,
-                &false.into(),
-            )
-            .unwrap();
+        let search_result =
+            segment
+                .search(
+                    DEFAULT_VECTOR_NAME,
+                    &query_vector,
+                    &WithPayload::default(),
+                    &false.into(),
+                    None,
+                    10,
+                    None,
+                    &false.into(),
+                )
+                .unwrap();
         eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = segment
@@ -1914,18 +1922,19 @@ mod tests {
         segment.check_consistency_and_repair().unwrap();
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
-        let search_result = segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                None,
-                10,
-                None,
-                &false.into(),
-            )
-            .unwrap();
+        let search_result =
+            segment
+                .search(
+                    DEFAULT_VECTOR_NAME,
+                    &query_vector,
+                    &WithPayload::default(),
+                    &false.into(),
+                    None,
+                    10,
+                    None,
+                    &false.into(),
+                )
+                .unwrap();
 
         assert_eq!(search_result.len(), 2);
         assert_eq!(search_result[0].id, 6.into());
@@ -1938,18 +1947,19 @@ mod tests {
         // make id_tracker inconsistent
         segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
 
-        let search_result = segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &WithPayload::default(),
-                &false.into(),
-                None,
-                10,
-                None,
-                &false.into(),
-            )
-            .unwrap();
+        let search_result =
+            segment
+                .search(
+                    DEFAULT_VECTOR_NAME,
+                    &query_vector,
+                    &WithPayload::default(),
+                    &false.into(),
+                    None,
+                    10,
+                    None,
+                    &false.into(),
+                )
+                .unwrap();
 
         // only one result because of inconsistent id_tracker
         assert_eq!(search_result.len(), 1);

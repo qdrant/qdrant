@@ -155,12 +155,13 @@ pub async fn sync(
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
 
-    let shard_selector = if let Some(shard_selection) = shard_selection {
-        ShardSelectorInternal::ShardId(shard_selection)
-    } else {
-        debug_assert!(false, "Sync operation is supposed to select shard directly");
-        ShardSelectorInternal::Empty
-    };
+    let shard_selector =
+        if let Some(shard_selection) = shard_selection {
+            ShardSelectorInternal::ShardId(shard_selection)
+        } else {
+            debug_assert!(false, "Sync operation is supposed to select shard directly");
+            ShardSelectorInternal::Empty
+        };
 
     let result = toc
         .update(
@@ -470,190 +471,191 @@ pub async fn update_batch(
             .ok_or(Status::invalid_argument("Operation is missing"))?;
         let collection_name = collection_name.clone();
         let ordering = ordering.clone();
-        let result = match operation {
-            points_update_operation::Operation::Upsert(PointStructList {
-                points,
-                shard_key_selector,
-            }) => {
-                upsert(
-                    toc,
-                    UpsertPoints {
-                        collection_name,
-                        points,
-                        wait,
-                        ordering,
-                        shard_key_selector,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-            points_update_operation::Operation::DeleteDeprecated(points) => {
-                delete(
-                    toc,
-                    DeletePoints {
-                        collection_name,
-                        wait,
-                        points: Some(points),
-                        ordering,
-                        shard_key_selector: None,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-            points_update_operation::Operation::SetPayload(
-                points_update_operation::SetPayload {
-                    payload,
-                    points_selector,
-                    shard_key_selector,
-                },
-            ) => {
-                set_payload(
-                    toc,
-                    SetPayloadPoints {
-                        collection_name,
-                        wait,
-                        payload,
-                        points_selector,
-                        ordering,
-                        shard_key_selector,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-            points_update_operation::Operation::OverwritePayload(
-                points_update_operation::SetPayload {
-                    payload,
-                    points_selector,
-                    shard_key_selector,
-                },
-            ) => {
-                overwrite_payload(
-                    toc,
-                    SetPayloadPoints {
-                        collection_name,
-                        wait,
-                        payload,
-                        points_selector,
-                        ordering,
-                        shard_key_selector,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-            points_update_operation::Operation::DeletePayload(
-                points_update_operation::DeletePayload {
-                    keys,
-                    points_selector,
-                    shard_key_selector,
-                },
-            ) => {
-                delete_payload(
-                    toc,
-                    DeletePayloadPoints {
-                        collection_name,
-                        wait,
-                        keys,
-                        points_selector,
-                        ordering,
-                        shard_key_selector,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-            points_update_operation::Operation::ClearPayload(ClearPayload {
-                points,
-                shard_key_selector,
-            }) => {
-                clear_payload(
-                    toc,
-                    ClearPayloadPoints {
-                        collection_name,
-                        wait,
-                        points,
-                        ordering,
-                        shard_key_selector,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-            points_update_operation::Operation::UpdateVectors(
-                points_update_operation::UpdateVectors {
+        let result =
+            match operation {
+                points_update_operation::Operation::Upsert(PointStructList {
                     points,
                     shard_key_selector,
-                },
-            ) => {
-                update_vectors(
-                    toc,
-                    UpdatePointVectors {
-                        collection_name,
-                        wait,
-                        points,
-                        ordering,
+                }) => {
+                    upsert(
+                        toc,
+                        UpsertPoints {
+                            collection_name,
+                            points,
+                            wait,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                points_update_operation::Operation::DeleteDeprecated(points) => {
+                    delete(
+                        toc,
+                        DeletePoints {
+                            collection_name,
+                            wait,
+                            points: Some(points),
+                            ordering,
+                            shard_key_selector: None,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                points_update_operation::Operation::SetPayload(
+                    points_update_operation::SetPayload {
+                        payload,
+                        points_selector,
                         shard_key_selector,
                     },
-                    shard_selection,
-                )
-                .await
-            }
-            points_update_operation::Operation::DeleteVectors(
-                points_update_operation::DeleteVectors {
-                    points_selector,
-                    vectors,
+                ) => {
+                    set_payload(
+                        toc,
+                        SetPayloadPoints {
+                            collection_name,
+                            wait,
+                            payload,
+                            points_selector,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                points_update_operation::Operation::OverwritePayload(
+                    points_update_operation::SetPayload {
+                        payload,
+                        points_selector,
+                        shard_key_selector,
+                    },
+                ) => {
+                    overwrite_payload(
+                        toc,
+                        SetPayloadPoints {
+                            collection_name,
+                            wait,
+                            payload,
+                            points_selector,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                points_update_operation::Operation::DeletePayload(
+                    points_update_operation::DeletePayload {
+                        keys,
+                        points_selector,
+                        shard_key_selector,
+                    },
+                ) => {
+                    delete_payload(
+                        toc,
+                        DeletePayloadPoints {
+                            collection_name,
+                            wait,
+                            keys,
+                            points_selector,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                points_update_operation::Operation::ClearPayload(ClearPayload {
+                    points,
                     shard_key_selector,
-                },
-            ) => {
-                delete_vectors(
-                    toc,
-                    DeletePointVectors {
-                        collection_name,
-                        wait,
+                }) => {
+                    clear_payload(
+                        toc,
+                        ClearPayloadPoints {
+                            collection_name,
+                            wait,
+                            points,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                points_update_operation::Operation::UpdateVectors(
+                    points_update_operation::UpdateVectors {
+                        points,
+                        shard_key_selector,
+                    },
+                ) => {
+                    update_vectors(
+                        toc,
+                        UpdatePointVectors {
+                            collection_name,
+                            wait,
+                            points,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                points_update_operation::Operation::DeleteVectors(
+                    points_update_operation::DeleteVectors {
                         points_selector,
                         vectors,
-                        ordering,
                         shard_key_selector,
                     },
-                    shard_selection,
-                )
-                .await
-            }
-            Operation::ClearPayloadDeprecated(selector) => {
-                clear_payload(
-                    toc,
-                    ClearPayloadPoints {
-                        collection_name,
-                        wait,
-                        points: Some(selector),
-                        ordering,
-                        shard_key_selector: None,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-            Operation::DeletePoints(points_update_operation::DeletePoints {
-                points,
-                shard_key_selector,
-            }) => {
-                delete(
-                    toc,
-                    DeletePoints {
-                        collection_name,
-                        wait,
-                        points,
-                        ordering,
-                        shard_key_selector,
-                    },
-                    shard_selection,
-                )
-                .await
-            }
-        }?;
+                ) => {
+                    delete_vectors(
+                        toc,
+                        DeletePointVectors {
+                            collection_name,
+                            wait,
+                            points_selector,
+                            vectors,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                Operation::ClearPayloadDeprecated(selector) => {
+                    clear_payload(
+                        toc,
+                        ClearPayloadPoints {
+                            collection_name,
+                            wait,
+                            points: Some(selector),
+                            ordering,
+                            shard_key_selector: None,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+                Operation::DeletePoints(points_update_operation::DeletePoints {
+                    points,
+                    shard_key_selector,
+                }) => {
+                    delete(
+                        toc,
+                        DeletePoints {
+                            collection_name,
+                            wait,
+                            points,
+                            ordering,
+                            shard_key_selector,
+                        },
+                        shard_selection,
+                    )
+                    .await
+                }
+            }?;
         results.push(result);
     }
     Ok(Response::new(UpdateBatchResponse {
@@ -679,16 +681,18 @@ fn convert_field_type(
             Some(PayloadIndexParams {
                 index_params: Some(IndexParams::TextIndexParams(text_index_params)),
             }),
-        ) => match v {
-            FieldType::Text => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
-                text_index_params.try_into()?,
-            ))),
-            _ => {
-                return Err(Status::invalid_argument(
-                    "field_type and field_index_params do not match",
-                ))
+        ) => {
+            match v {
+                FieldType::Text => Some(PayloadFieldSchema::FieldParams(
+                    PayloadSchemaParams::Text(text_index_params.try_into()?),
+                )),
+                _ => {
+                    return Err(
+                        Status::invalid_argument("field_type and field_index_params do not match")
+                    )
+                }
             }
-        },
+        }
         (Some(v), None | Some(PayloadIndexParams { index_params: None })) => match v {
             FieldType::Keyword => Some(PayloadSchemaType::Keyword.into()),
             FieldType::Integer => Some(PayloadSchemaType::Integer.into()),
@@ -815,16 +819,17 @@ pub async fn delete_field_index_internal(
     } = delete_field_index_collection;
 
     let timing = Instant::now();
-    let result = do_delete_index_internal(
-        toc,
-        &collection_name,
-        field_name,
-        shard_selection,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
-    )
-    .await
-    .map_err(error_to_status)?;
+    let result =
+        do_delete_index_internal(
+            toc,
+            &collection_name,
+            field_name,
+            shard_selection,
+            wait.unwrap_or(false),
+            write_ordering_from_proto(ordering)?,
+        )
+        .await
+        .map_err(error_to_status)?;
 
     let response = points_operation_response(timing, result);
     Ok(Response::new(response))
@@ -938,9 +943,10 @@ pub async fn core_search_list(
     let searches: Result<Vec<_>, Status> =
         search_points.into_iter().map(TryInto::try_into).collect();
 
-    let request = CoreSearchRequestBatch {
-        searches: searches?,
-    };
+    let request =
+        CoreSearchRequestBatch {
+            searches: searches?,
+        };
 
     let timing = Instant::now();
 
@@ -1011,10 +1017,11 @@ pub async fn search_groups(
     .await
     .map_err(error_to_status)?;
 
-    let response = SearchGroupsResponse {
-        result: Some(groups_result.into()),
-        time: timing.elapsed().as_secs_f64(),
-    };
+    let response =
+        SearchGroupsResponse {
+            result: Some(groups_result.into()),
+            time: timing.elapsed().as_secs_f64(),
+        };
 
     Ok(Response::new(response))
 }
@@ -1178,10 +1185,11 @@ pub async fn recommend_groups(
     .await
     .map_err(error_to_status)?;
 
-    let response = RecommendGroupsResponse {
-        result: Some(groups_result.into()),
-        time: timing.elapsed().as_secs_f64(),
-    };
+    let response =
+        RecommendGroupsResponse {
+            result: Some(groups_result.into()),
+            time: timing.elapsed().as_secs_f64(),
+        };
 
     Ok(Response::new(response))
 }
@@ -1286,15 +1294,16 @@ pub async fn scroll(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
-    let scrolled_points = do_scroll_points(
-        toc,
-        &collection_name,
-        scroll_request,
-        read_consistency,
-        shard_selector,
-    )
-    .await
-    .map_err(error_to_status)?;
+    let scrolled_points =
+        do_scroll_points(
+            toc,
+            &collection_name,
+            scroll_request,
+            read_consistency,
+            shard_selector,
+        )
+        .await
+        .map_err(error_to_status)?;
 
     let response = ScrollResponse {
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
@@ -1332,15 +1341,16 @@ pub async fn count(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
-    let count_result = do_count_points(
-        toc,
-        &collection_name,
-        count_request,
-        read_consistency,
-        shard_selector,
-    )
-    .await
-    .map_err(error_to_status)?;
+    let count_result =
+        do_count_points(
+            toc,
+            &collection_name,
+            count_request,
+            read_consistency,
+            shard_selector,
+        )
+        .await
+        .map_err(error_to_status)?;
 
     let response = CountResponse {
         result: Some(count_result.into()),
@@ -1381,15 +1391,16 @@ pub async fn get(
 
     let timing = Instant::now();
 
-    let records = do_get_points(
-        toc,
-        &collection_name,
-        point_request,
-        read_consistency,
-        shard_selector,
-    )
-    .await
-    .map_err(error_to_status)?;
+    let records =
+        do_get_points(
+            toc,
+            &collection_name,
+            point_request,
+            read_consistency,
+            shard_selector,
+        )
+        .await
+        .map_err(error_to_status)?;
 
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),

@@ -51,16 +51,15 @@ pub fn open_appendable_memmap_vector_storage(
         }
     }
 
-    let storage = AppendableMmapVectorStorage {
-        vectors,
-        deleted,
-        distance,
-        deleted_count,
-    };
+    let storage =
+        AppendableMmapVectorStorage {
+            vectors,
+            deleted,
+            distance,
+            deleted_count,
+        };
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::AppendableMemmap(Box::new(storage)),
-    )))
+    Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::AppendableMemmap(Box::new(storage)))))
 }
 
 impl AppendableMmapVectorStorage {

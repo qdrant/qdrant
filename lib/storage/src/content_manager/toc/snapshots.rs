@@ -34,9 +34,9 @@ impl TableOfContent {
         tokio::fs::create_dir_all(&snapshots_path)
             .await
             .map_err(|err| {
-                StorageError::service_error(format!(
-                    "Can't create directory for snapshots {collection_name}. Error: {err}"
-                ))
+                StorageError::service_error(
+                    format!("Can't create directory for snapshots {collection_name}. Error: {err}")
+                )
             })?;
 
         Ok(snapshots_path)

@@ -38,12 +38,16 @@ pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Val
 
 fn json_to_proto(json_value: serde_json::Value) -> Value {
     match json_value {
-        serde_json::Value::Null => Value {
-            kind: Some(Kind::NullValue(0)),
-        },
-        serde_json::Value::Bool(v) => Value {
-            kind: Some(Kind::BoolValue(v)),
-        },
+        serde_json::Value::Null => {
+            Value {
+                kind: Some(Kind::NullValue(0)),
+            }
+        }
+        serde_json::Value::Bool(v) => {
+            Value {
+                kind: Some(Kind::BoolValue(v)),
+            }
+        }
         serde_json::Value::Number(n) => Value {
             kind: if let Some(int) = n.as_i64() {
                 Some(Kind::IntegerValue(int))
@@ -51,9 +55,11 @@ fn json_to_proto(json_value: serde_json::Value) -> Value {
                 Some(Kind::DoubleValue(n.as_f64().unwrap()))
             },
         },
-        serde_json::Value::String(s) => Value {
-            kind: Some(Kind::StringValue(s)),
-        },
+        serde_json::Value::String(s) => {
+            Value {
+                kind: Some(Kind::StringValue(s)),
+            }
+        }
         serde_json::Value::Array(v) => {
             let list = v.into_iter().map(json_to_proto).collect();
             Value {
@@ -270,9 +276,9 @@ impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
 
     fn try_from(value: IndexParams) -> Result<Self, Self::Error> {
         match value {
-            IndexParams::TextIndexParams(text_index_params) => Ok(
-                segment::types::PayloadSchemaParams::Text(text_index_params.try_into()?),
-            ),
+            IndexParams::TextIndexParams(text_index_params) => {
+                Ok(segment::types::PayloadSchemaParams::Text(text_index_params.try_into()?))
+            }
         }
     }
 }
@@ -282,11 +288,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
 
     fn try_from(schema: PayloadSchemaInfo) -> Result<Self, Self::Error> {
         let data_type = match PayloadSchemaType::from_i32(schema.data_type) {
-            None => {
-                return Err(Status::invalid_argument(
-                    "Malformed payload schema".to_string(),
-                ))
-            }
+            None => return Err(Status::invalid_argument("Malformed payload schema".to_string())),
             Some(data_type) => match data_type {
                 PayloadSchemaType::Keyword => segment::types::PayloadSchemaType::Keyword,
                 PayloadSchemaType::Integer => segment::types::PayloadSchemaType::Integer,
@@ -295,9 +297,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
                 PayloadSchemaType::Text => segment::types::PayloadSchemaType::Text,
                 PayloadSchemaType::Bool => segment::types::PayloadSchemaType::Bool,
                 PayloadSchemaType::UnknownType => {
-                    return Err(Status::invalid_argument(
-                        "Malformed payload schema".to_string(),
-                    ))
+                    return Err(Status::invalid_argument("Malformed payload schema".to_string()))
                 }
             },
         };
@@ -578,12 +578,10 @@ impl TryFrom<PointId> for segment::types::PointIdType {
             Some(PointIdOptions::Num(num_id)) => Ok(segment::types::PointIdType::NumId(num_id)),
             Some(PointIdOptions::Uuid(uui_str)) => Uuid::parse_str(&uui_str)
                 .map(segment::types::PointIdType::Uuid)
-                .map_err(|_err| {
-                    Status::invalid_argument(format!("Unable to parse UUID: {uui_str}"))
-                }),
-            _ => Err(Status::invalid_argument(
-                "No ID options provided".to_string(),
-            )),
+                .map_err(
+                    |_err| Status::invalid_argument(format!("Unable to parse UUID: {uui_str}"))
+                ),
+            _ => Err(Status::invalid_argument("No ID options provided".to_string())),
         }
     }
 }
@@ -646,9 +644,9 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
             product: segment::types::ProductQuantizationConfig {
                 compression: match CompressionRatio::from_i32(value.compression) {
                     None => {
-                        return Err(Status::invalid_argument(
-                            "Unknown compression ratio".to_string(),
-                        ))
+                        return Err(
+                            Status::invalid_argument("Unknown compression ratio".to_string())
+                        )
                     }
                     Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
                     Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
@@ -687,19 +685,19 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
             segment::types::QuantizationConfig::Scalar(scalar) => Self {
-                quantization: Some(super::qdrant::quantization_config::Quantization::Scalar(
-                    scalar.into(),
-                )),
+                quantization: Some(
+                    super::qdrant::quantization_config::Quantization::Scalar(scalar.into())
+                ),
             },
             segment::types::QuantizationConfig::Product(product) => Self {
-                quantization: Some(super::qdrant::quantization_config::Quantization::Product(
-                    product.into(),
-                )),
+                quantization: Some(
+                    super::qdrant::quantization_config::Quantization::Product(product.into())
+                ),
             },
             segment::types::QuantizationConfig::Binary(binary) => Self {
-                quantization: Some(super::qdrant::quantization_config::Quantization::Binary(
-                    binary.into(),
-                )),
+                quantization: Some(
+                    super::qdrant::quantization_config::Quantization::Binary(binary.into())
+                ),
             },
         }
     }
@@ -713,15 +711,15 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             .quantization
             .ok_or_else(|| Status::invalid_argument("Unable to convert quantization config"))?;
         match value {
-            super::qdrant::quantization_config::Quantization::Scalar(config) => Ok(
-                segment::types::QuantizationConfig::Scalar(config.try_into()?),
-            ),
-            super::qdrant::quantization_config::Quantization::Product(config) => Ok(
-                segment::types::QuantizationConfig::Product(config.try_into()?),
-            ),
-            super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
-                segment::types::QuantizationConfig::Binary(config.try_into()?),
-            ),
+            super::qdrant::quantization_config::Quantization::Scalar(config) => {
+                Ok(segment::types::QuantizationConfig::Scalar(config.try_into()?))
+            }
+            super::qdrant::quantization_config::Quantization::Product(config) => {
+                Ok(segment::types::QuantizationConfig::Product(config.try_into()?))
+            }
+            super::qdrant::quantization_config::Quantization::Binary(config) => {
+                Ok(segment::types::QuantizationConfig::Binary(config.try_into()?))
+            }
         }
     }
 }
@@ -831,9 +829,7 @@ impl TryFrom<NestedCondition> for segment::types::Nested {
 
     fn try_from(value: NestedCondition) -> Result<Self, Self::Error> {
         match value.filter {
-            None => Err(Status::invalid_argument(
-                "Nested condition must have a filter",
-            )),
+            None => Err(Status::invalid_argument("Nested condition must have a filter")),
             Some(filter) => Ok(Self {
                 key: value.key,
                 filter: filter.try_into()?,
@@ -1138,32 +1134,35 @@ impl TryFrom<Match> for segment::types::Match {
 
 impl From<segment::types::Match> for Match {
     fn from(value: segment::types::Match) -> Self {
-        let match_value = match value {
-            segment::types::Match::Value(value) => match value.value {
-                segment::types::ValueVariants::Keyword(kw) => MatchValue::Keyword(kw),
-                segment::types::ValueVariants::Integer(int) => MatchValue::Integer(int),
-                segment::types::ValueVariants::Bool(flag) => MatchValue::Boolean(flag),
-            },
-            segment::types::Match::Text(segment::types::MatchText { text }) => {
-                MatchValue::Text(text)
-            }
-            segment::types::Match::Any(any) => match any.any {
-                segment::types::AnyVariants::Keywords(strings) => {
-                    MatchValue::Keywords(RepeatedStrings { strings })
+        let match_value =
+            match value {
+                segment::types::Match::Value(value) => match value.value {
+                    segment::types::ValueVariants::Keyword(kw) => MatchValue::Keyword(kw),
+                    segment::types::ValueVariants::Integer(int) => MatchValue::Integer(int),
+                    segment::types::ValueVariants::Bool(flag) => MatchValue::Boolean(flag),
+                },
+                segment::types::Match::Text(segment::types::MatchText { text }) => {
+                    MatchValue::Text(text)
                 }
-                segment::types::AnyVariants::Integers(integers) => {
-                    MatchValue::Integers(RepeatedIntegers { integers })
+                segment::types::Match::Any(any) => {
+                    match any.any {
+                        segment::types::AnyVariants::Keywords(strings) => {
+                            MatchValue::Keywords(RepeatedStrings { strings })
+                        }
+                        segment::types::AnyVariants::Integers(integers) => {
+                            MatchValue::Integers(RepeatedIntegers { integers })
+                        }
+                    }
                 }
-            },
-            segment::types::Match::Except(except) => match except.except {
-                segment::types::AnyVariants::Keywords(strings) => {
-                    MatchValue::ExceptKeywords(RepeatedStrings { strings })
-                }
-                segment::types::AnyVariants::Integers(integers) => {
-                    MatchValue::ExceptIntegers(RepeatedIntegers { integers })
-                }
-            },
-        };
+                segment::types::Match::Except(except) => match except.except {
+                    segment::types::AnyVariants::Keywords(strings) => {
+                        MatchValue::ExceptKeywords(RepeatedStrings { strings })
+                    }
+                    segment::types::AnyVariants::Integers(integers) => {
+                        MatchValue::ExceptIntegers(RepeatedIntegers { integers })
+                    }
+                },
+            };
         Self {
             match_value: Some(match_value),
         }
@@ -1196,9 +1195,9 @@ impl TryFrom<Distance> for segment::types::Distance {
     fn try_from(value: Distance) -> Result<Self, Self::Error> {
         Ok(match value {
             Distance::UnknownDistance => {
-                return Err(Status::invalid_argument(
-                    "Malformed distance parameter: UnknownDistance",
-                ))
+                return Err(
+                    Status::invalid_argument("Malformed distance parameter: UnknownDistance")
+                )
             }
             Distance::Cosine => segment::types::Distance::Cosine,
             Distance::Euclid => segment::types::Distance::Euclid,
@@ -1209,9 +1208,9 @@ impl TryFrom<Distance> for segment::types::Distance {
 
 pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
     match Distance::from_i32(dist) {
-        None => Err(Status::invalid_argument(format!(
-            "Malformed distance parameter, unexpected value: {dist}"
-        ))),
+        None => Err(Status::invalid_argument(
+            format!("Malformed distance parameter, unexpected value: {dist}")
+        )),
         Some(grpc_distance) => Ok(grpc_distance.try_into()?),
     }
 }

@@ -423,16 +423,17 @@ mod tests {
             "bad polygon should error on validation"
         );
 
-        let bad_polygon = GeoPolygon {
-            exterior: Some(GeoLineString {
-                points: vec![
-                    GeoPoint { lat: 1., lon: 1. },
-                    GeoPoint { lat: 2., lon: 2. },
-                    GeoPoint { lat: 3., lon: 3. },
-                ],
-            }),
-            interiors: vec![],
-        };
+        let bad_polygon =
+            GeoPolygon {
+                exterior: Some(GeoLineString {
+                    points: vec![
+                        GeoPoint { lat: 1., lon: 1. },
+                        GeoPoint { lat: 2., lon: 2. },
+                        GeoPoint { lat: 3., lon: 3. },
+                    ],
+                }),
+                interiors: vec![],
+            };
         assert!(
             bad_polygon.validate().is_err(),
             "bad polygon should error on validation"

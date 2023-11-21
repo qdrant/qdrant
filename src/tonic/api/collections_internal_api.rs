@@ -94,9 +94,7 @@ impl CollectionsInternal for CollectionsInternalService {
             .get_collection(&collection_name)
             .await
             .map_err(|err| {
-                Status::not_found(format!(
-                    "Collection {collection_name} could not be found: {err}"
-                ))
+                Status::not_found(format!("Collection {collection_name} could not be found: {err}"))
             })?;
 
         // Wait for replica state

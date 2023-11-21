@@ -257,31 +257,33 @@ pub async fn do_delete_vectors(
         let vectors_operation =
             VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
         let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
-        result = Some(
-            toc.update(
-                collection_name,
-                collection_operation,
-                wait,
-                ordering,
-                shard_selector.clone(),
-            )
-            .await?,
-        );
+        result =
+            Some(
+                toc.update(
+                    collection_name,
+                    collection_operation,
+                    wait,
+                    ordering,
+                    shard_selector.clone(),
+                )
+                .await?,
+            );
     }
 
     if let Some(points) = points {
         let vectors_operation = VectorOperations::DeleteVectors(points.into(), vector_names);
         let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
-        result = Some(
-            toc.update(
-                collection_name,
-                collection_operation,
-                wait,
-                ordering,
-                shard_selector,
-            )
-            .await?,
-        );
+        result =
+            Some(
+                toc.update(
+                    collection_name,
+                    collection_operation,
+                    wait,
+                    ordering,
+                    shard_selector,
+                )
+                .await?,
+            );
     }
 
     result.ok_or_else(|| StorageError::bad_request("No filter or points provided"))
@@ -430,96 +432,97 @@ pub async fn do_batch_update_points(
 ) -> Result<Vec<UpdateResult>, StorageError> {
     let mut results = Vec::with_capacity(operations.len());
     for operation in operations {
-        let result = match operation {
-            UpdateOperation::Upsert(operation) => {
-                do_upsert_points(
-                    toc,
-                    collection_name,
-                    operation.upsert,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-            UpdateOperation::Delete(operation) => {
-                do_delete_points(
-                    toc,
-                    collection_name,
-                    operation.delete,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-            UpdateOperation::SetPayload(operation) => {
-                do_set_payload(
-                    toc,
-                    collection_name,
-                    operation.set_payload,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-            UpdateOperation::OverwritePayload(operation) => {
-                do_overwrite_payload(
-                    toc,
-                    collection_name,
-                    operation.overwrite_payload,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-            UpdateOperation::DeletePayload(operation) => {
-                do_delete_payload(
-                    toc,
-                    collection_name,
-                    operation.delete_payload,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-            UpdateOperation::ClearPayload(operation) => {
-                do_clear_payload(
-                    toc,
-                    collection_name,
-                    operation.clear_payload,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-            UpdateOperation::UpdateVectors(operation) => {
-                do_update_vectors(
-                    toc,
-                    collection_name,
-                    operation.update_vectors,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-            UpdateOperation::DeleteVectors(operation) => {
-                do_delete_vectors(
-                    toc,
-                    collection_name,
-                    operation.delete_vectors,
-                    shard_selection,
-                    wait,
-                    ordering,
-                )
-                .await
-            }
-        }?;
+        let result =
+            match operation {
+                UpdateOperation::Upsert(operation) => {
+                    do_upsert_points(
+                        toc,
+                        collection_name,
+                        operation.upsert,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+                UpdateOperation::Delete(operation) => {
+                    do_delete_points(
+                        toc,
+                        collection_name,
+                        operation.delete,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+                UpdateOperation::SetPayload(operation) => {
+                    do_set_payload(
+                        toc,
+                        collection_name,
+                        operation.set_payload,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+                UpdateOperation::OverwritePayload(operation) => {
+                    do_overwrite_payload(
+                        toc,
+                        collection_name,
+                        operation.overwrite_payload,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+                UpdateOperation::DeletePayload(operation) => {
+                    do_delete_payload(
+                        toc,
+                        collection_name,
+                        operation.delete_payload,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+                UpdateOperation::ClearPayload(operation) => {
+                    do_clear_payload(
+                        toc,
+                        collection_name,
+                        operation.clear_payload,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+                UpdateOperation::UpdateVectors(operation) => {
+                    do_update_vectors(
+                        toc,
+                        collection_name,
+                        operation.update_vectors,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+                UpdateOperation::DeleteVectors(operation) => {
+                    do_delete_vectors(
+                        toc,
+                        collection_name,
+                        operation.delete_vectors,
+                        shard_selection,
+                        wait,
+                        ordering,
+                    )
+                    .await
+                }
+            }?;
         results.push(result);
     }
     Ok(results)
@@ -534,12 +537,13 @@ pub async fn do_create_index_internal(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
-        FieldIndexOperations::CreateIndex(CreateIndex {
-            field_name,
-            field_schema,
-        }),
-    );
+    let collection_operation =
+        CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
+            CreateIndex {
+                field_name,
+                field_schema,
+            },
+        ));
 
     let shard_selector = if let Some(shard_selection) = shard_selection {
         ShardSelectorInternal::ShardId(shard_selection)
@@ -667,17 +671,18 @@ pub async fn do_core_search_points(
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    let batch_res = do_core_search_batch_points(
-        toc,
-        collection_name,
-        CoreSearchRequestBatch {
-            searches: vec![request],
-        },
-        read_consistency,
-        shard_selection,
-        timeout,
-    )
-    .await?;
+    let batch_res =
+        do_core_search_batch_points(
+            toc,
+            collection_name,
+            CoreSearchRequestBatch {
+                searches: vec![request],
+            },
+            read_consistency,
+            shard_selection,
+            timeout,
+        )
+        .await?;
     batch_res
         .into_iter()
         .next()

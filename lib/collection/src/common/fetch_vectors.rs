@@ -188,15 +188,15 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                 Some(name) => {
                     let other_collection = collection_by_name(name.to_string()).await;
                     match other_collection {
-                        Some(other_collection) => {
-                            vector_retrieves.push(retrieve_points_with_locked_collection(
+                        Some(other_collection) => vector_retrieves.push(
+                            retrieve_points_with_locked_collection(
                                 CollectionRefHolder::Guard(other_collection),
                                 points,
                                 vector_names,
                                 read_consistency,
                                 &shard_selector,
-                            ))
-                        }
+                            ),
+                        ),
                         None => {
                             return Err(CollectionError::NotFound {
                                 what: format!("Collection {name}"),
@@ -295,12 +295,13 @@ where
             if referenced_points.is_empty() {
                 return Ok(());
             }
-            let fetch = referenced_points.fetch_vectors(
-                collection,
-                read_consistency,
-                &collection_by_name,
-                shard_selector,
-            );
+            let fetch =
+                referenced_points.fetch_vectors(
+                    collection,
+                    read_consistency,
+                    &collection_by_name,
+                    shard_selector,
+                );
             requests.push(fetch);
             Ok(())
         },

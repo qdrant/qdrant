@@ -133,8 +133,9 @@ mod tests {
         {
             let mut storage: PayloadStorageEnum =
                 SimplePayloadStorage::open(db.clone()).unwrap().into();
-            let payload: Payload = serde_json::from_str(
-                r#"{
+            let payload: Payload =
+                serde_json::from_str(
+                    r#"{
                 "name": "John Doe",
                 "age": 52,
                 "location": {
@@ -145,8 +146,8 @@ mod tests {
                     }
                 }
             }"#,
-            )
-            .unwrap();
+                )
+                .unwrap();
 
             storage.assign_all(100, &payload).unwrap();
 

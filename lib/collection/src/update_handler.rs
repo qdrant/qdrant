@@ -144,12 +144,9 @@ impl UpdateHandler {
             self.optimizers_log.clone(),
             self.max_optimization_threads,
         )));
-        self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
-            update_receiver,
-            tx,
-            self.wal.clone(),
-            self.segments.clone(),
-        )));
+        self.update_worker = Some(self.runtime_handle.spawn(
+            Self::update_worker_fn(update_receiver, tx, self.wal.clone(), self.segments.clone())
+        ));
         let (flush_tx, flush_rx) = oneshot::channel();
         self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
             self.segments.clone(),
@@ -299,9 +296,9 @@ impl UpdateHandler {
                         );
                         segments
                             .write()
-                            .report_optimizer_error(CollectionError::service_error(format!(
-                                "Optimization task panicked: {panic_msg}"
-                            )));
+                            .report_optimizer_error(CollectionError::service_error(
+                                format!("Optimization task panicked: {panic_msg}")
+                            ));
                     })),
                 );
                 handles.push(handle);
@@ -427,10 +424,9 @@ impl UpdateHandler {
                 }) => {
                     let flush_res = if wait {
                         wal.lock().flush().map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "Can't flush WAL before operation {} - {}",
-                                op_num, err
-                            ))
+                            CollectionError::service_error(
+                                format!("Can't flush WAL before operation {} - {}", op_num, err)
+                            )
                         })
                     } else {
                         Ok(())
@@ -464,14 +460,16 @@ impl UpdateHandler {
                         .unwrap_or_else(|_| debug!("Optimizer already stopped"));
                     break;
                 }
-                UpdateSignal::Nop => optimize_sender
-                    .send(OptimizerSignal::Nop)
-                    .await
-                    .unwrap_or_else(|_| {
-                        info!(
+                UpdateSignal::Nop => {
+                    optimize_sender
+                        .send(OptimizerSignal::Nop)
+                        .await
+                        .unwrap_or_else(|_| {
+                            info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
-                    }),
+                        })
+                }
                 UpdateSignal::Plunger(callback_sender) => {
                     callback_sender.send(()).unwrap_or_else(|_| {
                         debug!("Can't notify sender, assume nobody is waiting anymore");
@@ -509,11 +507,9 @@ impl UpdateHandler {
 
             if let Err(err) = wal_flash_job.join() {
                 error!("Failed to flush wal: {:?}", err);
-                segments
-                    .write()
-                    .report_optimizer_error(WalError::WriteWalError(format!(
-                        "WAL flush error: {err:?}"
-                    )));
+                segments.write().report_optimizer_error(
+                    WalError::WriteWalError(format!("WAL flush error: {err:?}"))
+                );
                 continue;
             }
 

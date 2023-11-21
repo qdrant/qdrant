@@ -81,11 +81,12 @@ impl AppBuildTelemetry {
 }
 
 fn get_system_data() -> RunningEnvironmentTelemetry {
-    let distribution = if let Ok(release) = sys_info::linux_os_release() {
-        release.id
-    } else {
-        sys_info::os_type().ok()
-    };
+    let distribution =
+        if let Ok(release) = sys_info::linux_os_release() {
+            release.id
+        } else {
+            sys_info::os_type().ok()
+        };
     let distribution_version = if let Ok(release) = sys_info::linux_os_release() {
         release.version_id
     } else {

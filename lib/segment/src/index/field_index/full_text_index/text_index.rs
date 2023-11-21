@@ -53,9 +53,9 @@ impl FullTextIndex {
             tokens: BTreeSet<String>,
         }
         serde_cbor::from_slice::<StoredDocument>(data)
-            .map_err(|e| {
-                OperationError::service_error(format!("Failed to deserialize document: {e}"))
-            })
+            .map_err(
+                |e| OperationError::service_error(format!("Failed to deserialize document: {e}"))
+            )
             .map(|doc| index.document_from_tokens(&doc.tokens))
     }
 
@@ -222,9 +222,7 @@ impl PayloadFieldIndex for FullTextIndex {
                 .inverted_index
                 .estimate_cardinality(&parsed_query, condition));
         }
-        Err(OperationError::service_error(
-            "failed to estimate cardinality",
-        ))
+        Err(OperationError::service_error("failed to estimate cardinality"))
     }
 
     fn payload_blocks(

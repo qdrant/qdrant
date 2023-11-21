@@ -73,14 +73,15 @@ impl InvertedIndex {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab
-            let vocab_idx = match self.vocab.get(token) {
-                Some(&idx) => idx,
-                None => {
-                    let next_token_id = self.vocab.len() as TokenId;
-                    self.vocab.insert(token.to_string(), next_token_id);
-                    next_token_id
-                }
-            };
+            let vocab_idx =
+                match self.vocab.get(token) {
+                    Some(&idx) => idx,
+                    None => {
+                        let next_token_id = self.vocab.len() as TokenId;
+                        self.vocab.insert(token.to_string(), next_token_id);
+                        next_token_id
+                    }
+                };
             document_tokens.push(vocab_idx);
         }
 
@@ -162,15 +163,16 @@ impl InvertedIndex {
         query: &ParsedQuery,
         condition: &FieldCondition,
     ) -> CardinalityEstimation {
-        let postings_opt: Option<Vec<_>> = query
-            .tokens
-            .iter()
-            .map(|&vocab_idx| match vocab_idx {
-                None => None,
-                // unwrap safety: same as in filter()
-                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
-            })
-            .collect();
+        let postings_opt: Option<Vec<_>> =
+            query
+                .tokens
+                .iter()
+                .map(|&vocab_idx| match vocab_idx {
+                    None => None,
+                    // unwrap safety: same as in filter()
+                    Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
+                })
+                .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
             return CardinalityEstimation {

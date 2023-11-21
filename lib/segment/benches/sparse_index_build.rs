@@ -84,14 +84,15 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     });
 
     // build once to reuse in mmap conversion benchmark
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
-        index_config,
-        id_tracker,
-        vector_storage.clone(),
-        wrapped_payload_index,
-        index_dir.path(),
-    )
-    .unwrap();
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+        SparseVectorIndex::open(
+            index_config,
+            id_tracker,
+            vector_storage.clone(),
+            wrapped_payload_index,
+            index_dir.path(),
+        )
+        .unwrap();
 
     sparse_vector_index.build_index(&stopped).unwrap();
 

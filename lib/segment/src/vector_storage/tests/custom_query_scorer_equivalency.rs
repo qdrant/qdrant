@@ -83,13 +83,14 @@ fn random_discovery_query<R: Rng + ?Sized>(
 
     let target = sampler.take(DIMS).collect_vec().into();
 
-    let pairs = (0..num_pairs)
-        .map(|_| {
-            let positive = sampler.take(DIMS).collect_vec().into();
-            let negative = sampler.take(DIMS).collect_vec().into();
-            ContextPair { positive, negative }
-        })
-        .collect_vec();
+    let pairs =
+        (0..num_pairs)
+            .map(|_| {
+                let positive = sampler.take(DIMS).collect_vec().into();
+                let negative = sampler.take(DIMS).collect_vec().into();
+                ContextPair { positive, negative }
+            })
+            .collect_vec();
 
     DiscoveryQuery::new(target, pairs).into()
 }
@@ -100,13 +101,14 @@ fn random_context_query<R: Rng + ?Sized>(
 ) -> QueryVector {
     let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
-    let pairs = (0..num_pairs)
-        .map(|_| {
-            let positive = sampler.take(DIMS).collect_vec().into();
-            let negative = sampler.take(DIMS).collect_vec().into();
-            ContextPair { positive, negative }
-        })
-        .collect_vec();
+    let pairs =
+        (0..num_pairs)
+            .map(|_| {
+                let positive = sampler.take(DIMS).collect_vec().into();
+                let negative = sampler.take(DIMS).collect_vec().into();
+                ContextPair { positive, negative }
+            })
+            .collect_vec();
 
     ContextQuery::new(pairs).into()
 }
@@ -222,17 +224,18 @@ fn scoring_equivalency(
     other_storage.update_from(&raw_storage, &mut (0..NUM_POINTS as _), &Default::default())?;
 
     let quant_dir = tempfile::Builder::new().prefix("quant-storage").tempdir()?;
-    let quantized_vectors = if let Some(config) = &quant_config {
-        Some(QuantizedVectors::create(
-            &other_storage,
-            config,
-            quant_dir.path(),
-            4,
-            &AtomicBool::new(false),
-        )?)
-    } else {
-        None
-    };
+    let quantized_vectors =
+        if let Some(config) = &quant_config {
+            Some(QuantizedVectors::create(
+                &other_storage,
+                config,
+                quant_dir.path(),
+                4,
+                &AtomicBool::new(false),
+            )?)
+        } else {
+            None
+        };
     let quantized_vectors = quantized_vectors.as_ref().map(|q| q.borrow());
 
     let attempts = 50;

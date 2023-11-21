@@ -97,10 +97,9 @@ impl RemoteShard {
         let guard_peer_address = self.channel_service.id_to_address.read();
         let peer_address = guard_peer_address.get(&self.peer_id).cloned();
         match peer_address {
-            None => Err(CollectionError::service_error(format!(
-                "no address found for peer {}",
-                self.peer_id
-            ))),
+            None => Err(CollectionError::service_error(
+                format!("no address found for peer {}", self.peer_id)
+            )),
             Some(peer_address) => Ok(peer_address),
         }
     }
@@ -212,59 +211,61 @@ impl RemoteShard {
         timer.set_success(false);
 
         let point_operation_response = match operation {
-            CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
-                PointOperations::UpsertPoints(point_insert_operations) => {
-                    let request = &internal_upsert_points(
-                        shard_id,
-                        collection_name,
-                        point_insert_operations,
-                        wait,
-                        ordering,
-                    )?;
-                    self.with_points_client(|mut client| async move {
-                        client.upsert(tonic::Request::new(request.clone())).await
-                    })
-                    .await?
-                    .into_inner()
+            CollectionUpdateOperations::PointOperation(point_ops) => {
+                match point_ops {
+                    PointOperations::UpsertPoints(point_insert_operations) => {
+                        let request = &internal_upsert_points(
+                            shard_id,
+                            collection_name,
+                            point_insert_operations,
+                            wait,
+                            ordering,
+                        )?;
+                        self.with_points_client(|mut client| async move {
+                            client.upsert(tonic::Request::new(request.clone())).await
+                        })
+                        .await?
+                        .into_inner()
+                    }
+                    PointOperations::DeletePoints { ids } => {
+                        let request =
+                            &internal_delete_points(shard_id, collection_name, ids, wait, ordering);
+                        self.with_points_client(|mut client| async move {
+                            client.delete(tonic::Request::new(request.clone())).await
+                        })
+                        .await?
+                        .into_inner()
+                    }
+                    PointOperations::DeletePointsByFilter(filter) => {
+                        let request = &internal_delete_points_by_filter(
+                            shard_id,
+                            collection_name,
+                            filter,
+                            wait,
+                            ordering,
+                        );
+                        self.with_points_client(|mut client| async move {
+                            client.delete(tonic::Request::new(request.clone())).await
+                        })
+                        .await?
+                        .into_inner()
+                    }
+                    PointOperations::SyncPoints(operation) => {
+                        let request = &internal_sync_points(
+                            shard_id,
+                            collection_name,
+                            operation,
+                            wait,
+                            ordering,
+                        )?;
+                        self.with_points_client(|mut client| async move {
+                            client.sync(tonic::Request::new(request.clone())).await
+                        })
+                        .await?
+                        .into_inner()
+                    }
                 }
-                PointOperations::DeletePoints { ids } => {
-                    let request =
-                        &internal_delete_points(shard_id, collection_name, ids, wait, ordering);
-                    self.with_points_client(|mut client| async move {
-                        client.delete(tonic::Request::new(request.clone())).await
-                    })
-                    .await?
-                    .into_inner()
-                }
-                PointOperations::DeletePointsByFilter(filter) => {
-                    let request = &internal_delete_points_by_filter(
-                        shard_id,
-                        collection_name,
-                        filter,
-                        wait,
-                        ordering,
-                    );
-                    self.with_points_client(|mut client| async move {
-                        client.delete(tonic::Request::new(request.clone())).await
-                    })
-                    .await?
-                    .into_inner()
-                }
-                PointOperations::SyncPoints(operation) => {
-                    let request = &internal_sync_points(
-                        shard_id,
-                        collection_name,
-                        operation,
-                        wait,
-                        ordering,
-                    )?;
-                    self.with_points_client(|mut client| async move {
-                        client.sync(tonic::Request::new(request.clone())).await
-                    })
-                    .await?
-                    .into_inner()
-                }
-            },
+            }
             CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
                 VectorOperations::UpdateVectors(update_operation) => {
                     let request = &internal_update_vectors(
@@ -431,9 +432,7 @@ impl RemoteShard {
             },
         };
         match point_operation_response.result {
-            None => Err(CollectionError::service_error(
-                "Malformed UpdateResult type".to_string(),
-            )),
+            None => Err(CollectionError::service_error("Malformed UpdateResult type".to_string())),
             Some(update_result) => update_result.try_into().map_err(|e: Status| e.into()),
         }
     }
@@ -540,10 +539,11 @@ impl ShardOperation for RemoteShard {
             read_consistency: None,
             shard_key_selector: None,
         };
-        let request = &ScrollPointsInternal {
-            scroll_points: Some(scroll_points),
-            shard_id: Some(self.id),
-        };
+        let request =
+            &ScrollPointsInternal {
+                scroll_points: Some(scroll_points),
+                shard_id: Some(self.id),
+            };
 
         let scroll_response = self
             .with_points_client(|mut client| async move {
@@ -570,9 +570,9 @@ impl ShardOperation for RemoteShard {
             shard_id: self.id,
         };
         let get_collection_response = self
-            .with_collections_client(|mut client| async move {
-                client.get(tonic::Request::new(request.clone())).await
-            })
+            .with_collections_client(
+                |mut client| async move { client.get(tonic::Request::new(request.clone())).await }
+            )
             .await?
             .into_inner();
 
@@ -651,17 +651,13 @@ impl ShardOperation for RemoteShard {
             shard_id: Some(self.id),
         };
         let count_response = self
-            .with_points_client(|mut client| async move {
-                client.count(tonic::Request::new(request.clone())).await
-            })
+            .with_points_client(
+                |mut client| async move { client.count(tonic::Request::new(request.clone())).await }
+            )
             .await?
             .into_inner();
         count_response.result.map_or_else(
-            || {
-                Err(CollectionError::service_error(
-                    "Unexpected empty CountResult".to_string(),
-                ))
-            },
+            || Err(CollectionError::service_error("Unexpected empty CountResult".to_string())),
             |count_result| Ok(count_result.into()),
         )
     }
@@ -686,9 +682,9 @@ impl ShardOperation for RemoteShard {
         };
 
         let get_response = self
-            .with_points_client(|mut client| async move {
-                client.get(tonic::Request::new(request.clone())).await
-            })
+            .with_points_client(
+                |mut client| async move { client.get(tonic::Request::new(request.clone())).await }
+            )
             .await?
             .into_inner();
 

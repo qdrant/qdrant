@@ -86,17 +86,18 @@ mod tests {
             payload
         };
 
-        let query = Filter {
-            should: None,
-            must: Some(vec![
-                Condition::Field(FieldCondition::new_match("age".to_string(), 43.into())),
-                Condition::Field(FieldCondition::new_match(
-                    "name".to_string(),
-                    "John Doe".to_string().into(),
-                )),
-            ]),
-            must_not: None,
-        };
+        let query =
+            Filter {
+                should: None,
+                must: Some(vec![
+                    Condition::Field(FieldCondition::new_match("age".to_string(), 43.into())),
+                    Condition::Field(FieldCondition::new_match(
+                        "name".to_string(),
+                        "John Doe".to_string().into(),
+                    )),
+                ]),
+                must_not: None,
+            };
 
         // Example:
         // How to check for payload in case if Payload is stored on disk

@@ -98,50 +98,51 @@ impl IndexingOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
         let segments_read_guard = segments.read();
-        let candidates: Vec<_> = segments_read_guard
-            .iter()
-            // Excluded externally, might already be scheduled for optimization
-            .filter(|(idx, _)| !excluded_ids.contains(idx))
-            .filter_map(|(idx, segment)| {
-                let segment_entry = segment.get();
-                let read_segment = segment_entry.read();
-                let point_count = read_segment.available_point_count();
-                let vector_size = point_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .max()
-                        .copied()
-                        .unwrap_or(0)
-                    * VECTOR_ELEMENT_SIZE;
+        let candidates: Vec<_> =
+            segments_read_guard
+                .iter()
+                // Excluded externally, might already be scheduled for optimization
+                .filter(|(idx, _)| !excluded_ids.contains(idx))
+                .filter_map(|(idx, segment)| {
+                    let segment_entry = segment.get();
+                    let read_segment = segment_entry.read();
+                    let point_count = read_segment.available_point_count();
+                    let vector_size = point_count
+                        * read_segment
+                            .vector_dims()
+                            .values()
+                            .max()
+                            .copied()
+                            .unwrap_or(0)
+                        * VECTOR_ELEMENT_SIZE;
 
-                let segment_config = read_segment.config();
+                    let segment_config = read_segment.config();
 
-                if read_segment.segment_type() == SegmentType::Special {
-                    return None; // Never optimize already optimized segment
-                }
+                    if read_segment.segment_type() == SegmentType::Special {
+                        return None; // Never optimize already optimized segment
+                    }
 
-                // Apply indexing to plain segments which have grown too big
-                let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
-                let is_any_on_disk = segment_config.is_any_on_disk();
+                    // Apply indexing to plain segments which have grown too big
+                    let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
+                    let is_any_on_disk = segment_config.is_any_on_disk();
 
-                let big_for_mmap = vector_size
-                    >= self
-                        .thresholds_config
-                        .memmap_threshold
-                        .saturating_mul(BYTES_IN_KB);
-                let big_for_index = vector_size
-                    >= self
-                        .thresholds_config
-                        .indexing_threshold
-                        .saturating_mul(BYTES_IN_KB);
+                    let big_for_mmap = vector_size
+                        >= self
+                            .thresholds_config
+                            .memmap_threshold
+                            .saturating_mul(BYTES_IN_KB);
+                    let big_for_index = vector_size
+                        >= self
+                            .thresholds_config
+                            .indexing_threshold
+                            .saturating_mul(BYTES_IN_KB);
 
-                let require_indexing = (big_for_mmap && !is_any_on_disk)
-                    || (big_for_index && !are_all_vectors_indexed);
+                    let require_indexing = (big_for_mmap && !is_any_on_disk)
+                        || (big_for_index && !are_all_vectors_indexed);
 
-                require_indexing.then_some((*idx, vector_size))
-            })
-            .collect();
+                    require_indexing.then_some((*idx, vector_size))
+                })
+                .collect();
 
         // Select the largest unindexed segment, return if none
         let selected_segment = candidates
@@ -563,11 +564,12 @@ mod tests {
         }
         .into();
 
-        let smallest_size = infos
-            .iter()
-            .min_by_key(|info| info.num_vectors)
-            .unwrap()
-            .num_vectors;
+        let smallest_size =
+            infos
+                .iter()
+                .min_by_key(|info| info.num_vectors)
+                .unwrap()
+                .num_vectors;
 
         process_point_operation(
             locked_holder.deref(),
@@ -581,11 +583,12 @@ mod tests {
             .iter()
             .map(|(_sid, segment)| segment.get().read().info())
             .collect_vec();
-        let new_smallest_size = new_infos
-            .iter()
-            .min_by_key(|info| info.num_vectors)
-            .unwrap()
-            .num_vectors;
+        let new_smallest_size =
+            new_infos
+                .iter()
+                .min_by_key(|info| info.num_vectors)
+                .unwrap()
+                .num_vectors;
 
         assert_eq!(
             new_smallest_size,

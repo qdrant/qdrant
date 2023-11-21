@@ -287,17 +287,19 @@ mod tests {
             .unwrap()
             .quantization_config
         {
-            Some(q) => match q {
-                QuantizationConfig::Scalar(scalar) => {
-                    assert_eq!(scalar.scalar.quantile, Some(0.99));
+            Some(q) => {
+                match q {
+                    QuantizationConfig::Scalar(scalar) => {
+                        assert_eq!(scalar.scalar.quantile, Some(0.99));
+                    }
+                    QuantizationConfig::Product(_) => {
+                        panic!("expected scalar quantization")
+                    }
+                    QuantizationConfig::Binary(_) => {
+                        panic!("expected scalar quantization")
+                    }
                 }
-                QuantizationConfig::Product(_) => {
-                    panic!("expected scalar quantization")
-                }
-                QuantizationConfig::Binary(_) => {
-                    panic!("expected scalar quantization")
-                }
-            },
+            }
             _ => {
                 panic!("expected quantization")
             }

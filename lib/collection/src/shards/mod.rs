@@ -40,10 +40,9 @@ pub async fn create_shard_dir(
         Ok(_) => Ok(shard_path),
         Err(e) => {
             if e.kind() == std::io::ErrorKind::AlreadyExists {
-                Err(CollectionError::service_error(format!(
-                    "shard path already exists: {:?}",
-                    shard_path
-                )))
+                Err(CollectionError::service_error(
+                    format!("shard path already exists: {:?}", shard_path)
+                ))
             } else {
                 Err(CollectionError::from(e))
             }

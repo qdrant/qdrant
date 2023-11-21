@@ -43,9 +43,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         collection_name: CollectionId,
     ) -> CollectionResult<()> {
         let Some(toc) = self.toc.upgrade() else {
-            return Err(CollectionError::service_error(
-                "Table of contents is dropped",
-            ));
+            return Err(CollectionError::service_error("Table of contents is dropped"));
         };
         let Some(proposal_sender) = toc.consensus_proposal_sender.as_ref() else {
             return Err(CollectionError::service_error(
@@ -54,11 +52,12 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         };
 
         // Propose operation to progress transfer, setting shard state to partial
-        let operation =
-            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+        let operation = ConsensusOperations::CollectionMeta(Box::new(
+            CollectionMetaOperations::TransferShard(
                 collection_name,
                 ShardTransferOperations::SnapshotRecovered(transfer_config.key()),
-            )));
+            ),
+        ));
         proposal_sender.send(operation).map_err(|err| {
             CollectionError::service_error(format!("Failed to submit consensus proposal: {err}"))
         })?;

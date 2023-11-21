@@ -517,14 +517,15 @@ mod tests {
 
         let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
 
-        let mut graph_layers = GraphLayersBuilder::new(
-            num_vectors,
-            m,
-            m * 2,
-            ef_construct,
-            entry_points_num,
-            use_heuristic,
-        );
+        let mut graph_layers =
+            GraphLayersBuilder::new(
+                num_vectors,
+                m,
+                m * 2,
+                ef_construct,
+                entry_points_num,
+                use_heuristic,
+            );
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let level = graph_layers.get_random_layer(rng);
@@ -561,14 +562,15 @@ mod tests {
 
         let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
 
-        let mut graph_layers = GraphLayersBuilder::new(
-            num_vectors,
-            m,
-            m * 2,
-            ef_construct,
-            entry_points_num,
-            use_heuristic,
-        );
+        let mut graph_layers =
+            GraphLayersBuilder::new(
+                num_vectors,
+                m,
+                m * 2,
+                ef_construct,
+                entry_points_num,
+                use_heuristic,
+            );
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let level = graph_layers.get_random_layer(rng);
@@ -617,11 +619,12 @@ mod tests {
             .unwrap();
         assert_eq!(main_entry.level + 1, num_levels);
 
-        let total_links_0: usize = graph_layers_builder
-            .links_layers
-            .iter()
-            .map(|x| x[0].read().len())
-            .sum();
+        let total_links_0: usize =
+            graph_layers_builder
+                .links_layers
+                .iter()
+                .map(|x| x[0].read().len())
+                .sum();
 
         assert!(total_links_0 > 0);
 
@@ -700,11 +703,12 @@ mod tests {
             .unwrap();
         assert_eq!(main_entry.level + 1, num_levels);
 
-        let total_links_0: usize = graph_layers_builder
-            .links_layers
-            .iter()
-            .map(|x| x[0].read().len())
-            .sum();
+        let total_links_0: usize =
+            graph_layers_builder
+                .links_layers
+                .iter()
+                .map(|x| x[0].read().len())
+                .sum();
 
         assert!(total_links_0 > 0);
 

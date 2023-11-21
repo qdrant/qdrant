@@ -114,16 +114,17 @@ async fn test_delete_from_indexed_payload() {
 
     let current_runtime: Handle = Handle::current();
 
-    let shard = LocalShard::build(
-        0,
-        collection_name.clone(),
-        collection_dir.path(),
-        Arc::new(RwLock::new(config.clone())),
-        Arc::new(Default::default()),
-        current_runtime.clone(),
-    )
-    .await
-    .unwrap();
+    let shard =
+        LocalShard::build(
+            0,
+            collection_name.clone(),
+            collection_dir.path(),
+            Arc::new(RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            current_runtime.clone(),
+        )
+        .await
+        .unwrap();
 
     let upsert_ops = upsert_operation();
 
@@ -142,16 +143,17 @@ async fn test_delete_from_indexed_payload() {
 
     drop(shard);
 
-    let shard = LocalShard::load(
-        0,
-        collection_name.clone(),
-        collection_dir.path(),
-        Arc::new(RwLock::new(config.clone())),
-        Arc::new(Default::default()),
-        current_runtime.clone(),
-    )
-    .await
-    .unwrap();
+    let shard =
+        LocalShard::load(
+            0,
+            collection_name.clone(),
+            collection_dir.path(),
+            Arc::new(RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            current_runtime.clone(),
+        )
+        .await
+        .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 

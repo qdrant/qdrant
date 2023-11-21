@@ -62,32 +62,33 @@ impl PostingList {
             .elements
             .binary_search_by_key(&posting_element.record_id, |e| e.record_id);
 
-        let modified_index = match index {
-            Ok(found_index) => {
-                // Update existing element for the same id
-                let element = &mut self.elements[found_index];
-                if element.weight == posting_element.weight {
-                    // no need to update anything
-                    None
-                } else {
-                    // the structure of the posting list is not changed, no need to update max_next_weight
-                    element.weight = posting_element.weight;
-                    Some(found_index)
+        let modified_index =
+            match index {
+                Ok(found_index) => {
+                    // Update existing element for the same id
+                    let element = &mut self.elements[found_index];
+                    if element.weight == posting_element.weight {
+                        // no need to update anything
+                        None
+                    } else {
+                        // the structure of the posting list is not changed, no need to update max_next_weight
+                        element.weight = posting_element.weight;
+                        Some(found_index)
+                    }
                 }
-            }
-            Err(insert_index) => {
-                // Insert new element by shifting elements to the right
-                self.elements.insert(insert_index, posting_element);
-                // the structure of the posting list is changed, need to update max_next_weight
-                if insert_index == self.elements.len() - 1 {
-                    // inserted at the end
-                    Some(insert_index)
-                } else {
-                    // inserted in the middle - need to propagated max_next_weight from the right
-                    Some(insert_index + 1)
+                Err(insert_index) => {
+                    // Insert new element by shifting elements to the right
+                    self.elements.insert(insert_index, posting_element);
+                    // the structure of the posting list is changed, need to update max_next_weight
+                    if insert_index == self.elements.len() - 1 {
+                        // inserted at the end
+                        Some(insert_index)
+                    } else {
+                        // inserted in the middle - need to propagated max_next_weight from the right
+                        Some(insert_index + 1)
+                    }
                 }
-            }
-        };
+            };
         // Propagate max_next_weight update to the previous entries
         if let Some(modified_index) = modified_index {
             self.propagate_max_next_weight_to_the_left(modified_index);

@@ -135,16 +135,16 @@ impl<'a> SearchContext<'a> {
     /// Make sure the longest posting list is at the head of the posting list iterators
     fn promote_longest_posting_lists_to_the_front(&mut self) {
         // find index of longest posting list
-        let posting_index = self
-            .postings_iterators
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| {
-                a.posting_list_iterator
-                    .len_to_end()
-                    .cmp(&b.posting_list_iterator.len_to_end())
-            })
-            .map(|(index, _)| index);
+        let posting_index =
+            self.postings_iterators
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| {
+                    a.posting_list_iterator
+                        .len_to_end()
+                        .cmp(&b.posting_list_iterator.len_to_end())
+                })
+                .map(|(index, _)| index);
 
         if let Some(posting_index) = posting_index {
             // make sure it is not already at the head
@@ -400,15 +400,16 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            10,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![1.0, 1.0, 1.0],
+                },
+                10,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         assert_eq!(
             search_context.search(&match_all),
@@ -436,15 +437,16 @@ mod tests {
                 values: vec![40.0, 40.0, 40.0],
             },
         );
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            10,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![1.0, 1.0, 1.0],
+                },
+                10,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         assert_eq!(
             search_context.search(&match_all),
@@ -688,15 +690,16 @@ mod tests {
             .build();
 
         let is_stopped = AtomicBool::new(false);
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            1,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![1.0, 1.0, 1.0],
+                },
+                1,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         // assuming we have gathered enough results and want to prune the longest posting list
         assert!(search_context.prune_longest_posting_list(30.0));
@@ -721,15 +724,16 @@ mod tests {
             .build();
 
         let is_stopped = AtomicBool::new(false);
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            1,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![1.0, 1.0, 1.0],
+                },
+                1,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         // assuming we have gathered enough results and want to prune the longest posting list
         assert!(search_context.prune_longest_posting_list(30.0));
@@ -761,15 +765,16 @@ mod tests {
             .build();
 
         let is_stopped = AtomicBool::new(false);
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            1,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![1.0, 1.0, 1.0],
+                },
+                1,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
         // we should actually check the best score up to `6` - 1 only instead of the max possible score (40.0)
@@ -795,15 +800,16 @@ mod tests {
             .build();
 
         let is_stopped = AtomicBool::new(false);
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![-1.0, 1.0, 1.0],
-            },
-            2,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![-1.0, 1.0, 1.0],
+                },
+                2,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         // pruning is automatically deactivated because the query vector contains negative values
         assert!(!search_context.use_pruning);
@@ -822,15 +828,16 @@ mod tests {
         );
 
         // try again with pruning to show the problem
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![-1.0, 1.0, 1.0],
-            },
-            2,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![-1.0, 1.0, 1.0],
+                },
+                2,
+                &inverted_index_ram,
+                &is_stopped,
+            );
         search_context.use_pruning = true;
         assert!(search_context.use_pruning);
 
@@ -872,15 +879,16 @@ mod tests {
         let mut rnd = StdRng::seed_from_u64(42);
         let is_stopped = AtomicBool::new(false);
         let inverted_index_ram = random_inverted_index(&mut rnd, num_vectors, max_sparse_dimension);
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            3,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![1.0, 1.0, 1.0],
+                },
+                3,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         let mut all_next_min_observed = HashSet::new();
 
@@ -940,15 +948,16 @@ mod tests {
             .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
             .build();
 
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            3,
-            &inverted_index_ram,
-            &is_stopped,
-        );
+        let mut search_context =
+            SearchContext::new(
+                SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![1.0, 1.0, 1.0],
+                },
+                3,
+                &inverted_index_ram,
+                &is_stopped,
+            );
 
         assert_eq!(
             search_context.postings_iterators[0]

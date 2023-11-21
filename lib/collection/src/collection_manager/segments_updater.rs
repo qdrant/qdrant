@@ -221,9 +221,9 @@ pub(crate) fn create_field_index(
     field_schema: Option<&PayloadFieldSchema>,
 ) -> CollectionResult<usize> {
     segments
-        .apply_segments(|write_segment| {
-            write_segment.create_field_index(op_num, field_name, field_schema)
-        })
+        .apply_segments(
+            |write_segment| write_segment.create_field_index(op_num, field_name, field_schema)
+        )
         .map_err(Into::into)
 }
 

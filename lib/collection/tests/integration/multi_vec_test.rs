@@ -105,9 +105,9 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::PointsList(points),
-    ));
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+    );
     collection
         .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
@@ -130,15 +130,16 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection
-        .search(
-            full_search_request.into(),
-            None,
-            &ShardSelectorInternal::All,
-            None,
-        )
-        .await
-        .unwrap();
+    let result =
+        collection
+            .search(
+                full_search_request.into(),
+                None,
+                &ShardSelectorInternal::All,
+                None,
+            )
+            .await
+            .unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -163,14 +164,15 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection
-        .search(
-            failed_search_request.into(),
-            None,
-            &ShardSelectorInternal::All,
-            None,
-        )
-        .await;
+    let result =
+        collection
+            .search(
+                failed_search_request.into(),
+                None,
+                &ShardSelectorInternal::All,
+                None,
+            )
+            .await;
 
     assert!(
         matches!(result, Err(CollectionError::BadInput { .. })),
@@ -192,15 +194,16 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection
-        .search(
-            full_search_request.into(),
-            None,
-            &ShardSelectorInternal::All,
-            None,
-        )
-        .await
-        .unwrap();
+    let result =
+        collection
+            .search(
+                full_search_request.into(),
+                None,
+                &ShardSelectorInternal::All,
+                None,
+            )
+            .await
+            .unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -212,18 +215,19 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         }
     }
 
-    let retrieve = collection
-        .retrieve(
-            PointRequestInternal {
-                ids: vec![6.into()],
-                with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
-            },
-            None,
-            &ShardSelectorInternal::All,
-        )
-        .await
-        .unwrap();
+    let retrieve =
+        collection
+            .retrieve(
+                PointRequestInternal {
+                    ids: vec![6.into()],
+                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                    with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
+                },
+                None,
+                &ShardSelectorInternal::All,
+            )
+            .await
+            .unwrap();
 
     assert_eq!(retrieve.len(), 1);
     match retrieve[0].vector.as_ref().unwrap() {

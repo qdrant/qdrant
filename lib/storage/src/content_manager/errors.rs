@@ -61,10 +61,12 @@ impl StorageError {
             CollectionError::PointNotFound { .. } => StorageError::NotFound {
                 description: overriding_description,
             },
-            CollectionError::ServiceError { backtrace, .. } => StorageError::ServiceError {
-                description: overriding_description,
-                backtrace,
-            },
+            CollectionError::ServiceError { backtrace, .. } => {
+                StorageError::ServiceError {
+                    description: overriding_description,
+                    backtrace,
+                }
+            }
             CollectionError::BadRequest { .. } => StorageError::BadRequest {
                 description: overriding_description,
             },
@@ -125,10 +127,12 @@ impl From<CollectionError> for StorageError {
                 let full_description = format!("{error}");
                 StorageError::from_inconsistent_shard_failure(*error, full_description)
             }
-            CollectionError::OutOfMemory { .. } => StorageError::ServiceError {
-                description: format!("{err}"),
-                backtrace: None,
-            },
+            CollectionError::OutOfMemory { .. } => {
+                StorageError::ServiceError {
+                    description: format!("{err}"),
+                    backtrace: None,
+                }
+            }
             CollectionError::Timeout { .. } => StorageError::Timeout {
                 description: format!("{err}"),
             },

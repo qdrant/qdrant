@@ -52,19 +52,20 @@ async fn remove_peer(
         );
     }
 
-    let response = match dispatcher.consensus_state() {
-        Some(consensus_state) => {
-            consensus_state
-                .propose_consensus_op_with_await(
-                    ConsensusOperations::RemovePeer(peer_id),
-                    params.timeout.map(std::time::Duration::from_secs),
-                )
-                .await
-        }
-        None => Err(StorageError::BadRequest {
-            description: "Distributed mode disabled.".to_string(),
-        }),
-    };
+    let response =
+        match dispatcher.consensus_state() {
+            Some(consensus_state) => {
+                consensus_state
+                    .propose_consensus_op_with_await(
+                        ConsensusOperations::RemovePeer(peer_id),
+                        params.timeout.map(std::time::Duration::from_secs),
+                    )
+                    .await
+            }
+            None => Err(StorageError::BadRequest {
+                description: "Distributed mode disabled.".to_string(),
+            }),
+        };
     process_response(response, timing)
 }
 

@@ -43,17 +43,19 @@ pub fn index_selector(
                 )]
             }
             PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(db, field))],
-            PayloadSchemaType::Text => vec![FieldIndex::FullTextIndex(FullTextIndex::new(
-                db,
-                Default::default(),
-                field,
-            ))],
+            PayloadSchemaType::Text => {
+                vec![FieldIndex::FullTextIndex(FullTextIndex::new(db, Default::default(), field))]
+            }
             PayloadSchemaType::Bool => vec![FieldIndex::BinaryIndex(BinaryIndex::new(db, field))],
         },
         PayloadFieldSchema::FieldParams(payload_params) => match payload_params {
-            PayloadSchemaParams::Text(text_index_params) => vec![FieldIndex::FullTextIndex(
-                FullTextIndex::new(db, text_index_params.clone(), field),
-            )],
+            PayloadSchemaParams::Text(text_index_params) => {
+                vec![FieldIndex::FullTextIndex(FullTextIndex::new(
+                    db,
+                    text_index_params.clone(),
+                    field,
+                ))]
+            }
         },
     }
 }

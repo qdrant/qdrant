@@ -72,10 +72,9 @@ pub fn sharding_method_from_proto(sharding_method: i32) -> Result<ShardingMethod
     match sharding_method {
         x if x == api::grpc::qdrant::ShardingMethod::Auto as i32 => Ok(ShardingMethod::Auto),
         x if x == api::grpc::qdrant::ShardingMethod::Custom as i32 => Ok(ShardingMethod::Custom),
-        _ => Err(Status::invalid_argument(format!(
-            "Cannot convert sharding method: {}",
-            sharding_method
-        ))),
+        _ => Err(
+            Status::invalid_argument(format!("Cannot convert sharding method: {}", sharding_method))
+        ),
     }
 }
 
@@ -273,9 +272,9 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             write_consistency_factor: value
                 .write_consistency_factor
                 .map(|factor| {
-                    NonZeroU32::new(factor).ok_or_else(|| {
-                        Status::invalid_argument("`write_consistency_factor` cannot be 0")
-                    })
+                    NonZeroU32::new(factor).ok_or_else(
+                        || Status::invalid_argument("`write_consistency_factor` cannot be 0")
+                    )
                 })
                 .transpose()?,
             read_fan_out_factor: value.read_fan_out_factor,
@@ -304,9 +303,7 @@ impl TryFrom<api::grpc::qdrant::QuantizationConfigDiff> for QuantizationConfigDi
 
     fn try_from(value: api::grpc::qdrant::QuantizationConfigDiff) -> Result<Self, Self::Error> {
         match value.quantization {
-            None => Err(Status::invalid_argument(
-                "Quantization type is not specified",
-            )),
+            None => Err(Status::invalid_argument("Quantization type is not specified")),
             Some(quantization) => match quantization {
                 Quantization::Scalar(scalar) => Ok(Self::Scalar(scalar.try_into()?)),
                 Quantization::Product(product) => Ok(Self::Product(product.try_into()?)),
@@ -338,10 +335,12 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             }
             .into(),
             optimizer_status: Some(match optimizer_status {
-                OptimizersStatus::Ok => api::grpc::qdrant::OptimizerStatus {
-                    ok: true,
-                    error: "".to_string(),
-                },
+                OptimizersStatus::Ok => {
+                    api::grpc::qdrant::OptimizerStatus {
+                        ok: true,
+                        error: "".to_string(),
+                    }
+                }
                 OptimizersStatus::Error(error) => {
                     api::grpc::qdrant::OptimizerStatus { ok: false, error }
                 }
@@ -354,13 +353,13 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 params: Some(api::grpc::qdrant::CollectionParams {
                     vectors_config: {
                         let config = match config.params.vectors {
-                            VectorsConfig::Single(vector_params) => {
-                                Some(api::grpc::qdrant::vectors_config::Config::Params(
+                            VectorsConfig::Single(vector_params) => Some(
+                                api::grpc::qdrant::vectors_config::Config::Params(
                                     vector_params.into(),
-                                ))
-                            }
-                            VectorsConfig::Multi(vectors_params) => {
-                                Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
+                                ),
+                            ),
+                            VectorsConfig::Multi(vectors_params) => Some(
+                                api::grpc::qdrant::vectors_config::Config::ParamsMap(
                                     api::grpc::qdrant::VectorParamsMap {
                                         map: vectors_params
                                             .iter()
@@ -369,8 +368,8 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                                             })
                                             .collect(),
                                     },
-                                ))
-                            }
+                                ),
+                            ),
                         };
                         Some(api::grpc::qdrant::VectorsConfig { config })
                     },
@@ -523,9 +522,9 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
 
     fn try_from(vector_params: api::grpc::qdrant::VectorParams) -> Result<Self, Self::Error> {
         Ok(Self {
-            size: NonZeroU64::new(vector_params.size).ok_or_else(|| {
-                Status::invalid_argument("VectorParams size must be greater than zero")
-            })?,
+            size: NonZeroU64::new(vector_params.size).ok_or_else(
+                || Status::invalid_argument("VectorParams size must be greater than zero")
+            )?,
             distance: from_grpc_dist(vector_params.distance)?,
             hnsw_config: vector_params.hnsw_config.map(Into::into),
             quantization_config: vector_params
@@ -594,9 +593,9 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
                                 VectorsConfig::Single(params.try_into()?)
                             }
-                            Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
-                                params_map,
-                            )) => VectorsConfig::Multi(
+                            Some(
+                                api::grpc::qdrant::vectors_config::Config::ParamsMap(params_map)
+                            ) => VectorsConfig::Multi(
                                 params_map
                                     .map
                                     .into_iter()
@@ -613,17 +612,17 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             .replication_factor
                             .unwrap_or_else(|| default_replication_factor().get()),
                     )
-                    .ok_or_else(|| {
-                        Status::invalid_argument("`replication_factor` cannot be zero")
-                    })?,
+                    .ok_or_else(
+                        || Status::invalid_argument("`replication_factor` cannot be zero")
+                    )?,
                     write_consistency_factor: NonZeroU32::new(
                         params
                             .write_consistency_factor
                             .unwrap_or_else(|| default_write_consistency_factor().get()),
                     )
-                    .ok_or_else(|| {
-                        Status::invalid_argument("`write_consistency_factor` cannot be zero")
-                    })?,
+                    .ok_or_else(
+                        || Status::invalid_argument("`write_consistency_factor` cannot be zero")
+                    )?,
 
                     read_fan_out_factor: params.read_fan_out_factor,
                     sharding_method: params
@@ -663,36 +662,40 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     ) -> Result<Self, Self::Error> {
         match collection_info_response.result {
             None => Err(Status::invalid_argument("Malformed CollectionInfo type")),
-            Some(collection_info_response) => Ok(Self {
-                status: collection_info_response.status.try_into()?,
-                optimizer_status: match collection_info_response.optimizer_status {
-                    None => return Err(Status::invalid_argument("Malformed OptimizerStatus type")),
-                    Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
-                        if ok {
-                            OptimizersStatus::Ok
-                        } else {
-                            OptimizersStatus::Error(error)
+            Some(collection_info_response) => {
+                Ok(Self {
+                    status: collection_info_response.status.try_into()?,
+                    optimizer_status: match collection_info_response.optimizer_status {
+                        None => {
+                            return Err(Status::invalid_argument("Malformed OptimizerStatus type"))
                         }
-                    }
-                },
-                vectors_count: collection_info_response.vectors_count as usize,
-                indexed_vectors_count: collection_info_response
-                    .indexed_vectors_count
-                    .unwrap_or_default() as usize,
-                points_count: collection_info_response.points_count as usize,
-                segments_count: collection_info_response.segments_count as usize,
-                config: match collection_info_response.config {
-                    None => {
-                        return Err(Status::invalid_argument("Malformed CollectionConfig type"))
-                    }
-                    Some(config) => config.try_into()?,
-                },
-                payload_schema: collection_info_response
-                    .payload_schema
-                    .into_iter()
-                    .map(|(k, v)| v.try_into().map(|v| (k, v)))
-                    .try_collect()?,
-            }),
+                        Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
+                            if ok {
+                                OptimizersStatus::Ok
+                            } else {
+                                OptimizersStatus::Error(error)
+                            }
+                        }
+                    },
+                    vectors_count: collection_info_response.vectors_count as usize,
+                    indexed_vectors_count: collection_info_response
+                        .indexed_vectors_count
+                        .unwrap_or_default() as usize,
+                    points_count: collection_info_response.points_count as usize,
+                    segments_count: collection_info_response.segments_count as usize,
+                    config: match collection_info_response.config {
+                        None => {
+                            return Err(Status::invalid_argument("Malformed CollectionConfig type"))
+                        }
+                        Some(config) => config.try_into()?,
+                    },
+                    payload_schema: collection_info_response
+                        .payload_schema
+                        .into_iter()
+                        .map(|(k, v)| v.try_into().map(|v| (k, v)))
+                        .try_collect()?,
+                })
+            }
         }
     }
 }
@@ -973,27 +976,29 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
                     },
                 )),
             },
-            QueryEnum::Context(named) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::Context(
-                    api::grpc::qdrant::ContextQuery {
-                        context: named
-                            .query
-                            .pairs
-                            .into_iter()
-                            .map(|pair| api::grpc::qdrant::ContextPair {
-                                positive: {
-                                    let v: Vec<_> = pair.positive.try_into().unwrap();
-                                    Some(v.into())
-                                },
-                                negative: {
-                                    let v: Vec<_> = pair.negative.try_into().unwrap();
-                                    Some(v.into())
-                                },
-                            })
-                            .collect(),
-                    },
-                )),
-            },
+            QueryEnum::Context(named) => {
+                api::grpc::qdrant::QueryEnum {
+                    query: Some(api::grpc::qdrant::query_enum::Query::Context(
+                        api::grpc::qdrant::ContextQuery {
+                            context: named
+                                .query
+                                .pairs
+                                .into_iter()
+                                .map(|pair| api::grpc::qdrant::ContextPair {
+                                    positive: {
+                                        let v: Vec<_> = pair.positive.try_into().unwrap();
+                                        Some(v.into())
+                                    },
+                                    negative: {
+                                        let v: Vec<_> = pair.negative.try_into().unwrap();
+                                        Some(v.into())
+                                    },
+                                })
+                                .collect(),
+                        },
+                    )),
+                }
+            }
         }
     }
 }
@@ -1104,9 +1109,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     api::grpc::qdrant::query_enum::Query::Discover(query) => {
                         let target = match query.target {
                             Some(target) => target,
-                            None => {
-                                return Err(Status::invalid_argument("Target is not specified"))
-                            }
+                            None => return Err(Status::invalid_argument("Target is not specified")),
                         };
 
                         let pairs = query
@@ -1301,9 +1304,9 @@ impl TryFrom<i32> for RecommendStrategy {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        let strategy = api::grpc::qdrant::RecommendStrategy::from_i32(value).ok_or_else(|| {
-            Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
-        })?;
+        let strategy = api::grpc::qdrant::RecommendStrategy::from_i32(value).ok_or_else(
+            || Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
+        )?;
         Ok(strategy.into())
     }
 }
@@ -1558,9 +1561,9 @@ impl TryFrom<i32> for ShardTransferMethod {
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         api::grpc::qdrant::ShardTransferMethod::from_i32(value)
             .map(Into::into)
-            .ok_or_else(|| {
-                Status::invalid_argument(format!("Unknown shard transfer method: {value}"))
-            })
+            .ok_or_else(
+                || Status::invalid_argument(format!("Unknown shard transfer method: {value}"))
+            )
     }
 }
 

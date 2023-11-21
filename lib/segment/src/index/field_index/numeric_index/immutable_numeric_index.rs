@@ -143,20 +143,24 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
     fn find_start_index(&self, bound: Bound<NumericIndexKey<T>>) -> usize {
         match bound {
             Bound::Included(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
-            Bound::Excluded(bound) => match self.data.binary_search(&bound) {
-                Ok(idx) => idx + 1,
-                Err(idx) => idx,
-            },
+            Bound::Excluded(bound) => {
+                match self.data.binary_search(&bound) {
+                    Ok(idx) => idx + 1,
+                    Err(idx) => idx,
+                }
+            }
             Bound::Unbounded => 0,
         }
     }
 
     fn find_end_index(&self, bound: Bound<NumericIndexKey<T>>) -> usize {
         match bound {
-            Bound::Included(bound) => match self.data.binary_search(&bound) {
-                Ok(idx) => idx + 1,
-                Err(idx) => idx,
-            },
+            Bound::Included(bound) => {
+                match self.data.binary_search(&bound) {
+                    Ok(idx) => idx + 1,
+                    Err(idx) => idx,
+                }
+            }
             Bound::Excluded(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
             Bound::Unbounded => self.data.len(),
         }

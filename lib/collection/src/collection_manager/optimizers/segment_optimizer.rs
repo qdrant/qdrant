@@ -118,14 +118,15 @@ pub trait SegmentOptimizer {
         let mut bytes_count_by_vector_name = HashMap::new();
 
         for segment in optimizing_segments {
-            let segment = match segment {
-                LockedSegment::Original(segment) => segment,
-                LockedSegment::Proxy(_) => {
-                    return Err(CollectionError::service_error(
-                        "Proxy segment is not expected here".to_string(),
-                    ))
-                }
-            };
+            let segment =
+                match segment {
+                    LockedSegment::Original(segment) => segment,
+                    LockedSegment::Proxy(_) => {
+                        return Err(CollectionError::service_error(
+                            "Proxy segment is not expected here".to_string(),
+                        ))
+                    }
+                };
             let locked_segment = segment.read();
 
             for (vector_name, dim) in locked_segment.vector_dims() {
@@ -138,11 +139,12 @@ pub trait SegmentOptimizer {
         }
 
         // Example: maximal_vector_store_size_bytes = 10200 * dim * VECTOR_ELEMENT_SIZE
-        let maximal_vector_store_size_bytes = bytes_count_by_vector_name
-            .values()
-            .max()
-            .copied()
-            .unwrap_or(0);
+        let maximal_vector_store_size_bytes =
+            bytes_count_by_vector_name
+                .values()
+                .max()
+                .copied()
+                .unwrap_or(0);
 
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
@@ -421,10 +423,8 @@ pub trait SegmentOptimizer {
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
-            PayloadKeyType,
-            PayloadFieldSchema,
-        >::new()));
+        let proxy_created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {

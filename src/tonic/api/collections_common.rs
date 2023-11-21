@@ -18,10 +18,11 @@ pub async fn get(
     let result = do_get_collection(toc, &collection_name, shard_selection)
         .await
         .map_err(error_to_status)?;
-    let response = GetCollectionInfoResponse {
-        result: Some(result.into()),
-        time: timing.elapsed().as_secs_f64(),
-    };
+    let response =
+        GetCollectionInfoResponse {
+            result: Some(result.into()),
+            time: timing.elapsed().as_secs_f64(),
+        };
 
     Ok(Response::new(response))
 }

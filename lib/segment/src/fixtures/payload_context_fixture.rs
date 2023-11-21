@@ -221,9 +221,8 @@ pub fn create_struct_payload_index(
     num_points: usize,
     seed: u64,
 ) -> StructPayloadIndex {
-    let payload_storage = Arc::new(AtomicRefCell::new(
-        create_payload_storage_fixture(num_points, seed).into(),
-    ));
+    let payload_storage =
+        Arc::new(AtomicRefCell::new(create_payload_storage_fixture(num_points, seed).into()));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
     let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path, true).unwrap();

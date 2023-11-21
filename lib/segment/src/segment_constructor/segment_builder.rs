@@ -124,15 +124,16 @@ impl SegmentBuilder {
             for (new_internal_id, old_internal_id) in internal_id_iter {
                 check_process_stopped(stopped)?;
 
-                let external_id =
-                    if let Some(external_id) = other_id_tracker.external_id(old_internal_id) {
-                        external_id
-                    } else {
-                        log::warn!(
-                            "Cannot find external id for internal id {old_internal_id}, skipping"
-                        );
-                        continue;
-                    };
+                let external_id = if let Some(external_id) =
+                    other_id_tracker.external_id(old_internal_id)
+                {
+                    external_id
+                } else {
+                    log::warn!(
+                        "Cannot find external id for internal id {old_internal_id}, skipping"
+                    );
+                    continue;
+                };
                 let other_version = other_id_tracker.internal_version(old_internal_id).unwrap();
 
                 match id_tracker.internal_id(external_id) {
@@ -183,9 +184,9 @@ impl SegmentBuilder {
 
     pub fn build(mut self, stopped: &AtomicBool) -> Result<Segment, OperationError> {
         {
-            let mut segment = self.segment.take().ok_or(OperationError::service_error(
-                "Segment building error: created segment not found",
-            ))?;
+            let mut segment = self.segment.take().ok_or(
+                OperationError::service_error("Segment building error: created segment not found")
+            )?;
 
             for (field, payload_schema) in &self.indexed_fields {
                 segment.create_field_index(segment.version(), field, Some(payload_schema))?;
@@ -208,10 +209,9 @@ impl SegmentBuilder {
             .describe("Moving segment data after optimization")?;
 
         let loaded_segment = load_segment(&self.destination_path)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Segment loading error: {}",
-                self.destination_path.display()
-            ))
+            OperationError::service_error(
+                format!("Segment loading error: {}", self.destination_path.display())
+            )
         })?;
         Ok(loaded_segment)
     }

@@ -39,14 +39,15 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
-    let sparse_vector_index = fixture_sparse_index_ram(
-        &mut rnd,
-        NUM_VECTORS,
-        MAX_SPARSE_DIM,
-        full_scan_threshold,
-        data_dir.path(),
-        &stopped,
-    );
+    let sparse_vector_index =
+        fixture_sparse_index_ram(
+            &mut rnd,
+            NUM_VECTORS,
+            MAX_SPARSE_DIM,
+            full_scan_threshold,
+            data_dir.path(),
+            &stopped,
+        );
 
     // random query vectors
     let attempts = 1000;
@@ -55,10 +56,9 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
         .collect::<Vec<_>>();
 
     // filter matches everything
-    let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
-        STR_KEY,
-        STR_KEY.to_owned().into(),
-    )));
+    let filter = Filter::new_must_not(
+        Condition::Field(FieldCondition::new_match(STR_KEY, STR_KEY.to_owned().into()))
+    );
 
     // compares results with and without filters
     // expects the filter to have no effect on the results because the filter matches everything
@@ -149,14 +149,15 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let sparse_vector_ram_index = fixture_sparse_index_ram(
-        &mut rnd,
-        NUM_VECTORS,
-        MAX_SPARSE_DIM,
-        LOW_FULL_SCAN_THRESHOLD,
-        data_dir.path(),
-        &stopped,
-    );
+    let sparse_vector_ram_index =
+        fixture_sparse_index_ram(
+            &mut rnd,
+            NUM_VECTORS,
+            MAX_SPARSE_DIM,
+            LOW_FULL_SCAN_THRESHOLD,
+            data_dir.path(),
+            &stopped,
+        );
 
     // check consistency with underlying RAM inverted index
     check_index_storage_consistency(&sparse_vector_ram_index);
@@ -207,14 +208,15 @@ fn sparse_vector_index_ram_deleted_points_search() {
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
-    let mut sparse_vector_index = fixture_sparse_index_ram(
-        &mut rnd,
-        NUM_VECTORS,
-        MAX_SPARSE_DIM,
-        LOW_FULL_SCAN_THRESHOLD,
-        data_dir.path(),
-        &stopped,
-    );
+    let mut sparse_vector_index =
+        fixture_sparse_index_ram(
+            &mut rnd,
+            NUM_VECTORS,
+            MAX_SPARSE_DIM,
+            LOW_FULL_SCAN_THRESHOLD,
+            data_dir.path(),
+            &stopped,
+        );
 
     // sanity check (all indexed, no deleted points)
     assert_eq!(
@@ -301,22 +303,22 @@ fn sparse_vector_index_ram_filtered_search() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
     // setup index
-    let sparse_vector_index = fixture_sparse_index_ram(
-        &mut rnd,
-        NUM_VECTORS,
-        MAX_SPARSE_DIM,
-        LOW_FULL_SCAN_THRESHOLD,
-        data_dir.path(),
-        &stopped,
-    );
+    let sparse_vector_index =
+        fixture_sparse_index_ram(
+            &mut rnd,
+            NUM_VECTORS,
+            MAX_SPARSE_DIM,
+            LOW_FULL_SCAN_THRESHOLD,
+            data_dir.path(),
+            &stopped,
+        );
 
     // query index by payload
     let field_name = "field";
     let field_value = "important value";
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        field_name,
-        field_value.to_owned().into(),
-    )));
+    let filter = Filter::new_must(
+        Condition::Field(FieldCondition::new_match(field_name, field_value.to_owned().into()))
+    );
 
     // query all sparse dimension to get all points
     let query_vector: QueryVector = random_full_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
@@ -345,10 +347,11 @@ fn sparse_vector_index_ram_filtered_search() {
 
     // add payload on the first half of the points
     let half_indexed_count = sparse_vector_index.indexed_vector_count() / 2;
-    let payload: Payload = json!({
-        field_name: field_value,
-    })
-    .into();
+    let payload: Payload =
+        json!({
+            field_name: field_value,
+        })
+        .into();
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
     for idx in 0..half_indexed_count {
         payload_index
@@ -385,22 +388,22 @@ fn sparse_vector_index_plain_search() {
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     // setup index
-    let sparse_vector_index = fixture_sparse_index_ram(
-        &mut rnd,
-        NUM_VECTORS,
-        MAX_SPARSE_DIM,
-        LOW_FULL_SCAN_THRESHOLD,
-        data_dir.path(),
-        &stopped,
-    );
+    let sparse_vector_index =
+        fixture_sparse_index_ram(
+            &mut rnd,
+            NUM_VECTORS,
+            MAX_SPARSE_DIM,
+            LOW_FULL_SCAN_THRESHOLD,
+            data_dir.path(),
+            &stopped,
+        );
 
     // query index by payload
     let field_name = "field";
     let field_value = "important value";
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        field_name,
-        field_value.to_owned().into(),
-    )));
+    let filter = Filter::new_must(
+        Condition::Field(FieldCondition::new_match(field_name, field_value.to_owned().into()))
+    );
 
     // query all sparse dimension to get all points
     let query_vector: QueryVector = random_full_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
@@ -413,10 +416,11 @@ fn sparse_vector_index_plain_search() {
     assert_eq!(before_plain_results.len(), 1);
     assert_eq!(before_plain_results[0].len(), 0);
 
-    let payload: Payload = json!({
-        field_name: field_value,
-    })
-    .into();
+    let payload: Payload =
+        json!({
+            field_name: field_value,
+        })
+        .into();
 
     // add payload to all points
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();

@@ -50,12 +50,13 @@ pub fn check_transfer_conflicts_strict<'a, I>(
 where
     I: Iterator<Item = &'a ShardTransfer>,
 {
-    let res = current_transfers.find(|t| {
-        t.from == transfer.from
-            || t.to == transfer.from
-            || t.from == transfer.to
-            || t.to == transfer.to
-    });
+    let res =
+        current_transfers.find(|t| {
+            t.from == transfer.from
+                || t.to == transfer.from
+                || t.from == transfer.to
+                || t.to == transfer.to
+        });
     res.cloned()
 }
 
@@ -76,24 +77,17 @@ pub fn validate_transfer(
     let shard_state = if let Some(shard_state) = shard_state {
         shard_state
     } else {
-        return Err(CollectionError::service_error(format!(
-            "Shard {} does not exist",
-            transfer.shard_id,
-        )));
+        return Err(
+            CollectionError::service_error(format!("Shard {} does not exist", transfer.shard_id,))
+        );
     };
 
     if !all_peers.contains(&transfer.from) {
-        return Err(CollectionError::bad_request(format!(
-            "Peer {} does not exist",
-            transfer.from,
-        )));
+        return Err(CollectionError::bad_request(format!("Peer {} does not exist", transfer.from,)));
     }
 
     if !all_peers.contains(&transfer.to) {
-        return Err(CollectionError::bad_request(format!(
-            "Peer {} does not exist",
-            transfer.to,
-        )));
+        return Err(CollectionError::bad_request(format!("Peer {} does not exist", transfer.to,)));
     }
 
     if shard_state.get(&transfer.from) != Some(&ReplicaState::Active) {
@@ -145,12 +139,13 @@ pub fn suggest_transfer_source(
         .cloned()
         .collect();
 
-    let transfer_counts = current_transfers
-        .iter()
-        .fold(HashMap::new(), |mut counts, transfer| {
-            *counts.entry(transfer.from).or_insert(0_usize) += 1;
-            counts
-        });
+    let transfer_counts =
+        current_transfers
+            .iter()
+            .fold(HashMap::new(), |mut counts, transfer| {
+                *counts.entry(transfer.from).or_insert(0_usize) += 1;
+                counts
+            });
 
     // Sort candidates by the number of active transfers
     let mut candidates = candidates
@@ -207,16 +202,17 @@ pub fn suggest_peer_to_remove_replica(
         }
     }
 
-    let mut candidates: Vec<_> = shard_peers
-        .into_iter()
-        .map(|(peer_id, status)| {
-            (
-                peer_id,
-                status,
-                peer_loads.get(&peer_id).copied().unwrap_or(0),
-            )
-        })
-        .collect();
+    let mut candidates: Vec<_> =
+        shard_peers
+            .into_iter()
+            .map(|(peer_id, status)| {
+                (
+                    peer_id,
+                    status,
+                    peer_loads.get(&peer_id).copied().unwrap_or(0),
+                )
+            })
+            .collect();
 
     candidates.sort_unstable_by(|(_, status1, count1), (_, status2, count2)| {
         match (status1, status2) {

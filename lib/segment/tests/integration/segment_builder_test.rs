@@ -108,17 +108,18 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
 
     let res = builder.build(&stopped);
 
-    let is_cancelled = match res {
-        Ok(_) => false,
-        Err(OperationError::Cancelled { .. }) => true,
-        Err(err) => {
-            eprintln!(
-                "Was expecting cancellation signal but got unexpected error: {:?}",
-                err
-            );
-            false
-        }
-    };
+    let is_cancelled =
+        match res {
+            Ok(_) => false,
+            Err(OperationError::Cancelled { .. }) => true,
+            Err(err) => {
+                eprintln!(
+                    "Was expecting cancellation signal but got unexpected error: {:?}",
+                    err
+                );
+                false
+            }
+        };
 
     (now.elapsed().as_millis() as u64, is_cancelled)
 }

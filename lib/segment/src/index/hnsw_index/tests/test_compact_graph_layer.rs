@@ -27,12 +27,13 @@ fn search_in_builder(
         Some(ep) => ep,
     };
 
-    let zero_level_entry = builder.search_entry(
-        entry_point.point_id,
-        entry_point.level,
-        0,
-        &mut points_scorer,
-    );
+    let zero_level_entry =
+        builder.search_entry(
+            entry_point.point_id,
+            entry_point.level,
+            0,
+            &mut points_scorer,
+        );
 
     let nearest = builder.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
     nearest.into_iter().take(top).collect_vec()
@@ -57,14 +58,15 @@ fn test_compact_graph_layers() {
         .map(|_| random_vector(&mut rng, dim))
         .collect_vec();
 
-    let reference_results = queries
-        .iter()
-        .map(|query| {
-            let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            search_in_builder(&graph_layers_builder, top, ef, scorer)
-        })
-        .collect_vec();
+    let reference_results =
+        queries
+            .iter()
+            .map(|query| {
+                let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
+                let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+                search_in_builder(&graph_layers_builder, top, ef, scorer)
+            })
+            .collect_vec();
 
     let graph_layers = graph_layers_builder
         .into_graph_layers::<GraphLinksRam>(None)

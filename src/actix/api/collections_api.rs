@@ -93,15 +93,15 @@ async fn update_collection(
 ) -> impl Responder {
     let timing = Instant::now();
     let name = collection.name.clone();
-    let response = dispatcher
-        .submit_collection_meta_op(
-            CollectionMetaOperations::UpdateCollection(UpdateCollectionOperation::new(
-                name,
-                operation.into_inner(),
-            )),
-            query.timeout(),
-        )
-        .await;
+    let response =
+        dispatcher
+            .submit_collection_meta_op(
+                CollectionMetaOperations::UpdateCollection(
+                    UpdateCollectionOperation::new(name, operation.into_inner())
+                ),
+                query.timeout(),
+            )
+            .await;
     process_response(response, timing)
 }
 
@@ -112,14 +112,15 @@ async fn delete_collection(
     Query(query): Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = dispatcher
-        .submit_collection_meta_op(
-            CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
-                collection.name.clone(),
-            )),
-            query.timeout(),
-        )
-        .await;
+    let response =
+        dispatcher
+            .submit_collection_meta_op(
+                CollectionMetaOperations::DeleteCollection(
+                    DeleteCollectionOperation(collection.name.clone())
+                ),
+                query.timeout(),
+            )
+            .await;
     process_response(response, timing)
 }
 

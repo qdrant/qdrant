@@ -24,13 +24,14 @@ fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()
     })?;
 
     for entry in entries {
-        let entry = entry.map_err(|err| {
-            if base != dir {
-                failed_to_read_dir_error(dir, err)
-            } else {
-                err.into()
-            }
-        })?;
+        let entry =
+            entry.map_err(|err| {
+                if base != dir {
+                    failed_to_read_dir_error(dir, err)
+                } else {
+                    err.into()
+                }
+            })?;
 
         let path = entry.path();
 
@@ -72,9 +73,7 @@ fn assert_is_dir(dir: &Path) -> OperationResult<()> {
 }
 
 fn not_a_dir_error(dir: &Path) -> OperationError {
-    OperationError::service_error(format!(
-        "path {dir:?} is not a directory (or does not exist)"
-    ))
+    OperationError::service_error(format!("path {dir:?} is not a directory (or does not exist)"))
 }
 
 fn failed_to_read_dir_error(dir: &Path, err: impl fmt::Display) -> OperationError {

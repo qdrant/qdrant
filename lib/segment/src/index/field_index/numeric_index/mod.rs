@@ -193,23 +193,25 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         // min = max(1, 500 - (1200 - 1000)) = 300
         // exp = 500 / (1200 / 1000) = 416
         // max = min(1000, 500) = 500
-        let expected_min = max(
-            min_estimation
-                .checked_div(self.get_max_values_per_point())
-                .unwrap_or(0),
+        let expected_min =
             max(
-                min(1, min_estimation),
-                min_estimation.saturating_sub(total_values - self.get_points_count()),
-            ),
-        );
+                min_estimation
+                    .checked_div(self.get_max_values_per_point())
+                    .unwrap_or(0),
+                max(
+                    min(1, min_estimation),
+                    min_estimation.saturating_sub(total_values - self.get_points_count()),
+                ),
+            );
         let expected_max = min(self.get_points_count(), max_estimation);
 
-        let estimation = estimate_multi_value_selection_cardinality(
-            self.get_points_count(),
-            total_values,
-            histogram_estimation.1,
-        )
-        .round() as usize;
+        let estimation =
+            estimate_multi_value_selection_cardinality(
+                self.get_points_count(),
+                total_values,
+                histogram_estimation.1,
+            )
+            .round() as usize;
 
         CardinalityEstimation {
             primary_clauses: vec![],
@@ -409,9 +411,9 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
-            NumericIndex::Immutable(_) => Err(OperationError::service_error(
-                "Can't add values to immutable numeric index",
-            )),
+            NumericIndex::Immutable(_) => {
+                Err(OperationError::service_error("Can't add values to immutable numeric index"))
+            }
         }
     }
 
@@ -435,9 +437,9 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
-            NumericIndex::Immutable(_) => Err(OperationError::service_error(
-                "Can't add values to immutable numeric index",
-            )),
+            NumericIndex::Immutable(_) => {
+                Err(OperationError::service_error("Can't add values to immutable numeric index"))
+            }
         }
     }
 

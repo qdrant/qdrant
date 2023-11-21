@@ -52,10 +52,7 @@ fn get_vector_name_with_prefix(prefix: &str, vector_name: &str) -> String {
 }
 
 pub fn get_vector_storage_path(segment_path: &Path, vector_name: &str) -> PathBuf {
-    segment_path.join(get_vector_name_with_prefix(
-        VECTOR_STORAGE_PATH,
-        vector_name,
-    ))
+    segment_path.join(get_vector_name_with_prefix(VECTOR_STORAGE_PATH, vector_name))
 }
 
 pub fn get_vector_index_path(segment_path: &Path, vector_name: &str) -> PathBuf {
@@ -101,30 +98,31 @@ fn create_segment(
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         // Select suitable vector storage type based on configuration
-        let vector_storage = match vector_config.storage_type {
-            // In memory
-            VectorStorageType::Memory => {
-                let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-                open_simple_vector_storage(
-                    database.clone(),
-                    &db_column_name,
+        let vector_storage =
+            match vector_config.storage_type {
+                // In memory
+                VectorStorageType::Memory => {
+                    let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+                    open_simple_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                    )?
+                }
+                // Mmap on disk, not appendable
+                VectorStorageType::Mmap => open_memmap_vector_storage(
+                    &vector_storage_path,
                     vector_config.size,
                     vector_config.distance,
-                )?
-            }
-            // Mmap on disk, not appendable
-            VectorStorageType::Mmap => open_memmap_vector_storage(
-                &vector_storage_path,
-                vector_config.size,
-                vector_config.distance,
-            )?,
-            // Chunked mmap on disk, appendable
-            VectorStorageType::ChunkedMmap => open_appendable_memmap_vector_storage(
-                &vector_storage_path,
-                vector_config.size,
-                vector_config.distance,
-            )?,
-        };
+                )?,
+                // Chunked mmap on disk, appendable
+                VectorStorageType::ChunkedMmap => open_appendable_memmap_vector_storage(
+                    &vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                )?,
+            };
 
         // Warn when number of points between ID tracker and storage differs
         let point_count = id_tracker.borrow().total_point_count();
@@ -336,13 +334,14 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
     serde_json::from_str::<SegmentStateV3>(&contents)
         .map(|state| {
             // Construct V5 version, then convert into current
-            let vector_data = VectorDataConfigV5 {
-                size: state.config.vector_size,
-                distance: state.config.distance,
-                hnsw_config: None,
-                quantization_config: None,
-                on_disk: None,
-            };
+            let vector_data =
+                VectorDataConfigV5 {
+                    size: state.config.vector_size,
+                    distance: state.config.distance,
+                    hnsw_config: None,
+                    quantization_config: None,
+                    on_disk: None,
+                };
             let segment_config = SegmentConfigV5 {
                 vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                 index: state.config.index,

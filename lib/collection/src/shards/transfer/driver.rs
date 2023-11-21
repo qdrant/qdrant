@@ -82,10 +82,11 @@ pub async fn revert_proxy_shard_to_local(
     shard_holder: &ShardHolder,
     shard_id: ShardId,
 ) -> CollectionResult<bool> {
-    let replica_set = match shard_holder.get_shard(&shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
+    let replica_set =
+        match shard_holder.get_shard(&shard_id) {
+            None => return Ok(false),
+            Some(replica_set) => replica_set,
+        };
 
     // Revert queue proxy if we still have any and forget all collected updates
     replica_set.revert_queue_proxy_local().await;
@@ -103,10 +104,11 @@ pub async fn change_remote_shard_route(
     new_peer_id: PeerId,
     sync: bool,
 ) -> CollectionResult<bool> {
-    let replica_set = match shard_holder.get_shard(&shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
+    let replica_set =
+        match shard_holder.get_shard(&shard_id) {
+            None => return Ok(false),
+            Some(replica_set) => replica_set,
+        };
 
     if replica_set.this_peer_id() != new_peer_id {
         replica_set
@@ -128,10 +130,11 @@ pub async fn finalize_partial_shard(
     shard_holder: &ShardHolder,
     shard_id: ShardId,
 ) -> CollectionResult<bool> {
-    let replica_set = match shard_holder.get_shard(&shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
+    let replica_set =
+        match shard_holder.get_shard(&shard_id) {
+            None => return Ok(false),
+            Some(replica_set) => replica_set,
+        };
 
     if !replica_set.has_local_shard().await {
         return Ok(false);
@@ -152,10 +155,11 @@ pub async fn handle_transferred_shard_proxy(
 ) -> CollectionResult<bool> {
     // TODO: Ensure cancel safety!
 
-    let replica_set = match shard_holder.get_shard(&shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
+    let replica_set =
+        match shard_holder.get_shard(&shard_id) {
+            None => return Ok(false),
+            Some(replica_set) => replica_set,
+        };
 
     replica_set.add_remote(to, ReplicaState::Active).await?;
 
@@ -193,29 +197,30 @@ where
         let mut result = Err(cancel::Error::Cancelled);
 
         for attempt in 0..MAX_RETRY_COUNT {
-            let future = async {
-                if attempt > 0 {
-                    sleep(RETRY_DELAY * attempt as u32).await;
+            let future =
+                async {
+                    if attempt > 0 {
+                        sleep(RETRY_DELAY * attempt as u32).await;
 
-                    log::warn!(
-                        "Retrying shard transfer {collection_id}:{} -> {} (retry {attempt})",
-                        transfer.shard_id,
-                        transfer.to,
-                    );
-                }
+                        log::warn!(
+                            "Retrying shard transfer {collection_id}:{} -> {} (retry {attempt})",
+                            transfer.shard_id,
+                            transfer.to,
+                        );
+                    }
 
-                transfer_shard(
-                    transfer.clone(),
-                    shards_holder.clone(),
-                    consensus.as_ref(),
-                    collection_id.clone(),
-                    &collection_name,
-                    channel_service.clone(),
-                    &snapshots_path,
-                    &temp_dir,
-                )
-                .await
-            };
+                    transfer_shard(
+                        transfer.clone(),
+                        shards_holder.clone(),
+                        consensus.as_ref(),
+                        collection_id.clone(),
+                        &collection_name,
+                        channel_service.clone(),
+                        &snapshots_path,
+                        &temp_dir,
+                    )
+                    .await
+                };
 
             result = cancel::future::cancel_on_token(cancel.clone(), future).await;
 

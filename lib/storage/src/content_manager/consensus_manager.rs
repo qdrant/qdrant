@@ -640,9 +640,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         let is_leader_established = self.is_leader_established.clone();
 
-        let await_ready_for_timeout_future = tokio::task::spawn_blocking(move || {
-            is_leader_established.await_ready_for_timeout(wait_timeout)
-        });
+        let await_ready_for_timeout_future = tokio::task::spawn_blocking(
+            move || is_leader_established.await_ready_for_timeout(wait_timeout)
+        );
 
         let is_leader_established = await_ready_for_timeout_future
             .await
@@ -774,9 +774,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
                 }),
             })
         } else {
-            Err(raft::Error::Store(
-                raft::StorageError::SnapshotTemporarilyUnavailable,
-            ))
+            Err(raft::Error::Store(raft::StorageError::SnapshotTemporarilyUnavailable))
         }
     }
 }

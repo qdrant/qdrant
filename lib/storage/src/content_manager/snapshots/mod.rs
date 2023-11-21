@@ -134,12 +134,13 @@ async fn _do_create_full_snapshot(
 
     let snapshot_name = format!("{}-{}.snapshot", FULL_SNAPSHOT_FILE_NAME, &current_time);
 
-    let collection_name_to_snapshot_path: HashMap<_, _> = created_snapshots
-        .iter()
-        .map(|(collection_name, snapshot_details)| {
-            (collection_name.to_string(), snapshot_details.name.clone())
-        })
-        .collect();
+    let collection_name_to_snapshot_path: HashMap<_, _> =
+        created_snapshots
+            .iter()
+            .map(|(collection_name, snapshot_details)| {
+                (collection_name.to_string(), snapshot_details.name.clone())
+            })
+            .collect();
 
     let mut alias_mapping: HashMap<String, String> = Default::default();
     for collection_name in &all_collections {

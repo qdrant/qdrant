@@ -173,16 +173,17 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        let points_to_index: Vec<_> = payload_index
-            .query_points(&filter)
-            .into_iter()
-            .filter(|&point_id| {
-                !deleted_bitslice
-                    .get(point_id as usize)
-                    .map(|x| *x)
-                    .unwrap_or(false)
-            })
-            .collect();
+        let points_to_index: Vec<_> =
+            payload_index
+                .query_points(&filter)
+                .into_iter()
+                .filter(|&point_id| {
+                    !deleted_bitslice
+                        .get(point_id as usize)
+                        .map(|x| *x)
+                        .unwrap_or(false)
+                })
+                .collect();
 
         for block_point_id in points_to_index.iter().copied() {
             block_filter_list.check_and_update_visited(block_point_id);
@@ -200,17 +201,18 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             check_process_stopped(stopped)?;
 
             let vector = vector_storage.get_vector(block_point_id).into();
-            let raw_scorer = match &quantized_vectors {
-                Some(quantized_storage) => quantized_storage.raw_scorer(
-                    vector,
-                    id_tracker.deleted_point_bitslice(),
-                    deleted_bitslice,
-                    stopped,
-                ),
-                None => {
-                    new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
-                }
-            }?;
+            let raw_scorer =
+                match &quantized_vectors {
+                    Some(quantized_storage) => quantized_storage.raw_scorer(
+                        vector,
+                        id_tracker.deleted_point_bitslice(),
+                        deleted_bitslice,
+                        stopped,
+                    ),
+                    None => {
+                        new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
+                    }
+                }?;
             let block_condition_checker = BuildConditionChecker {
                 filter_list: block_filter_list,
                 current_point: block_point_id,
@@ -417,12 +419,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 vector_storage.deleted_vector_bitslice(),
                 is_stopped,
             ),
-            _ => new_stoppable_raw_scorer(
-                vector.to_owned(),
-                vector_storage,
-                id_tracker.deleted_point_bitslice(),
-                is_stopped,
-            ),
+            _ => {
+                new_stoppable_raw_scorer(
+                    vector.to_owned(),
+                    vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    is_stopped,
+                )
+            }
         }
     }
 
@@ -470,12 +474,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 .unwrap_or(default_rescoring);
 
         let mut postprocess_result = if rescore {
-            let raw_scorer = new_stoppable_raw_scorer(
-                vector.to_owned(),
-                &vector_storage,
-                id_tracker.deleted_point_bitslice(),
-                is_stopped,
-            )?;
+            let raw_scorer =
+                new_stoppable_raw_scorer(
+                    vector.to_owned(),
+                    &vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    is_stopped,
+                )?;
 
             let mut ids_iterator = search_result.iter().map(|x| x.idx);
             let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);

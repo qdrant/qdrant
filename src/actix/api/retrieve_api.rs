@@ -63,13 +63,14 @@ async fn get_point(
         }
     };
 
-    let response = do_get_point(
-        toc.get_ref(),
-        &collection.name,
-        point_id,
-        params.consistency,
-    )
-    .await;
+    let response =
+        do_get_point(
+            toc.get_ref(),
+            &collection.name,
+            point_id,
+            params.consistency,
+        )
+        .await;
 
     let response = match response {
         Ok(record) => match record {

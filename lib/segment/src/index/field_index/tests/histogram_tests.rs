@@ -25,12 +25,13 @@ fn test_build_histogram_small() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
-    let points = (0..num_samples)
-        .map(|i| Point {
-            val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 10.0),
-            idx: i % num_samples / 2,
-        })
-        .collect_vec();
+    let points =
+        (0..num_samples)
+            .map(|i| Point {
+                val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 10.0),
+                idx: i % num_samples / 2,
+            })
+            .collect_vec();
 
     let mut points_index: BTreeSet<Point<_>> = Default::default();
 
@@ -224,10 +225,11 @@ fn test_build_histogram_round() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
-    let points = (0..num_samples).map(|i| Point {
-        val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
-        idx: i,
-    });
+    let points =
+        (0..num_samples).map(|i| Point {
+            val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
+            idx: i,
+        });
     let (histogram, points_index) = build_histogram(max_bucket_size, precision, points.collect());
 
     request_histogram(&histogram, &points_index);

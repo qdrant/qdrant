@@ -219,16 +219,17 @@ impl SegmentEntry for ProxySegment {
             )?
         };
 
-        let mut write_result = self.write_segment.get().read().search(
-            vector_name,
-            vector,
-            with_payload,
-            with_vector,
-            filter,
-            top,
-            params,
-            is_stopped,
-        )?;
+        let mut write_result =
+            self.write_segment.get().read().search(
+                vector_name,
+                vector,
+                with_payload,
+                with_vector,
+                filter,
+                top,
+                params,
+                is_stopped,
+            )?;
 
         wrapped_result.append(&mut write_result);
         Ok(wrapped_result)
@@ -280,16 +281,17 @@ impl SegmentEntry for ProxySegment {
                 is_stopped,
             )?
         };
-        let mut write_results = self.write_segment.get().read().search_batch(
-            vector_name,
-            vectors,
-            with_payload,
-            with_vector,
-            filter,
-            top,
-            params,
-            is_stopped,
-        )?;
+        let mut write_results =
+            self.write_segment.get().read().search_batch(
+                vector_name,
+                vectors,
+                with_payload,
+                with_vector,
+                filter,
+                top,
+                params,
+                is_stopped,
+            )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
         }
@@ -530,14 +532,15 @@ impl SegmentEntry for ProxySegment {
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
         let deleted_point_count = self.deleted_points.read().len();
 
-        let (wrapped_segment_est, total_wrapped_size) = {
-            let wrapped_segment = self.wrapped_segment.get();
-            let wrapped_segment_guard = wrapped_segment.read();
-            (
-                wrapped_segment_guard.estimate_point_count(filter),
-                wrapped_segment_guard.available_point_count(),
-            )
-        };
+        let (wrapped_segment_est, total_wrapped_size) =
+            {
+                let wrapped_segment = self.wrapped_segment.get();
+                let wrapped_segment_guard = wrapped_segment.read();
+                (
+                    wrapped_segment_guard.estimate_point_count(filter),
+                    wrapped_segment_guard.available_point_count(),
+                )
+            };
 
         let write_segment_est = self.write_segment.get().read().estimate_point_count(filter);
 
@@ -548,12 +551,13 @@ impl SegmentEntry for ProxySegment {
             0
         };
 
-        let primary_clauses =
-            if wrapped_segment_est.primary_clauses == write_segment_est.primary_clauses {
-                wrapped_segment_est.primary_clauses
-            } else {
-                vec![]
-            };
+        let primary_clauses = if wrapped_segment_est.primary_clauses
+            == write_segment_est.primary_clauses
+        {
+            wrapped_segment_est.primary_clauses
+        } else {
+            vec![]
+        };
 
         CardinalityEstimation {
             primary_clauses,
@@ -684,10 +688,11 @@ impl SegmentEntry for ProxySegment {
             .create_field_index(op_num, key, field_schema)?;
         let indexed_fields = self.write_segment.get().read().get_indexed_fields();
 
-        let payload_schema = match indexed_fields.get(key) {
-            Some(schema_type) => schema_type,
-            None => return Ok(false),
-        };
+        let payload_schema =
+            match indexed_fields.get(key) {
+                Some(schema_type) => schema_type,
+                None => return Ok(false),
+            };
 
         self.created_indexes
             .write()
@@ -805,17 +810,17 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
-        let mut proxy_segment = ProxySegment::new(
-            original_segment,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let mut proxy_segment =
+            ProxySegment::new(
+                original_segment,
+                write_segment,
+                deleted_points,
+                created_indexes,
+                deleted_indexes,
+            );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
@@ -873,17 +878,17 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
-        let mut proxy_segment = ProxySegment::new(
-            original_segment,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let mut proxy_segment =
+            ProxySegment::new(
+                original_segment,
+                write_segment,
+                deleted_points,
+                created_indexes,
+                deleted_indexes,
+            );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
@@ -938,17 +943,17 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
-        let proxy_segment = ProxySegment::new(
-            original_segment,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let proxy_segment =
+            ProxySegment::new(
+                original_segment,
+                write_segment,
+                deleted_points,
+                created_indexes,
+                deleted_indexes,
+            );
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
@@ -993,17 +998,17 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
-        let proxy_segment = ProxySegment::new(
-            original_segment,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let proxy_segment =
+            ProxySegment::new(
+                original_segment,
+                write_segment,
+                deleted_points,
+                created_indexes,
+                deleted_indexes,
+            );
 
         let q1 = [1.0, 1.0, 1.0, 0.1];
         let q2 = [1.0, 1.0, 0.1, 0.1];
@@ -1054,9 +1059,8 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
         ProxySegment::new(
             original_segment,
@@ -1072,10 +1076,9 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
-        let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
-            "color".to_string(),
-            "blue".to_string().into(),
-        )));
+        let filter = Filter::new_must_not(Condition::Field(
+            FieldCondition::new_match("color".to_string(), "blue".to_string().into())
+        ));
 
         let original_points = original_segment
             .get()
@@ -1133,9 +1136,8 @@ mod tests {
 
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
         original_segment
             .get()
@@ -1194,9 +1196,8 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
         let mut proxy_segment = ProxySegment::new(
             original_segment,
@@ -1206,13 +1207,14 @@ mod tests {
             deleted_indexes.clone(),
         );
 
-        let mut proxy_segment2 = ProxySegment::new(
-            original_segment_2,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let mut proxy_segment2 =
+            ProxySegment::new(
+                original_segment_2,
+                write_segment,
+                deleted_points,
+                created_indexes,
+                deleted_indexes,
+            );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
@@ -1262,17 +1264,17 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
-        let mut proxy_segment = ProxySegment::new(
-            original_segment,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let mut proxy_segment =
+            ProxySegment::new(
+                original_segment,
+                write_segment,
+                deleted_points,
+                created_indexes,
+                deleted_indexes,
+            );
 
         // We have 5 points by default, assert counts
         let segment_info = proxy_segment.info();
@@ -1356,17 +1358,17 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
+        let created_indexes =
+            Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
-        let mut proxy_segment = ProxySegment::new(
-            original_segment,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let mut proxy_segment =
+            ProxySegment::new(
+                original_segment,
+                write_segment,
+                deleted_points,
+                created_indexes,
+                deleted_indexes,
+            );
 
         // Assert counts from original segment
         let segment_info = proxy_segment.info();

@@ -184,9 +184,11 @@ pub type OperationResult<T> = Result<T, OperationError>;
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {
     match err {
         Ok(_) => None,
-        Err(error) => match error {
-            OperationError::ServiceError { .. } => Some(error.clone()),
-            _ => None,
-        },
+        Err(error) => {
+            match error {
+                OperationError::ServiceError { .. } => Some(error.clone()),
+                _ => None,
+            }
+        }
     }
 }

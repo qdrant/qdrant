@@ -84,22 +84,23 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ..Default::default()
     };
 
-    let collection = Collection::new(
-        collection_name,
-        1,
-        collection_dir.path(),
-        snapshots_path.path(),
-        &config,
-        Arc::new(storage_config),
-        CollectionShardDistribution { shards },
-        ChannelService::default(),
-        dummy_on_replica_failure(),
-        dummy_request_shard_transfer(),
-        None,
-        None,
-    )
-    .await
-    .unwrap();
+    let collection =
+        Collection::new(
+            collection_name,
+            1,
+            collection_dir.path(),
+            snapshots_path.path(),
+            &config,
+            Arc::new(storage_config),
+            CollectionShardDistribution { shards },
+            ChannelService::default(),
+            dummy_on_replica_failure(),
+            dummy_request_shard_transfer(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let snapshot_description = collection

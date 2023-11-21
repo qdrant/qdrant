@@ -50,19 +50,17 @@ fn check_query_vector(
         QueryVector::Nearest(vector) => {
             check_vector_against_config(vector.to_vec_ref(), vector_config)?
         }
-        QueryVector::Recommend(reco_query) => reco_query.flat_iter().try_for_each(|vector| {
-            check_vector_against_config(vector.to_vec_ref(), vector_config)
-        })?,
-        QueryVector::Discovery(discovery_query) => {
-            discovery_query.flat_iter().try_for_each(|vector| {
-                check_vector_against_config(vector.to_vec_ref(), vector_config)
-            })?
-        }
-        QueryVector::Context(discovery_context_query) => {
-            discovery_context_query.flat_iter().try_for_each(|vector| {
-                check_vector_against_config(vector.to_vec_ref(), vector_config)
-            })?
-        }
+        QueryVector::Recommend(reco_query) => reco_query.flat_iter().try_for_each(
+            |vector| check_vector_against_config(vector.to_vec_ref(), vector_config)
+        )?,
+        QueryVector::Discovery(discovery_query) => discovery_query.flat_iter().try_for_each(
+            |vector| check_vector_against_config(vector.to_vec_ref(), vector_config),
+        )?,
+        QueryVector::Context(discovery_context_query) => discovery_context_query
+            .flat_iter()
+            .try_for_each(
+                |vector| check_vector_against_config(vector.to_vec_ref(), vector_config)
+            )?,
     }
 
     Ok(())

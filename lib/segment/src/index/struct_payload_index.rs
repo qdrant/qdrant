@@ -466,9 +466,9 @@ impl PayloadIndex for StructPayloadIndex {
             None => Box::new(vec![].into_iter()),
             Some(indexes) => {
                 let field_clone = field.to_owned();
-                Box::new(indexes.iter().flat_map(move |field_index| {
-                    field_index.payload_blocks(threshold, field_clone.clone())
-                }))
+                Box::new(indexes.iter().flat_map(
+                    move |field_index| field_index.payload_blocks(threshold, field_clone.clone())
+                ))
             }
         }
     }

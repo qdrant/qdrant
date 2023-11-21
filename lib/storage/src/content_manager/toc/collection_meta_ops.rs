@@ -302,26 +302,27 @@ impl TableOfContent {
                     let collection_id = collection_id.clone();
                     let transfer = transfer.clone();
                     async move {
-                        if let Err(error) =
-                            proposal_sender.send(ConsensusOperations::abort_transfer(
+                        if let Err(error) = proposal_sender.send(
+                            ConsensusOperations::abort_transfer(
                                 collection_id,
                                 transfer,
                                 "transmission failed",
-                            ))
-                        {
+                            ),
+                        ) {
                             log::error!("Can't report transfer progress to consensus: {}", error)
                         };
                     }
                 };
 
-                let shard_consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
-                    Some(consensus) => Box::new(consensus.clone()),
-                    None => {
-                        return Err(StorageError::service_error(
-                            "Can't handle transfer, this is a single node deployment",
-                        ))
-                    }
-                };
+                let shard_consensus =
+                    match self.shard_transfer_dispatcher.lock().as_ref() {
+                        Some(consensus) => Box::new(consensus.clone()),
+                        None => {
+                            return Err(StorageError::service_error(
+                                "Can't handle transfer, this is a single node deployment",
+                            ))
+                        }
+                    };
 
                 let temp_dir = self.optional_temp_or_storage_temp_path()?;
                 collection

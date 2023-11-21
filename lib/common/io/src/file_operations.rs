@@ -24,9 +24,7 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
 }
 
 pub fn read_bin<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    Ok(bincode::deserialize_from(BufReader::new(File::open(
-        path,
-    )?))?)
+    Ok(bincode::deserialize_from(BufReader::new(File::open(path)?))?)
 }
 
 pub type FileOperationResult<T> = Result<T>;

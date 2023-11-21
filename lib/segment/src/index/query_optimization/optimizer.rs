@@ -49,14 +49,15 @@ where
     let optimized_filter = OptimizedFilter {
         should: filter.should.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = optimize_should(
-                    conditions,
-                    id_tracker,
-                    field_indexes,
-                    payload_provider.clone(),
-                    estimator,
-                    total,
-                );
+                let (optimized_conditions, estimation) =
+                    optimize_should(
+                        conditions,
+                        id_tracker,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                    );
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -81,14 +82,15 @@ where
         }),
         must_not: filter.must_not.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = optimize_must_not(
-                    conditions,
-                    id_tracker,
-                    field_indexes,
-                    payload_provider.clone(),
-                    estimator,
-                    total,
-                );
+                let (optimized_conditions, estimation) =
+                    optimize_must_not(
+                        conditions,
+                        id_tracker,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                    );
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -130,12 +132,13 @@ where
             }
             _ => {
                 let estimation = estimator(condition);
-                let condition_checker = condition_converter(
-                    condition,
-                    field_indexes,
-                    payload_provider.clone(),
-                    id_tracker,
-                );
+                let condition_checker =
+                    condition_converter(
+                        condition,
+                        field_indexes,
+                        payload_provider.clone(),
+                        id_tracker,
+                    );
                 (OptimizedCondition::Checker(condition_checker), estimation)
             }
         })

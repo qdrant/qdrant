@@ -123,9 +123,9 @@ impl UringReader {
 
             unsafe {
                 // self.io_uring.submission().push(&read_e).unwrap();
-                io_uring.submission().push(&read_e).map_err(|err| {
-                    OperationError::service_error(format!("Failed using io-uring: {}", err))
-                })?;
+                io_uring.submission().push(&read_e).map_err(
+                    |err| OperationError::service_error(format!("Failed using io-uring: {}", err))
+                )?;
             }
         }
 

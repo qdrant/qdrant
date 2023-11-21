@@ -158,28 +158,29 @@ fn main() -> anyhow::Result<()> {
 
     let temp_path = settings.storage.temp_path.as_deref();
 
-    let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
-        recover_full_snapshot(
-            temp_path,
-            &full_snapshot,
-            &settings.storage.storage_path,
-            args.force_snapshot,
-            persistent_consensus_state.this_peer_id(),
-            is_distributed_deployment,
-        )
-    } else if let Some(snapshots) = args.snapshot {
-        // recover from snapshots
-        recover_snapshots(
-            &snapshots,
-            args.force_snapshot,
-            temp_path,
-            &settings.storage.storage_path,
-            persistent_consensus_state.this_peer_id(),
-            is_distributed_deployment,
-        )
-    } else {
-        vec![]
-    };
+    let restored_collections =
+        if let Some(full_snapshot) = args.storage_snapshot {
+            recover_full_snapshot(
+                temp_path,
+                &full_snapshot,
+                &settings.storage.storage_path,
+                args.force_snapshot,
+                persistent_consensus_state.this_peer_id(),
+                is_distributed_deployment,
+            )
+        } else if let Some(snapshots) = args.snapshot {
+            // recover from snapshots
+            recover_snapshots(
+                &snapshots,
+                args.force_snapshot,
+                temp_path,
+                &settings.storage.storage_path,
+                persistent_consensus_state.this_peer_id(),
+                is_distributed_deployment,
+            )
+        } else {
+            vec![]
+        };
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
@@ -258,13 +259,14 @@ fn main() -> anyhow::Result<()> {
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
     let (telemetry_collector, dispatcher_arc) = if is_distributed_deployment {
-        let consensus_state: ConsensusStateRef = ConsensusManager::new(
-            persistent_consensus_state,
-            toc_arc.clone(),
-            propose_operation_sender.unwrap(),
-            storage_path,
-        )
-        .into();
+        let consensus_state: ConsensusStateRef =
+            ConsensusManager::new(
+                persistent_consensus_state,
+                toc_arc.clone(),
+                propose_operation_sender.unwrap(),
+                storage_path,
+            )
+            .into();
         let is_new_deployment = consensus_state.is_new_deployment();
 
         dispatcher = dispatcher.with_consensus(consensus_state.clone());

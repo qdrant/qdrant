@@ -57,10 +57,9 @@ impl Collection {
         }
 
         if state.shards_key_mapping.contains_key(&shard_key) {
-            return Err(CollectionError::bad_request(format!(
-                "Shard key {} already exists",
-                shard_key
-            )));
+            return Err(
+                CollectionError::bad_request(format!("Shard key {} already exists", shard_key))
+            );
         }
 
         let all_peers: HashSet<_> = self

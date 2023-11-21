@@ -273,9 +273,7 @@ impl PayloadFieldIndex for BinaryIndex {
 
                 Ok(estimation)
             }
-            _ => Err(OperationError::service_error(
-                "failed to estimate cardinality",
-            )),
+            _ => Err(OperationError::service_error("failed to estimate cardinality")),
         }
     }
 
@@ -301,12 +299,13 @@ impl PayloadFieldIndex for BinaryIndex {
         };
 
         // just two possible blocks: true and false
-        let iter = [
-            make_block(self.memory.trues_count(), true, key.clone()),
-            make_block(self.memory.falses_count(), false, key),
-        ]
-        .into_iter()
-        .flatten();
+        let iter =
+            [
+                make_block(self.memory.trues_count(), true, key.clone()),
+                make_block(self.memory.falses_count(), false, key),
+            ]
+            .into_iter()
+            .flatten();
 
         Box::new(iter)
     }

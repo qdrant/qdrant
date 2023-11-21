@@ -60,27 +60,29 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     };
 
     let this_peer_id = 0;
-    let shard_distribution = CollectionShardDistribution::all_local(
-        Some(config.params.shard_number.into()),
-        this_peer_id,
-    );
+    let shard_distribution =
+        CollectionShardDistribution::all_local(
+            Some(config.params.shard_number.into()),
+            this_peer_id,
+        );
 
-    let collection = Collection::new(
-        collection_name,
-        this_peer_id,
-        collection_dir.path(),
-        snapshots_path.path(),
-        &config,
-        Arc::new(storage_config),
-        shard_distribution,
-        ChannelService::new(REST_PORT),
-        dummy_on_replica_failure(),
-        dummy_request_shard_transfer(),
-        None,
-        None,
-    )
-    .await
-    .unwrap();
+    let collection =
+        Collection::new(
+            collection_name,
+            this_peer_id,
+            collection_dir.path(),
+            snapshots_path.path(),
+            &config,
+            Arc::new(storage_config),
+            shard_distribution,
+            ChannelService::new(REST_PORT),
+            dummy_on_replica_failure(),
+            dummy_request_shard_transfer(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     let local_shards = collection.get_local_shards().await;
     for shard_id in local_shards {
@@ -99,9 +101,9 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::PointsList(points),
-    ));
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+    );
     collection
         .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await

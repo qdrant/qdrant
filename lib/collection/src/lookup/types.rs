@@ -77,13 +77,13 @@ impl TryFrom<PseudoId> for PointIdType {
 
     fn try_from(value: PseudoId) -> Result<Self, Self::Error> {
         match value {
-            PseudoId::String(s) => Ok(PointIdType::Uuid(
-                Uuid::try_parse(&s).map_err(ConversionError::ParseError)?,
-            )),
+            PseudoId::String(s) => {
+                Ok(PointIdType::Uuid(Uuid::try_parse(&s).map_err(ConversionError::ParseError)?))
+            }
             PseudoId::NumberU64(n) => Ok(PointIdType::NumId(n)),
-            PseudoId::NumberI64(n) => Ok(PointIdType::NumId(
-                u64::try_from(n).map_err(ConversionError::IntError)?,
-            )),
+            PseudoId::NumberI64(n) => {
+                Ok(PointIdType::NumId(u64::try_from(n).map_err(ConversionError::IntError)?))
+            }
         }
     }
 }

@@ -133,10 +133,9 @@ fn hnsw_quantized_search_test(
     let query_vectors = (0..attempts)
         .map(|_| random_vector(&mut rnd, dim).into())
         .collect::<Vec<_>>();
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        STR_KEY,
-        STR_KEY.to_owned().into(),
-    )));
+    let filter = Filter::new_must(
+        Condition::Field(FieldCondition::new_match(STR_KEY, STR_KEY.to_owned().into()))
+    );
 
     // check that quantized search is working
     // to check it, compare quantized search result with exact search result
@@ -177,16 +176,17 @@ fn check_matches(
     ef: usize,
     top: usize,
 ) {
-    let exact_search_results = query_vectors
-        .iter()
-        .map(|query| {
-            segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_index
-                .borrow()
-                .search(&[&query], filter, top, None, &false.into())
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
+    let exact_search_results =
+        query_vectors
+            .iter()
+            .map(|query| {
+                segment.vector_data[DEFAULT_VECTOR_NAME]
+                    .vector_index
+                    .borrow()
+                    .search(&[&query], filter, top, None, &false.into())
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
 
     let mut sames: usize = 0;
     let attempts = query_vectors.len();

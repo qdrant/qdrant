@@ -116,10 +116,9 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
 
         let Some(local) = local.deref() else {
-            return Err(CollectionError::service_error(format!(
-                "Local shard {} not found",
-                self.shard_id
-            )));
+            return Err(
+                CollectionError::service_error(format!("Local shard {} not found", self.shard_id))
+            );
         };
 
         read_operation(local.get()).await
@@ -165,10 +164,9 @@ impl ShardReplicaSet {
                 let local = local.await;
 
                 let Some(local) = local.deref() else {
-                    return Err(CollectionError::service_error(format!(
-                        "Local shard {} not found",
-                        self.shard_id
-                    )));
+                    return Err(CollectionError::service_error(
+                        format!("Local shard {} not found", self.shard_id)
+                    ));
                 };
 
                 read_operation(local.get()).await
@@ -228,12 +226,13 @@ impl ShardReplicaSet {
 
         let mut is_local_operation_resolved = false;
 
-        let update_watcher = async move {
-            match update_watcher {
-                Some(update_watcher) => update_watcher.await,
-                None => future::pending().await,
-            }
-        };
+        let update_watcher =
+            async move {
+                match update_watcher {
+                    Some(update_watcher) => update_watcher.await,
+                    None => future::pending().await,
+                }
+            };
 
         let update_watcher = update_watcher.fuse();
 

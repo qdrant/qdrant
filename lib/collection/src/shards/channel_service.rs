@@ -81,9 +81,9 @@ impl ChannelService {
             })?
             // Await consensus error
             .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to wait for consensus commit on peer: {err}"
-                ))
+                CollectionError::service_error(
+                    format!("Failed to wait for consensus commit on peer: {err}")
+                )
             })?;
         Ok(())
     }
@@ -115,9 +115,9 @@ impl ChannelService {
             })
             .await
             .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to wait for consensus commit on peer {peer_id}: {err}"
-                ))
+                CollectionError::service_error(
+                    format!("Failed to wait for consensus commit on peer {peer_id}: {err}")
+                )
             })?
             .into_inner();
 

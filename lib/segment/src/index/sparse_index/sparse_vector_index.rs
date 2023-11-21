@@ -49,12 +49,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         // load config
         let config_path = SparseIndexConfig::get_config_path(path);
-        let config = if config_path.exists() {
-            SparseIndexConfig::load(&config_path)?
-        } else {
-            // use provided config if no config file exists
-            config
-        };
+        let config =
+            if config_path.exists() {
+                SparseIndexConfig::load(&config_path)?
+            } else {
+                // use provided config if no config file exists
+                config
+            };
 
         let searches_telemetry = SparseSearchesTelemetry::new();
         let inverted_index = TInvertedIndex::open(path)?;
@@ -154,12 +155,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         for &vector in vectors {
             check_process_stopped(is_stopped)?;
             let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
-            let raw_scorer = new_stoppable_raw_scorer(
-                vector.clone(),
-                vector_storage,
-                id_tracker.deleted_point_bitslice(),
-                is_stopped,
-            )?;
+            let raw_scorer =
+                new_stoppable_raw_scorer(
+                    vector.clone(),
+                    vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    is_stopped,
+                )?;
             let search_results =
                 raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), top);
             results.push(search_results);

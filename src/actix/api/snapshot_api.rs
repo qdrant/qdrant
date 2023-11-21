@@ -88,12 +88,12 @@ pub async fn do_save_uploaded_snapshot(
 
     let absolute_path = path.canonicalize()?;
 
-    let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
-        StorageError::service_error(format!(
-            "Failed to convert path to URL: {}",
-            absolute_path.display()
-        ))
-    })?;
+    let snapshot_location =
+        Url::from_file_path(&absolute_path).map_err(|_| {
+            StorageError::service_error(
+                format!("Failed to convert path to URL: {}", absolute_path.display())
+            )
+        })?;
 
     Ok(snapshot_location)
 }
@@ -330,21 +330,22 @@ async fn recover_shard_snapshot(
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
-    let future = async move {
-        let (collection, shard) = path.into_inner();
+    let future =
+        async move {
+            let (collection, shard) = path.into_inner();
 
-        common::snapshots::recover_shard_snapshot(
-            toc.into_inner(),
-            collection,
-            shard,
-            request.location,
-            request.priority.unwrap_or_default(),
-            http_client.as_ref().clone(),
-        )
-        .await?;
+            common::snapshots::recover_shard_snapshot(
+                toc.into_inner(),
+                collection,
+                shard,
+                request.location,
+                request.priority.unwrap_or_default(),
+                http_client.as_ref().clone(),
+            )
+            .await?;
 
-        Ok(())
-    };
+            Ok(())
+        };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }

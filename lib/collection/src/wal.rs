@@ -78,19 +78,21 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
         let first_index_path = Path::new(dir).join(FIRST_INDEX_FILE);
 
-        let first_index = if first_index_path.exists() {
-            let wal_state: WalState = read_json(&first_index_path).map_err(|err| {
-                WalError::InitWalError(format!("failed to read first-index file: {err}"))
-            })?;
+        let first_index =
+            if first_index_path.exists() {
+                let wal_state: WalState =
+                    read_json(&first_index_path).map_err(|err| {
+                        WalError::InitWalError(format!("failed to read first-index file: {err}"))
+                    })?;
 
-            let first_index = wal_state
-                .ack_index
-                .max(wal.first_index())
-                .min(wal.last_index());
-            Some(first_index)
-        } else {
-            None
-        };
+                let first_index = wal_state
+                    .ack_index
+                    .max(wal.first_index())
+                    .min(wal.last_index());
+                Some(first_index)
+            } else {
+                None
+            };
 
         Ok(SerdeWal {
             record: PhantomData,
@@ -196,9 +198,9 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             &self.path().join(FIRST_INDEX_FILE),
             &WalState::new(first_index),
         )
-        .map_err(|err| {
-            WalError::TruncateWalError(format!("failed to write first-index file: {err:?}"))
-        })?;
+        .map_err(
+            |err| WalError::TruncateWalError(format!("failed to write first-index file: {err:?}"))
+        )?;
 
         Ok(())
     }

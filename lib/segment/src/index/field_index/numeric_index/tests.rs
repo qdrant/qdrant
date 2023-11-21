@@ -194,17 +194,18 @@ fn test_payload_blocks(#[case] immutable: bool) {
 fn test_payload_blocks_small(#[case] immutable: bool) {
     let (_temp_dir, mut index) = get_index();
     let threshold = 4;
-    let values = vec![
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![2.0],
-        vec![2.0],
-        vec![2.0],
-        vec![2.0],
-    ];
+    let values =
+        vec![
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![2.0],
+            vec![2.0],
+            vec![2.0],
+            vec![2.0],
+        ];
 
     values
         .into_iter()
@@ -240,17 +241,18 @@ fn test_payload_blocks_small(#[case] immutable: bool) {
 fn test_numeric_index_load_from_disk(#[case] immutable: bool) {
     let (_temp_dir, mut index) = get_index();
 
-    let values = vec![
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![2.0],
-        vec![2.5],
-        vec![2.6],
-        vec![3.0],
-    ];
+    let values =
+        vec![
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![2.0],
+            vec![2.5],
+            vec![2.6],
+            vec![3.0],
+        ];
 
     values
         .into_iter()
@@ -286,17 +288,18 @@ fn test_numeric_index_load_from_disk(#[case] immutable: bool) {
 fn test_numeric_index(#[case] immutable: bool) {
     let (_temp_dir, mut index) = get_index();
 
-    let values = vec![
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![1.0],
-        vec![2.0],
-        vec![2.5],
-        vec![2.6],
-        vec![3.0],
-    ];
+    let values =
+        vec![
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![2.0],
+            vec![2.5],
+            vec![2.6],
+            vec![3.0],
+        ];
 
     values
         .into_iter()

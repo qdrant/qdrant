@@ -79,11 +79,12 @@ mod cgroups_mem {
                 memory_cgroup_path.trim_start_matches('/'),
             );
 
-            let mut mem = Self {
-                mem_controller: cgroup.controller_of::<memory::MemController>()?.clone(),
-                memory_limit_bytes: None,
-                used_memory_bytes: 0,
-            };
+            let mut mem =
+                Self {
+                    mem_controller: cgroup.controller_of::<memory::MemController>()?.clone(),
+                    memory_limit_bytes: None,
+                    used_memory_bytes: 0,
+                };
 
             mem.refresh();
 

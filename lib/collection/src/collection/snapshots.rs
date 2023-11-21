@@ -161,27 +161,28 @@ impl Collection {
         config.validate_and_warn();
         let configured_shards = config.params.shard_number.get();
 
-        let shard_ids_list: Vec<_> = match config.params.sharding_method.unwrap_or_default() {
-            ShardingMethod::Auto => (0..configured_shards).collect(),
-            ShardingMethod::Custom => {
-                // Load shard mapping from disk
-                let mapping_path = target_dir.join(SHARD_KEY_MAPPING_FILE);
-                debug_assert!(
-                    mapping_path.exists(),
-                    "Shard mapping file must exist once custom sharding is used"
-                );
-                if !mapping_path.exists() {
-                    Vec::new()
-                } else {
-                    let shard_key_mapping: ShardKeyMapping = read_json(&mapping_path)?;
-                    shard_key_mapping
-                        .values()
-                        .flat_map(|v| v.iter())
-                        .copied()
-                        .collect()
+        let shard_ids_list: Vec<_> =
+            match config.params.sharding_method.unwrap_or_default() {
+                ShardingMethod::Auto => (0..configured_shards).collect(),
+                ShardingMethod::Custom => {
+                    // Load shard mapping from disk
+                    let mapping_path = target_dir.join(SHARD_KEY_MAPPING_FILE);
+                    debug_assert!(
+                        mapping_path.exists(),
+                        "Shard mapping file must exist once custom sharding is used"
+                    );
+                    if !mapping_path.exists() {
+                        Vec::new()
+                    } else {
+                        let shard_key_mapping: ShardKeyMapping = read_json(&mapping_path)?;
+                        shard_key_mapping
+                            .values()
+                            .flat_map(|v| v.iter())
+                            .copied()
+                            .collect()
+                    }
                 }
-            }
-        };
+            };
 
         // Check that all shard ids are unique
         debug_assert_eq!(
@@ -209,10 +210,9 @@ impl Collection {
                     }
                 }
             } else {
-                return Err(CollectionError::service_error(format!(
-                    "Can't read shard config at {}",
-                    shard_path.display()
-                )));
+                return Err(CollectionError::service_error(
+                    format!("Can't read shard config at {}", shard_path.display())
+                ));
             }
         }
 

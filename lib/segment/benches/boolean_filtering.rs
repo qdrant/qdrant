@@ -82,9 +82,8 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(seed);
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let payload_storage = Arc::new(AtomicRefCell::new(
-        create_payload_storage_fixture(NUM_POINTS, seed).into(),
-    ));
+    let payload_storage =
+        Arc::new(AtomicRefCell::new(create_payload_storage_fixture(NUM_POINTS, seed).into()));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
     let mut index =

@@ -279,9 +279,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
 
         // Expected case: we assume that all points are filled equally.
         // So we can estimate the probability of the point to have non-excluded value.
-        let exp = number_of_selected_points(self.get_indexed_points(), non_excluded_values_count)
-            .max(min)
-            .min(max);
+        let exp =
+            number_of_selected_points(self.get_indexed_points(), non_excluded_values_count)
+                .max(min)
+                .min(max);
 
         CardinalityEstimation {
             primary_clauses: vec![],
@@ -343,9 +344,7 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
                     if integers.is_empty() {
                         Ok(Box::new(vec![].into_iter()))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        Err(OperationError::service_error("failed to estimate cardinality"))
                     }
                 }
             },
@@ -389,18 +388,14 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
                         Ok(CardinalityEstimation::exact(0)
                             .with_primary_clause(PrimaryCondition::Condition(condition.clone())))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        Err(OperationError::service_error("failed to estimate cardinality"))
                     }
                 }
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
             })) => Ok(self.except_cardinality::<str, &str>(keywords.iter().map(|k| k.as_str()))),
-            _ => Err(OperationError::service_error(
-                "failed to estimate cardinality",
-            )),
+            _ => Err(OperationError::service_error("failed to estimate cardinality")),
         }
     }
 
@@ -451,9 +446,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     if keywords.is_empty() {
                         Ok(Box::new(vec![].into_iter()))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        Err(OperationError::service_error("failed to estimate cardinality"))
                     }
                 }
                 AnyVariants::Integers(integers) => Ok(Box::new(
@@ -490,9 +483,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         Ok(CardinalityEstimation::exact(0)
                             .with_primary_clause(PrimaryCondition::Condition(condition.clone())))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        Err(OperationError::service_error("failed to estimate cardinality"))
                     }
                 }
                 AnyVariants::Integers(integers) => {
@@ -511,13 +502,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => {
-                Ok(self
-                    .except_cardinality::<IntPayloadType, IntPayloadType>(integers.iter().cloned()))
-            }
-            _ => Err(OperationError::service_error(
-                "failed to estimate cardinality",
-            )),
+            })) => Ok(self
+                .except_cardinality::<IntPayloadType, IntPayloadType>(integers.iter().cloned())),
+            _ => Err(OperationError::service_error("failed to estimate cardinality")),
         }
     }
 
@@ -542,9 +529,9 @@ impl ValueIndexer<String> for MapIndex<SmolStr> {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.add_many_to_map(id, values),
-            MapIndex::Immutable(_) => Err(OperationError::service_error(
-                "Can't add values to immutable map index",
-            )),
+            MapIndex::Immutable(_) => {
+                Err(OperationError::service_error("Can't add values to immutable map index"))
+            }
         }
     }
 
@@ -571,9 +558,9 @@ impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
     ) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.add_many_to_map(id, values),
-            MapIndex::Immutable(_) => Err(OperationError::service_error(
-                "Can't add values to immutable map index",
-            )),
+            MapIndex::Immutable(_) => {
+                Err(OperationError::service_error("Can't add values to immutable map index"))
+            }
         }
     }
 

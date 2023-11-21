@@ -281,15 +281,16 @@ async fn delete_field_index(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    let response = do_delete_index(
-        dispatcher.get_ref(),
-        &collection.name,
-        field.name.clone(),
-        None,
-        wait,
-        ordering,
-    )
-    .await;
+    let response =
+        do_delete_index(
+            dispatcher.get_ref(),
+            &collection.name,
+            field.name.clone(),
+            None,
+            wait,
+            ordering,
+        )
+        .await;
     process_response(response, timing)
 }
 

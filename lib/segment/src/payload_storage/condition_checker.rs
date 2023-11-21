@@ -80,10 +80,12 @@ impl ValueChecker for Match {
                 }
                 _ => false,
             },
-            Match::Text(MatchText { text }) => match payload {
-                Value::String(stored) => stored.contains(text),
-                _ => false,
-            },
+            Match::Text(MatchText { text }) => {
+                match payload {
+                    Value::String(stored) => stored.contains(text),
+                    _ => false,
+                }
+            }
             Match::Any(MatchAny { any }) => match (payload, any) {
                 (Value::String(stored), AnyVariants::Keywords(list)) => list.contains(stored),
                 (Value::Number(stored), AnyVariants::Integers(list)) => stored
@@ -191,16 +193,17 @@ mod tests {
 
     #[test]
     fn test_geo_matching() {
-        let berlin_and_moscow = json!([
-            {
-                "lat": 52.52197645,
-                "lon": 13.413637435864272
-            },
-            {
-                "lat": 55.7536283,
-                "lon": 37.62137960067377,
-            }
-        ]);
+        let berlin_and_moscow =
+            json!([
+                {
+                    "lat": 52.52197645,
+                    "lon": 13.413637435864272
+                },
+                {
+                    "lat": 55.7536283,
+                    "lon": 37.62137960067377,
+                }
+            ]);
 
         let near_berlin_query = GeoRadius {
             center: GeoPoint {
@@ -232,28 +235,31 @@ mod tests {
             }
         ]);
 
-        let gt_one_country_query = ValuesCount {
-            lt: None,
-            gt: Some(1),
-            gte: None,
-            lte: None,
-        };
+        let gt_one_country_query =
+            ValuesCount {
+                lt: None,
+                gt: Some(1),
+                gte: None,
+                lte: None,
+            };
         assert!(gt_one_country_query.check(&countries));
 
-        let gt_two_countries_query = ValuesCount {
-            lt: None,
-            gt: Some(2),
-            gte: None,
-            lte: None,
-        };
+        let gt_two_countries_query =
+            ValuesCount {
+                lt: None,
+                gt: Some(2),
+                gte: None,
+                lte: None,
+            };
         assert!(!gt_two_countries_query.check(&countries));
 
-        let gte_two_countries_query = ValuesCount {
-            lt: None,
-            gt: None,
-            gte: Some(2),
-            lte: None,
-        };
+        let gte_two_countries_query =
+            ValuesCount {
+                lt: None,
+                gt: None,
+                gte: Some(2),
+                lte: None,
+            };
         assert!(gte_two_countries_query.check(&countries));
     }
 }

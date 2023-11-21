@@ -152,17 +152,19 @@ impl QuantizedVectors {
             )?,
         };
 
-        let quantized_vectors_config = QuantizedVectorsConfig {
-            quantization_config: quantization_config.clone(),
-            vector_parameters,
-        };
+        let quantized_vectors_config =
+            QuantizedVectorsConfig {
+                quantization_config: quantization_config.clone(),
+                vector_parameters,
+            };
 
-        let quantized_vectors = QuantizedVectors {
-            storage_impl: quantized_storage,
-            config: quantized_vectors_config,
-            path: path.to_path_buf(),
-            distance,
-        };
+        let quantized_vectors =
+            QuantizedVectors {
+                storage_impl: quantized_storage,
+                config: quantized_vectors_config,
+                path: path.to_path_buf(),
+                distance,
+            };
 
         quantized_vectors.save_to(path)?;
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
@@ -184,59 +186,64 @@ impl QuantizedVectors {
         let meta_path = path.join(QUANTIZED_META_PATH);
         let config_path = path.join(QUANTIZED_CONFIG_PATH);
         let config: QuantizedVectorsConfig = read_json(&config_path)?;
-        let quantized_store = match &config.quantization_config {
-            QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
-                if Self::is_ram(scalar.always_ram, on_disk_vector_storage) {
-                    QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::<ChunkedVectors<u8>>::load(
-                        &data_path,
-                        &meta_path,
-                        &config.vector_parameters,
-                    )?)
-                } else {
-                    QuantizedVectorStorage::ScalarMmap(
-                        EncodedVectorsU8::<QuantizedMmapStorage>::load(
+        let quantized_store =
+            match &config.quantization_config {
+                QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
+                    if Self::is_ram(scalar.always_ram, on_disk_vector_storage) {
+                        QuantizedVectorStorage::ScalarRam(
+                            EncodedVectorsU8::<ChunkedVectors<u8>>::load(
+                                &data_path,
+                                &meta_path,
+                                &config.vector_parameters,
+                            )?,
+                        )
+                    } else {
+                        QuantizedVectorStorage::ScalarMmap(
+                            EncodedVectorsU8::<QuantizedMmapStorage>::load(
+                                &data_path,
+                                &meta_path,
+                                &config.vector_parameters,
+                            )?,
+                        )
+                    }
+                }
+                QuantizationConfig::Product(ProductQuantization { product: pq }) => {
+                    if Self::is_ram(pq.always_ram, on_disk_vector_storage) {
+                        QuantizedVectorStorage::PQRam(EncodedVectorsPQ::<ChunkedVectors<u8>>::load(
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
-                        )?,
-                    )
+                        )?)
+                    } else {
+                        QuantizedVectorStorage::PQMmap(
+                            EncodedVectorsPQ::<QuantizedMmapStorage>::load(
+                                &data_path,
+                                &meta_path,
+                                &config.vector_parameters,
+                            )?,
+                        )
+                    }
                 }
-            }
-            QuantizationConfig::Product(ProductQuantization { product: pq }) => {
-                if Self::is_ram(pq.always_ram, on_disk_vector_storage) {
-                    QuantizedVectorStorage::PQRam(EncodedVectorsPQ::<ChunkedVectors<u8>>::load(
-                        &data_path,
-                        &meta_path,
-                        &config.vector_parameters,
-                    )?)
-                } else {
-                    QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::<QuantizedMmapStorage>::load(
-                        &data_path,
-                        &meta_path,
-                        &config.vector_parameters,
-                    )?)
+                QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+                    if Self::is_ram(binary.always_ram, on_disk_vector_storage) {
+                        QuantizedVectorStorage::BinaryRam(
+                            EncodedVectorsBin::<ChunkedVectors<u8>>::load(
+                                &data_path,
+                                &meta_path,
+                                &config.vector_parameters,
+                            )?,
+                        )
+                    } else {
+                        QuantizedVectorStorage::BinaryMmap(
+                            EncodedVectorsBin::<QuantizedMmapStorage>::load(
+                                &data_path,
+                                &meta_path,
+                                &config.vector_parameters,
+                            )?,
+                        )
+                    }
                 }
-            }
-            QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                if Self::is_ram(binary.always_ram, on_disk_vector_storage) {
-                    QuantizedVectorStorage::BinaryRam(
-                        EncodedVectorsBin::<ChunkedVectors<u8>>::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?,
-                    )
-                } else {
-                    QuantizedVectorStorage::BinaryMmap(
-                        EncodedVectorsBin::<QuantizedMmapStorage>::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?,
-                    )
-                }
-            }
-        };
+            };
 
         Ok(Arc::new(AtomicRefCell::new(QuantizedVectors {
             storage_impl: quantized_store,

@@ -30,13 +30,14 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             &collection_path.join("snapshots"),
         )
         .await;
-        let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
-                ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
-                payloads: None,
-            })),
-        );
+        let insert_points =
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsBatch(Batch {
+                    ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
+                    vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
+                    payloads: None,
+                }),
+            ));
         collection
             .update_from_client_simple(insert_points, true, WriteOrdering::default())
             .await
@@ -70,13 +71,14 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     {
         let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
-        let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
-                ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
-                payloads: serde_json::from_str(r#"[{ "k": "v1" } , { "k": "v2"}]"#).unwrap(),
-            })),
-        );
+        let insert_points =
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsBatch(Batch {
+                    ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
+                    vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
+                    payloads: serde_json::from_str(r#"[{ "k": "v1" } , { "k": "v2"}]"#).unwrap(),
+                }),
+            ));
         collection
             .update_from_client_simple(insert_points, true, WriteOrdering::default())
             .await
@@ -136,16 +138,17 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     {
         let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
-        let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
-                ids: vec![0.into(), 1.into()],
-                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
-                payloads: serde_json::from_str(
-                    r#"[{ "k1": "v1" }, { "k1": "v2" , "k2": "v3", "k3": "v4"}]"#,
-                )
-                .unwrap(),
-            })),
-        );
+        let insert_points =
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsBatch(Batch {
+                    ids: vec![0.into(), 1.into()],
+                    vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
+                    payloads: serde_json::from_str(
+                        r#"[{ "k1": "v1" }, { "k1": "v2" , "k2": "v3", "k3": "v4"}]"#,
+                    )
+                    .unwrap(),
+                }),
+            ));
         collection
             .update_from_client_simple(insert_points, true, WriteOrdering::default())
             .await

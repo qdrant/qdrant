@@ -81,14 +81,15 @@ async fn recommend_batch_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = do_recommend_batch_points(
-        toc.get_ref(),
-        &collection.name,
-        request.into_inner(),
-        params.consistency,
-        params.timeout(),
-    )
-    .await;
+    let response =
+        do_recommend_batch_points(
+            toc.get_ref(),
+            &collection.name,
+            request.into_inner(),
+            params.consistency,
+            params.timeout(),
+        )
+        .await;
 
     process_response(response, timing)
 }
@@ -112,15 +113,16 @@ async fn recommend_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let response = crate::common::points::do_recommend_point_groups(
-        toc.get_ref(),
-        &collection.name,
-        recommend_group_request,
-        params.consistency,
-        shard_selection,
-        params.timeout(),
-    )
-    .await;
+    let response =
+        crate::common::points::do_recommend_point_groups(
+            toc.get_ref(),
+            &collection.name,
+            recommend_group_request,
+            params.consistency,
+            shard_selection,
+            params.timeout(),
+        )
+        .await;
 
     process_response(response, timing)
 }

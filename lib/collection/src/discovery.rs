@@ -43,14 +43,15 @@ fn discovery_into_core_search(
         }
     }
 
-    let target = convert_to_vectors(
-        request.target.iter(),
-        all_vectors_records_map,
-        &lookup_vector_name,
-        lookup_collection_name,
-    )
-    .next()
-    .map(|v| v.to_owned());
+    let target =
+        convert_to_vectors(
+            request.target.iter(),
+            all_vectors_records_map,
+            &lookup_vector_name,
+            lookup_collection_name,
+        )
+        .next()
+        .map(|v| v.to_owned());
 
     let context_pairs = request
         .context
@@ -87,20 +88,22 @@ fn discovery_into_core_search(
         }),
     };
 
-    let filter = {
-        let not_ids = Filter {
-            should: None,
-            must: None,
-            must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: referenced_ids.into_iter().collect(),
-            })]),
-        };
+    let filter =
+        {
+            let not_ids =
+                Filter {
+                    should: None,
+                    must: None,
+                    must_not: Some(vec![Condition::HasId(HasIdCondition {
+                        has_id: referenced_ids.into_iter().collect(),
+                    })]),
+                };
 
-        match &request.filter {
-            None => not_ids,
-            Some(filter) => not_ids.merge(filter),
-        }
-    };
+            match &request.filter {
+                None => not_ids,
+                Some(filter) => not_ids.merge(filter),
+            }
+        };
 
     let core_search = CoreSearchRequest {
         query,

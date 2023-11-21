@@ -307,12 +307,13 @@ mod tests {
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
-        let raw_scorer = new_raw_scorer(
-            points[2].as_slice().into(),
-            &borrowed_storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
-        )
-        .unwrap();
+        let raw_scorer =
+            new_raw_scorer(
+                points[2].as_slice().into(),
+                &borrowed_storage,
+                borrowed_id_tracker.deleted_point_bitslice(),
+            )
+            .unwrap();
         let res = raw_scorer.peek_top_all(2);
 
         assert_eq!(res.len(), 2);
@@ -438,13 +439,14 @@ mod tests {
 
         let vector = vec![1.0, 0.0, 0.0, 0.0];
         let query = vector.as_slice().into();
-        let closest = new_raw_scorer(
-            query,
-            &borrowed_storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
-        )
-        .unwrap()
-        .peek_top_all(5);
+        let closest =
+            new_raw_scorer(
+                query,
+                &borrowed_storage,
+                borrowed_id_tracker.deleted_point_bitslice(),
+            )
+            .unwrap()
+            .peek_top_all(5);
         assert!(closest.is_empty(), "must have no results, all deleted");
     }
 
@@ -668,12 +670,13 @@ mod tests {
                     &stopped,
                 )
                 .unwrap();
-            let scorer_orig = new_raw_scorer(
-                query.clone(),
-                &borrowed_storage,
-                borrowed_id_tracker.deleted_point_bitslice(),
-            )
-            .unwrap();
+            let scorer_orig =
+                new_raw_scorer(
+                    query.clone(),
+                    &borrowed_storage,
+                    borrowed_id_tracker.deleted_point_bitslice(),
+                )
+                .unwrap();
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
                 let orig = scorer_orig.score_point(i);

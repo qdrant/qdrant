@@ -109,12 +109,13 @@ impl ChunkedMmapVectors {
         let config = Self::ensure_config(directory, dim)?;
         let chunks = read_mmaps(directory)?;
 
-        let vectors = Self {
-            status,
-            config,
-            chunks,
-            directory: directory.to_owned(),
-        };
+        let vectors =
+            Self {
+                status,
+                config,
+                chunks,
+                directory: directory.to_owned(),
+            };
         Ok(vectors)
     }
 
@@ -139,11 +140,12 @@ impl ChunkedMmapVectors {
     }
 
     fn add_chunk(&mut self) -> OperationResult<()> {
-        let chunk = create_chunk(
-            &self.directory,
-            self.chunks.len(),
-            self.config.chunk_size_bytes,
-        )?;
+        let chunk =
+            create_chunk(
+                &self.directory,
+                self.chunks.len(),
+                self.config.chunk_size_bytes,
+            )?;
 
         self.chunks.push(chunk);
         Ok(())

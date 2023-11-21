@@ -76,9 +76,9 @@ pub async fn download_snapshot(
                 )
             })?;
             if !local_path.exists() {
-                return Err(StorageError::bad_request(format!(
-                    "Snapshot file {local_path:?} does not exist"
-                )));
+                return Err(StorageError::bad_request(
+                    format!("Snapshot file {local_path:?} does not exist")
+                ));
             }
             Ok((local_path, None))
         }

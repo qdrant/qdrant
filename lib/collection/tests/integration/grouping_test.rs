@@ -95,15 +95,16 @@ mod group_by {
     async fn searching() {
         let resources = setup(16, 8).await;
 
-        let result = group_by(
-            resources.request.clone(),
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+        let result =
+            group_by(
+                resources.request.clone(),
+                &resources.collection,
+                |_name| async { unreachable!() },
+                resources.read_consistency,
+                resources.shard_selection,
+                None,
+            )
+            .await;
 
         assert!(result.is_ok());
 
@@ -151,15 +152,16 @@ mod group_by {
             2,
         );
 
-        let result = group_by(
-            request.clone(),
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+        let result =
+            group_by(
+                request.clone(),
+                &resources.collection,
+                |_name| async { unreachable!() },
+                resources.read_consistency,
+                resources.shard_selection,
+                None,
+            )
+            .await;
 
         assert!(result.is_ok());
 
@@ -187,18 +189,19 @@ mod group_by {
     async fn with_filter() {
         let resources = setup(16, 8).await;
 
-        let filter: Filter = serde_json::from_value(json!({
-            "must": [
-                {
-                    "key": "docId",
-                    "range": {
-                        "gte": 1,
-                        "lte": 2
+        let filter: Filter =
+            serde_json::from_value(json!({
+                "must": [
+                    {
+                        "key": "docId",
+                        "range": {
+                            "gte": 1,
+                            "lte": 2
+                        }
                     }
-                }
-            ]
-        }))
-        .unwrap();
+                ]
+            }))
+            .unwrap();
 
         let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequestInternal {
@@ -215,15 +218,16 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request,
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+        let result =
+            group_by(
+                group_by_request,
+                &resources.collection,
+                |_name| async { unreachable!() },
+                resources.read_consistency,
+                resources.shard_selection,
+                None,
+            )
+            .await;
 
         assert!(result.is_ok());
 
@@ -251,15 +255,16 @@ mod group_by {
             3,
         );
 
-        let result = group_by(
-            group_by_request.clone(),
-            &resources.collection,
-            |_name| async { unreachable!() },
-            resources.read_consistency,
-            resources.shard_selection,
-            None,
-        )
-        .await;
+        let result =
+            group_by(
+                group_by_request.clone(),
+                &resources.collection,
+                |_name| async { unreachable!() },
+                resources.read_consistency,
+                resources.shard_selection,
+                None,
+            )
+            .await;
 
         assert!(result.is_ok());
 

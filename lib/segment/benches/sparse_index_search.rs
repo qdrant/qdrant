@@ -27,22 +27,24 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let mut rnd = StdRng::seed_from_u64(42);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let sparse_vector_index = fixture_sparse_index_ram(
-        &mut rnd,
-        NUM_VECTORS,
-        MAX_SPARSE_DIM,
-        FULL_SCAN_THRESHOLD,
-        data_dir.path(),
-        &stopped,
-    );
+    let sparse_vector_index =
+        fixture_sparse_index_ram(
+            &mut rnd,
+            NUM_VECTORS,
+            MAX_SPARSE_DIM,
+            FULL_SCAN_THRESHOLD,
+            data_dir.path(),
+            &stopped,
+        );
 
     // adding payload on field
     let field_name = "field";
     let field_value = "important value";
-    let payload: Payload = json!({
-        field_name: field_value,
-    })
-    .into();
+    let payload: Payload =
+        json!({
+            field_name: field_value,
+        })
+        .into();
 
     // all points have the same payload
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
@@ -70,10 +72,9 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     });
 
     // filter by field
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        field_name,
-        field_value.to_owned().into(),
-    )));
+    let filter = Filter::new_must(
+        Condition::Field(FieldCondition::new_match(field_name, field_value.to_owned().into()))
+    );
 
     // intent: bench `search` when the filtered payload key is not indexed
     group.bench_function("inverted-index-filtered-plain", |b| {

@@ -30,12 +30,13 @@ pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
         // Num CPU = 3 -> 2 thread
         // Num CPU = 4 -> 3 thread
         // Num CPU = 5 -> 4 thread
-        search_threads = match num_cpu {
-            0 => 1,
-            1 => 1,
-            2 => 2,
-            _ => num_cpu - 1,
-        };
+        search_threads =
+            match num_cpu {
+                0 => 1,
+                1 => 1,
+                2 => 2,
+                _ => num_cpu - 1,
+            };
     }
 
     runtime::Builder::new_multi_thread()

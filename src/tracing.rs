@@ -62,9 +62,10 @@ pub fn setup(user_filters: &str) -> anyhow::Result<()> {
 
     // Use `tracy` or `tracing-tracy` feature to enable `tracing-tracy`
     #[cfg(feature = "tracing-tracy")]
-    let reg = reg.with(tracing_tracy::TracyLayer::new().with_filter(
-        tracing_subscriber::filter::filter_fn(|metadata| metadata.is_span()),
-    ));
+    let reg = reg.with(
+        tracing_tracy::TracyLayer::new()
+            .with_filter(tracing_subscriber::filter::filter_fn(|metadata| metadata.is_span())),
+    );
 
     tracing::subscriber::set_global_default(reg)?;
 

@@ -108,9 +108,10 @@ impl MutableGeoMapIndex {
         let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
 
         for (key, value) in self.db_wrapper.lock_db().iter()? {
-            let key_str = std::str::from_utf8(&key).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
+            let key_str =
+                std::str::from_utf8(&key).map_err(|_| {
+                    OperationError::service_error("Index load error: UTF8 error while DB parsing")
+                })?;
 
             let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
             let geo_point = GeoMapIndex::decode_db_value(value)?;
@@ -170,16 +171,17 @@ impl MutableGeoMapIndex {
             let key = GeoMapIndex::encode_db_key(&removed_geo_hash, idx);
             self.db_wrapper.remove(key)?;
 
-            let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
-                hash_ids.remove(&idx);
-                hash_ids.is_empty()
-            } else {
-                log::warn!(
-                    "Geo index error: no points for hash {} was found",
-                    removed_geo_hash
-                );
-                false
-            };
+            let is_last =
+                if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
+                    hash_ids.remove(&idx);
+                    hash_ids.is_empty()
+                } else {
+                    log::warn!(
+                        "Geo index error: no points for hash {} was found",
+                        removed_geo_hash
+                    );
+                    false
+                };
 
             if is_last {
                 self.points_map.remove(&removed_geo_hash);
@@ -710,9 +712,7 @@ impl PayloadFieldIndex for GeoMapIndex {
             return Ok(exterior_estimation);
         }
 
-        Err(OperationError::service_error(
-            "failed to estimate cardinality",
-        ))
+        Err(OperationError::service_error("failed to estimate cardinality"))
     }
 
     fn payload_blocks(
@@ -755,10 +755,11 @@ mod tests {
         lon: -73.991516,
     };
 
-    const BERLIN: GeoPoint = GeoPoint {
-        lat: 52.52437,
-        lon: 13.41053,
-    };
+    const BERLIN: GeoPoint =
+        GeoPoint {
+            lat: 52.52437,
+            lon: 13.41053,
+        };
 
     const POTSDAM: GeoPoint = GeoPoint {
         lat: 52.390569,

@@ -477,18 +477,19 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Update working segment ID
-        segment_id = *locked_holder
-            .read()
-            .iter()
-            .find(|(_, segment)| {
-                let segment = match segment {
-                    LockedSegment::Original(s) => s.read(),
-                    LockedSegment::Proxy(_) => unreachable!(),
-                };
-                segment.total_point_count() > 0
-            })
-            .unwrap()
-            .0;
+        segment_id =
+            *locked_holder
+                .read()
+                .iter()
+                .find(|(_, segment)| {
+                    let segment = match segment {
+                        LockedSegment::Original(s) => s.read(),
+                        LockedSegment::Proxy(_) => unreachable!(),
+                    };
+                    segment.total_point_count() > 0
+                })
+                .unwrap()
+                .0;
 
         // Vacuum optimizer should not optimize yet, no points/vectors have been deleted
         let suggested_to_optimize =

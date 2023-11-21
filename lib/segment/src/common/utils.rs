@@ -31,14 +31,16 @@ impl<T> MultiValue<T> {
 
     fn push(&mut self, value: T) {
         match self {
-            Self::Single(opt) => match opt.take() {
-                Some(v) => {
-                    *self = Self::Multiple(vec![v, value]);
+            Self::Single(opt) => {
+                match opt.take() {
+                    Some(v) => {
+                        *self = Self::Multiple(vec![v, value]);
+                    }
+                    None => {
+                        *self = Self::Single(Some(value));
+                    }
                 }
-                None => {
-                    *self = Self::Single(Some(value));
-                }
-            },
+            }
             Self::Multiple(vec) => {
                 vec.push(value);
             }
@@ -75,12 +77,14 @@ impl MultiValue<&Value> {
                 Value::Null => true,
                 _ => false,
             }),
-            Self::Single(val) => match val {
-                None => true,
-                Some(Value::Array(vec)) => vec.is_empty(),
-                Some(Value::Null) => true,
-                _ => false,
-            },
+            Self::Single(val) => {
+                match val {
+                    None => true,
+                    Some(Value::Array(vec)) => vec.is_empty(),
+                    Some(Value::Null) => true,
+                    _ => false,
+                }
+            }
         }
     }
 
@@ -227,15 +231,17 @@ pub fn get_value_from_json_map<'a>(
                 }
             }
         }
-        None => match parse_array_path(path) {
-            Some((array_element_path, array_index)) => {
-                focus_array_path(array_element_path, array_index, None, json_map)
+        None => {
+            match parse_array_path(path) {
+                Some((array_element_path, array_index)) => {
+                    focus_array_path(array_element_path, array_index, None, json_map)
+                }
+                None => match json_map.get(path) {
+                    Some(value) => MultiValue::one(value),
+                    None => MultiValue::default(),
+                },
             }
-            None => match json_map.get(path) {
-                Some(value) => MultiValue::one(value),
-                None => MultiValue::default(),
-            },
-        },
+        }
     }
 }
 
@@ -484,10 +490,9 @@ mod tests {
 
         assert_eq!(
             get_value_from_json_map("a.b", &map).values(),
-            vec![&Value::Object(serde_json::Map::from_iter(vec![(
-                "c".to_string(),
-                Value::Number(1.into())
-            )]))]
+            vec![&Value::Object(
+                serde_json::Map::from_iter(vec![("c".to_string(), Value::Number(1.into()))])
+            )]
         );
 
         // going deeper
@@ -559,20 +564,17 @@ mod tests {
         assert_eq!(
             get_value_from_json_map("a.b", &map).values(),
             vec![&Value::Array(vec![
-                Value::Object(serde_json::Map::from_iter(vec![(
-                    "c".to_string(),
-                    Value::Number(1.into())
-                )])),
-                Value::Object(serde_json::Map::from_iter(vec![(
-                    "c".to_string(),
-                    Value::Number(2.into())
-                )])),
+                Value::Object(
+                    serde_json::Map::from_iter(vec![("c".to_string(), Value::Number(1.into()))])
+                ),
+                Value::Object(
+                    serde_json::Map::from_iter(vec![("c".to_string(), Value::Number(2.into()))])
+                ),
                 Value::Object(serde_json::Map::from_iter(vec![(
                     "d".to_string(),
-                    Value::Object(serde_json::Map::from_iter(vec![(
-                        "e".to_string(),
-                        Value::Number(3.into())
-                    )]))
+                    Value::Object(serde_json::Map::from_iter(
+                        vec![("e".to_string(), Value::Number(3.into()))]
+                    ))
                 )]))
             ])]
         );
@@ -581,20 +583,17 @@ mod tests {
         assert_eq!(
             get_value_from_json_map("a.b[]", &map).values(),
             vec![
-                &Value::Object(serde_json::Map::from_iter(vec![(
-                    "c".to_string(),
-                    Value::Number(1.into())
-                )])),
-                &Value::Object(serde_json::Map::from_iter(vec![(
-                    "c".to_string(),
-                    Value::Number(2.into())
-                )])),
+                &Value::Object(
+                    serde_json::Map::from_iter(vec![("c".to_string(), Value::Number(1.into()))])
+                ),
+                &Value::Object(
+                    serde_json::Map::from_iter(vec![("c".to_string(), Value::Number(2.into()))])
+                ),
                 &Value::Object(serde_json::Map::from_iter(vec![(
                     "d".to_string(),
-                    Value::Object(serde_json::Map::from_iter(vec![(
-                        "e".to_string(),
-                        Value::Number(3.into())
-                    )]))
+                    Value::Object(serde_json::Map::from_iter(
+                        vec![("e".to_string(), Value::Number(3.into()))]
+                    ))
                 )]))
             ]
         );
@@ -608,28 +607,25 @@ mod tests {
         // project object field through array
         assert_eq!(
             get_value_from_json_map("a.b[].d", &map).values(),
-            vec![&Value::Object(serde_json::Map::from_iter(vec![(
-                "e".to_string(),
-                Value::Number(3.into())
-            )]))]
+            vec![&Value::Object(
+                serde_json::Map::from_iter(vec![("e".to_string(), Value::Number(3.into()))])
+            )]
         );
 
         // select scalar element from array
         assert_eq!(
             get_value_from_json_map("a.b[0]", &map).values(),
-            vec![&Value::Object(serde_json::Map::from_iter(vec![(
-                "c".to_string(),
-                Value::Number(1.into())
-            )]))]
+            vec![&Value::Object(
+                serde_json::Map::from_iter(vec![("c".to_string(), Value::Number(1.into()))])
+            )]
         );
 
         // select scalar object from array different index
         assert_eq!(
             get_value_from_json_map("a.b[1]", &map).values(),
-            vec![&Value::Object(serde_json::Map::from_iter(vec![(
-                "c".to_string(),
-                Value::Number(2.into())
-            )]))]
+            vec![&Value::Object(
+                serde_json::Map::from_iter(vec![("c".to_string(), Value::Number(2.into()))])
+            )]
         );
 
         // select field element from array different index
@@ -649,10 +645,9 @@ mod tests {
             get_value_from_json_map("a.b[2]", &map).values(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "d".to_string(),
-                Value::Object(serde_json::Map::from_iter(vec![(
-                    "e".to_string(),
-                    Value::Number(3.into())
-                )]))
+                Value::Object(
+                    serde_json::Map::from_iter(vec![("e".to_string(), Value::Number(3.into()))])
+                )
             )]))]
         );
 

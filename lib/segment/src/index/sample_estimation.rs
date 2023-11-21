@@ -93,12 +93,13 @@ mod tests {
 
     #[test]
     fn test_sample_check_cardinality() {
-        let res = sample_check_cardinality(
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].into_iter(),
-            |idx| idx % 2 == 0,
-            10_000,
-            100_000,
-        );
+        let res =
+            sample_check_cardinality(
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].into_iter(),
+                |idx| idx % 2 == 0,
+                10_000,
+                100_000,
+            );
 
         assert!(res)
     }

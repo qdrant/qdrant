@@ -219,15 +219,16 @@ impl ShardReplicaSet {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
                 Shard::Dummy(DummyShard::new(recovery_reason))
             } else {
-                let res = LocalShard::load(
-                    shard_id,
-                    collection_id.clone(),
-                    shard_path,
-                    collection_config.clone(),
-                    shared_storage_config.clone(),
-                    update_runtime.clone(),
-                )
-                .await;
+                let res =
+                    LocalShard::load(
+                        shard_id,
+                        collection_id.clone(),
+                        shard_path,
+                        collection_config.clone(),
+                        shared_storage_config.clone(),
+                        update_runtime.clone(),
+                    )
+                    .await;
 
                 match res {
                     Ok(shard) => Shard::Local(shard),
@@ -244,9 +245,9 @@ impl ShardReplicaSet {
                              {err}"
                         );
 
-                        Shard::Dummy(DummyShard::new(format!(
-                            "Failed to load local shard {shard_path:?}: {err}"
-                        )))
+                        Shard::Dummy(DummyShard::new(
+                            format!("Failed to load local shard {shard_path:?}: {err}")
+                        ))
                     }
                 }
             };
@@ -388,15 +389,15 @@ impl ShardReplicaSet {
             !tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
                 .await
                 .map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Failed to wait for replica set state: {err}"
-                    ))
+                    CollectionError::service_error(
+                        format!("Failed to wait for replica set state: {err}")
+                    )
                 })?;
 
         if timed_out {
-            return Err(CollectionError::service_error(
-                "Failed to wait for replica set state, timed out",
-            ));
+            return Err(
+                CollectionError::service_error("Failed to wait for replica set state, timed out")
+            );
         }
 
         Ok(())

@@ -544,9 +544,9 @@ impl<'s> SegmentHolder {
             .map(|segment_id| {
                 self.segments
                     .get(&segment_id)
-                    .ok_or_else(|| {
-                        OperationError::service_error(format!("No segment with ID {segment_id}"))
-                    })
+                    .ok_or_else(
+                        || OperationError::service_error(format!("No segment with ID {segment_id}"))
+                    )
                     .map(LockedSegment::get)
             })
             .collect()

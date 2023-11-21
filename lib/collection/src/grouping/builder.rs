@@ -77,15 +77,16 @@ where
     async fn run(self) -> CollectionResult<Vec<PointGroup>> {
         let with_lookup = self.group_by.with_lookup.clone();
 
-        let mut groups = group_by(
-            self.group_by,
-            self.collection,
-            self.collection_by_name.clone(),
-            self.read_consistency,
-            self.shard_selection.clone(),
-            self.timeout,
-        )
-        .await?;
+        let mut groups =
+            group_by(
+                self.group_by,
+                self.collection,
+                self.collection_by_name.clone(),
+                self.read_consistency,
+                self.shard_selection.clone(),
+                self.timeout,
+            )
+            .await?;
 
         if let Some(lookup) = with_lookup {
             let mut lookups = {

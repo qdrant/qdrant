@@ -237,11 +237,13 @@ pub struct PayloadIndexInfo {
 impl PayloadIndexInfo {
     pub fn new(field_type: PayloadFieldSchema, points_count: usize) -> Self {
         match field_type {
-            PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
-                data_type,
-                params: None,
-                points: points_count,
-            },
+            PayloadFieldSchema::FieldType(data_type) => {
+                PayloadIndexInfo {
+                    data_type,
+                    params: None,
+                    points: points_count,
+                }
+            }
             PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
                 PayloadSchemaParams::Text(_) => PayloadIndexInfo {
                     data_type: PayloadSchemaType::Text,
@@ -999,12 +1001,12 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
 
     fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
         match (index_info.data_type, index_info.params) {
-            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => Ok(
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
-            ),
-            (data_type, Some(_)) => Err(format!(
-                "Payload field with type {data_type:?} has unexpected params"
-            )),
+            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => {
+                Ok(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)))
+            }
+            (data_type, Some(_)) => {
+                Err(format!("Payload field with type {data_type:?} has unexpected params"))
+            }
             (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
         }
     }
@@ -1266,11 +1268,12 @@ pub struct ValuesCount {
 
 impl ValuesCount {
     pub fn check_count(&self, value: &Value) -> bool {
-        let count = match value {
-            Value::Null => 0,
-            Value::Array(array) => array.len(),
-            _ => 1,
-        };
+        let count =
+            match value {
+                Value::Null => 0,
+                Value::Array(array) => array.len(),
+                _ => 1,
+            };
 
         self.lt.map_or(true, |x| count < x)
             && self.gt.map_or(true, |x| count > x)
@@ -1378,13 +1381,14 @@ impl GeoPolygon {
 
     // convert GeoPolygon to Geo crate Polygon class for checking point intersection
     pub fn convert(&self) -> PolygonWrapper {
-        let exterior_line: LineString = LineString(
-            self.exterior
-                .points
-                .iter()
-                .map(|p| Coord { x: p.lon, y: p.lat })
-                .collect(),
-        );
+        let exterior_line: LineString =
+            LineString(
+                self.exterior
+                    .points
+                    .iter()
+                    .map(|p| Coord { x: p.lon, y: p.lat })
+                    .collect(),
+            );
 
         // Convert the interior points to coordinates (if any)
         let interior_lines: Vec<LineString> = match &self.interiors {
@@ -1548,9 +1552,7 @@ impl FieldCondition {
 
 pub fn validate_field_condition(field_condition: &FieldCondition) -> Result<(), ValidationError> {
     if field_condition.all_fields_none() {
-        Err(ValidationError::new(
-            "At least one field condition must be specified",
-        ))
+        Err(ValidationError::new("At least one field condition must be specified"))
     } else {
         Ok(())
     }
@@ -1927,12 +1929,13 @@ pub(crate) mod test_utils {
     use super::{GeoLineString, GeoPoint, GeoPolygon};
 
     pub fn build_polygon(exterior_points: Vec<(f64, f64)>) -> GeoPolygon {
-        let exterior_line = GeoLineString {
-            points: exterior_points
-                .into_iter()
-                .map(|(lon, lat)| GeoPoint { lon, lat })
-                .collect(),
-        };
+        let exterior_line =
+            GeoLineString {
+                points: exterior_points
+                    .into_iter()
+                    .map(|(lon, lat)| GeoPoint { lon, lat })
+                    .collect(),
+            };
 
         GeoPolygon {
             exterior: exterior_line,
@@ -1944,12 +1947,13 @@ pub(crate) mod test_utils {
         exterior_points: Vec<(f64, f64)>,
         interiors_points: Vec<Vec<(f64, f64)>>,
     ) -> GeoPolygon {
-        let exterior_line = GeoLineString {
-            points: exterior_points
-                .into_iter()
-                .map(|(lon, lat)| GeoPoint { lon, lat })
-                .collect(),
-        };
+        let exterior_line =
+            GeoLineString {
+                points: exterior_points
+                    .into_iter()
+                    .map(|(lon, lat)| GeoPoint { lon, lat })
+                    .collect(),
+            };
 
         let interior_lines = Some(
             interiors_points
@@ -2016,16 +2020,17 @@ mod tests {
 
     #[test]
     fn test_geo_boundingbox_check_point() {
-        let bounding_box = GeoBoundingBox {
-            top_left: GeoPoint {
-                lon: -1.0,
-                lat: 1.0,
-            },
-            bottom_right: GeoPoint {
-                lon: 1.0,
-                lat: -1.0,
-            },
-        };
+        let bounding_box =
+            GeoBoundingBox {
+                top_left: GeoPoint {
+                    lon: -1.0,
+                    lat: 1.0,
+                },
+                bottom_right: GeoPoint {
+                    lon: 1.0,
+                    lat: -1.0,
+                },
+            };
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 78626.29627999048
         let inside_result = bounding_box.check_point(&GeoPoint {
@@ -2041,59 +2046,60 @@ mod tests {
 
     #[test]
     fn test_geo_polygon_check_point() {
-        let test_cases = [
-            // Create a GeoPolygon with a square shape
-            (
-                // Exterior
-                vec![
-                    (-1.0, -1.0),
-                    (1.0, -1.0),
-                    (1.0, 1.0),
-                    (-1.0, 1.0),
-                    (-1.0, -1.0),
-                ],
-                // Interiors
-                vec![vec![]],
-                // Expected results
-                vec![((0.5, 0.5), true), ((1.5, 1.5), false), ((1.0, 0.0), false)],
-            ),
-            // Create a GeoPolygon as a `twisted square`
-            (
-                // Exterior
-                vec![
-                    (-1.0, -1.0),
-                    (1.0, 1.0),
-                    (1.0, -1.0),
-                    (-1.0, 1.0),
-                    (-1.0, -1.0),
-                ],
-                // Interiors
-                vec![vec![]],
-                // Expected results
-                vec![((0.5, 0.0), true), ((0.0, 0.5), false), ((0.0, 0.0), false)],
-            ),
-            // Create a GeoPolygon with an interior (a 'hole' inside the polygon)
-            (
-                // Exterior
-                vec![
-                    (-1.0, -1.0),
-                    (1.5, -1.0),
-                    (1.5, 1.5),
-                    (-1.0, 1.5),
-                    (-1.0, -1.0),
-                ],
-                // Interiors
-                vec![vec![
-                    (-0.5, -0.5),
-                    (-0.5, 0.5),
-                    (0.5, 0.5),
-                    (0.5, -0.5),
-                    (-0.5, -0.5),
-                ]],
-                // Expected results
-                vec![((0.6, 0.6), true), ((0.0, 0.0), false), ((0.5, 0.5), false)],
-            ),
-        ];
+        let test_cases =
+            [
+                // Create a GeoPolygon with a square shape
+                (
+                    // Exterior
+                    vec![
+                        (-1.0, -1.0),
+                        (1.0, -1.0),
+                        (1.0, 1.0),
+                        (-1.0, 1.0),
+                        (-1.0, -1.0),
+                    ],
+                    // Interiors
+                    vec![vec![]],
+                    // Expected results
+                    vec![((0.5, 0.5), true), ((1.5, 1.5), false), ((1.0, 0.0), false)],
+                ),
+                // Create a GeoPolygon as a `twisted square`
+                (
+                    // Exterior
+                    vec![
+                        (-1.0, -1.0),
+                        (1.0, 1.0),
+                        (1.0, -1.0),
+                        (-1.0, 1.0),
+                        (-1.0, -1.0),
+                    ],
+                    // Interiors
+                    vec![vec![]],
+                    // Expected results
+                    vec![((0.5, 0.0), true), ((0.0, 0.5), false), ((0.0, 0.0), false)],
+                ),
+                // Create a GeoPolygon with an interior (a 'hole' inside the polygon)
+                (
+                    // Exterior
+                    vec![
+                        (-1.0, -1.0),
+                        (1.5, -1.0),
+                        (1.5, 1.5),
+                        (-1.0, 1.5),
+                        (-1.0, -1.0),
+                    ],
+                    // Interiors
+                    vec![vec![
+                        (-0.5, -0.5),
+                        (-0.5, 0.5),
+                        (0.5, 0.5),
+                        (0.5, -0.5),
+                        (-0.5, -0.5),
+                    ]],
+                    // Expected results
+                    vec![((0.6, 0.6), true), ((0.0, 0.0), false), ((0.5, 0.5), false)],
+                ),
+            ];
 
         for (exterior, interiors, points) in test_cases {
             let polygon = build_polygon_with_interiors(exterior, interiors);
@@ -2108,10 +2114,9 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Field(FieldCondition::new_match(
-                "hello".to_owned(),
-                "world".to_owned().into(),
-            ))]),
+            must: Some(vec![Condition::Field(
+                FieldCondition::new_match("hello".to_owned(), "world".to_owned().into())
+            )]),
             must_not: None,
             should: None,
         };
@@ -2207,10 +2212,11 @@ mod tests {
 
         assert_eq!(c.key.as_str(), "Jason");
 
-        let m = match c.r#match.as_ref().unwrap() {
-            Match::Any(m) => m,
-            _ => panic!("Match::Any expected"),
-        };
+        let m =
+            match c.r#match.as_ref().unwrap() {
+                Match::Any(m) => m,
+                _ => panic!("Match::Any expected"),
+            };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
             assert_eq!(kws.to_owned(), vec!["Bourne", "Momoa", "Statham"]);
@@ -2679,10 +2685,9 @@ mod tests {
             removed,
             vec![Value::Array(vec![
                 Value::Object(serde_json::Map::from_iter(vec![])),
-                Value::Object(serde_json::Map::from_iter(vec![(
-                    "j".to_string(),
-                    Value::Number(3.into())
-                ),])),
+                Value::Object(
+                    serde_json::Map::from_iter(vec![("j".to_string(), Value::Number(3.into())),])
+                ),
             ])]
         );
         assert_ne!(payload, Default::default());
@@ -2747,10 +2752,8 @@ mod tests {
 
     #[test]
     fn merge_filters() {
-        let condition1 = Condition::Field(FieldCondition::new_match(
-            "summary",
-            Match::new_text("Berlin"),
-        ));
+        let condition1 =
+            Condition::Field(FieldCondition::new_match("summary", Match::new_text("Berlin")));
         let mut this = Filter::new_must(condition1.clone());
         this.should = Some(vec![condition1.clone()]);
 
@@ -2972,12 +2975,13 @@ mod tests {
         let payload = selector.process(payload.into());
 
         // single removal
-        let expected = json!({
-            "b": {
-                "c": 123,
-                "f": [1,2,3,4,5],
-            }
-        });
+        let expected =
+            json!({
+                "b": {
+                    "c": 123,
+                    "f": [1,2,3,4,5],
+                }
+            });
         assert_eq!(payload, expected.into());
 
         // ignore path that points to array
@@ -2985,12 +2989,13 @@ mod tests {
         let payload = selector.process(payload);
 
         // no removal
-        let expected = json!({
-            "b": {
-                "c": 123,
-                "f": [1,2,3,4,5],
-            }
-        });
+        let expected =
+            json!({
+                "b": {
+                    "c": 123,
+                    "f": [1,2,3,4,5],
+                }
+            });
         assert_eq!(payload, expected.into());
     }
 }

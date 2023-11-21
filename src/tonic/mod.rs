@@ -179,9 +179,7 @@ pub fn init(
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()
             .layer(logging::LoggingMiddlewareLayer::new())
-            .layer(tonic_telemetry::TonicTelemetryLayer::new(
-                telemetry_collector,
-            ))
+            .layer(tonic_telemetry::TonicTelemetryLayer::new(telemetry_collector))
             .option_layer(
                 settings
                     .service
@@ -286,9 +284,7 @@ pub fn init_internal(
             // The stack of middleware that our service will be wrapped in
             let middleware_layer = tower::ServiceBuilder::new()
                 .layer(logging::LoggingMiddlewareLayer::new())
-                .layer(tonic_telemetry::TonicTelemetryLayer::new(
-                    telemetry_collector,
-                ))
+                .layer(tonic_telemetry::TonicTelemetryLayer::new(telemetry_collector))
                 .into_inner();
 
             server

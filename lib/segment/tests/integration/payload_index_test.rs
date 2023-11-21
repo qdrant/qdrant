@@ -365,15 +365,16 @@ fn test_cardinality_estimation() {
 
     let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-        INT_KEY.to_owned(),
-        Range {
-            lt: None,
-            gt: None,
-            gte: Some(50.),
-            lte: Some(100.),
-        },
-    )));
+    let filter =
+        Filter::new_must(Condition::Field(FieldCondition::new_range(
+            INT_KEY.to_owned(),
+            Range {
+                lt: None,
+                gt: None,
+                gte: Some(50.),
+                lte: Some(100.),
+            },
+        )));
 
     let estimation = struct_segment
         .payload_index
@@ -619,10 +620,9 @@ fn test_struct_payload_geo_radius_index() {
         radius: r_meters,
     };
 
-    let condition = Condition::Field(FieldCondition::new_geo_radius(
-        "geo_key".to_string(),
-        geo_radius,
-    ));
+    let condition = Condition::Field(
+        FieldCondition::new_geo_radius("geo_key".to_string(), geo_radius)
+    );
 
     let query_filter = Filter::new_must(condition);
 
@@ -655,15 +655,15 @@ fn test_struct_payload_geo_polygon_index() {
             .collect(),
     );
 
-    let geo_polygon = GeoPolygon {
-        exterior,
-        interiors,
-    };
+    let geo_polygon =
+        GeoPolygon {
+            exterior,
+            interiors,
+        };
 
-    let condition = Condition::Field(FieldCondition::new_geo_polygon(
-        "geo_key".to_string(),
-        geo_polygon,
-    ));
+    let condition = Condition::Field(
+        FieldCondition::new_geo_polygon("geo_key".to_string(), geo_polygon)
+    );
 
     let query_filter = Filter::new_must(condition);
 
@@ -807,10 +807,7 @@ fn test_any_matcher_cardinality_estimation() {
 
     let any_match = FieldCondition::new_match(
         STR_KEY,
-        Match::new_any(AnyVariants::Keywords(vec![
-            "value1".to_string(),
-            "value2".to_string(),
-        ])),
+        Match::new_any(AnyVariants::Keywords(vec!["value1".to_string(), "value2".to_string()])),
     );
 
     let filter = Filter::new_must(Condition::Field(any_match.clone()));

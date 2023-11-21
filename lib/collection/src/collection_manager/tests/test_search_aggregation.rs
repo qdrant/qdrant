@@ -80,11 +80,12 @@ fn test_aggregation_of_batch_search_results() {
 
     let further_results = vec![vec![true, true], vec![true, true], vec![false, true]];
 
-    let (aggregator, re_request) = SegmentsSearcher::process_search_result_step1(
-        search_results,
-        result_limits,
-        further_results,
-    );
+    let (aggregator, re_request) =
+        SegmentsSearcher::process_search_result_step1(
+            search_results,
+            result_limits,
+            further_results,
+        );
 
     // ------------Segment----------batch---
     assert!(re_request[&1].contains(&0));

@@ -65,9 +65,9 @@ impl Collection {
                 replica_set
             } else {
                 // Service error, because it means the validation was incorrect
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} doesn't exist"
-                )));
+                return Err(
+                    CollectionError::service_error(format!("Shard {shard_id} doesn't exist"))
+                );
             };
 
             let is_local = replica_set.is_local().await;
@@ -194,14 +194,15 @@ impl Collection {
         // Should happen on a third-party side
         // Change direction of the remote shards or add a new remote shard
         if self.this_peer_id != transfer.from {
-            let remote_shard_rerouted = transfer::driver::change_remote_shard_route(
-                &shards_holder_guard,
-                transfer.shard_id,
-                transfer.from,
-                transfer.to,
-                transfer.sync,
-            )
-            .await?;
+            let remote_shard_rerouted =
+                transfer::driver::change_remote_shard_route(
+                    &shards_holder_guard,
+                    transfer.shard_id,
+                    transfer.from,
+                    transfer.to,
+                    transfer.sync,
+                )
+                .await?;
             log::debug!("remote_shard_rerouted: {}", remote_shard_rerouted);
         }
         let finish_was_registered =
@@ -241,15 +242,15 @@ impl Collection {
             .await
             .is_finished();
 
-        let replica_set =
-            if let Some(replica_set) = shard_holder_guard.get_shard(&transfer_key.shard_id) {
-                replica_set
-            } else {
-                return Err(CollectionError::bad_request(format!(
-                    "Shard {} doesn't exist",
-                    transfer_key.shard_id
-                )));
-            };
+        let replica_set = if let Some(replica_set) =
+            shard_holder_guard.get_shard(&transfer_key.shard_id)
+        {
+            replica_set
+        } else {
+            return Err(CollectionError::bad_request(
+                format!("Shard {} doesn't exist", transfer_key.shard_id)
+            ));
+        };
 
         let transfer = shard_holder_guard.get_transfer(&transfer_key).await;
 
@@ -285,9 +286,9 @@ impl Collection {
             let shards_holder = shards_holder.read_owned().await;
 
             let Some(replica_set) = shards_holder.get_shard(&shard_id) else {
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} doesn't exist, repartition is not supported yet"
-                )));
+                return Err(CollectionError::service_error(
+                    format!("Shard {shard_id} doesn't exist, repartition is not supported yet")
+                ));
             };
 
             // Wait for the replica set to have the local shard initialized

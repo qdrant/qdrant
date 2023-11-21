@@ -181,12 +181,12 @@ impl Metric for CosineMetric {
 }
 
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    let s: ScoreType = v1
-        .iter()
-        .copied()
-        .zip(v2.iter().copied())
-        .map(|(a, b)| (a - b).powi(2))
-        .sum();
+    let s: ScoreType =
+        v1.iter()
+            .copied()
+            .zip(v2.iter().copied())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum();
     -s
 }
 

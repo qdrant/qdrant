@@ -49,24 +49,25 @@ impl Collection {
         let _update_lock = self.updates_lock.read().await;
         let shard_holder_guard = self.shards_holder.read().await;
 
-        let res = match shard_holder_guard.get_shard(&shard_selection) {
-            None => None,
-            Some(target_shard) => match ordering {
-                WriteOrdering::Weak => target_shard.update_local(operation, wait).await?,
-                WriteOrdering::Medium | WriteOrdering::Strong => Some(
-                    target_shard
-                        .update_with_consistency(operation, wait, ordering)
-                        .await?,
-                ),
-            },
-        };
+        let res =
+            match shard_holder_guard.get_shard(&shard_selection) {
+                None => None,
+                Some(target_shard) => match ordering {
+                    WriteOrdering::Weak => target_shard.update_local(operation, wait).await?,
+                    WriteOrdering::Medium | WriteOrdering::Strong => Some(
+                        target_shard
+                            .update_with_consistency(operation, wait, ordering)
+                            .await?,
+                    ),
+                },
+            };
 
         if let Some(res) = res {
             Ok(res)
         } else {
-            Err(CollectionError::service_error(format!(
-                "No target shard {shard_selection} found for update"
-            )))
+            Err(CollectionError::service_error(
+                format!("No target shard {shard_selection} found for update")
+            ))
         }
     }
 
@@ -95,9 +96,7 @@ impl Collection {
             let shard_to_op = shards_holder.split_by_shard(operation, &shard_keys_selection)?;
 
             if shard_to_op.is_empty() {
-                return Err(CollectionError::bad_request(
-                    "Empty update request".to_string(),
-                ));
+                return Err(CollectionError::bad_request("Empty update request".to_string()));
             }
 
             let shard_requests = shard_to_op
@@ -165,28 +164,29 @@ impl Collection {
         let retrieved_points: Vec<_> = {
             let shards_holder = self.shards_holder.read().await;
             let target_shards = shards_holder.select_shards(shard_selection)?;
-            let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                let shard_key = shard_key.cloned();
-                shard
-                    .scroll_by(
-                        offset,
-                        limit,
-                        &with_payload_interface,
-                        &with_vector,
-                        request.filter.as_ref(),
-                        read_consistency,
-                        shard_selection.is_shard_id(),
-                    )
-                    .and_then(move |mut records| async move {
-                        if shard_key.is_none() {
-                            return Ok(records);
-                        }
-                        for point in &mut records {
-                            point.shard_key = shard_key.clone();
-                        }
-                        Ok(records)
-                    })
-            });
+            let scroll_futures =
+                target_shards.into_iter().map(|(shard, shard_key)| {
+                    let shard_key = shard_key.cloned();
+                    shard
+                        .scroll_by(
+                            offset,
+                            limit,
+                            &with_payload_interface,
+                            &with_vector,
+                            request.filter.as_ref(),
+                            read_consistency,
+                            shard_selection.is_shard_id(),
+                        )
+                        .and_then(move |mut records| async move {
+                            if shard_key.is_none() {
+                                return Ok(records);
+                            }
+                            for point in &mut records {
+                                point.shard_key = shard_key.clone();
+                            }
+                            Ok(records)
+                        })
+                });
 
             future::try_join_all(scroll_futures).await?
         };
@@ -220,17 +220,18 @@ impl Collection {
         let shards = shards_holder.select_shards(shard_selection)?;
 
         let request = Arc::new(request);
-        let mut requests: futures::stream::FuturesUnordered<_> = shards
-            .into_iter()
-            // `count` requests received through internal gRPC *always* have `shard_selection`
-            .map(|(shard, _shard_key)| {
-                shard.count(
-                    request.clone(),
-                    read_consistency,
-                    shard_selection.is_shard_id(),
-                )
-            })
-            .collect();
+        let mut requests: futures::stream::FuturesUnordered<_> =
+            shards
+                .into_iter()
+                // `count` requests received through internal gRPC *always* have `shard_selection`
+                .map(|(shard, _shard_key)| {
+                    shard.count(
+                        request.clone(),
+                        read_consistency,
+                        shard_selection.is_shard_id(),
+                    )
+                })
+                .collect();
 
         let mut count = 0;
 

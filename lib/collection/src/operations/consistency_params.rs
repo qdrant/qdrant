@@ -119,24 +119,23 @@ where
         String(String),
     }
 
-    let factor = match Factor::deserialize(deserializer)? {
-        Factor::Usize(factor) => Ok(factor),
-        Factor::Str(str) => str.parse(),
-        Factor::String(str) => str.parse(),
-    };
+    let factor =
+        match Factor::deserialize(deserializer)? {
+            Factor::Usize(factor) => Ok(factor),
+            Factor::Str(str) => str.parse(),
+            Factor::String(str) => str.parse(),
+        };
 
     let factor = factor.map_err(|err| {
-        serde::de::Error::custom(format!(
-            "failed to deserialize read consistency factor value: {err}"
-        ))
+        serde::de::Error::custom(
+            format!("failed to deserialize read consistency factor value: {err}")
+        )
     })?;
 
     if factor > 0 {
         Ok(factor)
     } else {
-        Err(serde::de::Error::custom(
-            "read consistency factor can't be zero",
-        ))
+        Err(serde::de::Error::custom("read consistency factor can't be zero"))
     }
 }
 
@@ -161,9 +160,9 @@ impl TryFrom<i32> for ReadConsistencyType {
 
     fn try_from(consistency: i32) -> Result<Self, Self::Error> {
         let consistency = ReadConsistencyTypeGrpc::from_i32(consistency).ok_or_else(|| {
-            tonic::Status::invalid_argument(format!(
-                "invalid read consistency type value {consistency}",
-            ))
+            tonic::Status::invalid_argument(
+                format!("invalid read consistency type value {consistency}",)
+            )
         })?;
 
         Ok(consistency.into())

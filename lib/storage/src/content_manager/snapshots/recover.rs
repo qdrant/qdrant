@@ -54,9 +54,9 @@ pub async fn do_recover_from_snapshot(
 ) -> Result<bool, StorageError> {
     let dispatch = dispatcher.clone();
     let collection_name = collection_name.to_string();
-    let recovery = tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatch, &collection_name, source, &client).await
-    });
+    let recovery = tokio::spawn(
+        async move { _do_recover_from_snapshot(dispatch, &collection_name, source, &client).await }
+    );
     if wait {
         Ok(recovery.await??)
     } else {
@@ -221,9 +221,9 @@ async fn _do_recover_from_snapshot(
             let other_active_replicas: Vec<_> = shard_info
                 .replicas
                 .iter()
-                .filter(|(peer_id, state)| {
-                    *state == &ReplicaState::Active && **peer_id != this_peer_id
-                })
+                .filter(
+                    |(peer_id, state)| *state == &ReplicaState::Active && **peer_id != this_peer_id
+                )
                 .collect();
 
             if other_active_replicas.is_empty() {

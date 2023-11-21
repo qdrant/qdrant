@@ -72,10 +72,9 @@ fn test_batch_and_single_request_equivalency() {
 
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
-        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            int_key,
-            payload_value.into(),
-        )));
+        let filter = Filter::new_must(
+            Condition::Field(FieldCondition::new_match(int_key, payload_value.into()))
+        );
 
         let search_res_1 = segment
             .search(
@@ -130,26 +129,28 @@ fn test_batch_and_single_request_equivalency() {
     let ef_construct = 100;
     let full_scan_threshold = 10000;
 
-    let hnsw_config = HnswConfig {
-        m,
-        ef_construct,
-        full_scan_threshold,
-        max_indexing_threads: 2,
-        on_disk: Some(false),
-        payload_m: None,
-    };
+    let hnsw_config =
+        HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads: 2,
+            on_disk: Some(false),
+            payload_m: None,
+        };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        vector_storage.clone(),
-        quantized_vectors.clone(),
-        payload_index_ptr,
-        hnsw_config,
-    )
-    .unwrap();
+    let mut hnsw_index =
+        HNSWIndex::<GraphLinksRam>::open(
+            hnsw_dir.path(),
+            segment.id_tracker.clone(),
+            vector_storage.clone(),
+            quantized_vectors.clone(),
+            payload_index_ptr,
+            hnsw_config,
+        )
+        .unwrap();
 
     hnsw_index.build_index(&stopped).unwrap();
 
@@ -159,10 +160,9 @@ fn test_batch_and_single_request_equivalency() {
 
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
-        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            int_key,
-            payload_value.into(),
-        )));
+        let filter = Filter::new_must(
+            Condition::Field(FieldCondition::new_match(int_key, payload_value.into()))
+        );
 
         let search_res_1 = hnsw_index
             .search(&[&query_vector_1], Some(&filter), 10, None, &false.into())

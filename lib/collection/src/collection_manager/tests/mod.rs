@@ -28,9 +28,8 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
     let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
     let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-    let proxy_created_indexes = Arc::new(RwLock::new(
-        HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-    ));
+    let proxy_created_indexes =
+        Arc::new(RwLock::new(HashMap::<PayloadKeyType, PayloadFieldSchema>::new()));
 
     let proxy = ProxySegment::new(
         optimizing_segment,
@@ -66,27 +65,29 @@ fn test_update_proxy_segments() {
     ];
 
     for i in 1..10 {
-        let points = vec![
-            PointStruct {
-                id: (100 * i + 1).into(),
-                vector: vectors[0].clone().into(),
-                payload: None,
-            },
-            PointStruct {
-                id: (100 * i + 2).into(),
-                vector: vectors[1].clone().into(),
-                payload: None,
-            },
-        ];
+        let points =
+            vec![
+                PointStruct {
+                    id: (100 * i + 1).into(),
+                    vector: vectors[0].clone().into(),
+                    payload: None,
+                },
+                PointStruct {
+                    id: (100 * i + 2).into(),
+                    vector: vectors[1].clone().into(),
+                    payload: None,
+                },
+            ];
         upsert_points(&segments.read(), 1000 + i, &points).unwrap();
     }
 
-    let all_ids = segments
-        .read()
-        .iter()
-        .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, Some(100), None))
-        .sorted()
-        .collect_vec();
+    let all_ids =
+        segments
+            .read()
+            .iter()
+            .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, Some(100), None))
+            .sorted()
+            .collect_vec();
 
     for i in 1..10 {
         let idx = 100 * i + 1;

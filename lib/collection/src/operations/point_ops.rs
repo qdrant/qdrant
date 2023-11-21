@@ -215,23 +215,21 @@ impl Validate for Batch {
         let bad_input_description = |ids: usize, vecs: usize| -> String {
             format!("number of ids and vectors must be equal ({ids} != {vecs})")
         };
-        let create_error = |message: String| -> validator::ValidationErrors {
-            let mut errors = validator::ValidationErrors::new();
-            errors.add("batch", {
-                let mut error = validator::ValidationError::new("point_insert_operation");
-                error.message.replace(Cow::from(message));
-                error
-            });
-            errors
-        };
+        let create_error =
+            |message: String| -> validator::ValidationErrors {
+                let mut errors = validator::ValidationErrors::new();
+                errors.add("batch", {
+                    let mut error = validator::ValidationError::new("point_insert_operation");
+                    error.message.replace(Cow::from(message));
+                    error
+                });
+                errors
+            };
 
         match &batch.vectors {
             BatchVectorStruct::Single(vectors) => {
                 if batch.ids.len() != vectors.len() {
-                    return Err(create_error(bad_input_description(
-                        batch.ids.len(),
-                        vectors.len(),
-                    )));
+                    return Err(create_error(bad_input_description(batch.ids.len(), vectors.len())));
                 }
             }
             BatchVectorStruct::Multi(named_vectors) => {

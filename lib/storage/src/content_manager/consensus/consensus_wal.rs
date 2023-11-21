@@ -216,32 +216,33 @@ mod tests {
     #[test]
     fn test_log_compaction_rewrite() {
         init_logger();
-        let entries_orig = vec![
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 1,
-                data: vec![1, 2, 3],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 2,
-                data: vec![1, 2, 3],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 3,
-                data: vec![1, 2, 3],
-                context: vec![],
-                sync_log: false,
-            },
-        ];
+        let entries_orig =
+            vec![
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 1,
+                    data: vec![1, 2, 3],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 2,
+                    data: vec![1, 2, 3],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 3,
+                    data: vec![1, 2, 3],
+                    context: vec![],
+                    sync_log: false,
+                },
+            ];
 
         let entries_new = vec![
             Entry {
@@ -298,59 +299,61 @@ mod tests {
     #[test]
     fn test_log_rewrite() {
         init_logger();
-        let entries_orig = vec![
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 1,
-                data: vec![1, 1, 1],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 2,
-                data: vec![1, 1, 1],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 3,
-                data: vec![1, 1, 1],
-                context: vec![],
-                sync_log: false,
-            },
-        ];
+        let entries_orig =
+            vec![
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 1,
+                    data: vec![1, 1, 1],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 2,
+                    data: vec![1, 1, 1],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 3,
+                    data: vec![1, 1, 1],
+                    context: vec![],
+                    sync_log: false,
+                },
+            ];
 
-        let entries_new = vec![
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 2,
-                data: vec![2, 2, 2],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 3,
-                data: vec![2, 2, 2],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 4,
-                data: vec![2, 2, 2],
-                context: vec![],
-                sync_log: false,
-            },
-        ];
+        let entries_new =
+            vec![
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 2,
+                    data: vec![2, 2, 2],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 3,
+                    data: vec![2, 2, 2],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 4,
+                    data: vec![2, 2, 2],
+                    context: vec![],
+                    sync_log: false,
+                },
+            ];
 
         let temp_dir = tempfile::tempdir().unwrap();
         let mut wal = ConsensusOpWal::new(temp_dir.path().to_str().unwrap());
@@ -400,32 +403,33 @@ mod tests {
     #[test]
     fn test_log_rewrite_last() {
         init_logger();
-        let entries_orig = vec![
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 1,
-                data: vec![1, 1, 1],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 2,
-                data: vec![1, 1, 1],
-                context: vec![],
-                sync_log: false,
-            },
-            Entry {
-                entry_type: 0,
-                term: 1,
-                index: 3,
-                data: vec![1, 1, 1],
-                context: vec![],
-                sync_log: false,
-            },
-        ];
+        let entries_orig =
+            vec![
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 1,
+                    data: vec![1, 1, 1],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 2,
+                    data: vec![1, 1, 1],
+                    context: vec![],
+                    sync_log: false,
+                },
+                Entry {
+                    entry_type: 0,
+                    term: 1,
+                    index: 3,
+                    data: vec![1, 1, 1],
+                    context: vec![],
+                    sync_log: false,
+                },
+            ];
 
         // change only the last entry
         let entries_new = vec![Entry {

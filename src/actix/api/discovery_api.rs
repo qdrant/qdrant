@@ -51,14 +51,15 @@ async fn discover_batch_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = do_discover_batch_points(
-        toc.get_ref(),
-        &collection.name,
-        request.into_inner(),
-        params.consistency,
-        params.timeout(),
-    )
-    .await;
+    let response =
+        do_discover_batch_points(
+            toc.get_ref(),
+            &collection.name,
+            request.into_inner(),
+            params.consistency,
+            params.timeout(),
+        )
+        .await;
 
     process_response(response, timing)
 }

@@ -209,28 +209,32 @@ pub fn get_geo_bounding_box_checkers(
     geo_bounding_box: GeoBoundingBox,
 ) -> Option<ConditionCheckerFn> {
     match index {
-        FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            match geo_index.get_values(point_id) {
-                None => false,
-                Some(values) => values
-                    .iter()
-                    .any(|geo_point| geo_bounding_box.check_point(geo_point)),
-            }
-        })),
+        FieldIndex::GeoIndex(geo_index) => {
+            Some(Box::new(move |point_id: PointOffsetType| {
+                match geo_index.get_values(point_id) {
+                    None => false,
+                    Some(values) => values
+                        .iter()
+                        .any(|geo_point| geo_bounding_box.check_point(geo_point)),
+                }
+            }))
+        }
         _ => None,
     }
 }
 
 pub fn get_range_checkers(index: &FieldIndex, range: Range) -> Option<ConditionCheckerFn> {
     match index {
-        FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            num_index.get_values(point_id).map_or(false, |values| {
-                values
-                    .iter()
-                    .copied()
-                    .any(|i| range.check_range(i as FloatPayloadType))
-            })
-        })),
+        FieldIndex::IntIndex(num_index) => {
+            Some(Box::new(move |point_id: PointOffsetType| {
+                num_index.get_values(point_id).map_or(false, |values| {
+                    values
+                        .iter()
+                        .copied()
+                        .any(|i| range.check_range(i as FloatPayloadType))
+                })
+            }))
+        }
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             num_index.get_values(point_id).map_or(false, |values| {
                 values.iter().copied().any(|i| range.check_range(i))
@@ -270,17 +274,19 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             }
             _ => None,
         },
-        Match::Text(MatchText { text }) => match index {
-            FieldIndex::FullTextIndex(full_text_index) => {
-                let parsed_query = full_text_index.parse_query(&text);
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    full_text_index
-                        .get_doc(point_id)
-                        .map_or(false, |doc| parsed_query.check_match(doc))
-                }))
+        Match::Text(MatchText { text }) => {
+            match index {
+                FieldIndex::FullTextIndex(full_text_index) => {
+                    let parsed_query = full_text_index.parse_query(&text);
+                    Some(Box::new(move |point_id: PointOffsetType| {
+                        full_text_index
+                            .get_doc(point_id)
+                            .map_or(false, |doc| parsed_query.check_match(doc))
+                    }))
+                }
+                _ => None,
             }
-            _ => None,
-        },
+        }
         Match::Any(MatchAny { any }) => match (any, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {

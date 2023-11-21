@@ -221,20 +221,14 @@ impl ShardHolder {
     ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
         let Some(hashring) = self.rings.get(shard_keys_selection) else {
             if let Some(shard_key) = shard_keys_selection {
-                return Err(CollectionError::bad_input(format!(
-                    "Shard key {shard_key} not found"
-                )));
+                return Err(CollectionError::bad_input(format!("Shard key {shard_key} not found")));
             } else {
-                return Err(CollectionError::bad_input(
-                    "Shard key not specified".to_string(),
-                ));
+                return Err(CollectionError::bad_input("Shard key not specified".to_string()));
             }
         };
 
         if hashring.is_empty() {
-            return Err(CollectionError::bad_input(
-                "No shards found for shard key".to_string(),
-            ));
+            return Err(CollectionError::bad_input("No shards found for shard key".to_string()));
         }
 
         let operation_to_shard = operation.split_by_shard(hashring);
@@ -315,9 +309,7 @@ impl ShardHolder {
 
     fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
         match self.key_mapping.read().get(shard_key).cloned() {
-            None => Err(CollectionError::bad_request(format!(
-                "Shard key {shard_key} not found"
-            ))),
+            None => Err(CollectionError::bad_request(format!("Shard key {shard_key} not found"))),
             Some(ids) => Ok(ids),
         }
     }
@@ -544,9 +536,7 @@ impl ShardHolder {
         if is_local_shard {
             Ok(())
         } else {
-            Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local shard"
-            )))
+            Err(CollectionError::bad_input(format!("Shard {shard_id} is not a local shard")))
         }
     }
 
@@ -562,9 +552,9 @@ impl ShardHolder {
         if is_local_shard {
             Ok(())
         } else {
-            Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local or queue proxy shard"
-            )))
+            Err(CollectionError::bad_input(
+                format!("Shard {shard_id} is not a local or queue proxy shard")
+            ))
         }
     }
 
@@ -673,9 +663,9 @@ impl ShardHolder {
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         if !shard.is_local().await && !shard.is_queue_proxy().await {
-            return Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local or queue proxy shard"
-            )));
+            return Err(CollectionError::bad_input(
+                format!("Shard {shard_id} is not a local or queue proxy shard")
+            ));
         }
 
         let snapshot_file_name = format!(
@@ -795,9 +785,7 @@ impl ShardHolder {
         let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
 
         let snapshot_temp_dir = tempfile::Builder::new()
-            .prefix(&format!(
-                "{collection_name}-shard-{shard_id}-{snapshot_file_name}"
-            ))
+            .prefix(&format!("{collection_name}-shard-{shard_id}-{snapshot_file_name}"))
             .tempdir_in(temp_dir)?;
 
         let task = {
@@ -839,9 +827,9 @@ impl ShardHolder {
             .await?;
 
         if !recovered {
-            return Err(CollectionError::bad_request(format!(
-                "Invalid snapshot {snapshot_file_name}"
-            )));
+            return Err(
+                CollectionError::bad_request(format!("Invalid snapshot {snapshot_file_name}"))
+            );
         }
 
         Ok(())

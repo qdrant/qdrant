@@ -72,14 +72,15 @@ fn exact_search_test() {
 
     let payload_index_ptr = segment.payload_index.clone();
 
-    let hnsw_config = HnswConfig {
-        m,
-        ef_construct,
-        full_scan_threshold,
-        max_indexing_threads: 2,
-        on_disk: Some(false),
-        payload_m: None,
-    };
+    let hnsw_config =
+        HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads: 2,
+            on_disk: Some(false),
+            payload_m: None,
+        };
 
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),

@@ -72,14 +72,15 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let search_res = collection
-        .search(
-            search_request.into(),
-            None,
-            &ShardSelectorInternal::All,
-            None,
-        )
-        .await;
+    let search_res =
+        collection
+            .search(
+                search_request.into(),
+                None,
+                &ShardSelectorInternal::All,
+                None,
+            )
+            .await;
 
     match search_res {
         Ok(res) => {
@@ -136,14 +137,15 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
-    let search_res = collection
-        .search(
-            search_request.into(),
-            None,
-            &ShardSelectorInternal::All,
-            None,
-        )
-        .await;
+    let search_res =
+        collection
+            .search(
+                search_request.into(),
+                None,
+                &ShardSelectorInternal::All,
+                None,
+            )
+            .await;
 
     match search_res {
         Ok(res) => {
@@ -260,14 +262,15 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
 
 #[test]
 fn test_deserialization() {
-    let insert_points = CollectionUpdateOperations::PointOperation(
-        Batch {
-            ids: vec![0.into(), 1.into()],
-            vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
-            payloads: None,
-        }
-        .into(),
-    );
+    let insert_points =
+        CollectionUpdateOperations::PointOperation(
+            Batch {
+                ids: vec![0.into(), 1.into()],
+                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
+                payloads: None,
+            }
+            .into(),
+        );
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
     let _read_obj: CollectionUpdateOperations = serde_json::from_str(&json_str).unwrap();

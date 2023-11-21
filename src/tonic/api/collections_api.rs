@@ -209,9 +209,7 @@ impl Collections for CollectionsService {
         )
         .await
         .map_err(error_to_status)?;
-        Ok(Response::new(UpdateCollectionClusterSetupResponse {
-            result,
-        }))
+        Ok(Response::new(UpdateCollectionClusterSetupResponse { result }))
     }
 
     async fn create_shard_key(

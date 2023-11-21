@@ -83,11 +83,12 @@ impl ClusterTelemetry {
             None
         };
 
-        let config = if level > 1 {
-            Some(ClusterConfigTelemetry::from(settings))
-        } else {
-            None
-        };
+        let config =
+            if level > 1 {
+                Some(ClusterConfigTelemetry::from(settings))
+            } else {
+                None
+            };
 
         ClusterTelemetry {
             enabled: settings.cluster.enabled,

@@ -1476,14 +1476,14 @@ impl VectorsConfigDiff {
 impl Validate for VectorsConfigDiff {
     #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let errors = self
-            .0
-            .values()
-            .filter_map(|v| v.validate().err())
-            .fold(Err(ValidationErrors::new()), |bag, err| {
-                ValidationErrors::merge(bag, "?", Err(err))
-            })
-            .unwrap_err();
+        let errors =
+            self.0
+                .values()
+                .filter_map(|v| v.validate().err())
+                .fold(Err(ValidationErrors::new()), |bag, err| {
+                    ValidationErrors::merge(bag, "?", Err(err))
+                })
+                .unwrap_err();
         errors.errors().is_empty().then_some(()).ok_or(errors)
     }
 }

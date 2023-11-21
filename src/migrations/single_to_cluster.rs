@@ -74,16 +74,14 @@ pub async fn handle_existing_collections(
                         .collect(),
                 });
 
-                consensus_operations.push(CollectionMetaOperations::CreateCollection(
-                    collection_create_operation,
-                ));
+                consensus_operations
+                    .push(CollectionMetaOperations::CreateCollection(collection_create_operation));
             }
             ShardingMethod::Custom => {
                 // We should create additional consensus operations here to set the shard distribution
                 collection_create_operation.set_distribution(ShardDistributionProposal::empty());
-                consensus_operations.push(CollectionMetaOperations::CreateCollection(
-                    collection_create_operation,
-                ));
+                consensus_operations
+                    .push(CollectionMetaOperations::CreateCollection(collection_create_operation));
 
                 for (shard_key, shards) in &collection_state.shards_key_mapping {
                     let mut placement = Vec::new();

@@ -133,12 +133,13 @@ impl ShardReplicaSet {
 
             if let Some(local) = local.deref() {
                 if self.peer_is_active_or_pending(&this_peer_id) {
-                    let local_wait =
-                        if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
-                            false
-                        } else {
-                            wait
-                        };
+                    let local_wait = if self.peer_state(&this_peer_id)
+                        == Some(ReplicaState::Listener)
+                    {
+                        false
+                    } else {
+                        wait
+                    };
 
                     let operation = operation.clone();
 
@@ -326,10 +327,12 @@ impl ShardReplicaSet {
                     .forward_update(operation, wait, ordering)
                     .await
             }
-            None => Err(CollectionError::service_error(format!(
-                "Cannot forward update to shard {} because was removed from the replica set",
-                self.shard_id
-            ))),
+            None => {
+                Err(CollectionError::service_error(format!(
+                    "Cannot forward update to shard {} because was removed from the replica set",
+                    self.shard_id
+                )))
+            }
         }
     }
 }

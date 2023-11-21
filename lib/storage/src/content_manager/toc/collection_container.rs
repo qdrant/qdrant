@@ -48,14 +48,14 @@ impl CollectionContainer for TableOfContent {
                 // We are detaching the current peer, so we need to remove all connections
                 // Remove all peers from the channel service
 
-                let ids_to_drop: Vec<_> = self
-                    .channel_service
-                    .id_to_address
-                    .read()
-                    .keys()
-                    .filter(|id| **id != self.this_peer_id)
-                    .copied()
-                    .collect();
+                let ids_to_drop: Vec<_> =
+                    self.channel_service
+                        .id_to_address
+                        .read()
+                        .keys()
+                        .filter(|id| **id != self.this_peer_id)
+                        .copied()
+                        .collect();
                 for id in ids_to_drop {
                     self.channel_service.remove_peer(id).await;
                 }
@@ -141,31 +141,32 @@ impl TableOfContent {
                     let snapshots_path = self.create_snapshots_path(id).await?;
                     let shard_distribution =
                         CollectionShardDistribution::from_shards_info(state.shards.clone());
-                    let collection = Collection::new(
-                        id.to_string(),
-                        self.this_peer_id,
-                        &collection_path,
-                        &snapshots_path,
-                        &state.config,
-                        self.storage_config
-                            .to_shared_storage_config(self.is_distributed())
-                            .into(),
-                        shard_distribution,
-                        self.channel_service.clone(),
-                        Self::change_peer_state_callback(
-                            self.consensus_proposal_sender.clone(),
+                    let collection =
+                        Collection::new(
                             id.to_string(),
-                            ReplicaState::Dead,
-                            None,
-                        ),
-                        Self::request_shard_transfer_callback(
-                            self.consensus_proposal_sender.clone(),
-                            id.to_string(),
-                        ),
-                        Some(self.search_runtime.handle().clone()),
-                        Some(self.update_runtime.handle().clone()),
-                    )
-                    .await?;
+                            self.this_peer_id,
+                            &collection_path,
+                            &snapshots_path,
+                            &state.config,
+                            self.storage_config
+                                .to_shared_storage_config(self.is_distributed())
+                                .into(),
+                            shard_distribution,
+                            self.channel_service.clone(),
+                            Self::change_peer_state_callback(
+                                self.consensus_proposal_sender.clone(),
+                                id.to_string(),
+                                ReplicaState::Dead,
+                                None,
+                            ),
+                            Self::request_shard_transfer_callback(
+                                self.consensus_proposal_sender.clone(),
+                                id.to_string(),
+                            ),
+                            Some(self.search_runtime.handle().clone()),
+                            Some(self.update_runtime.handle().clone()),
+                        )
+                        .await?;
                     collections.validate_collection_not_exists(id).await?;
                     collections.insert(id.to_string(), collection);
                 }
@@ -180,13 +181,13 @@ impl TableOfContent {
                     if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
                         // In some cases on state application it might be needed to abort the transfer
                         let abort_transfer = |transfer| {
-                            if let Err(error) =
-                                proposal_sender.send(ConsensusOperations::abort_transfer(
+                            if let Err(error) = proposal_sender.send(
+                                ConsensusOperations::abort_transfer(
                                     id.clone(),
                                     transfer,
                                     "sender was not up to date",
-                                ))
-                            {
+                                ),
+                            ) {
                                 log::error!(
                                     "Can't report transfer progress to consensus: {}",
                                     error

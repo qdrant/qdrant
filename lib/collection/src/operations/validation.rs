@@ -147,12 +147,13 @@ mod tests {
         exterior_points: Vec<(f64, f64)>,
         interiors_points: Vec<Vec<(f64, f64)>>,
     ) -> GeoPolygon {
-        let exterior_line = GeoLineString {
-            points: exterior_points
-                .into_iter()
-                .map(|(lon, lat)| GeoPoint { lon, lat })
-                .collect(),
-        };
+        let exterior_line =
+            GeoLineString {
+                points: exterior_points
+                    .into_iter()
+                    .map(|(lon, lat)| GeoPoint { lon, lat })
+                    .collect(),
+            };
 
         let interior_lines = interiors_points
             .into_iter()
@@ -183,13 +184,14 @@ mod tests {
 
     #[test]
     fn test_config_validation_render() {
-        let bad_config = OtherThing {
-            things: vec![
-                SomeThing { idx: 0 },
-                SomeThing { idx: 1 },
-                SomeThing { idx: 2 },
-            ],
-        };
+        let bad_config =
+            OtherThing {
+                things: vec![
+                    SomeThing { idx: 0 },
+                    SomeThing { idx: 1 },
+                    SomeThing { idx: 2 },
+                ],
+            };
 
         let errors = bad_config
             .validate()

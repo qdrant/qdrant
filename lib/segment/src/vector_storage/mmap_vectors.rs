@@ -71,14 +71,15 @@ impl MmapVectors {
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        let uring_reader = if with_async_io {
-            // Keep file handle open for async IO
-            let vectors_file = File::open(vectors_path)?;
-            let raw_size = dim * size_of::<VectorElementType>();
-            Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
-        } else {
-            None
-        };
+        let uring_reader =
+            if with_async_io {
+                // Keep file handle open for async IO
+                let vectors_file = File::open(vectors_path)?;
+                let raw_size = dim * size_of::<VectorElementType>();
+                Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
+            } else {
+                None
+            };
 
         Ok(MmapVectors {
             dim,

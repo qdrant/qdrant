@@ -66,21 +66,21 @@ impl ConfigMismatchOptimizer {
     fn get_required_hnsw_config(&self, vector_name: &str) -> Cow<HnswConfig> {
         let target_hnsw_collection = &self.hnsw_config;
         // Select vector specific target HNSW config
-        let target_hnsw_vector = self
-            .collection_params
-            .vectors
-            .get_params(vector_name)
-            .and_then(|vector_params| vector_params.hnsw_config)
-            .map(|vector_hnsw| vector_hnsw.update(target_hnsw_collection))
-            .and_then(|hnsw| match hnsw {
-                Ok(hnsw) => Some(hnsw),
-                Err(err) => {
-                    log::warn!(
-                        "Failed to merge collection and vector HNSW config, ignoring: {err}"
-                    );
-                    None
-                }
-            });
+        let target_hnsw_vector =
+            self.collection_params
+                .vectors
+                .get_params(vector_name)
+                .and_then(|vector_params| vector_params.hnsw_config)
+                .map(|vector_hnsw| vector_hnsw.update(target_hnsw_collection))
+                .and_then(|hnsw| match hnsw {
+                    Ok(hnsw) => Some(hnsw),
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to merge collection and vector HNSW config, ignoring: {err}"
+                        );
+                        None
+                    }
+                });
         match target_hnsw_vector {
             Some(target_hnsw) => Cow::Owned(target_hnsw),
             None => Cow::Borrowed(target_hnsw_collection),
@@ -318,14 +318,15 @@ mod tests {
             hnsw_config.clone(),
             Default::default(),
         );
-        let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
-            thresholds_config,
-            dir.path().to_owned(),
-            temp_dir.path().to_owned(),
-            collection_params,
-            hnsw_config.clone(),
-            Default::default(),
-        );
+        let mut config_mismatch_optimizer =
+            ConfigMismatchOptimizer::new(
+                thresholds_config,
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params,
+                hnsw_config.clone(),
+                Default::default(),
+            );
 
         // Use indexing optimizer to build index for HNSW mismatch test
         let changed = index_optimizer

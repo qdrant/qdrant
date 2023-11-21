@@ -325,15 +325,16 @@ where
         }
 
         // Make request
-        let points = request
-            .r#do(
-                collection,
-                collection_by_name.clone(),
-                read_consistency,
-                shard_selection.clone(),
-                timeout,
-            )
-            .await?;
+        let points =
+            request
+                .r#do(
+                    collection,
+                    collection_by_name.clone(),
+                    read_consistency,
+                    shard_selection.clone(),
+                    timeout,
+                )
+                .await?;
 
         if points.is_empty() {
             break;
@@ -444,10 +445,7 @@ fn match_on(path: &str, values: Vec<Value>) -> Vec<Condition> {
     values_to_any_variants(values)
         .into_iter()
         .map(|any_variants| {
-            Condition::Field(FieldCondition::new_match(
-                path,
-                Match::new_any(any_variants),
-            ))
+            Condition::Field(FieldCondition::new_match(path, Match::new_any(any_variants)))
         })
         .collect()
 }

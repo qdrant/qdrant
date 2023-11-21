@@ -343,14 +343,15 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     assert_eq!(quantization_files, quantized_vectors.borrow().files());
 
     let borrowed_quantized_vectors = quantized_vectors.borrow();
-    let scorer_quant = borrowed_quantized_vectors
-        .raw_scorer(
-            query.clone(),
-            borrowed_id_tracker.deleted_point_bitslice(),
-            borrowed_storage.deleted_vector_bitslice(),
-            &stopped,
-        )
-        .unwrap();
+    let scorer_quant =
+        borrowed_quantized_vectors
+            .raw_scorer(
+                query.clone(),
+                borrowed_id_tracker.deleted_point_bitslice(),
+                borrowed_storage.deleted_vector_bitslice(),
+                &stopped,
+            )
+            .unwrap();
     let scorer_orig = new_raw_scorer(
         query,
         &borrowed_storage,

@@ -225,13 +225,14 @@ impl<T: Numericable> Histogram<T> {
             }
         };
 
-        let right_border = {
-            if matches!(to_, Unbounded) {
-                None
-            } else {
-                self.borders.range((to_.clone(), Unbounded)).next()
-            }
-        };
+        let right_border =
+            {
+                if matches!(to_, Unbounded) {
+                    None
+                } else {
+                    self.borders.range((to_.clone(), Unbounded)).next()
+                }
+            };
 
         if !check_boundaries(&from_, &to_) {
             return (0, 0, 0);
@@ -282,20 +283,21 @@ impl<T: Numericable> Histogram<T> {
         F: Fn(&Point<T>) -> Option<Point<T>>,
         G: Fn(&Point<T>) -> Option<Point<T>>,
     {
-        let (mut close_neighbors, (mut far_left_neighbor, mut far_right_neighbor)) = {
-            let mut left_iterator = self
-                .borders
-                .range((Unbounded, Included(val.clone())))
-                .map(|(k, v)| (k.clone(), v.clone()));
-            let mut right_iterator = self
-                .borders
-                .range((Excluded(val.clone()), Unbounded))
-                .map(|(k, v)| (k.clone(), v.clone()));
-            (
-                (left_iterator.next_back(), right_iterator.next()),
-                (left_iterator.next_back(), right_iterator.next()),
-            )
-        };
+        let (mut close_neighbors, (mut far_left_neighbor, mut far_right_neighbor)) =
+            {
+                let mut left_iterator = self
+                    .borders
+                    .range((Unbounded, Included(val.clone())))
+                    .map(|(k, v)| (k.clone(), v.clone()));
+                let mut right_iterator = self
+                    .borders
+                    .range((Excluded(val.clone()), Unbounded))
+                    .map(|(k, v)| (k.clone(), v.clone()));
+                (
+                    (left_iterator.next_back(), right_iterator.next()),
+                    (left_iterator.next_back(), right_iterator.next()),
+                )
+            };
 
         let (to_remove, to_create, removed) = match &mut close_neighbors {
             (None, None) => (None, None, false), // histogram is empty
@@ -504,32 +506,34 @@ impl<T: Numericable> Histogram<T> {
             return;
         }
 
-        let (mut close_neighbors, (mut far_left_neighbor, mut far_right_neighbor)) = {
-            let mut left_iterator = self
-                .borders
-                .range((Unbounded, Included(val.clone())))
-                .map(|(k, v)| (k.clone(), v.clone()));
-            let mut right_iterator = self
-                .borders
-                .range((Excluded(val.clone()), Unbounded))
-                .map(|(k, v)| (k.clone(), v.clone()));
-            (
-                (left_iterator.next_back(), right_iterator.next()),
-                (left_iterator.next_back(), right_iterator.next()),
-            )
-        };
+        let (mut close_neighbors, (mut far_left_neighbor, mut far_right_neighbor)) =
+            {
+                let mut left_iterator = self
+                    .borders
+                    .range((Unbounded, Included(val.clone())))
+                    .map(|(k, v)| (k.clone(), v.clone()));
+                let mut right_iterator = self
+                    .borders
+                    .range((Excluded(val.clone()), Unbounded))
+                    .map(|(k, v)| (k.clone(), v.clone()));
+                (
+                    (left_iterator.next_back(), right_iterator.next()),
+                    (left_iterator.next_back(), right_iterator.next()),
+                )
+            };
 
         let (to_remove, to_create) = match &mut close_neighbors {
             (None, Some((right_border, right_border_count))) => {
                 // x|.....|...
                 let new_count = right_border_count.right + 1;
-                let (new_border, mut new_border_count) = (
-                    val,
-                    Counts {
-                        left: 0,
-                        right: new_count,
-                    },
-                );
+                let (new_border, mut new_border_count) =
+                    (
+                        val,
+                        Counts {
+                            left: 0,
+                            right: new_count,
+                        },
+                    );
 
                 if new_count > self.current_bucket_size() {
                     // Too many values, can't move the border
@@ -555,13 +559,14 @@ impl<T: Numericable> Histogram<T> {
             (Some((left_border, left_border_count)), None) => {
                 // ...|.....|x
                 let new_count = left_border_count.left + 1;
-                let (new_border, mut new_border_count) = (
-                    val,
-                    Counts {
-                        left: new_count,
-                        right: 0,
-                    },
-                );
+                let (new_border, mut new_border_count) =
+                    (
+                        val,
+                        Counts {
+                            left: new_count,
+                            right: 0,
+                        },
+                    );
                 if new_count > self.current_bucket_size() {
                     // Too many values, can't move the border
                     // ...|.....|x

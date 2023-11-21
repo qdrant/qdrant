@@ -62,9 +62,7 @@ async fn get_local_source_shards(
 fn handle_get_collection(collection: Option<&Collection>) -> CollectionResult<&Collection> {
     match collection {
         Some(collection) => Ok(collection),
-        None => Err(CollectionError::service_error(
-            "Collection is not found".to_string(),
-        )),
+        None => Err(CollectionError::service_error("Collection is not found".to_string())),
     }
 }
 

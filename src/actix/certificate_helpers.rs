@@ -43,10 +43,11 @@ impl RotatingCertificateResolver {
     fn get_key_or_refresh(&self) -> Arc<CertifiedKey> {
         // Get read-only lock to the key. If TTL is not configured or is not expired, return key.
         let key = self.key.read();
-        let ttl = match self.ttl {
-            Some(ttl) if key.is_expired(ttl) => ttl,
-            _ => return key.key.clone(),
-        };
+        let ttl =
+            match self.ttl {
+                Some(ttl) if key.is_expired(ttl) => ttl,
+                _ => return key.key.clone(),
+            };
         drop(key);
 
         // If TTL is expired:
@@ -103,13 +104,14 @@ impl CertifiedKeyWithAge {
 /// Load TLS configuration and construct certified key.
 fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
     // Load certificates
-    let certs: Vec<Certificate> = with_buf_read(&tls_config.cert, rustls_pemfile::read_all)?
-        .into_iter()
-        .filter_map(|item| match item {
-            Item::X509Certificate(data) => Some(Certificate(data)),
-            _ => None,
-        })
-        .collect();
+    let certs: Vec<Certificate> =
+        with_buf_read(&tls_config.cert, rustls_pemfile::read_all)?
+            .into_iter()
+            .filter_map(|item| match item {
+                Item::X509Certificate(data) => Some(Certificate(data)),
+                _ => None,
+            })
+            .collect();
     if certs.is_empty() {
         return Err(Error::NoServerCert);
     }

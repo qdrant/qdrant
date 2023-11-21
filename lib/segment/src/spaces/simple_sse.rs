@@ -116,20 +116,23 @@ pub(crate) unsafe fn dot_similarity_sse(
     while i < m {
         sum128_1 = _mm_add_ps(_mm_mul_ps(_mm_loadu_ps(ptr1), _mm_loadu_ps(ptr2)), sum128_1);
 
-        sum128_2 = _mm_add_ps(
-            _mm_mul_ps(_mm_loadu_ps(ptr1.add(4)), _mm_loadu_ps(ptr2.add(4))),
-            sum128_2,
-        );
+        sum128_2 =
+            _mm_add_ps(
+                _mm_mul_ps(_mm_loadu_ps(ptr1.add(4)), _mm_loadu_ps(ptr2.add(4))),
+                sum128_2,
+            );
 
-        sum128_3 = _mm_add_ps(
-            _mm_mul_ps(_mm_loadu_ps(ptr1.add(8)), _mm_loadu_ps(ptr2.add(8))),
-            sum128_3,
-        );
+        sum128_3 =
+            _mm_add_ps(
+                _mm_mul_ps(_mm_loadu_ps(ptr1.add(8)), _mm_loadu_ps(ptr2.add(8))),
+                sum128_3,
+            );
 
-        sum128_4 = _mm_add_ps(
-            _mm_mul_ps(_mm_loadu_ps(ptr1.add(12)), _mm_loadu_ps(ptr2.add(12))),
-            sum128_4,
-        );
+        sum128_4 =
+            _mm_add_ps(
+                _mm_mul_ps(_mm_loadu_ps(ptr1.add(12)), _mm_loadu_ps(ptr2.add(12))),
+                sum128_4,
+            );
 
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);

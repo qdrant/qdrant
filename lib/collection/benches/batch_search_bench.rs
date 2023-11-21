@@ -40,9 +40,9 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         };
         points.push(point);
     }
-    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperationsInternal::PointsList(points),
-    ))
+    CollectionUpdateOperations::PointOperation(
+        PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+    )
 }
 
 fn batch_search_bench(c: &mut Criterion) {
@@ -89,16 +89,17 @@ fn batch_search_bench(c: &mut Criterion) {
 
     let shared_config = Arc::new(RwLock::new(collection_config));
 
-    let shard = handle
-        .block_on(LocalShard::build_local(
-            0,
-            "test_collection".to_string(),
-            storage_dir.path(),
-            shared_config,
-            Default::default(),
-            handle.clone(),
-        ))
-        .unwrap();
+    let shard =
+        handle
+            .block_on(LocalShard::build_local(
+                0,
+                "test_collection".to_string(),
+                storage_dir.path(),
+                shared_config,
+                Default::default(),
+                handle.clone(),
+            ))
+            .unwrap();
 
     let rnd_batch = create_rnd_batch();
 
@@ -108,9 +109,9 @@ fn batch_search_bench(c: &mut Criterion) {
 
     let filters = vec![
         None,
-        Some(Filter::new_must(Condition::Field(
-            FieldCondition::new_match("a".to_string(), 3.into()),
-        ))),
+        Some(
+            Filter::new_must(Condition::Field(FieldCondition::new_match("a".to_string(), 3.into())))
+        ),
         Some(Filter::new_must(Condition::Field(
             FieldCondition::new_range(
                 "a".to_string(),

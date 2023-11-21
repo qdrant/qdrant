@@ -125,9 +125,7 @@ impl ShardReplicaSet {
 
             Err(restore_err) => {
                 // Initialize "dummy" replica
-                local.replace(Shard::Dummy(DummyShard::new(
-                    "Failed to restore local replica",
-                )));
+                local.replace(Shard::Dummy(DummyShard::new("Failed to restore local replica")));
 
                 // TODO: Handle single-node mode!? (How!? 😰)
 

@@ -91,15 +91,16 @@ where
     Fut: Future<Output = HttpResult<T>> + Send + 'static,
     T: serde::Serialize + Send + 'static,
 {
-    let future = async move {
-        let handle = tokio::task::spawn(future);
+    let future =
+        async move {
+            let handle = tokio::task::spawn(future);
 
-        if wait {
-            handle.await?.map(Some)
-        } else {
-            Ok(None)
-        }
-    };
+            if wait {
+                handle.await?.map(Some)
+            } else {
+                Ok(None)
+            }
+        };
 
     time_impl(future).await
 }

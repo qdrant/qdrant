@@ -32,9 +32,9 @@ pub(super) async fn transfer_stream_records(
         let shard_holder = shard_holder.read().await;
 
         let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be proxied because it does not exist"
-            )));
+            return Err(CollectionError::service_error(
+                format!("Shard {shard_id} cannot be proxied because it does not exist")
+            ));
         };
 
         replica_set.proxify_local(remote_shard).await?;
@@ -53,9 +53,7 @@ pub(super) async fn transfer_stream_records(
         let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
             // Forward proxy gone?!
             // That would be a programming error.
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} is not found"
-            )));
+            return Err(CollectionError::service_error(format!("Shard {shard_id} is not found")));
         };
 
         offset = replica_set

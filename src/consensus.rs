@@ -117,16 +117,17 @@ impl Consensus {
                 }
             })?;
 
-        let server_tls = if settings.cluster.p2p.enable_tls {
-            let tls_config = settings
-                .tls
-                .clone()
-                .ok_or_else(Settings::tls_config_is_undefined_error)?;
+        let server_tls =
+            if settings.cluster.p2p.enable_tls {
+                let tls_config = settings
+                    .tls
+                    .clone()
+                    .ok_or_else(Settings::tls_config_is_undefined_error)?;
 
-            Some(helpers::load_tls_internal_server_config(&tls_config)?)
-        } else {
-            None
-        };
+                Some(helpers::load_tls_internal_server_config(&tls_config)?)
+            } else {
+                None
+            };
 
         let handle = thread::Builder::new()
             .name("grpc_internal".to_string())
@@ -231,13 +232,14 @@ impl Consensus {
             channel_service.channel_pool,
         );
 
-        let consensus = Self {
-            node,
-            receiver,
-            runtime,
-            config,
-            broker,
-        };
+        let consensus =
+            Self {
+                node,
+                receiver,
+                runtime,
+                config,
+                broker,
+            };
 
         Ok((consensus, sender))
     }
@@ -322,12 +324,13 @@ impl Consensus {
         tls_config: Option<ClientTlsConfig>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
-        let mut peer_to_uri = state_ref
-            .persistent
-            .read()
-            .peer_address_by_id
-            .read()
-            .clone();
+        let mut peer_to_uri =
+            state_ref
+                .persistent
+                .read()
+                .peer_address_by_id
+                .read()
+                .clone();
         let this_peer_url = peer_to_uri.remove(&this_peer_id);
         // Recover url if a different one is provided
         let do_recover = match (&this_peer_url, &uri) {
@@ -507,10 +510,9 @@ impl Consensus {
                 let result = match operation {
                     ConsensusOperations::RemovePeer(peer_id) => {
                         let mut change = ConfChangeV2::default();
-                        change.set_changes(vec![raft_proto::new_conf_change_single(
-                            peer_id,
-                            ConfChangeType::RemoveNode,
-                        )]);
+                        change.set_changes(vec![
+                            raft_proto::new_conf_change_single(peer_id, ConfChangeType::RemoveNode)
+                        ]);
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(vec![], change)
                     }
@@ -582,10 +584,9 @@ impl Consensus {
             return Ok(false);
         }
         let mut change = ConfChangeV2::default();
-        change.set_changes(vec![raft_proto::new_conf_change_single(
-            learner,
-            ConfChangeType::AddNode,
-        )]);
+        change.set_changes(
+            vec![raft_proto::new_conf_change_single(learner, ConfChangeType::AddNode)]
+        );
         log::debug!("Proposing promotion for learner {learner} to voter");
         self.node.propose_conf_change(vec![], change)?;
         Ok(true)
@@ -818,18 +819,19 @@ impl RaftMessageBroker {
                 }
             };
 
-            let failed_to_forward = |message: &RaftMessage, description: &str| {
-                let peer_id = message.to;
+            let failed_to_forward =
+                |message: &RaftMessage, description: &str| {
+                    let peer_id = message.to;
 
-                let is_debug = log::max_level() >= log::Level::Debug;
-                let space = if is_debug { " " } else { "" };
-                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" }; // TODO: `fmt::Debug` for `""` prints `""`... 😒
+                    let is_debug = log::max_level() >= log::Level::Debug;
+                    let space = if is_debug { " " } else { "" };
+                    let message: &dyn fmt::Debug = if is_debug { &message } else { &"" }; // TODO: `fmt::Debug` for `""` prints `""`... 😒
 
-                log::error!(
+                    log::error!(
                     "Failed to forward message{space}{message:?} to message sender task {peer_id}: \
                      {description}"
                 );
-            };
+                };
 
             match sender.send(message) {
                 Ok(()) => (),
@@ -978,12 +980,13 @@ impl RaftMessageSender {
         let mut prev_index = 0;
 
         loop {
-            let (index, message) = tokio::select! {
-                biased;
-                Some(message) = self.messages.recv() => message,
-                Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
-                else => break,
-            };
+            let (index, message) =
+                tokio::select! {
+                    biased;
+                    Some(message) = self.messages.recv() => message,
+                    Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
+                    else => break,
+                };
 
             if prev_index <= index {
                 self.send(&message).await;
@@ -1033,14 +1036,15 @@ impl RaftMessageSender {
             .await;
 
         if message.msg_type == raft::eraftpb::MessageType::MsgSnapshot as i32 {
-            let res = self.consensus_state.report_snapshot(
-                peer_id,
-                if res.is_ok() {
-                    SnapshotStatus::Finish
-                } else {
-                    SnapshotStatus::Failure
-                },
-            );
+            let res =
+                self.consensus_state.report_snapshot(
+                    peer_id,
+                    if res.is_ok() {
+                        SnapshotStatus::Finish
+                    } else {
+                        SnapshotStatus::Failure
+                    },
+                );
 
             // Should we ignore the error? Seems like it will only produce noise.
             //
@@ -1096,12 +1100,13 @@ impl RaftMessageSender {
         .await
         .map_err(|err| anyhow::format_err!("Failed to create who-is channel: {}", err))?;
 
-        let uri = RaftClient::new(channel)
-            .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
-            .await?
-            .into_inner()
-            .uri
-            .parse()?;
+        let uri =
+            RaftClient::new(channel)
+                .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
+                .await?
+                .into_inner()
+                .uri
+                .parse()?;
 
         Ok(uri)
     }
@@ -1176,18 +1181,19 @@ mod tests {
         .into();
         let dispatcher = Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone());
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-        let (mut consensus, message_sender) = Consensus::new(
-            &slog_logger,
-            consensus_state.clone(),
-            None,
-            Some("http://127.0.0.1:6335".parse().unwrap()),
-            6335,
-            ConsensusConfig::default(),
-            None,
-            ChannelService::new(settings.service.http_port),
-            handle.clone(),
-        )
-        .unwrap();
+        let (mut consensus, message_sender) =
+            Consensus::new(
+                &slog_logger,
+                consensus_state.clone(),
+                None,
+                Some("http://127.0.0.1:6335".parse().unwrap()),
+                6335,
+                ConsensusConfig::default(),
+                None,
+                ChannelService::new(settings.service.http_port),
+                handle.clone(),
+            )
+            .unwrap();
 
         let is_leader_established = consensus_state.is_leader_established.clone();
         thread::spawn(move || consensus.start().unwrap());

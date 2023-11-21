@@ -88,9 +88,9 @@ impl LocalShard {
 
                 if let Some(threshold) = req.score_threshold {
                     processed_res
-                        .take_while(|scored_point| {
-                            distance.check_threshold(scored_point.score, threshold)
-                        })
+                        .take_while(
+                            |scored_point| distance.check_threshold(scored_point.score, threshold)
+                        )
                         .collect()
                 } else {
                     processed_res.collect()

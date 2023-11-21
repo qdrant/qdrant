@@ -27,13 +27,14 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVect
 
     let target = random_vector(rnd, dim).into();
 
-    let pairs = (0..num_pairs)
-        .map(|_| {
-            let positive = random_vector(rnd, dim).into();
-            let negative = random_vector(rnd, dim).into();
-            ContextPair { positive, negative }
-        })
-        .collect_vec();
+    let pairs =
+        (0..num_pairs)
+            .map(|_| {
+                let positive = random_vector(rnd, dim).into();
+                let negative = random_vector(rnd, dim).into();
+                ContextPair { positive, negative }
+            })
+            .collect_vec();
 
     DiscoveryQuery::new(target, pairs).into()
 }
@@ -90,26 +91,28 @@ fn hnsw_discover_precision() {
 
     let payload_index_ptr = segment.payload_index.clone();
 
-    let hnsw_config = HnswConfig {
-        m,
-        ef_construct,
-        full_scan_threshold,
-        max_indexing_threads: 2,
-        on_disk: Some(false),
-        payload_m: None,
-    };
+    let hnsw_config =
+        HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads: 2,
+            on_disk: Some(false),
+            payload_m: None,
+        };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        vector_storage.clone(),
-        quantized_vectors.clone(),
-        payload_index_ptr.clone(),
-        hnsw_config,
-    )
-    .unwrap();
+    let mut hnsw_index =
+        HNSWIndex::<GraphLinksRam>::open(
+            hnsw_dir.path(),
+            segment.id_tracker.clone(),
+            vector_storage.clone(),
+            quantized_vectors.clone(),
+            payload_index_ptr.clone(),
+            hnsw_config,
+        )
+        .unwrap();
 
     hnsw_index.build_index(&stopped).unwrap();
 
@@ -203,26 +206,28 @@ fn filtered_hnsw_discover_precision() {
 
     let payload_index_ptr = segment.payload_index.clone();
 
-    let hnsw_config = HnswConfig {
-        m,
-        ef_construct,
-        full_scan_threshold,
-        max_indexing_threads: 2,
-        on_disk: Some(false),
-        payload_m: None,
-    };
+    let hnsw_config =
+        HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads: 2,
+            on_disk: Some(false),
+            payload_m: None,
+        };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        vector_storage.clone(),
-        quantized_vectors.clone(),
-        payload_index_ptr.clone(),
-        hnsw_config,
-    )
-    .unwrap();
+    let mut hnsw_index =
+        HNSWIndex::<GraphLinksRam>::open(
+            hnsw_dir.path(),
+            segment.id_tracker.clone(),
+            vector_storage.clone(),
+            quantized_vectors.clone(),
+            payload_index_ptr.clone(),
+            hnsw_config,
+        )
+        .unwrap();
 
     payload_index_ptr
         .borrow_mut()

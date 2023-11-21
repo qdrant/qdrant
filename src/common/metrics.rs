@@ -83,10 +83,7 @@ impl MetricsProvider for AppBuildTelemetry {
             "app_info",
             "information about qdrant server",
             MetricType::COUNTER,
-            vec![counter(
-                1.0,
-                &[("name", &self.name), ("version", &self.version)],
-            )],
+            vec![counter(1.0, &[("name", &self.name), ("version", &self.version)])],
         ));
         self.features.iter().for_each(|f| f.add_metrics(metrics));
     }

@@ -243,9 +243,7 @@ where
         let try_self: Result<Self, FileStorageError> = if links_path.exists() {
             read_bin(graph_path)
         } else {
-            Err(FileStorageError::generic(format!(
-                "Links file does not exists: {links_path:?}"
-            )))
+            Err(FileStorageError::generic(format!("Links file does not exists: {links_path:?}")))
         };
 
         match try_self {
@@ -474,14 +472,15 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (vector_holder, graph_layers) = create_graph_layer_fixture::<CosineMetric, _>(
-            num_vectors,
-            M,
-            dim,
-            true,
-            &mut rng,
-            None,
-        );
+        let (vector_holder, graph_layers) =
+            create_graph_layer_fixture::<CosineMetric, _>(
+                num_vectors,
+                M,
+                dim,
+                true,
+                &mut rng,
+                None,
+            );
 
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 

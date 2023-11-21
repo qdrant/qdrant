@@ -31,9 +31,9 @@ impl RaftService {
 impl Raft for RaftService {
     async fn send(&self, mut request: Request<RaftMessageBytes>) -> Result<Response<()>, Status> {
         let message = <RaftMessage as prost::Message>::decode(&request.get_mut().message[..])
-            .map_err(|err| {
-                Status::invalid_argument(format!("Failed to parse raft message: {err}"))
-            })?;
+            .map_err(
+                |err| Status::invalid_argument(format!("Failed to parse raft message: {err}"))
+            )?;
         self.message_sender
             .send(consensus::Message::FromPeer(Box::new(message)))
             .await
@@ -65,9 +65,9 @@ impl Raft for RaftService {
         } else {
             let ip = request
                 .remote_addr()
-                .ok_or_else(|| {
-                    Status::failed_precondition("Remote address unavailable due to the used IO")
-                })?
+                .ok_or_else(
+                    || Status::failed_precondition("Remote address unavailable due to the used IO")
+                )?
                 .ip();
             let port = peer
                 .port
@@ -93,9 +93,7 @@ impl Raft for RaftService {
         let addresses = self.consensus_state.peer_address_by_id();
         // Make sure that the new peer is now present in the known addresses
         if !addresses.values().contains(&uri) {
-            return Err(Status::internal(format!(
-                "Failed to add peer after consensus: {uri}"
-            )));
+            return Err(Status::internal(format!("Failed to add peer after consensus: {uri}")));
         }
         let first_peer_id = self.consensus_state.first_voter();
         Ok(Response::new(AllPeers {

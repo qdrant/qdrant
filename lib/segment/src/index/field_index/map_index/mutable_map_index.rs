@@ -97,9 +97,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         }
         self.indexed_points = 0;
         for (record, _) in self.db_wrapper.lock_db().iter()? {
-            let record = std::str::from_utf8(&record).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
+            let record =
+                std::str::from_utf8(&record).map_err(|_| {
+                    OperationError::service_error("Index load error: UTF8 error while DB parsing")
+                })?;
             let (value, idx) = MapIndex::decode_db_record(record)?;
             if self.point_to_values.len() <= idx as usize {
                 self.point_to_values.resize_with(idx as usize + 1, Vec::new)

@@ -25,14 +25,15 @@ impl<'a> StructFilterContext<'a> {
     where
         F: Fn(&Condition) -> CardinalityEstimation,
     {
-        let (optimized_filter, _) = optimize_filter(
-            filter,
-            id_tracker,
-            field_indexes,
-            payload_provider,
-            estimator,
-            total,
-        );
+        let (optimized_filter, _) =
+            optimize_filter(
+                filter,
+                id_tracker,
+                field_indexes,
+                payload_provider,
+                estimator,
+                total,
+            );
 
         Self { optimized_filter }
     }

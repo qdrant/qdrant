@@ -59,26 +59,28 @@ fn test_graph_connectivity() {
 
     let payload_index_ptr = segment.payload_index.clone();
 
-    let hnsw_config = HnswConfig {
-        m,
-        ef_construct,
-        full_scan_threshold,
-        max_indexing_threads: 4,
-        on_disk: Some(false),
-        payload_m: None,
-    };
+    let hnsw_config =
+        HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads: 4,
+            on_disk: Some(false),
+            payload_m: None,
+        };
 
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_storage
-            .clone(),
-        None,
-        payload_index_ptr.clone(),
-        hnsw_config,
-    )
-    .unwrap();
+    let mut hnsw_index =
+        HNSWIndex::<GraphLinksRam>::open(
+            hnsw_dir.path(),
+            segment.id_tracker.clone(),
+            segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            None,
+            payload_index_ptr.clone(),
+            hnsw_config,
+        )
+        .unwrap();
 
     hnsw_index.build_index(&stopped).unwrap();
 

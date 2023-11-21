@@ -303,17 +303,18 @@ impl TableOfContent {
         // │ Updating node     │ <- update_from_peer
         // └───────────────────┘
 
-        let _rate_limit = match &self.update_rate_limiter {
-            None => None,
-            Some(rate_limiter) => {
-                // We only want to rate limit the first node in the chain
-                if !shard_selector.is_shard_id() {
-                    Some(rate_limiter.acquire().await)
-                } else {
-                    None
+        let _rate_limit =
+            match &self.update_rate_limiter {
+                None => None,
+                Some(rate_limiter) => {
+                    // We only want to rate limit the first node in the chain
+                    if !shard_selector.is_shard_id() {
+                        Some(rate_limiter.acquire().await)
+                    } else {
+                        None
+                    }
                 }
-            }
-        };
+            };
         if operation.is_write_operation() {
             self.check_write_lock()?;
         }

@@ -370,21 +370,20 @@ mod tests {
         }));
         assert!(!payload_checker.check(0, &is_null_condition));
 
-        let match_red = Condition::Field(FieldCondition::new_match(
-            "color".to_string(),
-            "red".to_owned().into(),
-        ));
-        let match_blue = Condition::Field(FieldCondition::new_match(
-            "color".to_string(),
-            "blue".to_owned().into(),
-        ));
-        let with_delivery = Condition::Field(FieldCondition::new_match(
-            "has_delivery".to_string(),
-            true.into(),
-        ));
+        let match_red = Condition::Field(
+            FieldCondition::new_match("color".to_string(), "red".to_owned().into())
+        );
+        let match_blue = Condition::Field(
+            FieldCondition::new_match("color".to_string(), "blue".to_owned().into())
+        );
+        let with_delivery =
+            Condition::Field(FieldCondition::new_match(
+                "has_delivery".to_string(),
+                true.into(),
+            ));
 
-        let many_value_count_condition =
-            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+        let many_value_count_condition = Filter::new_must(Condition::Field(
+            FieldCondition::new_values_count(
                 "rating".to_string(),
                 ValuesCount {
                     lt: None,
@@ -392,11 +391,12 @@ mod tests {
                     gte: Some(10),
                     lte: None,
                 },
-            )));
+            ),
+        ));
         assert!(!payload_checker.check(0, &many_value_count_condition));
 
-        let few_value_count_condition =
-            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+        let few_value_count_condition = Filter::new_must(Condition::Field(
+            FieldCondition::new_values_count(
                 "rating".to_string(),
                 ValuesCount {
                     lt: Some(5),
@@ -404,7 +404,8 @@ mod tests {
                     gte: None,
                     lte: None,
                 },
-            )));
+            ),
+        ));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
@@ -435,28 +436,31 @@ mod tests {
             },
         ));
 
-        let with_bad_rating = Condition::Field(FieldCondition::new_range(
-            "rating".to_string(),
-            Range {
-                lt: None,
-                gt: None,
-                gte: None,
-                lte: Some(5.),
-            },
-        ));
+        let with_bad_rating =
+            Condition::Field(FieldCondition::new_range(
+                "rating".to_string(),
+                Range {
+                    lt: None,
+                    gt: None,
+                    gte: None,
+                    lte: Some(5.),
+                },
+            ));
 
-        let query = Filter {
-            should: None,
-            must: Some(vec![match_red.clone()]),
-            must_not: None,
-        };
+        let query =
+            Filter {
+                should: None,
+                must: Some(vec![match_red.clone()]),
+                must_not: None,
+            };
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            must: Some(vec![match_blue.clone()]),
-            must_not: None,
-        };
+        let query =
+            Filter {
+                should: None,
+                must: Some(vec![match_blue.clone()]),
+                must_not: None,
+            };
         assert!(!payload_checker.check(0, &query));
 
         let query = Filter {
@@ -473,18 +477,20 @@ mod tests {
         };
         assert!(!payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: Some(vec![match_red.clone(), match_blue.clone()]),
-            must: Some(vec![with_delivery.clone(), in_berlin.clone()]),
-            must_not: None,
-        };
+        let query =
+            Filter {
+                should: Some(vec![match_red.clone(), match_blue.clone()]),
+                must: Some(vec![with_delivery.clone(), in_berlin.clone()]),
+                must_not: None,
+            };
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: Some(vec![match_red.clone(), match_blue.clone()]),
-            must: Some(vec![with_delivery, in_moscow.clone()]),
-            must_not: None,
-        };
+        let query =
+            Filter {
+                should: Some(vec![match_red.clone(), match_blue.clone()]),
+                must: Some(vec![with_delivery, in_moscow.clone()]),
+                must_not: None,
+            };
         assert!(!payload_checker.check(0, &query));
 
         let query = Filter {

@@ -25,20 +25,21 @@ const ADJECTIVE: &[&str] = &[
     "broad",
 ];
 
-const NOUN: &[&str] = &[
-    "territory",
-    "jam",
-    "neck",
-    "chicken",
-    "cap",
-    "kiss",
-    "veil",
-    "trail",
-    "size",
-    "digestion",
-    "rod",
-    "seed",
-];
+const NOUN: &[&str] =
+    &[
+        "territory",
+        "jam",
+        "neck",
+        "chicken",
+        "cap",
+        "kiss",
+        "veil",
+        "trail",
+        "size",
+        "digestion",
+        "rod",
+        "seed",
+    ];
 
 const INT_RANGE: Range<i64> = 0..500;
 pub const LON_RANGE: Range<f64> = -180.0..180.0;
@@ -157,10 +158,9 @@ pub fn random_simple_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
     if str_or_int {
         let kv_or_txt: bool = rnd_gen.gen();
         if kv_or_txt {
-            Condition::Field(FieldCondition::new_match(
-                STR_KEY.to_string(),
-                random_keyword(rnd_gen).into(),
-            ))
+            Condition::Field(
+                FieldCondition::new_match(STR_KEY.to_string(), random_keyword(rnd_gen).into())
+            )
         } else {
             Condition::Field(FieldCondition::new_match(
                 TEXT_KEY.to_string(),
@@ -239,10 +239,8 @@ pub fn random_nested_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
     } else {
         format!("{}.{}[].{}", STR_PROJ_KEY, "nested_1", "nested_2")
     };
-    let condition = Condition::Field(FieldCondition::new_match(
-        nested_str_key,
-        random_keyword(rnd_gen).into(),
-    ));
+    let condition =
+        Condition::Field(FieldCondition::new_match(nested_str_key, random_keyword(rnd_gen).into()));
     Filter {
         should: Some(vec![condition]),
         must: None,

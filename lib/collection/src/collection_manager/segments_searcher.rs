@@ -300,9 +300,9 @@ impl SegmentsSearcher {
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
         segments.read().read_points(points, |id, segment| {
-            let version = segment.point_version(id).ok_or_else(|| {
-                OperationError::service_error(format!("No version for point {id}"))
-            })?;
+            let version = segment.point_version(id).ok_or_else(
+                || OperationError::service_error(format!("No version for point {id}"))
+            )?;
             // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < version {
                 point_records.insert(
@@ -744,16 +744,17 @@ mod tests {
 
             let batch_request = Arc::new(batch_request);
 
-            let result_no_sampling = SegmentsSearcher::search(
-                segment_holder.clone(),
-                batch_request.clone(),
-                &Handle::current(),
-                false,
-                Arc::new(false.into()),
-                DEFAULT_INDEXING_THRESHOLD_KB,
-            )
-            .await
-            .unwrap();
+            let result_no_sampling =
+                SegmentsSearcher::search(
+                    segment_holder.clone(),
+                    batch_request.clone(),
+                    &Handle::current(),
+                    false,
+                    Arc::new(false.into()),
+                    DEFAULT_INDEXING_THRESHOLD_KB,
+                )
+                .await
+                .unwrap();
 
             assert!(!result_no_sampling.is_empty());
 
