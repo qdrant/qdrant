@@ -12,12 +12,13 @@ use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
-use segment::types::{Condition, FieldCondition, Filter, Payload};
+use segment::types::{Condition, FieldCondition, Filter, Payload, DEFAULT_FULL_SCAN_THRESHOLD};
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
@@ -433,4 +434,47 @@ fn sparse_vector_index_plain_search() {
 
     assert_eq!(after_plain_results.len(), 1);
     assert_eq!(after_plain_results[0].len(), NUM_VECTORS);
+}
+
+#[test]
+fn handling_empty_sparse_vectors() {
+    let stopped = AtomicBool::new(false);
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+        fixture_open_sparse_index(data_dir.path(), NUM_VECTORS, DEFAULT_FULL_SCAN_THRESHOLD)
+            .unwrap();
+    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
+
+    // add empty points to storage
+    for idx in 0..NUM_VECTORS {
+        let vec = &SparseVector::new(vec![], vec![]).unwrap();
+        borrowed_storage
+            .insert_vector(idx as PointOffsetType, vec.into())
+            .unwrap();
+    }
+    drop(borrowed_storage);
+
+    // assert all empty points are in storage
+    assert_eq!(
+        sparse_vector_index
+            .vector_storage
+            .borrow()
+            .available_vector_count(),
+        NUM_VECTORS
+    );
+
+    // empty vectors are not indexed
+    sparse_vector_index.build_index(&stopped).unwrap();
+    assert_eq!(sparse_vector_index.indexed_vector_count(), 0);
+
+    let query_vector: QueryVector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
+
+    // empty vectors are not searchable (recommend using scroll API to retrieve those)
+    let results = sparse_vector_index
+        .search(&[&query_vector], None, 10, None, &stopped)
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].len(), 0);
 }
