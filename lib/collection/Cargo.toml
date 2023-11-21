@@ -55,7 +55,7 @@ io = { path = "../common/io" }
 segment = {path = "../segment"}
 api = {path = "../api"}
 
-itertools = "0.11"
+itertools = "0.12"
 indicatif = "0.17.6"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url"] }
