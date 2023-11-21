@@ -71,8 +71,8 @@ actix-web = { version = "4.3.1", optional = true, features = ["rustls-0_21", "ac
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
 actix-web-httpauth = "0.8.1"
-tonic = { version = "0.10.2", features = ["gzip", "tls"] }
-tonic-reflection = "0.10.2"
+tonic = { version = "0.9.2", features = ["gzip", "tls"] }
+tonic-reflection = "0.9.2"
 tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.16"
@@ -157,3 +157,7 @@ lto = false
 inherits = "release"
 lto = false
 opt-level = 3
+
+[patch.crates-io]
+# Temporary patch until <https://github.com/hyperium/tonic/pull/1401> is merged
+tonic = { git = 'https://github.com/qdrant/tonic', branch = "v0.9.2-patched" }

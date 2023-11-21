@@ -30,9 +30,9 @@ impl TryFrom<i32> for SnapshotPriority {
     type Error = tonic::Status;
 
     fn try_from(snapshot_priority: i32) -> Result<Self, Self::Error> {
-        api::grpc::qdrant::ShardSnapshotPriority::try_from(snapshot_priority)
+        api::grpc::qdrant::ShardSnapshotPriority::from_i32(snapshot_priority)
             .map(Into::into)
-            .map_err(|_| tonic::Status::invalid_argument("Malformed shard snapshot priority"))
+            .ok_or_else(|| tonic::Status::invalid_argument("Malformed shard snapshot priority"))
     }
 }
 
