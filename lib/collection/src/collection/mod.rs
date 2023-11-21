@@ -535,9 +535,25 @@ impl Collection {
                     sync: true,
                     method: None,
                 };
+
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
                     continue; // this transfer won't work
                 }
+
+                // TODO: Should we, maybe, throttle/backoff this requests a bit?
+                if let Err(err) = replica_set.health_check(replica_id).await {
+                    // TODO: This is rather verbose, not sure if we want to log this at all... :/
+                    log::trace!(
+                        "Replica {replica_id}/{}:{} is not available \
+                         to request shard transfer from: \
+                         {err}",
+                        self.id,
+                        replica_set.shard_id,
+                    );
+
+                    continue;
+                }
+
                 log::debug!(
                     "Recovering shard {}:{} on peer {} by requesting it from {}",
                     self.name(),
@@ -545,6 +561,7 @@ impl Collection {
                     this_peer_id,
                     replica_id
                 );
+
                 self.request_shard_transfer(transfer);
                 break;
             }

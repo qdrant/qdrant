@@ -701,6 +701,20 @@ impl ShardReplicaSet {
         }
     }
 
+    pub(crate) async fn health_check(&self, peer_id: PeerId) -> CollectionResult<()> {
+        let remotes = self.remotes.read().await;
+
+        let Some(remote) = remotes.iter().find(|remote| remote.peer_id == peer_id) else {
+            return Err(CollectionError::NotFound {
+                what: format!("{}/{}:{} shard", peer_id, self.collection_id, self.shard_id),
+            });
+        };
+
+        remote.health_check().await?;
+
+        Ok(())
+    }
+
     fn init_remote_shards(
         shard_id: ShardId,
         collection_id: CollectionId,
