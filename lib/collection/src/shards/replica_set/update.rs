@@ -63,8 +63,8 @@ impl ShardReplicaSet {
                         .map_err(|err| {
                             if err.is_transient() {
                                 // Deactivate the peer if forwarding failed with transient error
-                                self.locally_disabled_peers.write().insert(leader_peer);
-                                self.notify_peer_failure(leader_peer);
+                                self.add_locally_disabled(leader_peer);
+
                                 // return service error
                                 CollectionError::service_error(format!(
                                     "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
@@ -314,8 +314,7 @@ impl ShardReplicaSet {
                 self.shard_id
             );
 
-            self.locally_disabled_peers.write().insert(*peer_id);
-            self.notify_peer_failure(*peer_id);
+            self.add_locally_disabled(*peer_id);
         }
 
         wait_for_deactivation
