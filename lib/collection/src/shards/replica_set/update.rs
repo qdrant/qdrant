@@ -147,11 +147,8 @@ impl ShardReplicaSet {
                             .get()
                             .update(operation, local_wait)
                             .await
-                            .map_err(|err| {
-                                let peer_id = err.remote_peer_id().unwrap_or(this_peer_id);
-
-                                (peer_id, err)
-                            })
+                            .map(|ok| (this_peer_id, ok))
+                            .map_err(|err| (this_peer_id, err))
                     };
 
                     update_futures.push(local_update.left_future());
@@ -165,6 +162,7 @@ impl ShardReplicaSet {
                     remote
                         .update(operation, wait)
                         .await
+                        .map(|ok| (remote.peer_id, ok))
                         .map_err(|err| (remote.peer_id, err))
                 };
 
@@ -204,6 +202,7 @@ impl ShardReplicaSet {
         if successes.len() >= minimal_success_count {
             let wait_for_deactivation =
                 self.handle_failed_replicas(&failures, &self.replica_state.read());
+
             // report all failing peers to consensus
             if wait && wait_for_deactivation && !failures.is_empty() {
                 // ToDo: allow timeout configuration in API
@@ -243,11 +242,23 @@ impl ShardReplicaSet {
             let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
             return Err(err);
         }
+
+        if !successes
+            .iter()
+            .any(|(peer_id, _)| self.peer_is_active(peer_id))
+        {
+            return Err(CollectionError::service_error(
+                "Failed to apply operation to at least one `Active` replica. \
+                 Consistency of this update is not guaranteed. Please retry.",
+            ));
+        }
+
         // there are enough successes, return the first one
-        let res = successes
+        let (_, res) = successes
             .into_iter()
             .next()
             .expect("successes is not empty");
+
         Ok(res)
     }
 
