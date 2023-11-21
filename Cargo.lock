@@ -1067,7 +1067,7 @@ dependencies = [
  "hashring",
  "indicatif",
  "io",
- "itertools 0.11.0",
+ "itertools 0.12.0",
  "log",
  "merge",
  "num_cpus",
@@ -2440,9 +2440,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+checksum = "25db6b064527c5d482d0423354fcd07a89a2dfe07b67892e62411946db7f07b0"
 dependencies = [
  "either",
 ]
@@ -3599,7 +3599,7 @@ checksum = "30d3e647e9eb04ddfef78dfee2d5b3fefdf94821c84b710a3d8ebc89ede8b164"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.11.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -3633,7 +3633,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56075c27b20ae524d00f247b8a4dc333e5784f889fe63099f8e626bc8d73486c"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.28",
@@ -3719,7 +3719,7 @@ dependencies = [
  "constant_time_eq 0.3.0",
  "futures",
  "futures-util",
- "itertools 0.11.0",
+ "itertools 0.12.0",
  "log",
  "memory",
  "num-traits",
@@ -4469,7 +4469,7 @@ dependencies = [
  "geohash",
  "io",
  "io-uring",
- "itertools 0.11.0",
+ "itertools 0.12.0",
  "lazy_static",
  "log",
  "memmap2 0.9.0",
@@ -4801,7 +4801,7 @@ dependencies = [
  "futures",
  "http",
  "io",
- "itertools 0.11.0",
+ "itertools 0.12.0",
  "log",
  "memory",
  "num_cpus",
