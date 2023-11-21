@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use segment::data_types::groups::GroupId;
 use segment::types::{PointIdType, ScoredPoint};
 
-use crate::operations::types::PointGroup;
+use crate::lookup::WithLookup;
+use crate::operations::types::{CoreSearchRequest, PointGroup};
 
 #[derive(PartialEq, Debug)]
 pub(super) enum AggregatorError {
@@ -35,6 +36,24 @@ impl From<Group> for PointGroup {
             lookup: None,
         }
     }
+}
+
+#[derive(Clone)]
+pub struct CoreGroupRequest {
+    /// Core request to use
+    pub source: CoreSearchRequest,
+
+    /// Path to the field to group by
+    pub group_by: String,
+
+    /// Limit of points to return per group
+    pub group_size: usize,
+
+    /// Limit of groups to return
+    pub limit: usize,
+
+    /// Options for specifying how to use the group id to lookup points in another collection
+    pub with_lookup: Option<WithLookup>,
 }
 
 #[cfg(test)]
