@@ -280,9 +280,9 @@ pub async fn group_by(
                 source.filter = Some(
                     source
                         .filter
-                        .clone()
-                        .unwrap_or_default()
-                        .merge(&exclude_groups),
+                        .as_ref()
+                        .map(|filter| filter.merge(&exclude_groups))
+                        .unwrap_or(exclude_groups),
                 );
             }
         }
@@ -294,9 +294,9 @@ pub async fn group_by(
             source.filter = Some(
                 source
                     .filter
-                    .clone()
-                    .unwrap_or_default()
-                    .merge(&exclude_ids),
+                    .as_ref()
+                    .map(|filter| filter.merge(&exclude_ids))
+                    .unwrap_or(exclude_ids),
             );
         }
 
@@ -341,9 +341,9 @@ pub async fn group_by(
                 source.filter = Some(
                     source
                         .filter
-                        .clone()
-                        .unwrap_or_default()
-                        .merge(&include_groups),
+                        .as_ref()
+                        .map(|filter| filter.merge(&include_groups))
+                        .unwrap_or(include_groups),
                 );
             }
 
@@ -354,9 +354,9 @@ pub async fn group_by(
                 source.filter = Some(
                     source
                         .filter
-                        .clone()
-                        .unwrap_or_default()
-                        .merge(&exclude_ids),
+                        .as_ref()
+                        .map(|filter| filter.merge(&exclude_ids))
+                        .unwrap_or(exclude_ids),
                 );
             }
 
