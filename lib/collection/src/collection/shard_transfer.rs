@@ -22,7 +22,6 @@ impl Collection {
             .read()
             .await
             .get_outgoing_transfers(current_peer_id)
-            .await
     }
 
     pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
@@ -30,7 +29,6 @@ impl Collection {
             .read()
             .await
             .check_transfer_exists(transfer_key)
-            .await
     }
 
     pub async fn start_shard_transfer<T, F>(
@@ -251,7 +249,7 @@ impl Collection {
                 )));
             };
 
-        let transfer = shard_holder_guard.get_transfer(&transfer_key).await;
+        let transfer = shard_holder_guard.get_transfer(&transfer_key);
 
         if transfer.map(|x| x.sync).unwrap_or(false) {
             replica_set.set_replica_state(&transfer_key.to, ReplicaState::Dead)?;

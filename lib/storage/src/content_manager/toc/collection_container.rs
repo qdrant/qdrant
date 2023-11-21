@@ -162,6 +162,10 @@ impl TableOfContent {
                             self.consensus_proposal_sender.clone(),
                             id.to_string(),
                         ),
+                        Self::abort_shard_transfer_callback(
+                            self.consensus_proposal_sender.clone(),
+                            id.to_string(),
+                        ),
                         Some(self.search_runtime.handle().clone()),
                         Some(self.update_runtime.handle().clone()),
                     )
