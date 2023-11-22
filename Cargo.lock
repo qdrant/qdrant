@@ -3782,7 +3782,7 @@ dependencies = [
 [[package]]
 name = "quantization"
 version = "0.1.0"
-source = "git+https://github.com/kaancfidan/quantization.git?branch=manhattan-distance#f314ce9476dd3feddd5d7fc98360f5ad47710dd7"
+source = "git+https://github.com/kaancfidan/quantization.git?branch=manhattan-distance#473eaff0b2d107c2b3bd5c1e57186e22c14a08a4"
 dependencies = [
  "cc",
  "permutation_iterator",
