@@ -70,6 +70,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - Official: [Rust client](https://github.com/qdrant/rust-client)
 - Official: [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
 - Official: [Python client](https://github.com/qdrant/qdrant-client)
+- Official: [.NET/C# client](https://github.com/qdrant/qdrant-dotnet)
 - Community: [Elixir](https://hexdocs.pm/qdrant/readme.html)
 - Community: [PHP](https://github.com/hkulekci/qdrant-php)
 - Community: [Ruby](https://github.com/andreibondarev/qdrant-ruby)
@@ -254,7 +255,7 @@ Thanks to the people who contributed to Qdrant:
       <td align="center" valign="top" width="14.28%"><a href="http://hozan23.com"><img src="https://avatars.githubusercontent.com/u/119854621?v=4?s=50" width="50px;" alt="Hozan"/><br /><sub><b>Hozan</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=hozan23" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/joein"><img src="https://avatars.githubusercontent.com/u/22641570?v=4?s=50" width="50px;" alt="George"/><br /><sub><b>George</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=joein" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/csko"><img src="https://avatars.githubusercontent.com/u/749306?v=4?s=50" width="50px;" alt="Kornél Csernai"/><br /><sub><b>Kornél Csernai</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=csko" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="http://coszio.github.io"><img src="https://avatars.githubusercontent.com/u/62079184?v=4?s=50" width="50px;" alt="Luis Cossío"/><br /><sub><b>Luis Cossío</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=coszio" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://coszio.github.io"><img src="https://avatars.githubusercontent.com/u/62079184?v=4?s=50" width="50px;" alt="Luis Cossío"/><br /><sub><b>Luis Cossío</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=coszio" title="Code">💻</a></td>
     </tr>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://timvisee.com/"><img src="https://avatars.githubusercontent.com/u/856222?v=4?s=50" width="50px;" alt="Tim Visée"/><br /><sub><b>Tim Visée</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=timvisee" title="Code">💻</a></td>
