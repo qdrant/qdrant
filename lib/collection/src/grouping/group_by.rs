@@ -17,9 +17,8 @@ use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionError, CollectionResult, PointGroup,
-    RecommendGroupsRequestInternal, RecommendRequestInternal, SearchGroupsRequestInternal,
-    SearchRequestInternal,
+    BaseGroupRequest, CollectionResult, PointGroup, RecommendGroupsRequestInternal,
+    RecommendRequestInternal, SearchGroupsRequestInternal, SearchRequestInternal,
 };
 use crate::recommendations::recommend_into_core_search;
 
@@ -106,22 +105,10 @@ impl GroupRequest {
 }
 
 impl CoreGroupRequest {
-    /// Apply a bunch of hacks to make `group_by` field selector work with as `with_payload`.
-    fn _group_by_to_payload_selector(&self, group_by: &str) -> CollectionResult<String> {
-        // Hack 1: `with_payload` only works with top-level fields. (ToDo: maybe fix this?)
-        group_by.split('.').next().map_or_else(
-            || {
-                Err(CollectionError::bad_request(format!(
-                    "Malformed group_by parameter which uses unsupported nested path: {}",
-                    group_by
-                )))
-            },
-            |field| {
-                // Hack 2: `with_payload` doesn't work with `[]` at the end of the field name.
-                // Remove the ending `[]`.
-                Ok(field.strip_suffix("[]").unwrap_or(field).to_owned())
-            },
-        )
+    /// Make `group_by` field selector work with as `with_payload`.
+    fn group_by_to_payload_selector(&self, group_by: &str) -> WithPayloadInterface {
+        let group_by = group_by.strip_suffix("[]").unwrap_or(group_by).to_owned();
+        WithPayloadInterface::Fields(vec![group_by])
     }
 
     async fn r#do(
@@ -131,20 +118,17 @@ impl CoreGroupRequest {
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let include_group_by = self._group_by_to_payload_selector(&self.group_by)?;
-
-        let only_group_by_key = Some(WithPayloadInterface::Fields(vec![include_group_by]));
-
-        let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
-
         let mut request = self.source.clone();
 
         request.limit = self.limit * self.group_size;
 
+        let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
         request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
 
+        let with_group_by_payload = self.group_by_to_payload_selector(&self.group_by);
+
         // We're enriching the final results at the end, so we'll keep this minimal
-        request.with_payload = only_group_by_key;
+        request.with_payload = Some(with_group_by_payload);
         request.with_vector = None;
 
         collection
