@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use bincode;
 use bitvec::prelude::{BitSlice, BitVec};
@@ -56,6 +57,10 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
     point_id.into()
 }
 
+// TODO: remove after debug?
+use std::sync::Mutex;
+static ROCKS_THROTTLER: Mutex<()> = Mutex::new(());
+
 pub struct SimpleIdTracker {
     deleted: BitVec,
     internal_to_external: Vec<PointIdType>,
@@ -72,6 +77,11 @@ impl SimpleIdTracker {
         let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
+
+        log::warn!("AAAAA");
+        let start = Instant::now();
+
+        let permit = ROCKS_THROTTLER.lock().unwrap();
 
         let mapping_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
             DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF),
@@ -119,6 +129,13 @@ impl SimpleIdTracker {
             }
         }
 
+        drop(permit);
+
+        log::warn!("BBBBB: {:?}", start.elapsed());
+        let start = Instant::now();
+
+        let permit = ROCKS_THROTTLER.lock().unwrap();
+
         let mut internal_to_version: Vec<SeqNumberType> = Default::default();
         let versions_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
@@ -143,6 +160,11 @@ impl SimpleIdTracker {
             }
         }
 
+        drop(permit);
+
+        log::warn!("CCCCC: {:?}", start.elapsed());
+        let start = Instant::now();
+
         #[cfg(debug_assertions)]
         {
             for (idx, id) in external_to_internal_num.iter() {
@@ -154,6 +176,8 @@ impl SimpleIdTracker {
                 );
             }
         }
+
+        log::warn!("DDDDD: {:?}", start.elapsed());
 
         Ok(SimpleIdTracker {
             deleted,

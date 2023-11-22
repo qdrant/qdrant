@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
 use log::info;
@@ -80,7 +81,26 @@ fn create_segment(
         PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
     };
 
+    log::warn!("LOADING ID TRACK");
+    let start = Instant::now();
+
+    // TODO: let mut guard = pprof::ProfilerGuardBuilder::default()
+    // TODO:     .frequency(5000)
+    // TODO:     .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+    // TODO:     .build()
+    // TODO:     .ok();
+
     let id_tracker = sp(SimpleIdTracker::open(database.clone())?);
+
+    // TODO: if let Some(guard) = guard.take() {
+    // TODO:     if let Ok(report) = guard.report().build() {
+    // TODO:         let file = std::fs::File::create("flamegraph.svg").unwrap();
+    // TODO:         report.flamegraph(file).unwrap();
+    // TODO:         // println!("report: {:?}", &report);
+    // TODO:     }
+    // TODO: }
+
+    log::warn!("DONE LOAD ID TRACK: took {:?}", start.elapsed());
 
     let appendable_flag = config
         .vector_data
