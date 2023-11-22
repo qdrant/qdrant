@@ -146,7 +146,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         vector: query_vector.clone().into(),
         filter: None,
         limit: 100,
-        offset: 0,
+        offset: None,
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: Some(WithVector::Bool(true)),
         params: None,
