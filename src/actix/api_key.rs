@@ -10,9 +10,8 @@ use futures_util::future::LocalBoxFuture;
 
 use crate::common::auth::AuthKeys;
 
-const READ_ONLY_POST_PATTERNS: [&str; 12] = [
+const READ_ONLY_POST_PATTERNS: [&str; 11] = [
     "/collections/{name}/points",
-    "/collections/{name}/points/{id}",
     "/collections/{name}/points/count",
     "/collections/{name}/points/search",
     "/collections/{name}/points/scroll",
