@@ -23,7 +23,7 @@ def random_example(dim=4, min_id=1, max_id=8):
 def count_ids_in_examples(context, target) -> int:
     set_ = set()
     for pair in context:
-        for example in [pair['positive'], pair['negative']]:
+        for example in [pair["positive"], pair["negative"]]:
             if isinstance(example, int):
                 set_.add(example)
     if isinstance(target, int):
@@ -283,3 +283,19 @@ def test_discover_batch():
     assert len(single_results) == len(batch_results)
     for single_result, batch_result in zip(single_results, batch_results):
         assert single_result == batch_result
+
+
+def test_null_offset():
+    target = random_example()
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/discover",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "target": target,
+            "limit": 8,
+            "offset": None,
+        },
+    )
+    assert response.ok, response.json()
