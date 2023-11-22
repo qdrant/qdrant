@@ -112,7 +112,7 @@ impl Metric for ManhattanMetric {
     }
 
     fn postprocess(score: ScoreType) -> ScoreType {
-        score
+        score.abs()
     }
 }
 
