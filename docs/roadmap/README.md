@@ -8,8 +8,8 @@ Previous year roadmap is available here:
 
 Goals of the release:
 
-* **Maintain easy upgrades** - we plan to keep backward compatibility for at least one major version back. 
-  * That means that you can upgrade Qdrant without any downtime and without any changes in your client code within one major version.
+* **Maintain easy upgrades** - we plan to keep backward compatibility for at least one minor version back.
+  * That means that you can upgrade Qdrant without any downtime and without any changes in your client code within one minor version.
   * Storage should be compatible between any two consequent versions, so you can upgrade Qdrant with automatic data migration between consecutive versions.
 * **Make billion-scale serving cheap** - qdrant already can serve billions of vectors, but we want to make it even more affordable.
 * **Easy scaling** - our plan is to make it easy to dynamically scale Qdrant, so you could go from 1 to 1B vectors seamlessly.
@@ -31,6 +31,7 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 * :atom_symbol: Quantization support
   * [x] Scalar quantization f32 -> u8 (4x compression)
   * [x] Product quantization (4x, 8x, 16x, 32x, and 64x compression)
+  * [x] Binary quantization (32x compression, 40x speedup)
   * [ ] Support for binary vectors
 
 ---
@@ -44,15 +45,15 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 
 * :eyes: Search scenarios
   * [ ] Diversity search - search for vectors that are different from each other
+  * [ ] Discovery search - constrain the space in which the search is performed
   * [ ] Sparse vectors search - search for vectors with a small number of non-zero values
-  * [ ] Grouping requests - search within payload-defined groups
-  * [ ] Different scenarios for recommendation API
+  * [x] Grouping requests - search within payload-defined groups
+  * [x] Different scenarios for recommendation API
 
 ---
-    
+
 * Additionally
   * [ ] Extend full-text filtering support
     * [ ] Support for phrase queries
     * [ ] Support for logical operators
-  * [ ] Simplify update of collection parameters
-
+  * [x] Simplify update of collection parameters
