@@ -720,7 +720,7 @@ mod tests {
             let req1 = SearchRequestInternal {
                 vector: random_vector(&mut rnd, 4).into(),
                 limit: 150, // more than LOWER_SEARCH_LIMIT_SAMPLING
-                offset: 0,
+                offset: None,
                 with_payload: None,
                 with_vector: None,
                 filter: None,
@@ -730,7 +730,7 @@ mod tests {
             let req2 = SearchRequestInternal {
                 vector: random_vector(&mut rnd, 4).into(),
                 limit: 50, // less than LOWER_SEARCH_LIMIT_SAMPLING
-                offset: 0,
+                offset: None,
                 filter: None,
                 params: None,
                 with_payload: None,

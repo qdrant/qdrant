@@ -68,7 +68,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         filter: None,
         params: None,
         limit: 3,
-        offset: 0,
+        offset: None,
         score_threshold: None,
     };
 
@@ -132,7 +132,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         filter: None,
         params: None,
         limit: 3,
-        offset: 0,
+        offset: None,
         score_threshold: None,
     };
 

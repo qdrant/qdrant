@@ -107,7 +107,7 @@ fn discovery_into_core_search(
         filter: Some(filter),
         params: request.params,
         limit: request.limit,
-        offset: request.offset,
+        offset: request.offset.unwrap_or_default(),
         with_payload: request.with_payload,
         with_vector: request.with_vector,
         score_threshold: None,

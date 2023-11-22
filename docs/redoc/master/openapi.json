@@ -6218,10 +6218,10 @@
           },
           "offset": {
             "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
-            "default": 0,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "with_payload": {
             "description": "Select which payload to return with the response. Default: None",
@@ -6988,10 +6988,10 @@
           },
           "offset": {
             "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
-            "default": 0,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "with_payload": {
             "description": "Select which payload to return with the response. Default: None",
@@ -10436,10 +10436,10 @@
           },
           "offset": {
             "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
-            "default": 0,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "with_payload": {
             "description": "Select which payload to return with the response. Default: None",

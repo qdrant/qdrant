@@ -1071,7 +1071,7 @@ pub async fn recommend(
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
-        offset: offset.unwrap_or_default() as usize,
+        offset: offset.map(|x| x as usize),
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: Some(
             with_vectors
