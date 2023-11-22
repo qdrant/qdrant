@@ -301,7 +301,7 @@ fn recommend_by_avg_vector(
         params,
         limit,
         score_threshold,
-        offset,
+        offset: offset.unwrap_or_default(),
     }
 }
 
@@ -361,7 +361,7 @@ fn recommend_by_best_score(
         }),
         params,
         limit,
-        offset,
+        offset: offset.unwrap_or_default(),
         with_payload,
         with_vector,
         score_threshold,

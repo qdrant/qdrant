@@ -293,8 +293,7 @@ pub struct SearchRequestInternal {
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
-    #[serde(default)]
-    pub offset: usize,
+    pub offset: Option<usize>,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
@@ -556,8 +555,7 @@ pub struct RecommendRequestInternal {
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
-    #[serde(default)]
-    pub offset: usize,
+    pub offset: Option<usize>,
 
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
@@ -711,8 +709,7 @@ pub struct DiscoverRequestInternal {
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
-    #[serde(default)]
-    pub offset: usize,
+    pub offset: Option<usize>,
 
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
@@ -1545,7 +1542,7 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
             filter: request.filter,
             params: request.params,
             limit: request.limit,
-            offset: request.offset,
+            offset: request.offset.unwrap_or_default(),
             with_payload: request.with_payload,
             with_vector: request.with_vector,
             score_threshold: request.score_threshold,

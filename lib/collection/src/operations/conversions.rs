@@ -199,7 +199,7 @@ pub fn try_discover_request_from_grpc(
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
-        offset: offset.unwrap_or_default() as usize,
+        offset: offset.map(|x| x as usize),
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: Some(
             with_vectors
@@ -902,7 +902,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
             score_threshold: request.score_threshold,
-            offset: Some(request.offset as u64),
+            offset: request.offset.map(|x| x as u64),
             vector_name: match request.vector.get_name() {
                 DEFAULT_VECTOR_NAME => None,
                 vector_name => Some(vector_name.to_string()),
@@ -1171,7 +1171,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
             limit: value.limit as usize,
-            offset: value.offset.unwrap_or_default() as usize,
+            offset: value.offset.map(|x| x as usize),
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vector: Some(
                 value
@@ -1371,7 +1371,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
             limit: value.limit as usize,
-            offset: value.offset.unwrap_or_default() as usize,
+            offset: value.offset.map(|x| x as usize),
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vector: Some(
                 value
