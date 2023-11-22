@@ -112,32 +112,27 @@ pub struct CreateCollection {
     /// Number of shards in collection per shard group.
     ///  - Default is 1, meaning that each shard key will be mapped to a single shard
     ///  - Minimum is 1
-    #[serde(default)]
     #[validate(range(min = 1))]
     pub shard_number: Option<u32>,
     /// Sharding method
     /// Default is Auto - points are distributed across all available shards
     /// Custom - points are distributed across shards according to shard key
-    #[serde(default)]
     pub sharding_method: Option<ShardingMethod>,
     /// Number of shards replicas.
     /// Default is 1
     /// Minimum is 1
-    #[serde(default)]
     #[validate(range(min = 1))]
     pub replication_factor: Option<u32>,
     /// Defines how many replicas should apply the operation for us to consider it successful.
     /// Increasing this number will make the collection more resilient to inconsistencies, but will
     /// also make it fail if not enough replicas are available.
     /// Does not have any performance impact.
-    #[serde(default)]
     #[validate(range(min = 1))]
     pub write_consistency_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
     /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
-    #[serde(default)]
     pub on_disk_payload: Option<bool>,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
     #[validate]
@@ -153,7 +148,7 @@ pub struct CreateCollection {
     #[serde(default)]
     pub init_from: Option<InitFrom>,
     /// Quantization parameters. If none - quantization is disabled.
-    #[serde(default, alias = "quantization")]
+    #[serde(alias = "quantization")]
     #[validate]
     pub quantization_config: Option<QuantizationConfig>,
 }

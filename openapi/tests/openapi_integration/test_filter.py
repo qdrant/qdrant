@@ -65,6 +65,5 @@ def test_just_key():
     assert not response.ok
     assert response.status_code == 422
     error = response.json()["status"]["error"]
-    print(error)
     assert "Validation error in JSON body" in error
     assert "At least one field condition must be specified" in error
