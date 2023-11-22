@@ -64,16 +64,16 @@ pub(crate) unsafe fn manhattan_similarity_neon(
     let mut i: usize = 0;
     while i < m {
         let sub1 = vsubq_f32(vld1q_f32(ptr1), vld1q_f32(ptr2));
-        sum1 = vaddq_f32(sum1, vabs_f32(sub1));
+        sum1 = vaddq_f32(sum1, vabsq_f32(sub1));
 
         let sub2 = vsubq_f32(vld1q_f32(ptr1.add(4)), vld1q_f32(ptr2.add(4)));
-        sum2 = vaddq_f32(sum2, vabs_f32(sub2));
+        sum2 = vaddq_f32(sum2, vabsq_f32(sub2));
 
         let sub3 = vsubq_f32(vld1q_f32(ptr1.add(8)), vld1q_f32(ptr2.add(8)));
-        sum3 = vaddq_f32(sum3, vabs_f32(sub3));
+        sum3 = vaddq_f32(sum3, vabsq_f32(sub3));
 
         let sub4 = vsubq_f32(vld1q_f32(ptr1.add(12)), vld1q_f32(ptr2.add(12)));
-        sum4 = vaddq_f32(sum4, vabs_f32(sub4));
+        sum4 = vaddq_f32(sum4, vabsq_f32(sub4));
 
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
