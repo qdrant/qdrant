@@ -3,6 +3,8 @@
 openapi: 3.0.1
 security:
   - api-key: []
+  - bearerAuth: []
+  - {}
 info:
   title: Qdrant API
   description: >
@@ -602,7 +604,9 @@ components:
       in: header
       name: api-key
       description: Authorization key, either read-write or read-only
-      required: false
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     ErrorResponse:
       type: object
