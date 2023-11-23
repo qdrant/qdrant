@@ -31,6 +31,7 @@ use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::api_key::{ApiKey, WhitelistItem};
+use crate::common::auth::AuthKeys;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
@@ -59,7 +60,7 @@ pub fn init(
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
-        let api_key = settings.service.api_key.clone();
+        let auth_keys = AuthKeys::try_create(&settings.service);
         let static_folder = settings
             .service
             .static_content_dir
@@ -116,11 +117,8 @@ pub fn init(
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(Condition::new(
-                    api_key.is_some(),
-                    ApiKey::new(
-                        &api_key.clone().unwrap_or_default(),
-                        api_key_whitelist.clone(),
-                    ),
+                    auth_keys.is_some(),
+                    ApiKey::new(auth_keys.clone(), api_key_whitelist.clone()),
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests

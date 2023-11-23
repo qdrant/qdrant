@@ -26,6 +26,10 @@ jobs:
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
+      - name: Run API Key tests
+        run: ./tests/integration-tests-api-key.sh
+        shell: bash
+
   test-consensus:
 
     runs-on: ubuntu-latest
@@ -128,6 +132,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      - name: Install dependencies
+        run: sudo apt-get install -y jq
       - name: Docker build
         uses: docker/build-push-action@v5
         with:

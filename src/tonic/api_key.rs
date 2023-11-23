@@ -1,7 +1,6 @@
 use std::task::{Context, Poll};
 
 use actix_web_httpauth::headers::authorization::{Bearer, Scheme};
-use constant_time_eq::constant_time_eq;
 use futures_util::future::BoxFuture;
 use reqwest::header::HeaderValue;
 use reqwest::StatusCode;
@@ -10,15 +9,34 @@ use tonic::Code;
 use tower::Service;
 use tower_layer::Layer;
 
+use crate::common::auth::AuthKeys;
+use crate::common::strings::ct_eq;
+
+const READ_ONLY_RPC_PATHS: [&str; 13] = [
+    "/qdrant.Collections/List",
+    "/qdrant.Collections/Get",
+    "/qdrant.Points/Scroll",
+    "/qdrant.Points/Get",
+    "/qdrant.Points/Count",
+    "/qdrant.Points/Search",
+    "/qdrant.Points/SearchGroups",
+    "/qdrant.Points/SearchBatch",
+    "/qdrant.Points/Recommend",
+    "/qdrant.Points/RecommendGroups",
+    "/qdrant.Points/RecommendBatch",
+    "/qdrant.Points/Discover",
+    "/qdrant.Points/DiscoverBatch",
+];
+
 #[derive(Clone)]
 pub struct ApiKeyMiddleware<T> {
     service: T,
-    api_key: String,
+    auth_keys: AuthKeys,
 }
 
 #[derive(Clone)]
 pub struct ApiKeyMiddlewareLayer {
-    api_key: String,
+    auth_keys: AuthKeys,
 }
 
 impl<S> Service<tonic::codegen::http::Request<tonic::transport::Body>> for ApiKeyMiddleware<S>
@@ -45,23 +63,19 @@ where
         let key =
             // Request header
             request.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
-            // Fall back to authentication header with bearer token
-            .or_else(|| {
-                request.headers().get("authorization")
-                    .and_then(|auth| {
-                        Bearer::parse(auth).ok().map(|bearer| bearer.token().into())
-                    })
-            });
-
-        // If we have an API key, compare in constant time
-        if let Some(key) = key {
-            if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
-                let future = self.service.call(request);
-
-                return Box::pin(async move {
-                    let response = future.await?;
-                    Ok(response)
+                // Fall back to authentication header with bearer token
+                .or_else(|| {
+                    request.headers().get("authorization")
+                        .and_then(|auth| {
+                            Bearer::parse(auth).ok().map(|bearer| bearer.token().into())
+                        })
                 });
+
+        if let Some(key) = key {
+            let is_allowed = self.auth_keys.can_write(&key)
+                || (is_read_only(&request) && self.auth_keys.can_read(&key));
+            if is_allowed {
+                return Box::pin(self.service.call(request));
             }
         }
 
@@ -80,8 +94,8 @@ where
 }
 
 impl ApiKeyMiddlewareLayer {
-    pub fn new(api_key: String) -> Self {
-        Self { api_key }
+    pub fn new(auth_keys: AuthKeys) -> Self {
+        Self { auth_keys }
     }
 }
 
@@ -91,7 +105,14 @@ impl<S> Layer<S> for ApiKeyMiddlewareLayer {
     fn layer(&self, service: S) -> Self::Service {
         ApiKeyMiddleware {
             service,
-            api_key: self.api_key.clone(),
+            auth_keys: self.auth_keys.clone(),
         }
     }
+}
+
+fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {
+    let uri_path = req.uri().path();
+    READ_ONLY_RPC_PATHS
+        .iter()
+        .any(|ro_uri_path| ct_eq(uri_path, ro_uri_path))
 }
