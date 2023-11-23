@@ -28,7 +28,6 @@ pub struct DatabaseColumnWrapper {
 pub struct DatabaseColumnIterator<'a> {
     pub handle: &'a ColumnFamily,
     pub iter: rocksdb::DBRawIterator<'a>,
-    pub just_seeked: bool,
 }
 
 pub struct LockedDatabaseColumnWrapper<'a> {
@@ -249,11 +248,7 @@ impl<'a> DatabaseColumnIterator<'a> {
         })?;
         let mut iter = db.raw_iterator_cf(&handle);
         iter.seek_to_first();
-        Ok(DatabaseColumnIterator {
-            handle,
-            iter,
-            just_seeked: true,
-        })
+        Ok(DatabaseColumnIterator { handle, iter })
     }
 }
 
@@ -261,26 +256,19 @@ impl<'a> Iterator for DatabaseColumnIterator<'a> {
     type Item = (Box<[u8]>, Box<[u8]>);
 
     fn next(&mut self) -> Option<Self::Item> {
+        // Stop if iterator has ended or errored
         if !self.iter.valid() {
             return None;
         }
 
-        // Initial call to next() after seeking should not move the iterator
-        // or the first item will not be returned
-        if self.just_seeked {
-            self.just_seeked = false;
-        } else {
-            self.iter.next();
-        }
+        let item = (
+            Box::from(self.iter.key().unwrap()),
+            Box::from(self.iter.value().unwrap()),
+        );
 
-        if self.iter.valid() {
-            // .key() and .value() only ever return None if valid == false, which we've just checked
-            Some((
-                Box::from(self.iter.key().unwrap()),
-                Box::from(self.iter.value().unwrap()),
-            ))
-        } else {
-            None
-        }
+        // Search to next item for next iteration
+        self.iter.next();
+
+        Some(item)
     }
 }
