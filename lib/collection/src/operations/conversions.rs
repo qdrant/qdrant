@@ -861,11 +861,11 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             read_consistency: _,
             timeout: _,
             shard_key_selector: _,
-            indices,
+            sparse_indices,
         } = value;
 
         let vector_struct =
-            api::grpc::conversions::into_named_vector_struct(vector_name, vector, indices)?;
+            api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
 
         Ok(Self {
             query: QueryEnum::Nearest(vector_struct),
@@ -884,11 +884,11 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
-        let (vector, indices) = match request.vector.get_vector().to_owned() {
+        let (vector, sparse_indices) = match request.vector.get_vector().to_owned() {
             Vector::Dense(vector) => (vector, None),
             Vector::Sparse(vector) => (
                 vector.values,
-                Some(api::grpc::qdrant::ValuesIndices {
+                Some(api::grpc::qdrant::SparseIndices {
                     data: vector.indices,
                 }),
             ),
@@ -910,7 +910,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
             read_consistency: None,
             timeout: None,
             shard_key_selector: None,
-            indices,
+            sparse_indices,
         }
     }
 }
@@ -1128,7 +1128,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
             vector: api::grpc::conversions::into_named_vector_struct(
                 value.vector_name,
                 value.vector,
-                value.indices,
+                value.sparse_indices,
             )?,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
@@ -1164,7 +1164,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             read_consistency: None,
             timeout: None,
             shard_key_selector: None,
-            indices: value.indices,
+            sparse_indices: value.sparse_indices,
         };
 
         let SearchRequestInternal {

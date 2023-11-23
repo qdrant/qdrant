@@ -848,11 +848,11 @@ pub async fn search(
         read_consistency,
         timeout,
         shard_key_selector,
-        indices,
+        sparse_indices,
     } = search_points;
 
     let vector_struct =
-        api::grpc::conversions::into_named_vector_struct(vector_name, vector, indices)?;
+        api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 

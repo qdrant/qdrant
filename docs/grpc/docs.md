@@ -176,6 +176,7 @@
     - [SetPayloadPoints](#qdrant-SetPayloadPoints)
     - [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry)
     - [ShardKeySelector](#qdrant-ShardKeySelector)
+    - [SparseIndices](#qdrant-SparseIndices)
     - [TargetVector](#qdrant-TargetVector)
     - [UpdateBatchPoints](#qdrant-UpdateBatchPoints)
     - [UpdateBatchResponse](#qdrant-UpdateBatchResponse)
@@ -183,7 +184,6 @@
     - [UpdateResult](#qdrant-UpdateResult)
     - [UpsertPoints](#qdrant-UpsertPoints)
     - [ValuesCount](#qdrant-ValuesCount)
-    - [ValuesIndices](#qdrant-ValuesIndices)
     - [Vector](#qdrant-Vector)
     - [VectorExample](#qdrant-VectorExample)
     - [Vectors](#qdrant-Vectors)
@@ -2965,7 +2965,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
-| indices | [ValuesIndices](#qdrant-ValuesIndices) | optional |  |
+| sparse_indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
 
 
 
@@ -2993,7 +2993,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
-| indices | [ValuesIndices](#qdrant-ValuesIndices) | optional |  |
+| sparse_indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
 
 
 
@@ -3063,6 +3063,21 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | shard_keys | [ShardKey](#qdrant-ShardKey) | repeated | List of shard keys which should be used in the request |
+
+
+
+
+
+
+<a name="qdrant-SparseIndices"></a>
+
+### SparseIndices
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| data | [uint32](#uint32) | repeated |  |
 
 
 
@@ -3190,21 +3205,6 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
-<a name="qdrant-ValuesIndices"></a>
-
-### ValuesIndices
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| data | [uint32](#uint32) | repeated |  |
-
-
-
-
-
-
 <a name="qdrant-Vector"></a>
 
 ### Vector
@@ -3214,7 +3214,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | data | [float](#float) | repeated |  |
-| indices | [ValuesIndices](#qdrant-ValuesIndices) | optional |  |
+| indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
 
 
 

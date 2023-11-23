@@ -8,7 +8,7 @@ use segment::types::default_quantization_ignore_value;
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId, ValuesIndices};
+use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId, SparseIndices};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -439,7 +439,7 @@ impl From<segment::data_types::vectors::Vector> for Vector {
             },
             segment::data_types::vectors::Vector::Sparse(vector) => Self {
                 data: vector.values,
-                indices: Some(ValuesIndices {
+                indices: Some(SparseIndices {
                     data: vector.indices,
                 }),
             },
@@ -1228,7 +1228,7 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
 pub fn into_named_vector_struct(
     vector_name: Option<String>,
     vector: Vec<VectorElementType>,
-    indices: Option<ValuesIndices>,
+    indices: Option<SparseIndices>,
 ) -> Result<segment::data_types::vectors::NamedVectorStruct, Status> {
     use segment::data_types::vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
     use sparse::common::sparse_vector::SparseVector;
