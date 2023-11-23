@@ -33,7 +33,7 @@ impl Ready {
         let collections = self.toc.all_collections().await;
 
         for collection in &collections {
-            let state = match self.toc.get_collection(&collection).await {
+            let state = match self.toc.get_collection(collection).await {
                 Ok(collection) => collection.state().await,
                 Err(_) => continue,
             };
