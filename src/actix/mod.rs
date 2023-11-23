@@ -61,13 +61,18 @@ pub fn init(
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
-        let ready = web::Data::new(Ready::new(toc_data.clone().into_inner()));
         let auth_keys = AuthKeys::try_create(&settings.service);
         let static_folder = settings
             .service
             .static_content_dir
             .clone()
             .unwrap_or(DEFAULT_STATIC_DIR.to_string());
+
+        let ready = Arc::new(Ready::new(toc_data.clone().into_inner()));
+        let init = ready.clone().initialize();
+
+        let ready = web::Data::from(ready);
+        drop(actix_web::rt::spawn(init)); // drop `JoinFuture` explicitly to make clippy happy
 
         let web_ui_enabled = settings.service.enable_static_content.unwrap_or(true);
         // validate that the static folder exists IF the web UI is enabled
