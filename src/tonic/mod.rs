@@ -37,6 +37,7 @@ use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 
+use crate::common::auth::AuthKeys;
 use crate::common::helpers;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
@@ -182,12 +183,9 @@ pub fn init(
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))
-            .option_layer(
-                settings
-                    .service
-                    .api_key
-                    .map(api_key::ApiKeyMiddlewareLayer::new),
-            )
+            .option_layer({
+                AuthKeys::try_create(&settings.service).map(api_key::ApiKeyMiddlewareLayer::new)
+            })
             .into_inner();
 
         server

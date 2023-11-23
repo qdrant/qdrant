@@ -34,3 +34,14 @@ fi
 
 # Cleanup
 rm -f ./docs/redoc/master/.diff.openapi.json
+
+NUMBER_OF_APIS=$(cat ./docs/redoc/master/openapi.json | jq '.paths | length')
+EXPECTED_NUMBER_OF_APIS=48
+
+if [ "$NUMBER_OF_APIS" -ne "$EXPECTED_NUMBER_OF_APIS" ]; then
+    echo "ERROR: It looks like the total number of APIs has changed."
+    echo "ERROR: Please verify that all new APIs are correctly represented in read-only mode configuration"
+    echo "ERROR: See: 'READ_ONLY_POST_PATTERNS' and 'READ_ONLY_RPC_PATHS'"
+    echo "ERROR: once consistency is restored, please update EXPECTED_NUMBER_OF_APIS in this script"
+fi
+

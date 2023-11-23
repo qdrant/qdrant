@@ -3,20 +3,36 @@ use std::future::{ready, Ready};
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::header::Header;
+use actix_web::http::Method;
 use actix_web::{Error, HttpResponse};
 use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
-use constant_time_eq::constant_time_eq;
 use futures_util::future::LocalBoxFuture;
 
+use crate::common::auth::AuthKeys;
+
+const READ_ONLY_POST_PATTERNS: [&str; 11] = [
+    "/collections/{name}/points",
+    "/collections/{name}/points/count",
+    "/collections/{name}/points/search",
+    "/collections/{name}/points/scroll",
+    "/collections/{name}/points/search/groups",
+    "/collections/{name}/points/search/batch",
+    "/collections/{name}/points/recommend",
+    "/collections/{name}/points/recommend/groups",
+    "/collections/{name}/points/recommend/batch",
+    "/collections/{name}/points/discover",
+    "/collections/{name}/points/discover/batch",
+];
+
 pub struct ApiKey {
-    api_key: String,
+    auth_keys: Option<AuthKeys>,
     whitelist: Vec<WhitelistItem>,
 }
 
 impl ApiKey {
-    pub fn new(api_key: &str, whitelist: Vec<WhitelistItem>) -> Self {
+    pub fn new(auth_keys: Option<AuthKeys>, whitelist: Vec<WhitelistItem>) -> Self {
         Self {
-            api_key: api_key.to_string(),
+            auth_keys,
             whitelist,
         }
     }
@@ -36,7 +52,7 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(ApiKeyMiddleware {
-            api_key: self.api_key.clone(),
+            auth_keys: self.auth_keys.clone(),
             whitelist: self.whitelist.clone(),
             service,
         }))
@@ -78,7 +94,7 @@ impl PathMode {
 }
 
 pub struct ApiKeyMiddleware<S> {
-    api_key: String,
+    auth_keys: Option<AuthKeys>,
     /// List of items whitelisted from authentication.
     whitelist: Vec<WhitelistItem>,
     service: S,
@@ -113,14 +129,20 @@ where
         let key =
             // Request header
             req.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
-            // Fall back to authentication header with bearer token
-            .or_else(|| {
-                Authorization::<Bearer>::parse(&req).ok().map(|auth| auth.as_ref().token().into())
-            });
+                // Fall back to authentication header with bearer token
+                .or_else(|| {
+                    Authorization::<Bearer>::parse(&req).ok().map(|auth| auth.as_ref().token().into())
+                });
 
-        // If we have an API key, compare in constant time
         if let Some(key) = key {
-            if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
+            let is_allowed = if let Some(ref auth_keys) = self.auth_keys {
+                auth_keys.can_write(&key) || (is_read_only(&req) && auth_keys.can_read(&key))
+            } else {
+                // This code path should not be reached
+                log::warn!("Auth for REST API is set up incorrectly. Denying access by default.");
+                false
+            };
+            if is_allowed {
                 return Box::pin(self.service.call(req));
             }
         }
@@ -130,5 +152,16 @@ where
                 .into_response(HttpResponse::Forbidden().body("Invalid api-key"))
                 .map_into_right_body())
         })
+    }
+}
+
+fn is_read_only(req: &ServiceRequest) -> bool {
+    match *req.method() {
+        Method::GET => true,
+        Method::POST => req
+            .match_pattern()
+            .map(|pattern| READ_ONLY_POST_PATTERNS.iter().any(|pat| &pattern == pat))
+            .unwrap_or_default(),
+        _ => false,
     }
 }

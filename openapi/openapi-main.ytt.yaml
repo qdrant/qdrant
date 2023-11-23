@@ -1,7 +1,10 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 openapi: 3.0.1
-security: []
+security:
+  - api-key: []
+  - bearerAuth: []
+  - {}
 info:
   title: Qdrant API
   description: >
@@ -595,6 +598,15 @@ paths:
       responses: #@ response(reference("CountResult"))
 
 components:
+  securitySchemes:
+    api-key:
+      type: apiKey
+      in: header
+      name: api-key
+      description: Authorization key, either read-write or read-only
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     ErrorResponse:
       type: object
@@ -612,4 +624,3 @@ components:
         result:
           type: object
           nullable: true
-
