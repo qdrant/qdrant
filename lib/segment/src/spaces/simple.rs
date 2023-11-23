@@ -233,13 +233,10 @@ pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> 
 }
 
 pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    let s: ScoreType = v1
-        .iter()
-        .copied()
-        .zip(v2.iter().copied())
+    -v1.iter()
+        .zip(v2)
         .map(|(a, b)| (a - b).abs())
-        .sum();
-    -s
+        .sum::<ScoreType>()
 }
 
 pub fn cosine_preprocess(vector: VectorType) -> VectorType {
