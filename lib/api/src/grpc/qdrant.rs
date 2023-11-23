@@ -3139,9 +3139,18 @@ pub mod point_id {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SparseIndices {
+    #[prost(uint32, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
+    #[prost(message, optional, tag = "2")]
+    pub indices: ::core::option::Option<SparseIndices>,
 }
 /// ---------------------------------------------
 /// ----------------- ShardKeySelector ----------
@@ -3436,18 +3445,22 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {
     #[prost(map = "string, message", tag = "1")]
+    #[validate]
     pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vectors {
     #[prost(oneof = "vectors::VectorsOptions", tags = "1, 2")]
+    #[validate]
     pub vectors_options: ::core::option::Option<vectors::VectorsOptions>,
 }
 /// Nested message and enum types in `Vectors`.
@@ -3591,6 +3604,8 @@ pub struct SearchPoints {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "14")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    #[prost(message, optional, tag = "15")]
+    pub sparse_indices: ::core::option::Option<SparseIndices>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3683,6 +3698,8 @@ pub struct SearchPointGroups {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "15")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    #[prost(message, optional, tag = "16")]
+    pub sparse_indices: ::core::option::Option<SparseIndices>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -3781,9 +3798,11 @@ pub struct RecommendPoints {
     pub strategy: ::core::option::Option<i32>,
     /// Look for vectors closest to those
     #[prost(message, repeated, tag = "17")]
+    #[validate]
     pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// Try to avoid vectors like this
     #[prost(message, repeated, tag = "18")]
+    #[validate]
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "19")]
@@ -3874,9 +3893,11 @@ pub struct RecommendPointGroups {
     pub strategy: ::core::option::Option<i32>,
     /// Look for vectors closest to those
     #[prost(message, repeated, tag = "18")]
+    #[validate]
     pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// Try to avoid vectors like this
     #[prost(message, repeated, tag = "19")]
+    #[validate]
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "20")]
@@ -6993,38 +7014,49 @@ pub struct SearchBatchPointsInternal {
     #[prost(uint64, optional, tag = "4")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoQuery {
     #[prost(message, repeated, tag = "1")]
+    #[validate]
     pub positives: ::prost::alloc::vec::Vec<Vector>,
     #[prost(message, repeated, tag = "2")]
+    #[validate]
     pub negatives: ::prost::alloc::vec::Vec<Vector>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextPair {
     #[prost(message, optional, tag = "1")]
+    #[validate]
     pub positive: ::core::option::Option<Vector>,
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub negative: ::core::option::Option<Vector>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiscoveryQuery {
     #[prost(message, optional, tag = "1")]
+    #[validate]
     pub target: ::core::option::Option<Vector>,
     #[prost(message, repeated, tag = "2")]
+    #[validate]
     pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextQuery {
     #[prost(message, repeated, tag = "1")]
+    #[validate]
     pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
 #[derive(serde::Serialize)]

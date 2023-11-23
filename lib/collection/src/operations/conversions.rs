@@ -13,10 +13,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
-use segment::data_types::vectors::{
-    Named, NamedQuery, NamedVector, NamedVectorStruct, Vector, VectorStruct, VectorType,
-    DEFAULT_VECTOR_NAME,
-};
+use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -864,16 +861,11 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             read_consistency: _,
             timeout: _,
             shard_key_selector: _,
+            sparse_indices,
         } = value;
 
-        let vector_struct = if let Some(vector_name) = vector_name {
-            NamedVectorStruct::Named(NamedVector {
-                name: vector_name,
-                vector,
-            })
-        } else {
-            NamedVectorStruct::Default(vector)
-        };
+        let vector_struct =
+            api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
 
         Ok(Self {
             query: QueryEnum::Nearest(vector_struct),
@@ -892,7 +884,15 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
-        let vector: VectorType = request.vector.get_vector().to_owned().try_into().unwrap(); // TODO(sparse): grpc conversion
+        let (vector, sparse_indices) = match request.vector.get_vector().to_owned() {
+            Vector::Dense(vector) => (vector, None),
+            Vector::Sparse(vector) => (
+                vector.values,
+                Some(api::grpc::qdrant::SparseIndices {
+                    data: vector.indices,
+                }),
+            ),
+        };
         Self {
             collection_name: collection_id,
             vector,
@@ -910,12 +910,12 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
             read_consistency: None,
             timeout: None,
             shard_key_selector: None,
+            sparse_indices,
         }
     }
 }
 
 impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
-    // TODO(sparse) grpc conversion remove unwraps
     fn from(value: QueryEnum) -> Self {
         match value {
             QueryEnum::Nearest(vector) => api::grpc::qdrant::QueryEnum {
@@ -926,48 +926,22 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
             QueryEnum::RecommendBestScore(named) => api::grpc::qdrant::QueryEnum {
                 query: Some(api::grpc::qdrant::query_enum::Query::RecommendBestScore(
                     api::grpc::qdrant::RecoQuery {
-                        positives: named
-                            .query
-                            .positives
-                            .into_iter()
-                            .map(|v| {
-                                let v: Vec<_> = v.try_into().unwrap();
-                                v
-                            })
-                            .map_into()
-                            .collect(),
-                        negatives: named
-                            .query
-                            .negatives
-                            .into_iter()
-                            .map(|v| {
-                                let v: Vec<_> = v.try_into().unwrap();
-                                v
-                            })
-                            .map_into()
-                            .collect(),
+                        positives: named.query.positives.into_iter().map_into().collect(),
+                        negatives: named.query.negatives.into_iter().map_into().collect(),
                     },
                 )),
             },
             QueryEnum::Discover(named) => api::grpc::qdrant::QueryEnum {
                 query: Some(api::grpc::qdrant::query_enum::Query::Discover(
                     api::grpc::qdrant::DiscoveryQuery {
-                        target: Some(api::grpc::qdrant::Vector {
-                            data: named.query.target.try_into().unwrap(),
-                        }),
+                        target: Some(named.query.target.into()),
                         context: named
                             .query
                             .pairs
                             .into_iter()
                             .map(|pair| api::grpc::qdrant::ContextPair {
-                                positive: {
-                                    let v: Vec<_> = pair.positive.try_into().unwrap();
-                                    Some(v.into())
-                                },
-                                negative: {
-                                    let v: Vec<_> = pair.negative.try_into().unwrap();
-                                    Some(v.into())
-                                },
+                                positive: { Some(pair.positive.into()) },
+                                negative: { Some(pair.negative.into()) },
                             })
                             .collect(),
                     },
@@ -981,14 +955,8 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
                             .pairs
                             .into_iter()
                             .map(|pair| api::grpc::qdrant::ContextPair {
-                                positive: {
-                                    let v: Vec<_> = pair.positive.try_into().unwrap();
-                                    Some(v.into())
-                                },
-                                negative: {
-                                    let v: Vec<_> = pair.negative.try_into().unwrap();
-                                    Some(v.into())
-                                },
+                                positive: { Some(pair.positive.into()) },
+                                negative: { Some(pair.negative.into()) },
                             })
                             .collect(),
                     },
@@ -1064,8 +1032,8 @@ fn try_context_pair_from_grpc(
 ) -> Result<ContextPair<Vector>, Status> {
     match (pair.positive, pair.negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
-            positive: positive.data.into(),
-            negative: negative.data.into(),
+            positive: positive.into(),
+            negative: negative.into(),
         }),
         _ => Err(Status::invalid_argument(
             "All context pairs must have both positive and negative parts",
@@ -1083,20 +1051,17 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
             .map(|query| {
                 Ok(match query {
                     api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
-                        QueryEnum::Nearest(match value.vector_name {
-                            Some(name) => NamedVector {
-                                name,
-                                vector: vector.data,
-                            }
-                            .into(),
-                            None => vector.data.into(),
-                        })
+                        QueryEnum::Nearest(api::grpc::conversions::into_named_vector_struct(
+                            value.vector_name,
+                            vector.data,
+                            vector.indices.clone(),
+                        )?)
                     }
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                         QueryEnum::RecommendBestScore(NamedQuery {
                             query: RecoQuery::new(
-                                query.positives.into_iter().map(|v| v.data.into()).collect(),
-                                query.negatives.into_iter().map(|v| v.data.into()).collect(),
+                                query.positives.into_iter().map(|v| v.into()).collect(),
+                                query.negatives.into_iter().map(|v| v.into()).collect(),
                             ),
                             using: value.vector_name,
                         })
@@ -1116,7 +1081,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                             .try_collect()?;
 
                         QueryEnum::Discover(NamedQuery {
-                            query: DiscoveryQuery::new(target.data.into(), pairs),
+                            query: DiscoveryQuery::new(target.into(), pairs),
                             using: value.vector_name,
                         })
                     }
@@ -1160,14 +1125,11 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
 
     fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
         Ok(SearchRequestInternal {
-            vector: match value.vector_name {
-                Some(vector_name) => NamedVector {
-                    name: vector_name,
-                    vector: value.vector,
-                }
-                .into(),
-                None => value.vector.into(),
-            },
+            vector: api::grpc::conversions::into_named_vector_struct(
+                value.vector_name,
+                value.vector,
+                value.sparse_indices,
+            )?,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
             limit: value.limit as usize,
@@ -1202,6 +1164,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             read_consistency: None,
             timeout: None,
             shard_key_selector: None,
+            sparse_indices: value.sparse_indices,
         };
 
         let SearchRequestInternal {
@@ -1318,7 +1281,11 @@ impl TryFrom<api::grpc::qdrant::PointId> for RecommendExample {
 
 impl From<api::grpc::qdrant::Vector> for RecommendExample {
     fn from(value: api::grpc::qdrant::Vector) -> Self {
-        Self::Vector(value.data)
+        let vector: Vector = value.into();
+        match vector {
+            Vector::Dense(vector) => Self::Vector(vector),
+            Vector::Sparse(vector) => Self::Sparse(vector),
+        }
     }
 }
 

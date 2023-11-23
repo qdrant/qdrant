@@ -164,6 +164,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CreateFieldIndexCollection.field_name", "length(min = 1)"),
             ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
+            // TODO(sparse) validate sparse vector for `SearchPoints`
             ("SearchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchPoints.filter", ""),
             ("SearchPoints.limit", "range(min = 1)"),
@@ -172,6 +173,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
             ("SearchBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            // TODO(sparse) validate sparse vector for `SearchPointGroups`
             ("SearchPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("SearchPointGroups.group_by", "length(min = 1)"),
             ("SearchPointGroups.filter", ""),
@@ -188,6 +190,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendPoints.filter", ""),
             ("RecommendPoints.params", ""),
             ("RecommendPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("RecommendPoints.positive_vectors", ""),
+            ("RecommendPoints.negative_vectors", ""),
             ("RecommendBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("RecommendBatchPoints.recommend_points", ""),
             ("RecommendBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
@@ -198,6 +202,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendPointGroups.limit", "range(min = 1)"),
             ("RecommendPointGroups.params", ""),
             ("RecommendPointGroups.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("RecommendPointGroups.positive_vectors", ""),
+            ("RecommendPointGroups.negative_vectors", ""),
             ("DiscoverPoints.collection_name", "length(min = 1, max = 255)"),
             ("DiscoverPoints.filter", ""),
             ("DiscoverPoints.params", ""),
@@ -214,7 +220,16 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Filter.must", ""),
             ("Filter.must_not", ""),
             ("NestedCondition.filter", ""),
-            ("Condition.condition_one_of", "")
+            ("Condition.condition_one_of", ""),
+            ("Vectors.vectors_options", ""),
+            ("NamedVectors.vectors", ""),
+            ("RecoQuery.positives", ""),
+            ("RecoQuery.negatives", ""),
+            ("ContextPair.positive", ""),
+            ("ContextPair.negative", ""),
+            ("DiscoveryQuery.target", ""),
+            ("DiscoveryQuery.context", ""),
+            ("ContextQuery.context", ""),
         ], &[])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto

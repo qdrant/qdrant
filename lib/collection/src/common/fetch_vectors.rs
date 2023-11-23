@@ -234,6 +234,7 @@ pub fn convert_to_vectors_owned(
         .into_iter()
         .filter_map(|example| match example {
             RecommendExample::Vector(vector) => Some(vector.into()),
+            RecommendExample::Sparse(vector) => Some(vector.into()),
             RecommendExample::PointId(vid) => {
                 let rec = all_vectors_records_map.get(&collection_name, vid).unwrap();
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
@@ -250,6 +251,7 @@ pub fn convert_to_vectors<'a>(
 ) -> impl Iterator<Item = VectorRef<'a>> + 'a {
     examples.filter_map(move |example| match example {
         RecommendExample::Vector(vector) => Some(vector.into()),
+        RecommendExample::Sparse(vector) => Some(vector.into()),
         RecommendExample::PointId(vid) => {
             let rec = all_vectors_records_map.get(&collection_name, *vid).unwrap();
             rec.get_vector_by_name(vector_name)

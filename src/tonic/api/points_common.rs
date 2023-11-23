@@ -31,7 +31,6 @@ use collection::operations::types::{
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
-use segment::data_types::vectors::NamedVector;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -849,12 +848,11 @@ pub async fn search(
         read_consistency,
         timeout,
         shard_key_selector,
+        sparse_indices,
     } = search_points;
 
-    let vector_struct = match vector_name {
-        None => vector.into(),
-        Some(name) => NamedVector { name, vector }.into(),
-    };
+    let vector_struct =
+        api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 

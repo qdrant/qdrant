@@ -31,6 +31,7 @@ validator = { version = "0.16", features = ["derive"] }
 
 common = {path = "../common/common"}
 segment = {path = "../segment"}
+sparse = { path = "../sparse" }
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }
 

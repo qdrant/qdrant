@@ -104,23 +104,30 @@ impl TryFrom<Vec<(i32, f64)>> for SparseVector {
 
 impl Validate for SparseVector {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let mut errors = ValidationErrors::default();
+        validate_sparse_vector_impl(&self.indices, &self.values)
+    }
+}
 
-        if self.indices.len() != self.values.len() {
-            errors.add(
-                "values",
-                ValidationError::new("must be the same length as indices"),
-            );
-        }
-        if self.indices.iter().unique().count() != self.indices.len() {
-            errors.add("indices", ValidationError::new("must be unique"));
-        }
+pub fn validate_sparse_vector_impl(
+    indices: &[DimId],
+    values: &[DimWeight],
+) -> Result<(), ValidationErrors> {
+    let mut errors = ValidationErrors::default();
 
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
+    if indices.len() != values.len() {
+        errors.add(
+            "values",
+            ValidationError::new("must be the same length as indices"),
+        );
+    }
+    if indices.iter().unique().count() != indices.len() {
+        errors.add("indices", ValidationError::new("must be unique"));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
     }
 }
 
