@@ -41,8 +41,13 @@ message PointId {
   }
 }
 
+message SparseIndices {
+  repeated uint32 data = 1;
+}
+
 message Vector {
   repeated float data = 1;
+  optional SparseIndices indices = 2;
 }
 
 // ---------------------------------------------
@@ -258,6 +263,7 @@ message SearchPoints {
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
   optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
   optional ShardKeySelector shard_key_selector = 14; // Specify in which shards to look for the points, if not specified - look in all shards
+  optional SparseIndices sparse_indices = 15;
 }
 
 message SearchBatchPoints {
@@ -290,6 +296,7 @@ message SearchPointGroups {
   optional WithLookup with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
   optional uint64 timeout = 14; // If set, overrides global timeout setting for this request. Unit is seconds.
   optional ShardKeySelector shard_key_selector = 15; // Specify in which shards to look for the points, if not specified - look in all shards
+  optional SparseIndices sparse_indices = 16;
 }
 
 message ScrollPoints {

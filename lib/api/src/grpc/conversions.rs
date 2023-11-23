@@ -8,7 +8,7 @@ use segment::types::default_quantization_ignore_value;
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId};
+use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId, SparseIndices};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -430,23 +430,39 @@ impl From<segment::types::PointIdType> for PointId {
     }
 }
 
-impl From<segment::data_types::vectors::VectorType> for Vector {
-    fn from(vector: segment::data_types::vectors::VectorType) -> Self {
-        Self { data: vector }
-    }
-}
-
 impl From<segment::data_types::vectors::Vector> for Vector {
     fn from(vector: segment::data_types::vectors::Vector) -> Self {
         match vector {
-            segment::data_types::vectors::Vector::Dense(vector) => Self { data: vector },
-            segment::data_types::vectors::Vector::Sparse(_) => todo!(), // TODO(sparse) grpc conversion
+            segment::data_types::vectors::Vector::Dense(vector) => Self {
+                data: vector,
+                indices: None,
+            },
+            segment::data_types::vectors::Vector::Sparse(vector) => Self {
+                data: vector.values,
+                indices: Some(SparseIndices {
+                    data: vector.indices,
+                }),
+            },
         }
     }
 }
 
-impl From<HashMap<String, Vec<VectorElementType>>> for NamedVectors {
-    fn from(vectors: HashMap<String, Vec<VectorElementType>>) -> Self {
+impl From<Vector> for segment::data_types::vectors::Vector {
+    fn from(vector: Vector) -> Self {
+        match vector.indices {
+            None => segment::data_types::vectors::Vector::Dense(vector.data),
+            Some(indices) => segment::data_types::vectors::Vector::Sparse(
+                sparse::common::sparse_vector::SparseVector {
+                    values: vector.data,
+                    indices: indices.data,
+                },
+            ),
+        }
+    }
+}
+
+impl From<HashMap<String, segment::data_types::vectors::Vector>> for NamedVectors {
+    fn from(vectors: HashMap<String, segment::data_types::vectors::Vector>) -> Self {
         Self {
             vectors: vectors
                 .into_iter()
@@ -459,9 +475,12 @@ impl From<HashMap<String, Vec<VectorElementType>>> for NamedVectors {
 impl From<segment::data_types::vectors::VectorStruct> for Vectors {
     fn from(vector_struct: segment::data_types::vectors::VectorStruct) -> Self {
         match vector_struct {
-            segment::data_types::vectors::VectorStruct::Single(vector) => Self {
-                vectors_options: Some(VectorsOptions::Vector(vector.into())),
-            },
+            segment::data_types::vectors::VectorStruct::Single(vector) => {
+                let vector: segment::data_types::vectors::Vector = vector.into();
+                Self {
+                    vectors_options: Some(VectorsOptions::Vector(vector.into())),
+                }
+            }
             segment::data_types::vectors::VectorStruct::Multi(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
                     vectors: HashMap::from_iter(
@@ -501,16 +520,6 @@ impl From<segment::data_types::groups::GroupId> for GroupId {
                 kind: Some(crate::grpc::qdrant::group_id::Kind::IntegerValue(n)),
             },
         }
-    }
-}
-
-impl From<NamedVectors> for HashMap<String, Vec<VectorElementType>> {
-    fn from(vectors: NamedVectors) -> Self {
-        vectors
-            .vectors
-            .into_iter()
-            .map(|(name, vector)| (name, vector.data))
-            .collect()
     }
 }
 
@@ -1214,4 +1223,33 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
         ))),
         Some(grpc_distance) => Ok(grpc_distance.try_into()?),
     }
+}
+
+pub fn into_named_vector_struct(
+    vector_name: Option<String>,
+    vector: Vec<VectorElementType>,
+    indices: Option<SparseIndices>,
+) -> Result<segment::data_types::vectors::NamedVectorStruct, Status> {
+    use segment::data_types::vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
+    use sparse::common::sparse_vector::SparseVector;
+    Ok(match indices {
+        Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
+            name: vector_name
+                .ok_or_else(|| Status::invalid_argument("Sparse vector must have a name"))?,
+            vector: SparseVector {
+                values: vector,
+                indices: indices.data,
+            },
+        }),
+        None => {
+            if let Some(vector_name) = vector_name {
+                NamedVectorStruct::Named(NamedVector {
+                    name: vector_name,
+                    vector,
+                })
+            } else {
+                NamedVectorStruct::Default(vector)
+            }
+        }
+    })
 }

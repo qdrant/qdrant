@@ -29,6 +29,7 @@ use segment::vector_storage::query::reco_query::RecoQuery;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
+use sparse::common::sparse_vector::SparseVector;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
@@ -444,6 +445,7 @@ pub struct PointRequestInternal {
 pub enum RecommendExample {
     PointId(PointIdType),
     Vector(VectorType),
+    Sparse(SparseVector),
 }
 
 impl RecommendExample {

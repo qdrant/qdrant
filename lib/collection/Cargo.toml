@@ -53,6 +53,7 @@ common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 segment = {path = "../segment"}
+sparse = { path = "../sparse" }
 api = {path = "../api"}
 
 itertools = "0.12"
