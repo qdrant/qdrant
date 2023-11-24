@@ -78,7 +78,7 @@ impl ShardDistributionProposal {
         known_peers: &[PeerId],
     ) -> Self {
         // Min-heap: peer with lowest number of shards is on top
-        let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> = known_peers
+        let mut min_heap: BinaryHeap<_> = known_peers
             .iter()
             .map(|peer| Reverse(PeerShardCount::new(*peer)))
             .collect();
