@@ -203,10 +203,9 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         // min = max(1, 500 - (1200 - 1000)) = 300
         // exp = 500 / (1200 / 1000) = 416
         // max = min(1000, 500) = 500
+        // Note: max_values_per_point is never zero here because we check it above
         let expected_min = max(
-            min_estimation
-                .checked_div(max_values_per_point)
-                .unwrap_or(0),
+            min_estimation / max_values_per_point,
             max(
                 min(1, min_estimation),
                 min_estimation.saturating_sub(total_values - self.get_points_count()),

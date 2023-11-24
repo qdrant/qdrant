@@ -491,7 +491,8 @@ impl GeoMapIndex {
 
         // Assume all selected points have `max_values_per_point` value hits.
         // Therefore number of points can't be less than `total_hits / max_values_per_point`
-        let min_hits_by_value_groups = sum.checked_div(max_values_per_point).unwrap_or(0);
+        // Note: max_values_per_point is never zero here because we check it above
+        let min_hits_by_value_groups = sum / max_values_per_point;
 
         // Assume that we have selected all possible duplications of the points
         let point_duplications = total_values - total_points;
