@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 struct PeerShardCount {
     shard_count: usize,
     /// Randomized bias value, to prevent having a consistent order of peers across multiple
-    /// generated distributions. This rougly balances nodes across all nodes, if the number of
+    /// generated distributions. This roughly balances nodes across all nodes, if the number of
     /// shards is less than the number of nodes.
     bias: usize,
     peer_id: PeerId,
