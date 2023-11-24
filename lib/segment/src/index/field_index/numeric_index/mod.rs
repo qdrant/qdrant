@@ -1,8 +1,8 @@
-#[cfg(test)]
-mod tests;
-
 mod immutable_numeric_index;
 mod mutable_numeric_index;
+
+#[cfg(test)]
+mod tests;
 
 use std::cmp::{max, min};
 use std::ops::Bound;
@@ -155,7 +155,12 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         }
     }
 
-    pub fn get_max_values_per_point(&self) -> usize {
+    /// Maximum number of values per point
+    ///
+    /// # Warning
+    ///
+    /// Zero if the index is empty.
+    pub fn max_values_per_point(&self) -> usize {
         match self {
             NumericIndex::Mutable(index) => index.max_values_per_point,
             NumericIndex::Immutable(index) => index.max_values_per_point,
@@ -163,6 +168,11 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     }
 
     fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
+        let max_values_per_point = self.max_values_per_point();
+        if max_values_per_point == 0 {
+            return CardinalityEstimation::exact(0);
+        }
+
         let lbound = if let Some(lte) = range.lte {
             Included(T::from_f64(lte))
         } else if let Some(lt) = range.lt {
@@ -193,10 +203,9 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         // min = max(1, 500 - (1200 - 1000)) = 300
         // exp = 500 / (1200 / 1000) = 416
         // max = min(1000, 500) = 500
+        // Note: max_values_per_point is never zero here because we check it above
         let expected_min = max(
-            min_estimation
-                .checked_div(self.get_max_values_per_point())
-                .unwrap_or(0),
+            min_estimation / max_values_per_point,
             max(
                 min(1, min_estimation),
                 min_estimation.saturating_sub(total_values - self.get_points_count()),

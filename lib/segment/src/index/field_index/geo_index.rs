@@ -73,7 +73,7 @@ impl MutableGeoMapIndex {
             point_to_values: vec![],
             points_count: 0,
             points_values_count: 0,
-            max_values_per_point: 1,
+            max_values_per_point: 0,
             db_wrapper,
         }
     }
@@ -356,6 +356,11 @@ impl GeoMapIndex {
         }
     }
 
+    /// Maximum number of values per point
+    ///
+    /// # Warning
+    ///
+    /// Zero if the index is empty.
     fn max_values_per_point(&self) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.max_values_per_point,
@@ -467,6 +472,11 @@ impl GeoMapIndex {
     }
 
     pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
+        let max_values_per_point = self.max_values_per_point();
+        if max_values_per_point == 0 {
+            return CardinalityEstimation::exact(0);
+        }
+
         let common_hash = common_hash_prefix(values);
 
         let total_points = self.get_points_of_hash(&common_hash);
@@ -481,7 +491,8 @@ impl GeoMapIndex {
 
         // Assume all selected points have `max_values_per_point` value hits.
         // Therefore number of points can't be less than `total_hits / max_values_per_point`
-        let min_hits_by_value_groups = sum / self.max_values_per_point();
+        // Note: max_values_per_point is never zero here because we check it above
+        let min_hits_by_value_groups = sum / max_values_per_point;
 
         // Assume that we have selected all possible duplications of the points
         let point_duplications = total_values - total_points;
@@ -1301,5 +1312,82 @@ mod tests {
         new_index.load().unwrap();
         assert_eq!(new_index.points_count(), 1);
         assert_eq!(new_index.points_values_count(), 2);
+    }
+
+    #[test]
+    fn test_empty_index_cardinality() {
+        let polygon = GeoPolygon {
+            exterior: GeoLineString {
+                points: vec![
+                    GeoPoint {
+                        lon: 19.415558242000287,
+                        lat: 69.18533258102943,
+                    },
+                    GeoPoint {
+                        lon: 2.4664944437317615,
+                        lat: 61.852748225727254,
+                    },
+                    GeoPoint {
+                        lon: 2.713789718828849,
+                        lat: 51.80793869181895,
+                    },
+                    GeoPoint {
+                        lon: 19.415558242000287,
+                        lat: 69.18533258102943,
+                    },
+                ],
+            },
+            interiors: None,
+        };
+        let polygon_with_interior = GeoPolygon {
+            exterior: polygon.exterior.clone(),
+            interiors: Some(vec![GeoLineString {
+                points: vec![
+                    GeoPoint {
+                        lon: 13.2257943327987,
+                        lat: 52.62328249733332,
+                    },
+                    GeoPoint {
+                        lon: 13.11841750240768,
+                        lat: 52.550216162683455,
+                    },
+                    GeoPoint {
+                        lon: 13.11841750240768,
+                        lat: 52.40371784468752,
+                    },
+                    GeoPoint {
+                        lon: 13.2257943327987,
+                        lat: 52.62328249733332,
+                    },
+                ],
+            }]),
+        };
+        let hashes = polygon_hashes(&polygon, GEO_QUERY_MAX_REGION).unwrap();
+        let hashes_with_interior =
+            polygon_hashes(&polygon_with_interior, GEO_QUERY_MAX_REGION).unwrap();
+
+        let field_index = build_random_index(0, 0);
+        assert!(field_index
+            .match_cardinality(&hashes)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(field_index
+            .match_cardinality(&hashes_with_interior)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+
+        let field_index = build_random_index(0, 100);
+        assert!(field_index
+            .match_cardinality(&hashes)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(field_index
+            .match_cardinality(&hashes_with_interior)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+
+        let field_index = build_random_index(100, 100);
+        assert!(!field_index
+            .match_cardinality(&hashes)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(!field_index
+            .match_cardinality(&hashes_with_interior)
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
     }
 }

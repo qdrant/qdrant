@@ -627,7 +627,7 @@ mod tests {
     fn load_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug + Default>(
         data: &[Vec<N>],
         path: &Path,
-    ) {
+    ) -> MapIndex<N> {
         let mut index =
             MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
         index.load_from_db().unwrap();
@@ -642,6 +642,8 @@ mod tests {
             let check_values: HashSet<N> = HashSet::from_iter(values.iter().cloned());
             assert_eq!(index_values, check_values);
         }
+
+        index
     }
 
     #[test]
@@ -656,7 +658,12 @@ mod tests {
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
         save_map_index(&data, temp_dir.path());
-        load_map_index(&data, temp_dir.path());
+        let index = load_map_index(&data, temp_dir.path());
+
+        // Ensure cardinality is non zero
+        assert!(!index
+            .except_cardinality::<_, &_>(vec![].into_iter())
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)));
     }
 
     #[test]
@@ -687,6 +694,25 @@ mod tests {
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
         save_map_index(&data, temp_dir.path());
-        load_map_index(&data, temp_dir.path());
+        let index = load_map_index(&data, temp_dir.path());
+
+        // Ensure cardinality is non zero
+        assert!(!index
+            .except_cardinality::<str, &str>(vec![].into_iter())
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)));
+    }
+
+    #[test]
+    fn test_empty_index() {
+        let data: Vec<Vec<String>> = vec![];
+
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index(&data, temp_dir.path());
+        let index = load_map_index(&data, temp_dir.path());
+
+        // Ensure cardinality is zero
+        assert!(index
+            .except_cardinality::<str, &str>(vec![].into_iter())
+            .equals_min_exp_max(&CardinalityEstimation::exact(0)));
     }
 }
