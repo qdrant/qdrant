@@ -15,7 +15,7 @@ use crate::payload_storage::query_checker::{
 use crate::types::{
     AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
     GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, OwnedPayloadRef,
-    PayloadContainer, Range, ValueVariants,
+    PayloadContainer, PayloadKeyType, Range, ValueVariants,
 };
 
 pub fn condition_converter<'a>(
@@ -23,8 +23,9 @@ pub fn condition_converter<'a>(
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
     id_tracker: &IdTrackerSS,
-) -> ConditionCheckerFn<'a> {
-    match condition {
+) -> (ConditionCheckerFn<'a>, Vec<PayloadKeyType>) {
+    let mut missing_index = vec![];
+    let condition_checker = match condition {
         Condition::Field(field_condition) => field_indexes
             .get(&field_condition.key)
             .and_then(|indexes| {
@@ -33,6 +34,7 @@ pub fn condition_converter<'a>(
                     .find_map(|index| field_condition_index(index, field_condition))
             })
             .unwrap_or_else(|| {
+                missing_index.push(field_condition.key.clone());
                 Box::new(move |point_id| {
                     payload_provider.with_payload(point_id, |payload| {
                         check_field_condition(field_condition, &payload, field_indexes)
@@ -54,7 +56,10 @@ pub fn condition_converter<'a>(
 
             match first_field_index {
                 Some(index) => get_is_empty_checker(index, fallback),
-                None => fallback,
+                None => {
+                    missing_index.push(is_empty.is_empty.key.clone());
+                    fallback
+                }
             }
         }
 
@@ -121,7 +126,8 @@ pub fn condition_converter<'a>(
             })
         }
         Condition::Filter(_) => unreachable!(),
-    }
+    };
+    (condition_checker, missing_index)
 }
 
 pub fn field_condition_index<'a>(

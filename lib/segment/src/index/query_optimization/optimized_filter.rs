@@ -1,11 +1,40 @@
 use common::types::PointOffsetType;
 
+use crate::index::field_index::CardinalityEstimation;
+use crate::types::PayloadKeyType;
+
 pub type ConditionCheckerFn<'a> = Box<dyn Fn(PointOffsetType) -> bool + 'a>;
 
+#[derive(Debug, Clone, Default)]
+pub struct ConditionMeta {
+    /// List of un-indexed fields, used in this search condition
+    pub missing_index: Vec<PayloadKeyType>,
+}
+
+pub struct OptimizedConditionChecker<'a> {
+    pub checker: ConditionCheckerFn<'a>,
+    pub estimated_cardinality: CardinalityEstimation,
+    pub meta: ConditionMeta,
+}
+
+pub struct OptimizedConditionFilter<'a> {
+    pub filter: OptimizedFilter<'a>,
+    pub estimated_cardinality: CardinalityEstimation,
+}
+
 pub enum OptimizedCondition<'a> {
-    Checker(ConditionCheckerFn<'a>),
+    Checker(OptimizedConditionChecker<'a>),
     /// Nested filter
-    Filter(OptimizedFilter<'a>),
+    Filter(OptimizedConditionFilter<'a>),
+}
+
+impl OptimizedCondition<'_> {
+    pub fn estimated_cardinality(&self) -> &CardinalityEstimation {
+        match self {
+            OptimizedCondition::Checker(checker) => &checker.estimated_cardinality,
+            OptimizedCondition::Filter(filter) => &filter.estimated_cardinality,
+        }
+    }
 }
 
 pub struct OptimizedFilter<'a> {
@@ -25,8 +54,8 @@ pub fn check_optimized_filter(filter: &OptimizedFilter, point_id: PointOffsetTyp
 
 fn check_condition(condition: &OptimizedCondition, point_id: PointOffsetType) -> bool {
     match condition {
-        OptimizedCondition::Filter(filter) => check_optimized_filter(filter, point_id),
-        OptimizedCondition::Checker(checker) => checker(point_id),
+        OptimizedCondition::Filter(filter) => check_optimized_filter(&filter.filter, point_id),
+        OptimizedCondition::Checker(checker) => (checker.checker)(point_id),
     }
 }
 

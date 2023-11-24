@@ -9,7 +9,10 @@ use crate::index::query_estimator::{
     combine_must_estimations, combine_should_estimations, invert_estimation,
 };
 use crate::index::query_optimization::condition_converter::condition_converter;
-use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
+use crate::index::query_optimization::optimized_filter::{
+    ConditionMeta, OptimizedCondition, OptimizedConditionChecker, OptimizedConditionFilter,
+    OptimizedFilter,
+};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::types::{Condition, Filter};
 
@@ -40,7 +43,7 @@ pub fn optimize_filter<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-) -> (OptimizedFilter<'a>, CardinalityEstimation)
+) -> OptimizedConditionFilter<'a>
 where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
@@ -96,11 +99,10 @@ where
             }
         }),
     };
-
-    (
-        optimized_filter,
-        combine_must_estimations(&filter_estimations, total),
-    )
+    OptimizedConditionFilter {
+        filter: optimized_filter,
+        estimated_cardinality: combine_must_estimations(&filter_estimations, total),
+    }
 }
 
 fn convert_conditions<'a, F>(
@@ -110,7 +112,7 @@ fn convert_conditions<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-) -> Vec<(OptimizedCondition<'a>, CardinalityEstimation)>
+) -> Vec<OptimizedCondition<'a>>
 where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
@@ -118,7 +120,7 @@ where
         .iter()
         .map(|condition| match condition {
             Condition::Filter(filter) => {
-                let (optimized_filter, estimation) = optimize_filter(
+                let optimized_filter_condition = optimize_filter(
                     filter,
                     id_tracker,
                     field_indexes,
@@ -126,17 +128,21 @@ where
                     estimator,
                     total,
                 );
-                (OptimizedCondition::Filter(optimized_filter), estimation)
+                OptimizedCondition::Filter(optimized_filter_condition)
             }
             _ => {
                 let estimation = estimator(condition);
-                let condition_checker = condition_converter(
+                let (condition_checker, missing_index) = condition_converter(
                     condition,
                     field_indexes,
                     payload_provider.clone(),
                     id_tracker,
                 );
-                (OptimizedCondition::Checker(condition_checker), estimation)
+                OptimizedCondition::Checker(OptimizedConditionChecker {
+                    checker: condition_checker,
+                    estimated_cardinality: estimation,
+                    meta: ConditionMeta { missing_index },
+                })
             }
         })
         .collect()
@@ -153,7 +159,7 @@ fn optimize_should<'a, F>(
 where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
-    let mut converted = convert_conditions(
+    let mut converted_conditions = convert_conditions(
         conditions,
         id_tracker,
         field_indexes,
@@ -162,10 +168,16 @@ where
         total,
     );
     // More probable conditions first
-    converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
-    let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
+    converted_conditions.sort_by_key(|condition| Reverse(condition.estimated_cardinality().exp));
+    let estimations: Vec<_> = converted_conditions
+        .iter()
+        .map(|condition| condition.estimated_cardinality().clone())
+        .collect();
 
-    (conditions, combine_should_estimations(&estimations, total))
+    (
+        converted_conditions,
+        combine_should_estimations(&estimations, total),
+    )
 }
 
 fn optimize_must<'a, F>(
@@ -179,7 +191,7 @@ fn optimize_must<'a, F>(
 where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
-    let mut converted = convert_conditions(
+    let mut converted_conditions = convert_conditions(
         conditions,
         id_tracker,
         field_indexes,
@@ -188,10 +200,16 @@ where
         total,
     );
     // Less probable conditions first
-    converted.sort_by_key(|(_, estimation)| estimation.exp);
-    let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
+    converted_conditions.sort_by_key(|condition| condition.estimated_cardinality().exp);
+    let estimations: Vec<_> = converted_conditions
+        .iter()
+        .map(|condition| condition.estimated_cardinality().clone())
+        .collect();
 
-    (conditions, combine_must_estimations(&estimations, total))
+    (
+        converted_conditions,
+        combine_must_estimations(&estimations, total),
+    )
 }
 
 fn optimize_must_not<'a, F>(
@@ -205,7 +223,7 @@ fn optimize_must_not<'a, F>(
 where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
-    let mut converted = convert_conditions(
+    let mut converted_conditions = convert_conditions(
         conditions,
         id_tracker,
         field_indexes,
@@ -214,11 +232,14 @@ where
         total,
     );
     // More probable conditions first, as it will be reverted
-    converted.sort_by_key(|(_, estimation)| estimation.exp);
-    let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
+    converted_conditions.sort_by_key(|condition| condition.estimated_cardinality().exp);
+    let estimations: Vec<_> = converted_conditions
+        .iter()
+        .map(|condition| condition.estimated_cardinality().clone())
+        .collect();
 
     (
-        conditions,
+        converted_conditions,
         combine_must_estimations(
             &estimations
                 .into_iter()
