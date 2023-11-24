@@ -8,9 +8,9 @@ use collection::shards::shard::{PeerId, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq)]
 struct PeerShardCount {
-    shard_count: usize, // self.shard_count and other.shard_count are compared first to determine eq & ord
+    shard_count: usize,
     /// Randomized bias value, to prevent having a consistent order of peers across multiple
     /// generated distributions. This rougly balances nodes across all nodes, if the number of
     /// shards is less than the number of nodes.
@@ -30,6 +30,27 @@ impl PeerShardCount {
     fn get_and_inc_shard_count(&mut self) -> PeerId {
         self.shard_count += 1;
         self.peer_id
+    }
+}
+
+impl PartialOrd for PeerShardCount {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Explicitly implement ordering to make sure we don't accidentally break this.
+///
+/// Ordering:
+/// - shard_count: lowest number of shards first
+/// - bias: randomize order of peers with same number of shards
+/// - peer_id
+impl Ord for PeerShardCount {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.shard_count
+            .cmp(&other.shard_count)
+            .then(self.bias.cmp(&other.bias))
+            .then(self.peer_id.cmp(&other.peer_id))
     }
 }
 
