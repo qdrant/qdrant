@@ -321,13 +321,10 @@ pub(crate) fn sync_points(
     // 4. Select new points
     let num_updated = points_to_update.len();
     let mut num_new = 0;
-    sync_points
-        .difference(&stored_point_ids)
-        .copied()
-        .for_each(|id| {
-            num_new += 1;
-            points_to_update.push(*id_to_point.get(&id).unwrap());
-        });
+    sync_points.difference(&stored_point_ids).for_each(|id| {
+        num_new += 1;
+        points_to_update.push(*id_to_point.get(id).unwrap());
+    });
 
     // 5. Upsert points which differ from the stored ones
     let num_replaced = upsert_points(segments, op_num, points_to_update)?;
