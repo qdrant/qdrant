@@ -50,11 +50,10 @@ impl ShardDistributionProposal {
         known_peers: &[PeerId],
     ) -> Self {
         // min number of shard_count on top to make this a min-heap
-        let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> =
-            BinaryHeap::with_capacity(known_peers.len());
-        for peer in known_peers {
-            min_heap.push(Reverse(PeerShardCount::new(*peer)));
-        }
+        let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> = known_peers
+            .iter()
+            .map(|peer| Reverse(PeerShardCount::new(*peer)))
+            .collect();
 
         let mut distribution = Vec::with_capacity(shard_number.get() as usize);
         // There should not be more than 1 replica per peer
