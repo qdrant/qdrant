@@ -327,7 +327,7 @@ fn main() -> anyhow::Result<()> {
         };
 
         if !collections_to_recover_in_consensus.is_empty() {
-            runtime_handle.spawn(handle_existing_collections(
+            runtime_handle.block_on(handle_existing_collections(
                 toc_arc.clone(),
                 consensus_state.clone(),
                 dispatcher_arc.clone(),
