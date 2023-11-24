@@ -1,5 +1,6 @@
 use std::cmp::{self, Reverse};
 use std::collections::BinaryHeap;
+use std::iter::repeat_with;
 use std::num::NonZeroU32;
 
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -21,8 +22,9 @@ impl PeerShardCount {
         }
     }
 
-    fn inc_shard_count(&mut self) {
+    fn get_and_inc_shard_count(&mut self) -> PeerId {
         self.shard_count += 1;
+        self.peer_id
     }
 }
 
@@ -55,20 +57,19 @@ impl ShardDistributionProposal {
             .map(|peer| Reverse(PeerShardCount::new(*peer)))
             .collect();
 
-        let mut distribution = Vec::with_capacity(shard_number.get() as usize);
         // There should not be more than 1 replica per peer
         let n_replicas = cmp::min(replication_factor.get() as usize, known_peers.len());
 
-        for shard_id in 0..shard_number.get() {
-            let mut replicas = Vec::new();
-            for _replica in 0..n_replicas {
-                let mut least_loaded_peer = min_heap.peek_mut().unwrap();
-                let selected_peer = least_loaded_peer.0.peer_id;
-                least_loaded_peer.0.inc_shard_count();
-                replicas.push(selected_peer);
-            }
-            distribution.push((shard_id, replicas))
-        }
+        // Get fair distribution of shards on peers
+        let distribution = (0..shard_number.get())
+            .map(|shard_id| {
+                let replicas =
+                    repeat_with(|| min_heap.peek_mut().unwrap().0.get_and_inc_shard_count())
+                        .take(n_replicas)
+                        .collect();
+                (shard_id, replicas)
+            })
+            .collect();
 
         Self { distribution }
     }
