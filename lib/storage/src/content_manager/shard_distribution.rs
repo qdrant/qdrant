@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct PeerShardCount {
     shard_count: usize, // self.shard_count and other.shard_count are compared first to determine eq & ord
+    /// Randomized bias value, to prevent having a consistent order of peers across multiple
+    /// generated distributions. This rougly balances nodes across all nodes, if the number of
+    /// shards is less than the number of nodes.
+    bias: usize,
     peer_id: PeerId,
 }
 
@@ -18,6 +22,7 @@ impl PeerShardCount {
     fn new(peer_id: PeerId) -> Self {
         Self {
             shard_count: 0,
+            bias: rand::random(),
             peer_id,
         }
     }
