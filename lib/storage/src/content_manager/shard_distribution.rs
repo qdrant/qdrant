@@ -77,21 +77,21 @@ impl ShardDistributionProposal {
         replication_factor: NonZeroU32,
         known_peers: &[PeerId],
     ) -> Self {
-        // min number of shard_count on top to make this a min-heap
+        // Min-heap: peer with lowest number of shards is on top
         let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> = known_peers
             .iter()
             .map(|peer| Reverse(PeerShardCount::new(*peer)))
             .collect();
 
         // There should not be more than 1 replica per peer
-        let n_replicas = cmp::min(replication_factor.get() as usize, known_peers.len());
+        let replica_number = cmp::min(replication_factor.get() as usize, known_peers.len());
 
         // Get fair distribution of shards on peers
         let distribution = (0..shard_number.get())
             .map(|shard_id| {
                 let replicas =
                     repeat_with(|| min_heap.peek_mut().unwrap().0.get_and_inc_shard_count())
-                        .take(n_replicas)
+                        .take(replica_number)
                         .collect();
                 (shard_id, replicas)
             })
