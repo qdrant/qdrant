@@ -49,7 +49,7 @@ pub struct CardinalityEstimation {
 }
 
 impl CardinalityEstimation {
-    pub fn exact(count: usize) -> Self {
+    pub const fn exact(count: usize) -> Self {
         CardinalityEstimation {
             primary_clauses: vec![],
             min: count,
@@ -59,7 +59,7 @@ impl CardinalityEstimation {
     }
 
     /// Generate estimation for unknown filter
-    pub fn unknown(total: usize) -> Self {
+    pub const fn unknown(total: usize) -> Self {
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -72,5 +72,10 @@ impl CardinalityEstimation {
     pub fn with_primary_clause(mut self, clause: PrimaryCondition) -> Self {
         self.primary_clauses.push(clause);
         self
+    }
+
+    #[cfg(test)]
+    pub const fn equals_min_exp_max(&self, other: &Self) -> bool {
+        self.min == other.min && self.exp == other.exp && self.max == other.max
     }
 }
