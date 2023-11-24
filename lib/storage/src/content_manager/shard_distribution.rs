@@ -137,6 +137,8 @@ impl From<ShardDistributionProposal> for CollectionShardDistribution {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -165,5 +167,45 @@ mod tests {
         assert_eq!(shard_counts.iter().sum::<usize>(), 6);
         assert_eq!(shard_counts.iter().min(), Some(&1));
         assert_eq!(shard_counts.iter().max(), Some(&2));
+    }
+
+    #[test]
+    fn test_distribution_is_spread() {
+        let known_peers = vec![1, 2, 3, 4];
+        let shard_numbers = 1..=3;
+        let replication_factors = 1..=4;
+        let tries = 100;
+
+        // With 4 peers, for various shard number and replication factor ranges, always generate
+        // distributions that inhabit all peers across 100 retries.
+        for shard_number in shard_numbers {
+            for replication_factor in replication_factors.clone() {
+                let inhabited_peers = (0..tries)
+                    // Generate distribution
+                    .map(|_| {
+                        ShardDistributionProposal::new(
+                            NonZeroU32::new(shard_number).unwrap(),
+                            NonZeroU32::new(replication_factor).unwrap(),
+                            &known_peers,
+                        )
+                    })
+                    // Take just the inhabited peer IDs
+                    .flat_map(|proposal| {
+                        proposal
+                            .distribution
+                            .clone()
+                            .into_iter()
+                            .flat_map(|(_, peers)| peers)
+                    })
+                    .collect::<HashSet<_>>();
+
+                assert_eq!(
+                    inhabited_peers.len(),
+                    known_peers.len(),
+                    "must inhabit all {} peers across {tries} distributions",
+                    known_peers.len(),
+                );
+            }
+        }
     }
 }
