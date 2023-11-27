@@ -100,17 +100,17 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// Number of vectors in collection
-    /// All vectors in collection are available for querying
-    /// Calculated as `points_count x vectors_per_point`
-    /// Where `vectors_per_point` is a number of named vectors in schema
+    /// Deprecated - Number of vectors in collection.
+    /// All vectors in collection are available for querying.
+    /// Calculated as `points_count x vectors_per_point`.
+    /// Where `vectors_per_point` is a number of named vectors in schema.
     pub vectors_count: Option<usize>,
-    /// Number of indexed vectors in the collection.
+    /// Deprecated - Number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
-    /// as it is stored in vector index (HNSW)
+    /// as it is stored in vector index (HNSW).
     pub indexed_vectors_count: Option<usize>,
-    /// Number of points (vectors + payloads) in collection
-    /// Each point could be accessed by unique id
+    /// Deprecated - Number of points (vectors + payloads) in collection.
+    /// Each point could be accessed by unique id.
     pub points_count: Option<usize>,
     /// Number of segments in collection.
     /// Each segment has independent vector as payload indexes
