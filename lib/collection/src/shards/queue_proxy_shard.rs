@@ -173,6 +173,7 @@ impl ShardOperation for QueueProxyShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         self.inner
             .as_ref()
@@ -184,6 +185,7 @@ impl ShardOperation for QueueProxyShard {
                 with_vector,
                 filter,
                 search_runtime_handle,
+                order_by,
             )
             .await
     }

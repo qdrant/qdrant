@@ -138,6 +138,7 @@ pub fn try_record_from_grpc(
         payload,
         vector,
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
+        ordered_by: None,
     })
 }
 

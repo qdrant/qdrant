@@ -11,6 +11,7 @@ use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
 use merge::Merge;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
@@ -91,6 +92,8 @@ pub struct Record {
     /// Shard Key
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
+    #[serde(skip)]
+    pub ordered_by: Option<OrderedFloat<f64>>,
 }
 
 /// Current statistics and configuration of the collection
@@ -265,6 +268,25 @@ pub struct ScrollRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum OrderByInterface {
+    Key(String),
+    Struct(OrderBy),
+}
+
+impl From<OrderByInterface> for OrderBy {
+    fn from(order_by: OrderByInterface) -> Self {
+        match order_by {
+            OrderByInterface::Key(key) => OrderBy {
+                key,
+                direction: None,
+            },
+            OrderByInterface::Struct(order_by) => order_by,
+        }
+    }
+}
+
 /// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -284,8 +306,7 @@ pub struct ScrollRequestInternal {
     pub with_vector: WithVector,
 
     /// order by
-    #[validate]
-    pub order_by: Option<OrderBy>,
+    pub order_by: Option<OrderByInterface>,
 }
 
 impl Default for ScrollRequestInternal {

@@ -731,7 +731,7 @@ impl LocalShard {
         }
         let all_points: BTreeSet<_> = segments
             .iter()
-            .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, None, filter))
+            .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, None, filter, false))
             .collect();
         Ok(all_points)
     }

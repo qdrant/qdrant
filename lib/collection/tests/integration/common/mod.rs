@@ -17,7 +17,6 @@ use segment::types::Distance;
 /// Test collections for this upper bound of shards.
 /// Testing with more shards is problematic due to `number of open files problem`
 /// See https://github.com/qdrant/qdrant/issues/379
-#[allow(dead_code)]
 pub const N_SHARDS: u32 = 3;
 
 pub const REST_PORT: u16 = 6333;

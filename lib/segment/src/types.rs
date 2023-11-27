@@ -1082,6 +1082,16 @@ pub enum PayloadFieldSchema {
     FieldParams(PayloadSchemaParams),
 }
 
+impl PayloadFieldSchema {
+    pub fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+                | PayloadFieldSchema::FieldType(PayloadSchemaType::Float)
+        )
+    }
+}
+
 impl From<PayloadSchemaType> for PayloadFieldSchema {
     fn from(payload_schema_type: PayloadSchemaType) -> Self {
         PayloadFieldSchema::FieldType(payload_schema_type)
@@ -1957,45 +1967,20 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-/// Current state of the collection.
-/// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
+    #[default]
     Asc,
     Desc,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct OrderBy {
     pub key: String,
     pub direction: Option<Direction>,
-    pub min: Option<f64>,
-    pub max: Option<f64>,
-}
-
-impl OrderBy {
-    pub fn new_asc(key: String, min: f64) -> Self {
-        OrderBy {
-            key,
-            direction: Some(Direction::Asc),
-            min: Some(min),
-            max: None,
-        }
-    }
-
-    pub fn new_desc(key: String, max: f64) -> Self {
-        OrderBy {
-            key,
-            direction: Some(Direction::Desc),
-            min: None,
-            max: Some(max),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]

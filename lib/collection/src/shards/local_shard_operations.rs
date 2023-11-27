@@ -3,9 +3,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
+use ordered_float::OrderedFloat;
 use segment::types::{
-    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Direction, ExtendedPointId, Filter, OrderBy, PayloadContainer, ScoredPoint, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -165,33 +167,114 @@ impl ShardOperation for LocalShard {
                 .map(|(_, segment)| {
                     let segment = segment.clone();
                     let filter = filter.cloned();
-                    let order_by = order_by.cloned();
+
+                    // Special handling when using order_by
+                    let offset = order_by.is_none().then_some(offset).flatten();
+                    let limit = order_by.is_none().then_some(limit);
+                    let force_index = order_by.is_some();
+
                     search_runtime_handle.spawn_blocking(move || {
-                        let binding = segment.get();
-                        let result = binding.read();
-                        match order_by {
-                            Some(order_by) => result.read_ordered(offset, Some(limit), &order_by),
-                            None => result.read_filtered(offset, Some(limit), filter.as_ref()),
-                        }
+                        segment.get().read().read_filtered(
+                            offset,
+                            limit,
+                            filter.as_ref(),
+                            force_index,
+                        )
                     })
                 })
                 .collect()
         };
         let all_points = try_join_all(read_handles).await?;
-        let with_payload = WithPayload::from(with_payload_interface);
 
-        let point_ids = &all_points
-            .into_iter()
-            .flatten()
-            .sorted()
-            .dedup()
-            // .take(limit)
-            .collect_vec();
+        match order_by {
+            None => {
+                let point_ids = all_points
+                    .into_iter()
+                    .flatten()
+                    .sorted()
+                    .dedup()
+                    .take(limit)
+                    .collect_vec();
+                let with_payload = WithPayload::from(with_payload_interface);
 
-        let mut points =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
-        points.sort_by_key(|point| point.id);
-        Ok(points)
+                let mut points =
+                    SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
+                points.sort_by_key(|point| point.id);
+
+                Ok(points)
+            }
+            Some(order_by) => {
+                let preliminary_ids = all_points.into_iter().flatten().collect_vec();
+
+                let with_payload = &WithPayloadInterface::Fields(vec![order_by.key.clone()]);
+
+                let points_with_order_key = SegmentsSearcher::retrieve(
+                    segments,
+                    &preliminary_ids,
+                    &with_payload.into(),
+                    &false.into(),
+                )?;
+
+                let direction = order_by.direction.unwrap_or_default();
+
+                let default_value = match direction {
+                    Direction::Asc => f64::INFINITY,
+                    Direction::Desc => f64::NEG_INFINITY,
+                };
+
+                let sorted_iter = points_with_order_key
+                    .into_iter()
+                    .map(|mut record| {
+                        // Extract number value from payload
+                        let order_value = record
+                            .payload
+                            .as_ref()
+                            .map(|payload| payload.get_value(&order_by.key))
+                            .and_then(|multi_value| {
+                                multi_value.values().iter().find_map(|v| v.as_f64())
+                            })
+                            .unwrap_or(default_value);
+                        record.payload = None;
+                        record.ordered_by = Some(OrderedFloat(order_value));
+                        record
+                    })
+                    .sorted_unstable_by_key(|record| (record.ordered_by, record.id));
+
+                let sorted = match direction {
+                    Direction::Asc => Either::Left(sorted_iter),
+                    Direction::Desc => Either::Right(sorted_iter.rev()),
+                }
+                .dedup()
+                .collect_vec();
+
+                let offset_position = offset
+                    .and_then(|offset| sorted.iter().find_position(|record| record.id == offset))
+                    .map(|(position, _)| position);
+
+                let top_records = match offset_position {
+                    None => Either::Left(sorted.into_iter()),
+                    Some(position) => Either::Right(sorted.into_iter().skip(position)),
+                }
+                .take(limit)
+                .collect_vec();
+
+                let point_ids = top_records.iter().map(|record| record.id).collect_vec();
+
+                let with_payload = WithPayload::from(with_payload_interface);
+
+                let mut points =
+                    SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
+                points
+                    .iter_mut()
+                    .zip(top_records)
+                    .for_each(|(point, record)| {
+                        point.ordered_by = record.ordered_by;
+                    });
+                Ok(points)
+            }
+        }
     }
 
     /// Collect overview information about the shard

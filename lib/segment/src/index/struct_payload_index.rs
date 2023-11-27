@@ -89,7 +89,7 @@ impl StructPayloadIndex {
         indexes
     }
 
-    pub fn query_fields<'a>(
+    pub fn ordered_by_field<'a>(
         &'a self,
         field_condition: &'a FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
