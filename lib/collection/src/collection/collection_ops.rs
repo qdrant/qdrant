@@ -237,9 +237,18 @@ impl Collection {
         while let Some(response) = requests.try_next().await? {
             info.status = cmp::max(info.status, response.status);
             info.optimizer_status = cmp::max(info.optimizer_status, response.optimizer_status);
-            info.vectors_count += response.vectors_count;
-            info.indexed_vectors_count += response.indexed_vectors_count;
-            info.points_count += response.points_count;
+            info.vectors_count = info
+                .vectors_count
+                .zip(response.vectors_count)
+                .map(|(a, b)| a + b);
+            info.indexed_vectors_count = info
+                .indexed_vectors_count
+                .zip(response.indexed_vectors_count)
+                .map(|(a, b)| a + b);
+            info.points_count = info
+                .points_count
+                .zip(response.points_count)
+                .map(|(a, b)| a + b);
             info.segments_count += response.segments_count;
 
             for (key, response_schema) in response.payload_schema {

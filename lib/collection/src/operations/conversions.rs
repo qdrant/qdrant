@@ -344,9 +344,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     api::grpc::qdrant::OptimizerStatus { ok: false, error }
                 }
             }),
-            vectors_count: vectors_count as u64,
-            indexed_vectors_count: Some(indexed_vectors_count as u64),
-            points_count: points_count as u64,
+            vectors_count: vectors_count.map(|count| count as u64),
+            indexed_vectors_count: indexed_vectors_count.map(|count| count as u64),
+            points_count: points_count.map(|count| count as u64),
             segments_count: segments_count as u64,
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
@@ -716,11 +716,15 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         }
                     }
                 },
-                vectors_count: collection_info_response.vectors_count as usize,
+                vectors_count: collection_info_response
+                    .vectors_count
+                    .map(|count| count as usize),
                 indexed_vectors_count: collection_info_response
                     .indexed_vectors_count
-                    .unwrap_or_default() as usize,
-                points_count: collection_info_response.points_count as usize,
+                    .map(|count| count as usize),
+                points_count: collection_info_response
+                    .points_count
+                    .map(|count| count as usize),
                 segments_count: collection_info_response.segments_count as usize,
                 config: match collection_info_response.config {
                     None => {

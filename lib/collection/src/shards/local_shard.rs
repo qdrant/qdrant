@@ -768,7 +768,14 @@ impl LocalShard {
             })
             .sum();
 
-        vector_size * info.points_count
+        // The points count is currently always set. This provides a safeguard as we likely
+        // refactor this behavior in the future. In that case, points should be counted in a
+        // different manner.
+        debug_assert!(
+            info.points_count.is_some(),
+            "Must have points count to estimate vector data size",
+        );
+        vector_size * info.points_count.unwrap_or(0)
     }
 
     pub async fn local_shard_info(&self) -> CollectionInfo {
@@ -814,9 +821,9 @@ impl LocalShard {
         CollectionInfo {
             status,
             optimizer_status,
-            vectors_count,
-            indexed_vectors_count,
-            points_count,
+            vectors_count: Some(vectors_count),
+            indexed_vectors_count: Some(indexed_vectors_count),
+            points_count: Some(points_count),
             segments_count,
             config: collection_config,
             payload_schema: schema,
