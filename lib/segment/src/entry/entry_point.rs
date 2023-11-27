@@ -8,7 +8,7 @@ use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter,  Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
     WithVector,
 };

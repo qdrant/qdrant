@@ -14,8 +14,8 @@ use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
-    Condition, FieldCondition, Filter, HasIdCondition, Payload, PayloadFieldSchema,
-    PayloadSchemaType, PointIdType, WithPayloadInterface, Direction, OrderBy,
+    Condition, Direction, FieldCondition, Filter, HasIdCondition, OrderBy, Payload,
+    PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
 };
 use serde_json::Map;
 use tempfile::Builder;
@@ -540,7 +540,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     assert_eq!(result_desc.points.len(), 5);
     assert_eq!(result_desc.next_page_offset, Some(5.into()));
-    
+
     let second_page = collection
         .scroll_by(
             ScrollRequestInternal {

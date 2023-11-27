@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use futures::{future, TryFutureExt, TryStreamExt as _};
 use itertools::{Either, Itertools as _};
-
-use segment::types::{Condition, Direction, FieldCondition, Filter, PayloadContainer, Range};
-use segment::types::{OrderBy, ShardKey, WithPayload, WithPayloadInterface};
+use segment::types::{
+    Condition, Direction, FieldCondition, Filter, OrderBy, PayloadContainer, Range, ShardKey,
+    WithPayload, WithPayloadInterface,
+};
 use validator::Validate as _;
 
 use super::Collection;

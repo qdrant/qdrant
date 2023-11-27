@@ -12,9 +12,9 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
-    Condition, Filter,  Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    WithPayload, WithVector,
+    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
+    WithVector,
 };
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -492,16 +492,18 @@ impl SegmentEntry for ProxySegment {
         } else {
             let wrapped_filter =
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
-            self.wrapped_segment
+            self.wrapped_segment.get().read().read_filtered(
+                offset,
+                limit,
+                Some(&wrapped_filter),
+                force_index,
+            )
+        };
+        let mut write_segment_points =
+            self.write_segment
                 .get()
                 .read()
-                .read_filtered(offset, limit, Some(&wrapped_filter), force_index)
-        };
-        let mut write_segment_points = self
-            .write_segment
-            .get()
-            .read()
-            .read_filtered(offset, limit, filter, force_index);
+                .read_filtered(offset, limit, filter, force_index);
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points
@@ -1091,10 +1093,11 @@ mod tests {
             "blue".to_string().into(),
         )));
 
-        let original_points = original_segment
-            .get()
-            .read()
-            .read_filtered(None, Some(100), None, false);
+        let original_points =
+            original_segment
+                .get()
+                .read()
+                .read_filtered(None, Some(100), None, false);
 
         let original_points_filtered =
             original_segment

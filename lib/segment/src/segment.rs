@@ -34,10 +34,9 @@ use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter,  Payload, PayloadFieldSchema,
-    PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType,
-    SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -1051,7 +1050,7 @@ impl SegmentEntry for Segment {
                 .collect(),
             Some(condition) => {
                 if force_index {
-                    return self.filtered_read_by_index(offset, limit, condition)
+                    return self.filtered_read_by_index(offset, limit, condition);
                 }
 
                 let query_cardinality = {
