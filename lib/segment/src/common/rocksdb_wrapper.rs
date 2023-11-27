@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
-use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB, DBRecoveryMode};
+use rocksdb::{ColumnFamily, DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
 
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
