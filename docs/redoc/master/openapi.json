@@ -7123,8 +7123,58 @@
           },
           "with_vector": {
             "$ref": "#/components/schemas/WithVector"
+          },
+          "order_by": {
+            "description": "order by",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderByInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "OrderByInterface": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/OrderBy"
+          }
+        ]
+      },
+      "OrderBy": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Direction"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "Direction": {
+        "type": "string",
+        "enum": [
+          "asc",
+          "desc"
+        ]
       },
       "ScrollResult": {
         "description": "Result of the points read request",
