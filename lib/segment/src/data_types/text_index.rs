@@ -15,6 +15,7 @@ pub enum TokenizerType {
     #[default]
     Word,
     Multilingual,
+    Trigram,
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
