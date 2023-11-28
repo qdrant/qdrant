@@ -235,9 +235,7 @@ impl TryFrom<TokenizerType> for segment::data_types::text_index::TokenizerType {
                 Ok(segment::data_types::text_index::TokenizerType::Whitespace)
             }
             TokenizerType::Word => Ok(segment::data_types::text_index::TokenizerType::Word),
-            TokenizerType::Trigram => {
-                Ok(segment::data_types::text_index::TokenizerType::Trigram)
-            }
+            TokenizerType::Trigram => Ok(segment::data_types::text_index::TokenizerType::Trigram),
         }
     }
 }
