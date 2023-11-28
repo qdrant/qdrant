@@ -116,6 +116,7 @@ impl ShardReplicaSet {
         channel_service: ChannelService,
         update_runtime: Handle,
         search_runtime: Handle,
+        init_state: Option<ReplicaState>,
     ) -> CollectionResult<Self> {
         let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
@@ -134,14 +135,16 @@ impl ShardReplicaSet {
         };
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
+
+        let init_replica_state = init_state.unwrap_or(ReplicaState::Initializing);
         replica_state.write(|rs| {
             rs.this_peer_id = this_peer_id;
             if local.is_some() {
                 rs.is_local = true;
-                rs.set_peer_state(this_peer_id, ReplicaState::Initializing);
+                rs.set_peer_state(this_peer_id, init_replica_state);
             }
             for peer in remotes {
-                rs.set_peer_state(peer, ReplicaState::Initializing);
+                rs.set_peer_state(peer, init_replica_state);
             }
         })?;
 

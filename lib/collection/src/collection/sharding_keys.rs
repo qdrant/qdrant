@@ -6,7 +6,7 @@ use crate::collection::Collection;
 use crate::config::ShardingMethod;
 use crate::operations::types::CollectionError;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use crate::shards::replica_set::ShardReplicaSet;
+use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId, ShardsPlacement};
 
 impl Collection {
@@ -37,6 +37,7 @@ impl Collection {
             self.channel_service.clone(),
             self.update_runtime.clone(),
             self.search_runtime.clone(),
+            Some(ReplicaState::Active),
         )
         .await
     }

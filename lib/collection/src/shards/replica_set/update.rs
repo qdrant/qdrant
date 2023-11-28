@@ -437,6 +437,7 @@ mod tests {
             Default::default(),
             update_runtime,
             search_runtime,
+            None,
         )
         .await
         .unwrap()
