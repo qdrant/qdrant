@@ -164,12 +164,17 @@ impl DatabaseColumnWrapper {
         let column_name = self.column_name.clone();
         Box::new(move || {
             let db = database.read();
-            let column_family = db.cf_handle(&column_name).ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "RocksDB cf_handle error: Cannot find column family {}",
+            let Some(column_family) = db.cf_handle(&column_name) else {
+                // It is possible, that the index was removed during the flush by user or another thread.
+                // In this case, non-existing column family is not an error, but an expected behavior.
+
+                // Still we want to log this event, for potential debugging.
+                log::warn!(
+                    "Flush: RocksDB cf_handle error: Cannot find column family {}. Ignoring",
                     &column_name
-                ))
-            })?;
+                );
+                return Ok(()); // ignore error
+            };
 
             db.flush_cf(column_family).map_err(|err| {
                 OperationError::service_error(format!("RocksDB flush_cf error: {err}"))
