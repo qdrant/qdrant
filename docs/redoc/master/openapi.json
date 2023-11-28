@@ -5900,7 +5900,8 @@
           "prefix",
           "whitespace",
           "word",
-          "multilingual"
+          "multilingual",
+          "trigram"
         ]
       },
       "PointRequest": {
