@@ -7,8 +7,7 @@ struct TrigramTokenizer;
 impl TrigramTokenizer {
     fn tokenize<C: FnMut(&str)>(text: &str, callback: C) {
         text.split_whitespace()
-            .map(|word| generate_trigrams(word))
-            .flatten()
+            .flat_map(|word| generate_trigrams(word))
             .for_each(callback);
     }
 }
