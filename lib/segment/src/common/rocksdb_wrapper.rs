@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
-use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB};
+use rocksdb::{ColumnFamily, DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
 
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -46,6 +46,9 @@ pub fn db_options() -> Options {
     options.set_delete_obsolete_files_period_micros(DB_DELETE_OBSOLETE_FILES_PERIOD);
     options.create_missing_column_families(true);
     options.set_max_open_files(DB_MAX_OPEN_FILES as i32);
+
+    // Qdrant relies on it's own WAL for durability
+    options.set_wal_recovery_mode(DBRecoveryMode::TolerateCorruptedTailRecords);
     #[cfg(debug_assertions)]
     {
         options.set_paranoid_checks(true);
@@ -78,13 +81,6 @@ pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, rocksdb:
     };
     let db = DB::open_cf(&db_options(), path, existing_column_families)?;
     Ok(Arc::new(RwLock::new(db)))
-}
-
-pub fn db_write_options() -> WriteOptions {
-    let mut write_options = WriteOptions::default();
-    write_options.set_sync(false);
-    write_options.disable_wal(true);
-    write_options
 }
 
 pub fn create_db_cf_if_not_exists(
