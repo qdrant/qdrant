@@ -163,6 +163,12 @@ impl Dispatcher {
                 .await_commit_on_all_peers(this_peer_id, commit, term, timeout)
                 .await?;
 
+            log::debug!(
+                "Consensus is synchronized with term: {}, commit: {}",
+                term,
+                commit
+            );
+
             Ok(())
         } else {
             Ok(())
