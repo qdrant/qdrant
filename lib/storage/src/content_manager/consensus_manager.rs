@@ -587,7 +587,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
     }
 
-    /// Wait and block until consensus reaches a `commit` and `term`
+    /// Wait and block until consensus reaches a `term` and actually applies the `commit`.
     ///
     /// # Errors
     ///
@@ -605,8 +605,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         while start.elapsed() < timeout {
             let state = &self.hard_state();
 
+            let last_applied_commit = self.persistent.read().last_applied_entry();
+
+            let is_commit_ok = last_applied_commit
+                .map(|applied| applied >= commit)
+                .unwrap_or(false);
+
             // Okay if on the same term and have at least the specified commit
-            let is_ok = state.term == term && state.commit >= commit;
+            let is_ok = state.term == term && is_commit_ok;
             if is_ok {
                 return Ok(());
             }
