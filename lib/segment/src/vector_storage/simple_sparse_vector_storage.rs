@@ -19,6 +19,8 @@ use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
+pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
+
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleSparseVectorStorage {
     vectors: Vec<SparseVector>,
@@ -133,7 +135,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn distance(&self) -> Distance {
-        Distance::Dot
+        SPARSE_VECTOR_DISTANCE
     }
 
     fn is_on_disk(&self) -> bool {
@@ -151,7 +153,11 @@ impl VectorStorage for SimpleSparseVectorStorage {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &SparseVector = vector.try_into()?;
         debug_assert!(vector.is_sorted());
-        self.vectors.insert(key as usize, vector.clone());
+        self.vectors.resize_with(
+            std::cmp::max(self.vectors.len(), key as usize + 1),
+            Default::default,
+        );
+        self.vectors[key as usize] = vector.clone();
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
         Ok(())

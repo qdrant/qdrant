@@ -13,7 +13,7 @@ use sparse::index::search_context::SearchContext;
 
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -258,9 +258,8 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         self.inverted_index.vector_count()
     }
 
-    fn update_vector(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        let vector_storage = self.vector_storage.borrow();
-        let vector: &SparseVector = vector_storage.get_vector(id).try_into()?;
+    fn update_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        let vector: &SparseVector = vector.try_into()?;
         // do not upsert empty vectors into the index
         if !vector.is_empty() {
             self.inverted_index.upsert(id, vector.clone());

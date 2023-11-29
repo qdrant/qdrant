@@ -15,7 +15,7 @@ use crate::common::operation_time_statistics::{
 };
 use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
@@ -298,7 +298,7 @@ impl VectorIndex for PlainIndex {
         0
     }
 
-    fn update_vector(&mut self, _id: PointOffsetType) -> OperationResult<()> {
+    fn update_vector(&mut self, _id: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Ok(())
     }
 }
