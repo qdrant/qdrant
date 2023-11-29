@@ -1,6 +1,7 @@
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
+use validator::Validate;
 
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
@@ -46,6 +47,15 @@ impl<T> Query<T> for RecoQuery<T> {
         let negative_similarities = self.negatives.iter().map(&similarity);
 
         merge_similarities(positive_similarities, negative_similarities)
+    }
+}
+
+impl<T: Validate> Validate for RecoQuery<T> {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        common::validation::merge_validation_results(&[
+            common::validation::validate_iter(self.positives.iter()),
+            common::validation::validate_iter(self.negatives.iter()),
+        ])
     }
 }
 

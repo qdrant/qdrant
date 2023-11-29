@@ -280,6 +280,7 @@ pub struct SearchRequest {
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestInternal {
     /// Look for vectors closest to this
+    #[validate]
     pub vector: NamedVectorStruct,
     /// Look only for points which satisfies this conditions
     #[validate]
@@ -329,6 +330,17 @@ impl QueryEnum {
             QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
             QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
             QueryEnum::Context(context_query) => context_query.get_name(),
+        }
+    }
+}
+
+impl Validate for QueryEnum {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            QueryEnum::Nearest(vector) => vector.validate(),
+            QueryEnum::RecommendBestScore(reco_query) => reco_query.validate(),
+            QueryEnum::Discover(discovery_query) => discovery_query.validate(),
+            QueryEnum::Context(context_query) => context_query.validate(),
         }
     }
 }
@@ -390,6 +402,7 @@ pub struct SearchGroupsRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SearchGroupsRequestInternal {
     /// Look for vectors closest to this
+    #[validate]
     pub vector: NamedVectorStruct,
 
     /// Look only for points which satisfies this conditions
@@ -453,6 +466,16 @@ impl RecommendExample {
         match self {
             RecommendExample::PointId(id) => Some(*id),
             _ => None,
+        }
+    }
+}
+
+impl Validate for RecommendExample {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            RecommendExample::PointId(_) => Ok(()),
+            RecommendExample::Vector(_) => Ok(()),
+            RecommendExample::Sparse(sparse) => sparse.validate(),
         }
     }
 }
@@ -532,10 +555,12 @@ pub struct RecommendRequest {
 pub struct RecommendRequestInternal {
     /// Look for vectors closest to those
     #[serde(default)]
+    #[validate]
     pub positive: Vec<RecommendExample>,
 
     /// Try to avoid vectors like this
     #[serde(default)]
+    #[validate]
     pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative examples to find the results
@@ -1473,17 +1498,8 @@ impl VectorsConfigDiff {
 }
 
 impl Validate for VectorsConfigDiff {
-    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let errors = self
-            .0
-            .values()
-            .filter_map(|v| v.validate().err())
-            .fold(Err(ValidationErrors::new()), |bag, err| {
-                ValidationErrors::merge(bag, "?", Err(err))
-            })
-            .unwrap_err();
-        errors.errors().is_empty().then_some(()).ok_or(errors)
+        common::validation::validate_iter(self.0.values())
     }
 }
 
