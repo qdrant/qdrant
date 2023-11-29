@@ -1137,10 +1137,15 @@ impl SegmentEntry for Segment {
             .map(|(key, vector_data)| {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let num_vectors = vector_storage.available_vector_count();
-                let is_indexed = vector_data.vector_index.borrow().is_index();
+                let vector_index = vector_data.vector_index.borrow();
+                let is_indexed = vector_index.is_index();
                 let vector_data_info = VectorDataInfo {
                     num_vectors,
-                    num_indexed_vectors: if is_indexed { num_vectors } else { 0 },
+                    num_indexed_vectors: if is_indexed {
+                        vector_index.indexed_vector_count()
+                    } else {
+                        0
+                    },
                     num_deleted_vectors: vector_storage.deleted_vector_count(),
                 };
                 (key.to_string(), vector_data_info)
@@ -1148,7 +1153,10 @@ impl SegmentEntry for Segment {
             .collect();
 
         let num_indexed_vectors = if self.segment_type == SegmentType::Indexed {
-            num_vectors
+            self.vector_data
+                .values()
+                .map(|data| data.vector_index.borrow().indexed_vector_count())
+                .sum()
         } else {
             0
         };
