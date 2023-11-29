@@ -1127,10 +1127,6 @@ impl SegmentEntry for Segment {
 
         let borrowed_payload_index = self.payload_index.borrow();
 
-        for (key, index) in &borrowed_payload_index.field_indexes {
-            println!("key: {:?}, index: {:?}", key, index)
-        }
-
         let index = borrowed_payload_index
             .field_indexes
             .get(&order_by.key)

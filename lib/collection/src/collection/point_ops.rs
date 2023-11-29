@@ -161,20 +161,19 @@ impl Collection {
         // Handle case of order_by
         if let Some(order_by) = &mut order_by {
             // Validate we have a numeric index for the order_by key
-            let _has_numeric_index_for_order_by_field = self
+            let has_numeric_index_for_order_by_field = self
                 .payload_index_schema
                 .read()
                 .schema
                 .get(order_by.key.as_str())
                 .is_some_and(|field| field.is_numeric());
 
-            // TODO(luis): check why collection.update_all_local is not adding the schema accordingly
-            // if !has_numeric_index_for_order_by_field {
-            //     return Err(CollectionError::bad_request(format!(
-            //         "No numeric index for order_by key: {}",
-            //         order_by.key.as_str()
-            //     )));
-            // }
+            if !has_numeric_index_for_order_by_field {
+                return Err(CollectionError::bad_request(format!(
+                    "No numeric index for order_by key: {}",
+                    order_by.key.as_str()
+                )));
+            }
 
             // Fetch offset id to get offset value
             order_by.value_offset = if let Some(offset) = offset {

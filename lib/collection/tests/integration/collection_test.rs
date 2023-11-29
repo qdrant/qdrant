@@ -434,18 +434,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    let create_index_operation = CollectionUpdateOperations::FieldIndexOperation(
-        FieldIndexOperations::CreateIndex(CreateIndex {
-            field_name: "price".to_string(),
-            field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Float)),
-        }),
-    );
-
-    collection
-        .update_from_client_simple(create_index_operation, true, WriteOrdering::Strong)
-        .await
-        .unwrap();
-
     fn get_float_payload(value: f64) -> Option<Payload> {
         let mut payload_map = Map::new();
         payload_map.insert("price".to_string(), (value).into());
@@ -501,7 +489,14 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    // tokio::time::sleep(Duration::from_secs(5)).await;
+    collection
+        .create_payload_index_with_wait(
+            "price".to_string(),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
+            true,
+        )
+        .await
+        .unwrap();
 
     let result_asc = collection
         .scroll_by(
