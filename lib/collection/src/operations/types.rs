@@ -675,7 +675,9 @@ pub struct RecommendGroupsRequestInternal {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct ContextExamplePair {
+    #[validate]
     pub positive: RecommendExample,
+    #[validate]
     pub negative: RecommendExample,
 }
 
@@ -703,6 +705,7 @@ pub struct DiscoverRequestInternal {
     /// When using the target (with or without context), the integer part of the score represents
     /// the rank with respect to the context, while the decimal part of the score relates to the
     /// distance to the target.
+    #[validate]
     pub target: Option<RecommendExample>,
 
     /// Pairs of { positive, negative } examples to constrain the search.
@@ -718,6 +721,7 @@ pub struct DiscoverRequestInternal {
     /// For discovery search (when including a target), the context part of the score for each pair
     /// is calculated +1 if the point is closer to a positive than to a negative part of a pair,
     /// and -1 otherwise.
+    #[validate]
     pub context: Option<Vec<ContextExamplePair>>,
 
     /// Look only for points which satisfies this conditions
