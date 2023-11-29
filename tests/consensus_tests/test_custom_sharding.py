@@ -4,7 +4,7 @@ from .fixtures import upsert_random_points, create_collection
 from .utils import *
 
 N_PEERS = 3
-N_SHARDS = 3
+N_SHARDS = 1
 N_REPLICAS = 1
 
 COLLECTION_NAME = "test_collection"
@@ -51,6 +51,20 @@ def create_shard(
         })
     assert_http_ok(r_batch)
 
+
+def delete_shard(
+        peer_url,
+        collection,
+        shard_key,
+        timeout=10
+):
+    r_batch = requests.post(
+        f"{peer_url}/collections/{collection}/shards/delete?timeout={timeout}",
+        json={
+            "shard_key": shard_key,
+        }
+    )
+    assert_http_ok(r_batch)
 
 def test_shard_consistency(tmp_path: pathlib.Path):
     assert_project_root()
@@ -113,3 +127,93 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     )
     assert_http_ok(r)
     assert r.json()["result"]["count"] == 8
+
+    # Search points within the shard
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search",
+        json={
+            "vector": [0.29, 0.81, 0.75, 0.11],
+            "shard_key": "cats",
+            "limit": 10,
+            "with_payload": True,
+        }
+    )
+
+    assert_http_ok(r)
+    result = r.json()["result"]
+    assert len(result) == 4
+    for point in result:
+        assert point["payload"]["name"] in ["Barsik", "Murzik", "Vaska", "Chubais"]
+        assert point["shard_key"] == "cats"
+
+    # Search points within 2 shards
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search",
+        json={
+            "vector": [0.29, 0.81, 0.75, 0.11],
+            "shard_key": ["cats", "dogs"],
+            "limit": 10,
+            "with_payload": True,
+        }
+    )
+
+    assert_http_ok(r)
+    result = r.json()["result"]
+    assert len(result) == 8
+    for point in result:
+        assert point["shard_key"] in ["cats", "dogs"]
+
+    # Search across all the shards
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search",
+        json={
+            "vector": [0.29, 0.81, 0.75, 0.11],
+            "limit": 10,
+        }
+    )
+
+    assert_http_ok(r)
+    result = r.json()["result"]
+    assert len(result) == 8
+    for point in result:
+        assert point["shard_key"] in ["cats", "dogs"]
+
+    delete_shard(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_key="cats",
+    )
+
+    create_shard(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_key="birds",
+        shard_number=1,
+        replication_factor=1
+    )
+
+    r = requests.put(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points?wait=true", json={
+            "shard_key": "birds",
+            "points": [
+                {"id": 9, "vector": [0.29, 0.81, 0.75, 0.11], "payload": {"name": "Kesha"}},
+                {"id": 10, "vector": [0.19, 0.11, 0.15, 0.21], "payload": {"name": "Gosha"}},
+            ]
+        })
+    assert_http_ok(r)
+
+    # Search across all the shards
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search",
+        json={
+            "vector": [0.29, 0.81, 0.75, 0.11],
+            "limit": 10,
+        }
+    )
+
+    assert_http_ok(r)
+    result = r.json()["result"]
+
+    assert len(result) == 6
+    for point in result:
+        assert point["shard_key"] in ["dogs", "birds"]
