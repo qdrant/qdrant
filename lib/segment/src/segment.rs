@@ -435,9 +435,8 @@ impl Segment {
                 .is_deleted_vector(point_offset);
             if !is_vector_deleted {
                 let vector_storage = vector_data.vector_storage.borrow();
-                // TODO(sparse) remove unwrap after NamedVectors changes
-                let vector: &[_] = vector_storage.get_vector(point_offset).try_into().unwrap();
-                vectors.insert(vector_name.clone(), vector.to_vec().into());
+                let vector = vector_storage.get_vector(point_offset).to_vec();
+                vectors.insert(vector_name.clone(), vector);
             }
         }
         Ok(vectors)
