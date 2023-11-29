@@ -44,10 +44,7 @@ fn check_validation_error(result: Result<(), ::validator::ValidationErrors>) {
     match result {
         Ok(_) => panic!("Expected validation error"),
         // check if there is an error message about the length of the sparse vector
-        Err(e) => assert_eq!(
-            e.to_string().contains("must be the same length as indices"),
-            true,
-        ),
+        Err(e) => assert!(e.to_string().contains("must be the same length as indices")),
     }
 }
 
