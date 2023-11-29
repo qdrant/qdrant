@@ -19,7 +19,7 @@ const MAX_AUTO_RAYON_THREADS: usize = 16;
 
 pub fn max_rayon_threads(max_indexing_threads: usize) -> usize {
     if max_indexing_threads == 0 {
-        let num_cpu = crate::common::cpu::get_num_cpus();
+        let num_cpu = common::cpu::get_num_cpus();
         num_cpu.clamp(1, MAX_AUTO_RAYON_THREADS)
     } else {
         max_indexing_threads

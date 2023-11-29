@@ -5,7 +5,6 @@ use api::grpc::transport_channel_pool::{
 };
 use collection::operations::validation;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
-use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::Validate;
@@ -283,7 +282,7 @@ pub fn max_web_workers(settings: &Settings) -> usize {
     let max_workers = settings.service.max_workers;
 
     if max_workers == Some(0) {
-        let num_cpu = get_num_cpus();
+        let num_cpu = common::cpu::get_num_cpus();
         std::cmp::max(1, num_cpu - 1)
     } else if max_workers.is_none() {
         settings.storage.performance.max_search_threads
