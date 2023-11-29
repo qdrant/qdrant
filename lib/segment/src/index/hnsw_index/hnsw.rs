@@ -19,7 +19,7 @@ use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::BYTES_IN_KB;
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -826,7 +826,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .unwrap_or(0)
     }
 
-    fn update_vector(&mut self, _id: PointOffsetType) -> OperationResult<()> {
+    fn update_vector(&mut self, _id: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }
 }
