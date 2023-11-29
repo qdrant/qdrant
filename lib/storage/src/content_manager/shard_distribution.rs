@@ -1,5 +1,6 @@
 use std::cmp::{self, Reverse};
 use std::collections::BinaryHeap;
+use std::iter::repeat_with;
 use std::num::NonZeroU32;
 
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -7,9 +8,13 @@ use collection::shards::shard::{PeerId, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq)]
 struct PeerShardCount {
-    shard_count: usize, // self.shard_count and other.shard_count are compared first to determine eq & ord
+    shard_count: usize,
+    /// Randomized bias value, to prevent having a consistent order of peers across multiple
+    /// generated distributions. This roughly balances nodes across all nodes, if the number of
+    /// shards is less than the number of nodes.
+    bias: usize,
     peer_id: PeerId,
 }
 
@@ -17,12 +22,35 @@ impl PeerShardCount {
     fn new(peer_id: PeerId) -> Self {
         Self {
             shard_count: 0,
+            bias: rand::random(),
             peer_id,
         }
     }
 
-    fn inc_shard_count(&mut self) {
+    fn get_and_inc_shard_count(&mut self) -> PeerId {
         self.shard_count += 1;
+        self.peer_id
+    }
+}
+
+impl PartialOrd for PeerShardCount {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Explicitly implement ordering to make sure we don't accidentally break this.
+///
+/// Ordering:
+/// - shard_count: lowest number of shards first
+/// - bias: randomize order of peers with same number of shards
+/// - peer_id
+impl Ord for PeerShardCount {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.shard_count
+            .cmp(&other.shard_count)
+            .then(self.bias.cmp(&other.bias))
+            .then(self.peer_id.cmp(&other.peer_id))
     }
 }
 
@@ -49,27 +77,25 @@ impl ShardDistributionProposal {
         replication_factor: NonZeroU32,
         known_peers: &[PeerId],
     ) -> Self {
-        // min number of shard_count on top to make this a min-heap
-        let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> =
-            BinaryHeap::with_capacity(known_peers.len());
-        for peer in known_peers {
-            min_heap.push(Reverse(PeerShardCount::new(*peer)));
-        }
+        // Min-heap: peer with lowest number of shards is on top
+        let mut min_heap: BinaryHeap<_> = known_peers
+            .iter()
+            .map(|peer| Reverse(PeerShardCount::new(*peer)))
+            .collect();
 
-        let mut distribution = Vec::with_capacity(shard_number.get() as usize);
         // There should not be more than 1 replica per peer
-        let n_replicas = cmp::min(replication_factor.get() as usize, known_peers.len());
+        let replica_number = cmp::min(replication_factor.get() as usize, known_peers.len());
 
-        for shard_id in 0..shard_number.get() {
-            let mut replicas = Vec::new();
-            for _replica in 0..n_replicas {
-                let mut least_loaded_peer = min_heap.peek_mut().unwrap();
-                let selected_peer = least_loaded_peer.0.peer_id;
-                least_loaded_peer.0.inc_shard_count();
-                replicas.push(selected_peer);
-            }
-            distribution.push((shard_id, replicas))
-        }
+        // Get fair distribution of shards on peers
+        let distribution = (0..shard_number.get())
+            .map(|shard_id| {
+                let replicas =
+                    repeat_with(|| min_heap.peek_mut().unwrap().0.get_and_inc_shard_count())
+                        .take(replica_number)
+                        .collect();
+                (shard_id, replicas)
+            })
+            .collect();
 
         Self { distribution }
     }
@@ -111,6 +137,8 @@ impl From<ShardDistributionProposal> for CollectionShardDistribution {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -139,5 +167,45 @@ mod tests {
         assert_eq!(shard_counts.iter().sum::<usize>(), 6);
         assert_eq!(shard_counts.iter().min(), Some(&1));
         assert_eq!(shard_counts.iter().max(), Some(&2));
+    }
+
+    #[test]
+    fn test_distribution_is_spread() {
+        let known_peers = vec![1, 2, 3, 4];
+        let shard_numbers = 1..=3;
+        let replication_factors = 1..=4;
+        let tries = 100;
+
+        // With 4 peers, for various shard number and replication factor ranges, always generate
+        // distributions that inhabit all peers across 100 retries.
+        for shard_number in shard_numbers {
+            for replication_factor in replication_factors.clone() {
+                let inhabited_peers = (0..tries)
+                    // Generate distribution
+                    .map(|_| {
+                        ShardDistributionProposal::new(
+                            NonZeroU32::new(shard_number).unwrap(),
+                            NonZeroU32::new(replication_factor).unwrap(),
+                            &known_peers,
+                        )
+                    })
+                    // Take just the inhabited peer IDs
+                    .flat_map(|proposal| {
+                        proposal
+                            .distribution
+                            .clone()
+                            .into_iter()
+                            .flat_map(|(_, peers)| peers)
+                    })
+                    .collect::<HashSet<_>>();
+
+                assert_eq!(
+                    inhabited_peers.len(),
+                    known_peers.len(),
+                    "must inhabit all {} peers across {tries} distributions",
+                    known_peers.len(),
+                );
+            }
+        }
     }
 }
