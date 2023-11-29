@@ -34,7 +34,6 @@ pub struct PointVectors {
 
 impl Validate for PointVectors {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        self.vector.validate()?;
         if self.vector.is_empty() {
             let mut err = ValidationError::new("length");
             err.add_param(Cow::from("min"), &1);
@@ -42,7 +41,7 @@ impl Validate for PointVectors {
             errors.add("must specify vectors to update for point", err);
             Err(errors)
         } else {
-            Ok(())
+            self.vector.validate()
         }
     }
 }
