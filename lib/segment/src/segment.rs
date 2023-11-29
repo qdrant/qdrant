@@ -12,6 +12,7 @@ use io::file_operations::{atomic_save_json, read_json};
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
+use sparse::common::sparse_vector::SparseVector;
 use tar::Builder;
 use uuid::Uuid;
 
@@ -139,7 +140,7 @@ impl Segment {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     vector_storage.insert_vector(internal_id, vector)?;
                     let mut vector_index = vector_data.vector_index.borrow_mut();
-                    vector_index.update_vector(internal_id)?;
+                    vector_index.update_vector(internal_id, vector)?;
                 }
                 None => {
                     // No vector provided, so we remove it
@@ -181,7 +182,7 @@ impl Segment {
             vector_data
                 .vector_index
                 .borrow_mut()
-                .update_vector(internal_id)?;
+                .update_vector(internal_id, new_vector)?;
         }
         Ok(())
     }
@@ -205,16 +206,20 @@ impl Segment {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             match vector_opt {
                 None => {
-                    // TODO(sparse) check if vector_storage is sparse and insert sparse vector
                     let dim = vector_storage.vector_dim();
-                    let vector = vec![1.0; dim];
-                    vector_storage.insert_vector(new_index, vector.as_slice().into())?;
+                    let vector: Vector = match *vector_storage {
+                        VectorStorageEnum::Simple(_)
+                        | VectorStorageEnum::Memmap(_)
+                        | VectorStorageEnum::AppendableMemmap(_) => vec![1.0; dim].into(),
+                        VectorStorageEnum::SparseSimple(_) => SparseVector::default().into(),
+                    };
+                    vector_storage.insert_vector(new_index, vector.to_vec_ref())?;
                     vector_storage.delete_vector(new_index)?;
-                    vector_index.update_vector(new_index)?;
+                    vector_index.update_vector(new_index, vector.to_vec_ref())?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec)?;
-                    vector_index.update_vector(new_index)?;
+                    vector_index.update_vector(new_index, vec)?;
                 }
             }
         }
