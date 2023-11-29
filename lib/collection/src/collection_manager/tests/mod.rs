@@ -84,12 +84,7 @@ fn test_update_proxy_segments() {
     let all_ids = segments
         .read()
         .iter()
-        .flat_map(|(_id, segment)| {
-            segment
-                .get()
-                .read()
-                .read_filtered(None, Some(100), None, false)
-        })
+        .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, Some(100), None))
         .sorted()
         .collect_vec();
 

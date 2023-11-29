@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::mem::size_of;
-use std::ops::Deref;
+use std::ops::{Bound, Deref};
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -1354,6 +1354,27 @@ impl Range {
     }
 }
 
+impl From<std::ops::Range<Bound<f64>>> for Range {
+    /// Assumes start >= end
+    fn from(value: std::ops::Range<Bound<f64>>) -> Self {
+        let mut range = Range::default();
+
+        match value.start {
+            Bound::Included(start) => range.gte = Some(start),
+            Bound::Excluded(start) => range.gt = Some(start),
+            Bound::Unbounded => range.gt = Some(f64::NEG_INFINITY),
+        }
+
+        match value.end {
+            Bound::Included(end) => range.lte = Some(end),
+            Bound::Excluded(end) => range.lt = Some(end),
+            Bound::Unbounded => range.lt = Some(f64::INFINITY),
+        }
+
+        range
+    }
+}
+
 /// Values count filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1981,6 +2002,8 @@ pub enum Direction {
 pub struct OrderBy {
     pub key: String,
     pub direction: Option<Direction>,
+    #[serde(skip)]
+    pub value_offset: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]

@@ -481,29 +481,57 @@ impl SegmentEntry for ProxySegment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-        force_index: bool,
     ) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_filtered(offset, limit, filter, force_index)
+                .read_filtered(offset, limit, filter)
         } else {
             let wrapped_filter =
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
-            self.wrapped_segment.get().read().read_filtered(
-                offset,
-                limit,
-                Some(&wrapped_filter),
-                force_index,
-            )
-        };
-        let mut write_segment_points =
-            self.write_segment
+            self.wrapped_segment
                 .get()
                 .read()
-                .read_filtered(offset, limit, filter, force_index);
+                .read_filtered(offset, limit, Some(&wrapped_filter))
+        };
+        let mut write_segment_points = self
+            .write_segment
+            .get()
+            .read()
+            .read_filtered(offset, limit, filter);
+        read_points.append(&mut write_segment_points);
+        read_points.sort_unstable();
+        read_points
+    }
+
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a segment::types::OrderBy,
+    ) -> Vec<PointIdType> {
+        let deleted_points = self.deleted_points.read();
+        let mut read_points = if deleted_points.is_empty() {
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_ordered_filtered(limit, filter, order_by)
+        } else {
+            let wrapped_filter =
+                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+            self.wrapped_segment.get().read().read_ordered_filtered(
+                limit,
+                Some(&wrapped_filter),
+                order_by,
+            )
+        };
+        let mut write_segment_points = self
+            .write_segment
+            .get()
+            .read()
+            .read_ordered_filtered(limit, filter, order_by);
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points
@@ -742,7 +770,7 @@ impl SegmentEntry for ProxySegment {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_filtered(None, None, Some(filter), false);
+                .read_filtered(None, None, Some(filter));
         if !points_to_delete.is_empty() {
             deleted_points += points_to_delete.len();
             let mut deleted_points_guard = self.deleted_points.write();
@@ -1093,24 +1121,23 @@ mod tests {
             "blue".to_string().into(),
         )));
 
-        let original_points =
-            original_segment
-                .get()
-                .read()
-                .read_filtered(None, Some(100), None, false);
+        let original_points = original_segment
+            .get()
+            .read()
+            .read_filtered(None, Some(100), None);
 
         let original_points_filtered =
             original_segment
                 .get()
                 .read()
-                .read_filtered(None, Some(100), Some(&filter), false);
+                .read_filtered(None, Some(100), Some(&filter));
 
         let mut proxy_segment = wrap_proxy(&dir, original_segment);
 
         proxy_segment.delete_point(100, 2.into()).unwrap();
 
-        let proxy_res = proxy_segment.read_filtered(None, Some(100), None, false);
-        let proxy_res_filtered = proxy_segment.read_filtered(None, Some(100), Some(&filter), false);
+        let proxy_res = proxy_segment.read_filtered(None, Some(100), None);
+        let proxy_res_filtered = proxy_segment.read_filtered(None, Some(100), Some(&filter));
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());

@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
+use std::ops::Bound;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use crate::common::operation_error::OperationError::TypeInferenceError;
 use crate::common::operation_error::{
     get_service_error, OperationError, OperationResult, SegmentFailedState,
 };
+use crate::common::utils::bound_map;
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
@@ -31,12 +33,13 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
-use crate::spaces::tools::peek_top_smallest_iterable;
+use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    Condition, Direction, FieldCondition, Filter, OrderBy, Payload, PayloadFieldSchema,
+    PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType, Range,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType,
+    SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -637,6 +640,16 @@ impl Segment {
         limit: Option<usize>,
         condition: &Filter,
     ) -> Vec<PointIdType> {
+        self.filtered_read_by_index_with_direction(offset, limit, condition, Direction::Asc)
+    }
+
+    pub fn filtered_read_by_index_with_direction(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        condition: &Filter,
+        direction: Direction,
+    ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
@@ -655,10 +668,18 @@ impl Segment {
             });
 
         let mut page = match limit {
-            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
+            Some(limit) => match direction {
+                Direction::Asc => peek_top_smallest_iterable(ids_iterator, limit),
+                Direction::Desc => peek_top_largest_iterable(ids_iterator, limit),
+            },
             None => ids_iterator.collect(),
         };
-        page.sort_unstable();
+
+        match direction {
+            Direction::Asc => page.sort_unstable(),
+            Direction::Desc => page.sort_unstable_by(|a, b| b.cmp(a)),
+        }
+
         page
     }
 
@@ -1038,7 +1059,6 @@ impl SegmentEntry for Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-        force_index: bool,
     ) -> Vec<PointIdType> {
         match filter {
             None => self
@@ -1049,10 +1069,6 @@ impl SegmentEntry for Segment {
                 .take(limit.unwrap_or(usize::MAX))
                 .collect(),
             Some(condition) => {
-                if force_index {
-                    return self.filtered_read_by_index(offset, limit, condition);
-                }
-
                 let query_cardinality = {
                     let payload_index = self.payload_index.borrow();
                     payload_index.estimate_cardinality(condition)
@@ -1094,6 +1110,80 @@ impl SegmentEntry for Segment {
                 }
             }
         }
+    }
+
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a OrderBy,
+    ) -> Vec<PointIdType> {
+        let limit = limit.unwrap_or(usize::MAX);
+        let direction = order_by.direction.unwrap_or_default();
+        let from = match direction {
+            Direction::Asc => order_by.value_offset.unwrap_or(f64::NEG_INFINITY),
+            Direction::Desc => order_by.value_offset.unwrap_or(f64::INFINITY),
+        };
+
+        let borrowed_payload_index = self.payload_index.borrow();
+
+        for (key, index) in &borrowed_payload_index.field_indexes {
+            println!("key: {:?}, index: {:?}", key, index)
+        }
+
+        let index = borrowed_payload_index
+            .field_indexes
+            .get(&order_by.key)
+            .and_then(|field_indexes| field_indexes.first())
+            .expect("Index should exist for the order_by field");
+
+        let mut range = match index {
+            crate::index::field_index::FieldIndex::IntIndex(int_index) => {
+                let from = Bound::Included(from as i64);
+                let to = int_index.get_range_by_size(limit, from, direction);
+                let as_f64 = |x: i64| x as f64;
+                bound_map(from, as_f64)..bound_map(to, as_f64)
+            }
+            crate::index::field_index::FieldIndex::FloatIndex(float_index) => {
+                let from = Bound::Included(from);
+                let to = float_index.get_range_by_size(limit, from, direction);
+                from..to
+            }
+            crate::index::field_index::FieldIndex::KeywordIndex(_)
+            | crate::index::field_index::FieldIndex::IntMapIndex(_)
+            | crate::index::field_index::FieldIndex::GeoIndex(_)
+            | crate::index::field_index::FieldIndex::FullTextIndex(_)
+            | crate::index::field_index::FieldIndex::BinaryIndex(_) => {
+                unimplemented!("Order-by is not implemented for this index type")
+            }
+        };
+
+        // Adjust std::ops::Range for converting into `Range`
+        if matches!(direction, Direction::Desc) {
+            range = range.end..range.start
+        }
+
+        let range_cond = FieldCondition::new_range(order_by.key.clone(), Range::from(range));
+
+        // Index does not necessarily read in sequential order, so we need to expand the limit
+        // to make sure we get enough points to sort later
+        let expanded_limit = index
+            .estimate_cardinality(&range_cond)
+            .ok()
+            .map(|estimation| limit.max(estimation.max));
+
+        let range_filter = Filter::new_must(Condition::Field(range_cond));
+
+        let filter = filter.unwrap_or(&Filter::default()).merge(&range_filter);
+
+        let mut reads =
+            self.filtered_read_by_index_with_direction(None, expanded_limit, &filter, direction);
+
+        if matches!(direction, Direction::Desc) {
+            reads.reverse()
+        }
+
+        reads
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
@@ -1401,7 +1491,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(None, None, Some(filter), false) {
+        for point_id in self.read_filtered(None, None, Some(filter)) {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 

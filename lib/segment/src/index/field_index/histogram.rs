@@ -144,15 +144,12 @@ impl<T: Numericable> Histogram<T> {
         self.total_count
     }
 
-    /// Infers boundaries for bucket of given size and staring point.
+    /// Infers boundaries for bucket of given size and starting point.
     /// Returns `to` range of values starting provided `from`value which is expected to contain
     /// `range_size` values
     ///
-    /// Returns None if there are no points stored
+    /// Returns `Unbounded` if there are no points stored
     pub fn get_range_by_size(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
-        // bound_map is unstable, but can be used here
-        // let from_ = from.map(|val| Point { val, idx: usize::MIN });
-
         let from_ = match from {
             Included(val) => Included(Point {
                 val,
@@ -173,6 +170,38 @@ impl<T: Numericable> Histogram<T> {
             } else {
                 // Size not yet reached
                 reached_count += counts.left;
+            }
+        }
+
+        Unbounded
+    }
+
+    /// Infers boundaries for bucket of given size and starting point, assuming descending order.
+    /// Returns `to` range of values starting provided `from`value which is expected to contain
+    /// `range_size` values
+    ///
+    /// Returns `Unbounded` if there are no points stored
+    pub fn get_range_by_size_rev(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
+        let from_ = match from {
+            Included(val) => Included(Point {
+                val,
+                idx: usize::MIN,
+            }),
+            Excluded(val) => Excluded(Point {
+                val,
+                idx: usize::MAX,
+            }),
+            Unbounded => Unbounded,
+        };
+
+        let mut reached_count = 0;
+        for (border, counts) in self.borders.range((Unbounded, from_)).rev() {
+            if reached_count + counts.right > range_size {
+                // required size reached
+                return Included(border.val);
+            } else {
+                // Size not yet reached
+                reached_count += counts.right;
             }
         }
 
@@ -243,10 +272,10 @@ impl<T: Numericable> Histogram<T> {
             .chain(right_border)
             .tuple_windows()
             .map(
-                |((a, a_count), (b, _b_count)): ((&Point<T>, &Counts), (&Point<T>, _))| {
+                |((a, a_count), (b, b_count)): ((&Point<T>, &Counts), (&Point<T>, _))| {
                     let val_range = (b.val - a.val).to_f64();
 
-                    if val_range == 0. {
+                    if val_range == 0.0 {
                         // Zero-length range is always covered
                         let estimates = a_count.right + 1;
                         return (estimates, estimates, estimates);
@@ -267,7 +296,13 @@ impl<T: Numericable> Histogram<T> {
                     } else {
                         0
                     };
-                    let max_estimate = a_count.right + 1;
+                    let mut max_estimate = a_count.right + 1;
+
+                    if b_count.right == 0 {
+                        // This is the last border, so we need to include it
+                        max_estimate += 1;
+                    }
+
                     (min_estimate, estimate, max_estimate)
                 },
             )

@@ -3,8 +3,7 @@ use std::sync::Arc;
 use futures::{future, TryFutureExt, TryStreamExt as _};
 use itertools::{Either, Itertools as _};
 use segment::types::{
-    Condition, Direction, FieldCondition, Filter, OrderBy, PayloadContainer, Range, ShardKey,
-    WithPayload, WithPayloadInterface,
+    Direction, OrderBy, PayloadContainer, ShardKey, WithPayload, WithPayloadInterface,
 };
 use validator::Validate as _;
 
@@ -141,7 +140,7 @@ impl Collection {
 
     pub async fn scroll_by(
         &self,
-        mut request: ScrollRequestInternal,
+        request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<ScrollResult> {
@@ -157,26 +156,28 @@ impl Collection {
             .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
         let with_vector = request.with_vector;
 
-        let order_by = request.order_by.map(OrderBy::from);
+        let mut order_by = request.order_by.map(OrderBy::from);
 
-        // Validate we have a numeric index for the order_by key
-        if let Some(order_by) = &order_by {
-            let has_numeric_index_for_order_by_field = self
+        // Handle case of order_by
+        if let Some(order_by) = &mut order_by {
+            // Validate we have a numeric index for the order_by key
+            let _has_numeric_index_for_order_by_field = self
                 .payload_index_schema
                 .read()
                 .schema
                 .get(order_by.key.as_str())
                 .is_some_and(|field| field.is_numeric());
 
-            if !has_numeric_index_for_order_by_field {
-                return Err(CollectionError::bad_request(format!(
-                    "No numeric index for order_by key: {}",
-                    order_by.key.as_str()
-                )));
-            }
+            // TODO(luis): check why collection.update_all_local is not adding the schema accordingly
+            // if !has_numeric_index_for_order_by_field {
+            //     return Err(CollectionError::bad_request(format!(
+            //         "No numeric index for order_by key: {}",
+            //         order_by.key.as_str()
+            //     )));
+            // }
 
             // Fetch offset id to get offset value
-            let offset_value = if let Some(offset) = offset {
+            order_by.value_offset = if let Some(offset) = offset {
                 let with_payload_interface =
                     WithPayloadInterface::Fields(vec![order_by.key.clone()]);
                 let with_payload = WithPayload::from(&with_payload_interface);
@@ -215,25 +216,7 @@ impl Collection {
             } else {
                 None
             };
-
-            let direction = order_by.direction.unwrap_or_default();
-
-            let mut range = Range::default();
-            match direction {
-                Direction::Asc => range.gte = Some(offset_value.unwrap_or(f64::NEG_INFINITY)),
-                Direction::Desc => range.lte = Some(offset_value.unwrap_or(f64::INFINITY)),
-            };
-
-            let range_filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-                order_by.key.clone(),
-                range,
-            )));
-
-            request.filter = request
-                .filter
-                .map(|filter| filter.merge(&range_filter))
-                .or(Some(range_filter));
-        }
+        };
 
         if limit == 0 {
             return Err(CollectionError::BadRequest {
@@ -303,140 +286,6 @@ impl Collection {
             next_page_offset,
         })
     }
-
-    // async fn scroll_by_order(
-    //     &self,
-    //     request: ScrollRequest,
-    //     read_consistency: Option<ReadConsistency>,
-    //     shard_selection: Option<ShardId>,
-    //     order_by: &OrderBy,
-    // ) -> CollectionResult<ScrollResult> {
-    //     let default_request = ScrollRequest::default();
-    //     let offset = request.offset;
-    //     let limit = request
-    //         .limit
-    //         .unwrap_or_else(|| default_request.limit.unwrap());
-    //     let with_payload_interface = request
-    //         .with_payload
-    //         .clone()
-    //         .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
-    //     let with_vector = request.with_vector;
-
-    //     if limit == 0 {
-    //         return Err(CollectionError::BadRequest {
-    //             description: "Limit cannot be 0".to_string(),
-    //         });
-    //     }
-
-    //     let limit_step = limit.clone();
-    //     let initial_limit = limit.clone() + 1;
-    //     // Needed to return next page offset.
-    //     let mut limit;
-    //     match offset {
-    //         Some(_) => {
-    //             limit = 2 * initial_limit;
-    //         }
-    //         _ => {
-    //             limit = initial_limit;
-    //         }
-    //     }
-
-    //     let mut all_retrieved_points: Vec<_> = vec![];
-    //     let mut found_offset = false;
-
-    //     while !found_offset {
-    //         let retrieved_points: Vec<_> = {
-    //             let shards_holder = self.shards_holder.read().await;
-    //             let target_shards = shards_holder.target_shard(shard_selection)?;
-    //             let scroll_futures = target_shards.into_iter().map(|shard| {
-    //                 shard.scroll_by(
-    //                     None,
-    //                     limit,
-    //                     &with_payload_interface,
-    //                     &with_vector,
-    //                     None,
-    //                     read_consistency,
-    //                     shard_selection.is_some(),
-    //                     request.order_by.as_ref(),
-    //                 )
-    //             });
-
-    //             future::try_join_all(scroll_futures).await?
-    //         };
-    //         let returned_points: Vec<_> = retrieved_points.into_iter().flatten().collect();
-    //         if returned_points.len() < limit {
-    //             all_retrieved_points = returned_points;
-    //             break;
-    //         }
-
-    //         match offset {
-    //             Some(offset) => {
-    //                 found_offset = returned_points.iter().any(|item| item.id == offset);
-    //                 log::error!("found {:?}: {}", offset, found_offset);
-    //                 if found_offset {
-    //                     all_retrieved_points = returned_points;
-    //                 } else {
-    //                     limit = limit + limit_step;
-    //                 }
-    //             }
-    //             _ => {
-    //                 all_retrieved_points = returned_points;
-    //                 // we are not looking for offset so we can break immediately
-    //                 break;
-    //             }
-    //         }
-    //     }
-
-    //     let sort_items = |a: &Record, b: &Record| {
-    //         let aa = a.payload.as_ref().unwrap();
-    //         let bb = b.payload.as_ref().unwrap();
-    //         let n1 = aa.0.get(&order_by.key).unwrap().as_number().unwrap();
-    //         let n2 = bb.0.get(&order_by.key).unwrap().as_number().unwrap();
-
-    //         if let (Some(a_int), Some(b_int)) = (n1.as_i64(), n2.as_i64()) {
-    //             a_int.cmp(&b_int).then_with(|| a.id.cmp(&b.id))
-    //         } else if let (Some(a_f), Some(b_f)) = (n1.as_f64(), n2.as_f64()) {
-    //             a_f.partial_cmp(&b_f)
-    //                 .unwrap_or(Ordering::Equal)
-    //                 .then_with(|| a.id.cmp(&b.id))
-    //         } else {
-    //             panic!("Neither n1 nor n2 is i64 or f64.")
-    //         }
-    //     };
-
-    //     let mut points: Vec<_> = all_retrieved_points;
-    //     match order_by.direction {
-    //         Some(Direction::Desc) => {
-    //             points.sort_by(|a, b| sort_items(a, b).reverse());
-    //         }
-    //         _ => {
-    //             points.sort_by(sort_items);
-    //         }
-    //     }
-
-    //     // here the points are sorted so we need to cut if off at the offset
-    //     match offset {
-    //         Some(offset) => {
-    //             if let Some(pos) = points.iter().position(|p| p.id == offset) {
-    //                 points = points[pos..].to_vec();
-    //             }
-    //         }
-    //         _ => {}
-    //     }
-
-    //     points = points.into_iter().take(initial_limit).collect();
-    //     let next_page_offset = if points.len() < initial_limit {
-    //         // This was the last page
-    //         None
-    //     } else {
-    //         // remove extra point, it would be a first point of the next page
-    //         Some(points.pop().unwrap().id)
-    //     };
-    //     Ok(ScrollResult {
-    //         points,
-    //         next_page_offset,
-    //     })
-    // }
 
     pub async fn count(
         &self,

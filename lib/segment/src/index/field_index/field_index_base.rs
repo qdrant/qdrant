@@ -1,3 +1,5 @@
+use std::fmt::Formatter;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 use smol_str::SmolStr;
@@ -124,6 +126,20 @@ pub enum FieldIndex {
     BinaryIndex(BinaryIndex),
 }
 
+impl std::fmt::Debug for FieldIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldIndex::IntIndex(_index) => write!(f, "IntIndex"),
+            FieldIndex::IntMapIndex(_index) => write!(f, "IntMapInde"),
+            FieldIndex::KeywordIndex(_index) => write!(f, "KeywordIndex"),
+            FieldIndex::FloatIndex(_index) => write!(f, "FloatIndex"),
+            FieldIndex::GeoIndex(_index) => write!(f, "GeoIndex"),
+            FieldIndex::BinaryIndex(_index) => write!(f, "BinaryIndex"),
+            FieldIndex::FullTextIndex(_index) => write!(f, "FullTextIndex"),
+        }
+    }
+}
+
 impl FieldIndex {
     /// Try to check condition for a payload given a field index.
     /// Required because some index parameters may influence the condition checking logic.
@@ -234,18 +250,6 @@ impl FieldIndex {
         condition: &'a FieldCondition,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         self.get_payload_field_index().filter(condition)
-    }
-
-    pub fn filter_rev<'a>(
-        &'a self,
-        condition: &'a FieldCondition,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match self {
-            FieldIndex::FloatIndex(payload_field_index) => {
-                payload_field_index.filter_reversed(condition)
-            }
-            _ => unimplemented!("Cannot reverse filtering on non numeric indexes."),
-        }
     }
 
     pub fn estimate_cardinality(

@@ -168,22 +168,29 @@ impl ShardOperation for LocalShard {
                     let segment = segment.clone();
                     let filter = filter.cloned();
 
-                    // Special handling when using order_by
-                    let offset = order_by.is_none().then_some(offset).flatten();
-                    let limit = order_by.is_none().then_some(limit);
-                    let force_index = order_by.is_some();
+                    match order_by {
+                        None => search_runtime_handle.spawn_blocking(move || {
+                            segment
+                                .get()
+                                .read()
+                                .read_filtered(offset, Some(limit), filter.as_ref())
+                        }),
+                        Some(order_by) => {
+                            let order_by = order_by.clone();
 
-                    search_runtime_handle.spawn_blocking(move || {
-                        segment.get().read().read_filtered(
-                            offset,
-                            limit,
-                            filter.as_ref(),
-                            force_index,
-                        )
-                    })
+                            search_runtime_handle.spawn_blocking(move || {
+                                segment.get().read().read_ordered_filtered(
+                                    Some(limit),
+                                    filter.as_ref(),
+                                    &order_by,
+                                )
+                            })
+                        }
+                    }
                 })
                 .collect()
         };
+
         let all_points = try_join_all(read_handles).await?;
 
         match order_by {

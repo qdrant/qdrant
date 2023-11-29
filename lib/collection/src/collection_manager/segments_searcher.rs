@@ -297,12 +297,7 @@ impl SegmentsSearcher {
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
-        let mut order_mappings: HashMap<PointIdType, usize> = Default::default();
-        let mut record_map: HashMap<PointIdType, Record> = Default::default();
-
-        for (index, &value) in points.iter().enumerate() {
-            order_mappings.insert(value, index);
-        }
+        let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
         segments.read().read_points(points, |id, segment| {
             let version = segment.point_version(id).ok_or_else(|| {
@@ -310,7 +305,7 @@ impl SegmentsSearcher {
             })?;
             // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < version {
-                record_map.insert(
+                point_records.insert(
                     id,
                     Record {
                         id,
@@ -347,7 +342,7 @@ impl SegmentsSearcher {
         // Order the results
         let mut ordered_records: Vec<Record> = Vec::with_capacity(points.len());
         for &point in points.iter() {
-            if let Some(record) = record_map.remove(&point) {
+            if let Some(record) = point_records.remove(&point) {
                 ordered_records.push(record);
             }
         }
