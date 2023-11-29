@@ -38,7 +38,7 @@ impl Validate for PointVectors {
             let mut err = ValidationError::new("length");
             err.add_param(Cow::from("min"), &1);
             let mut errors = ValidationErrors::new();
-            errors.add("vector must specify vectors to update for point", err);
+            errors.add("vector: must specify vectors to update for point", err);
             Err(errors)
         } else {
             self.vector.validate()
