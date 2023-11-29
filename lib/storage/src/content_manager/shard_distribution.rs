@@ -50,7 +50,8 @@ impl Ord for PeerShardCount {
         self.shard_count
             .cmp(&other.shard_count)
             .then(self.bias.cmp(&other.bias))
-            .then(self.peer_id.cmp(&other.peer_id))
+            // It is very unlikely that we need this, so `then_with` is a bit faster
+            .then_with(|| self.peer_id.cmp(&other.peer_id))
     }
 }
 
