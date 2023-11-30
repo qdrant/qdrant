@@ -24,11 +24,11 @@ pub fn get_num_cpus() -> usize {
 ///
 /// This permit represents the number of CPUs allocated for an operation, so that the operation can
 /// respect other parallel workloads. When dropped or `release()`-ed, the CPUs are given back for
-/// other tasks to aquire.
+/// other tasks to acquire.
 ///
-/// These CPU permits are used to beter balance and saturate resource utilization.
+/// These CPU permits are used to better balance and saturate resource utilization.
 pub struct CpuPermit {
-    /// Number of CPUs aquired in this permit.
+    /// Number of CPUs acquired in this permit.
     pub num_cpus: u32,
     /// Semaphore permit.
     permit: Option<OwnedSemaphorePermit>,

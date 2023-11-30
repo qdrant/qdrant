@@ -252,14 +252,14 @@ impl UpdateHandler {
                     break;
                 }
 
-                // Determine how many CPUs we prefer for optimization task, aquire permit for it
+                // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = max_rayon_threads(max_indexing_threads);
-                let Some(permit) = OPTIMIZER_CPU_BUDGET.try_aquire(desired_cpus) else {
+                let Some(permit) = OPTIMIZER_CPU_BUDGET.try_acquire(desired_cpus) else {
                     break;
                 };
                 log::trace!(
-                    "Aquired {} CPU permit for {} optimizer",
+                    "Acquired {} CPU permit for {} optimizer",
                     permit.num_cpus,
                     optimizer.name(),
                 );
@@ -595,15 +595,15 @@ struct CpuBudget {
 }
 
 impl CpuBudget {
-    /// Try to aquire CPU permit for optimization task from global CPU budget.
-    pub fn try_aquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
-        // Determine what number of CPUs to aquire based on available budget
+    /// Try to acquire CPU permit for optimization task from global CPU budget.
+    pub fn try_acquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
+        // Determine what number of CPUs to acquire based on available budget
         let num_cpus = self.semaphore.available_permits().min(desired_cpus) as u32;
         if num_cpus == 0 {
             return None;
         }
 
-        // Try to aquire selected number of CPUs
+        // Try to acquire selected number of CPUs
         let result = Semaphore::try_acquire_many_owned(self.semaphore.clone(), num_cpus);
         let permit = match result {
             Ok(permit) => permit,

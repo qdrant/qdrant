@@ -126,7 +126,7 @@ storage:
     # Note: 1Kb = 1 vector of size 256
     full_scan_threshold_kb: 10000
     # Number of parallel threads used for background index building. If 0 - auto selection.
-    # Should not be higher than 16 to prevent likelyhood of building broken HNSW graphs.
+    # Should not be higher than 16 to prevent likelihood of building broken HNSW graphs.
     max_indexing_threads: 0
     # Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     on_disk: false
