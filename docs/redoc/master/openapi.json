@@ -10543,15 +10543,13 @@
       },
       "SparseIndexConfig": {
         "type": "object",
-        "required": [
-          "full_scan_threshold"
-        ],
         "properties": {
           "full_scan_threshold": {
             "description": "We prefer a full scan search upto (excluding) this number of vectors.\n\nNote: this is number of vectors, not KiloBytes.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "on_disk": {
             "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
