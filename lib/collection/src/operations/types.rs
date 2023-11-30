@@ -334,17 +334,6 @@ impl QueryEnum {
     }
 }
 
-impl Validate for QueryEnum {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            QueryEnum::Nearest(vector) => vector.validate(),
-            QueryEnum::RecommendBestScore(reco_query) => reco_query.validate(),
-            QueryEnum::Discover(discovery_query) => discovery_query.validate(),
-            QueryEnum::Context(context_query) => context_query.validate(),
-        }
-    }
-}
-
 impl From<Vec<VectorElementType>> for QueryEnum {
     fn from(vector: Vec<VectorElementType>) -> Self {
         QueryEnum::Nearest(NamedVectorStruct::Default(vector))
@@ -1375,20 +1364,10 @@ impl Anonymize for VectorsConfig {
 }
 
 impl Validate for VectorsConfig {
-    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             VectorsConfig::Single(single) => single.validate(),
-            VectorsConfig::Multi(multi) => {
-                let errors = multi
-                    .values()
-                    .filter_map(|v| v.validate().err())
-                    .fold(Err(ValidationErrors::new()), |bag, err| {
-                        ValidationErrors::merge(bag, "?", Err(err))
-                    })
-                    .unwrap_err();
-                errors.errors().is_empty().then_some(()).ok_or(errors)
-            }
+            VectorsConfig::Multi(multi) => common::validation::validate_iter(multi.values()),
         }
     }
 }
