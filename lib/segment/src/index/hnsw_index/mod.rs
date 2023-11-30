@@ -12,9 +12,11 @@ mod search_context;
 #[cfg(test)]
 mod tests;
 
-// In case if we are dealing with high-CPU system, creating more than
-// this amount of threads will most likely not improve performance
-// But we still allow to override this value by setting `max_indexing_threads` to non-zero value
+/// Default number of CPUs for HNSW graph building and optimization tasks in general.
+///
+/// Even on high-CPU systems, a value higher than 16 is discouraged. It will most likely not
+/// improve performance and is more likely to cause disconnected HNSW graphs.
+/// Will be less if currently available CPU budget is lower.
 const MAX_AUTO_RAYON_THREADS: usize = 8;
 
 pub fn max_rayon_threads(max_indexing_threads: usize) -> usize {

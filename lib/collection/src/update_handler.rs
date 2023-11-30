@@ -9,6 +9,7 @@ use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use segment::common::operation_error::OperationResult;
+use segment::index::hnsw_index::max_rayon_threads;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -33,9 +34,6 @@ lazy_static::lazy_static! {
     /// Assigns CPU permits to tasks to limit overall resource utilization.
     static ref OPTIMIZER_CPU_BUDGET: CpuBudget = Default::default();
 }
-
-/// Number of CPUs to use for optimization tasks, less if available CPU budget is lower.
-const OPTIMIZER_TASK_CPUS: usize = 8;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
@@ -254,14 +252,16 @@ impl UpdateHandler {
                     break;
                 }
 
-                // Aquire CPU permit for optimization task
-                let Some(permit) = OPTIMIZER_CPU_BUDGET.try_aquire() else {
+                // Determine how many CPUs we prefer for optimization task, aquire permit for it
+                let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
+                let desired_cpus = max_rayon_threads(max_indexing_threads);
+                let Some(permit) = OPTIMIZER_CPU_BUDGET.try_aquire(desired_cpus) else {
                     break;
                 };
                 log::trace!(
                     "Aquired {} CPU permit for {} optimizer",
                     permit.num_cpus,
-                    optimizer.name()
+                    optimizer.name(),
                 );
 
                 let optimizer = optimizer.clone();
@@ -596,9 +596,9 @@ struct CpuBudget {
 
 impl CpuBudget {
     /// Try to aquire CPU permit for optimization task from global CPU budget.
-    pub fn try_aquire(&self) -> Option<CpuPermit> {
+    pub fn try_aquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
         // Determine what number of CPUs to aquire based on available budget
-        let num_cpus = self.semaphore.available_permits().min(OPTIMIZER_TASK_CPUS) as u32;
+        let num_cpus = self.semaphore.available_permits().min(desired_cpus) as u32;
         if num_cpus == 0 {
             return None;
         }
