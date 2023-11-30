@@ -201,7 +201,7 @@ impl TableOfContent {
 
         if let Some(init_from) = init_from {
             self.run_data_initialization(init_from.collection, collection_name.to_string())
-                .await;
+                .await?;
         }
 
         Ok(true)
@@ -257,10 +257,10 @@ impl TableOfContent {
         &self,
         from_collection: CollectionId,
         to_collection: CollectionId,
-    ) {
+    ) -> CollectionResult<()> {
         let collections = self.collections.clone();
         let this_peer_id = self.this_peer_id;
-        self.general_runtime.spawn(async move {
+        let handle = self.general_runtime.spawn(async move {
             // Create indexes
             match data_transfer::transfer_indexes(
                 collections.clone(),
@@ -293,5 +293,7 @@ impl TableOfContent {
                 Err(err) => log::error!("Initialization failed: {}", err),
             }
         });
+        handle.await?;
+        Ok(())
     }
 }
