@@ -64,7 +64,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     drop(borrowed_storage);
 
     // save index config to disk
-    let index_config = SparseIndexConfig::new(10_000, None);
+    let index_config = SparseIndexConfig::new(Some(10_000), None);
 
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
