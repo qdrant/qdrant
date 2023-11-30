@@ -8,7 +8,7 @@ use collection::operations::types::{
     CountRequestInternal, OrderByInterface, PointRequestInternal, RecommendRequestInternal,
     ScrollRequestInternal, SearchRequestInternal, UpdateStatus,
 };
-use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
@@ -544,7 +544,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
     assert_eq!(result_desc.points.len(), 5);
     assert_eq!(result_desc.next_page_offset, Some(5.into()));
 
-    let second_page = collection
+    let asc_second_page = collection
         .scroll_by(
             ScrollRequestInternal {
                 offset: Some(7.into()),
@@ -564,8 +564,32 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    assert_eq!(second_page.points.len(), 5);
-    assert_eq!(second_page.next_page_offset, Some(3.into()));
+    assert_eq!(asc_second_page.points.len(), 5);
+    assert_eq!(asc_second_page.next_page_offset, Some(3.into()));
+
+    let desc_second_page = collection
+        .scroll_by(
+            ScrollRequestInternal {
+                offset: Some(7.into()),
+                limit: Some(4),
+                filter: None,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: false.into(),
+                order_by: Some(OrderByInterface::Struct(OrderBy {
+                    key: "price".into(),
+                    direction: Some(Direction::Desc),
+                    value_offset: None,
+                })),
+            },
+            None,
+            &ShardSelectorInternal::All,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(desc_second_page.points.len(), 4);
+    // Order is in (value, id), so should return ids [7, 6, 10, 11] and then offset id is 12
+    assert_eq!(desc_second_page.next_page_offset, Some(12.into()));
 }
 
 #[tokio::test(flavor = "multi_thread")]

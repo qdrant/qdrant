@@ -55,17 +55,6 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         self.map.range((start_bound, end_bound)).map(|(_, v)| *v)
     }
 
-    pub fn values_range_rev(
-        &self,
-        start_bound: Bound<Vec<u8>>,
-        end_bound: Bound<Vec<u8>>,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.map
-            .range((start_bound, end_bound))
-            .rev()
-            .map(|(_, v)| *v)
-    }
-
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
         self.db_wrapper.put(&key, id.to_be_bytes())?;

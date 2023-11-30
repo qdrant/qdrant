@@ -145,7 +145,7 @@ impl<T: Numericable> Histogram<T> {
     }
 
     /// Infers boundaries for bucket of given size and starting point.
-    /// Returns `to` range of values starting provided `from`value which is expected to contain
+    /// Returns `to` range of values starting provided `from` value which is expected to contain
     /// `range_size` values
     ///
     /// Returns `Unbounded` if there are no points stored
@@ -176,12 +176,16 @@ impl<T: Numericable> Histogram<T> {
         Unbounded
     }
 
-    /// Infers boundaries for bucket of given size and starting point, assuming descending order.
-    /// Returns `to` range of values starting provided `from`value which is expected to contain
-    /// `range_size` values
+    /// Infers boundaries for bucket of given size and starting point, skipping the first
+    /// border next to the starting point.
     ///
-    /// Returns `Unbounded` if there are no points stored
-    pub fn get_range_by_size_rev(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
+    /// E.g:
+    ///                                starts counting in this border
+    ///                                    ---> v
+    /// 1, 2, 3, 4, 5, 5, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13
+    /// b           [                    b      b       b
+    ///           from
+    pub fn get_range_by_size_excluding(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
         let from_ = match from {
             Included(val) => Included(Point {
                 val,
@@ -195,7 +199,44 @@ impl<T: Numericable> Histogram<T> {
         };
 
         let mut reached_count = 0;
-        for (border, counts) in self.borders.range((Unbounded, from_)).rev() {
+        for (border, counts) in self.borders.range((from_, Unbounded)).skip(1) {
+            if reached_count + counts.left > range_size {
+                // required size reached
+                return Included(border.val);
+            } else {
+                // Size not yet reached
+                reached_count += counts.left;
+            }
+        }
+
+        Unbounded
+    }
+
+    /// Infers boundaries for bucket of given size and starting point, skipping the first
+    /// border next to the starting point.
+    ///
+    /// E.g:
+    ///
+    ///  starts counting in this border
+    ///       v <--
+    /// 1, 2, 3, 4, 5, 5, 5, 5, 6, 7, 8, 9, 10, 11
+    ///       b     b        ]        b         b  
+    ///                     from
+    pub fn get_range_by_size_rev_excluding(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
+        let from_ = match from {
+            Included(val) => Included(Point {
+                val,
+                idx: usize::MIN,
+            }),
+            Excluded(val) => Excluded(Point {
+                val,
+                idx: usize::MAX,
+            }),
+            Unbounded => Unbounded,
+        };
+
+        let mut reached_count = 0;
+        for (border, counts) in self.borders.range((Unbounded, from_)).rev().skip(1) {
             if reached_count + counts.right > range_size {
                 // required size reached
                 return Included(border.val);

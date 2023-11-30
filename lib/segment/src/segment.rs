@@ -33,7 +33,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
-use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
+use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Condition, Direction, FieldCondition, Filter, OrderBy, Payload, PayloadFieldSchema,
@@ -640,16 +640,6 @@ impl Segment {
         limit: Option<usize>,
         condition: &Filter,
     ) -> Vec<PointIdType> {
-        self.filtered_read_by_index_with_direction(offset, limit, condition, Direction::Asc)
-    }
-
-    pub fn filtered_read_by_index_with_direction(
-        &self,
-        offset: Option<PointIdType>,
-        limit: Option<usize>,
-        condition: &Filter,
-        direction: Direction,
-    ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
@@ -668,19 +658,29 @@ impl Segment {
             });
 
         let mut page = match limit {
-            Some(limit) => match direction {
-                Direction::Asc => peek_top_smallest_iterable(ids_iterator, limit),
-                Direction::Desc => peek_top_largest_iterable(ids_iterator, limit),
-            },
+            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
             None => ids_iterator.collect(),
         };
 
-        match direction {
-            Direction::Asc => page.sort_unstable(),
-            Direction::Desc => page.sort_unstable_by(|a, b| b.cmp(a)),
-        }
+        page.sort_unstable();
 
         page
+    }
+
+    pub fn filtered_read_by_index_unsorted(
+        &self,
+        limit: Option<usize>,
+        filter: &Filter,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        payload_index
+            .query_points(filter)
+            .into_iter()
+            .filter_map(|internal_id| id_tracker.external_id(internal_id))
+            .take(limit.unwrap_or(usize::MAX))
+            .collect()
     }
 
     pub fn filtered_read_by_id_stream(
@@ -1133,17 +1133,26 @@ impl SegmentEntry for Segment {
             .and_then(|field_indexes| field_indexes.first())
             .expect("Index should exist for the order_by field");
 
-        let mut range = match index {
+        let search_from = match order_by.value_offset {
+            None => Bound::Included(from),
+
+            // We don't know where the offset id will be, so we search for the
+            // target value excluding `from`, but include it to estimate the extended_limit
+            Some(_) => Bound::Excluded(from),
+        };
+
+        let from = Bound::Included(from);
+
+        // Infer the destination bound value from the current limit, which will be used to filter the records
+        let mut range_bounds = match index {
             crate::index::field_index::FieldIndex::IntIndex(int_index) => {
-                let from = Bound::Included(from as i64);
-                let to = int_index.get_range_by_size(limit, from, direction);
-                let as_f64 = |x: i64| x as f64;
-                bound_map(from, as_f64)..bound_map(to, as_f64)
+                let search_from = bound_map(search_from, |x: f64| x as i64);
+                let to = int_index.get_range_by_size_excluding(limit, search_from, direction);
+                (from, bound_map(to, |x| x as f64))
             }
             crate::index::field_index::FieldIndex::FloatIndex(float_index) => {
-                let from = Bound::Included(from);
-                let to = float_index.get_range_by_size(limit, from, direction);
-                from..to
+                let to = float_index.get_range_by_size_excluding(limit, search_from, direction);
+                (from, to)
             }
             crate::index::field_index::FieldIndex::KeywordIndex(_)
             | crate::index::field_index::FieldIndex::IntMapIndex(_)
@@ -1154,26 +1163,24 @@ impl SegmentEntry for Segment {
             }
         };
 
-        // Adjust std::ops::Range for converting into `Range`
+        // Adjust range direction of std::ops::Range for converting into `Range`
         if matches!(direction, Direction::Desc) {
-            range = range.end..range.start
+            range_bounds = (range_bounds.1, range_bounds.0)
         }
 
-        let range_cond = FieldCondition::new_range(order_by.key.clone(), Range::from(range));
+        let range_cond = FieldCondition::new_range(order_by.key.clone(), Range::from(range_bounds));
 
-        // Index does not necessarily read in sequential order, so we need to expand the limit
+        // We can have many records with same value, so we need to expand the limit
         // to make sure we get enough points to sort later
-        let expanded_limit = index
-            .estimate_cardinality(&range_cond)
-            .ok()
-            .map(|estimation| limit.max(estimation.max));
+        let estimated_limit = index.estimate_cardinality(&range_cond).ok();
+
+        let extended_limit = estimated_limit.map(|estimation| limit.max(estimation.max));
 
         let range_filter = Filter::new_must(Condition::Field(range_cond));
 
         let filter = filter.unwrap_or(&Filter::default()).merge(&range_filter);
 
-        let mut reads =
-            self.filtered_read_by_index_with_direction(None, expanded_limit, &filter, direction);
+        let mut reads = self.filtered_read_by_index_unsorted(extended_limit, &filter);
 
         if matches!(direction, Direction::Desc) {
             reads.reverse()

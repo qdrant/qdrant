@@ -74,21 +74,6 @@ impl StructPayloadIndex {
         })
     }
 
-    pub fn ordered_by_field<'a>(
-        &'a self,
-        field_condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        let indexes = self
-            .field_indexes
-            .get(&field_condition.key)
-            .and_then(|indexes| {
-                indexes
-                    .iter()
-                    .find_map(|field_index| field_index.filter(field_condition).ok())
-            });
-        indexes
-    }
-
     fn query_field<'a>(
         &'a self,
         field_condition: &'a FieldCondition,

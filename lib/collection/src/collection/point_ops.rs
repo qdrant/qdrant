@@ -259,15 +259,30 @@ impl Collection {
         let mut points = match order_by {
             None => Either::Left(retrieved_iter.sorted_by_key(|point| point.id)),
             Some(order_by) => {
-                let sorted_iter =
-                    retrieved_iter.sorted_unstable_by_key(|point| (point.ordered_by, point.id));
+                // Sort
+                let sorted = {
+                    let sorted_iter =
+                        retrieved_iter.sorted_unstable_by_key(|point| (point.ordered_by, point.id));
 
-                let direction = order_by.direction.unwrap_or_default();
-                let sorted = match direction {
-                    Direction::Asc => Either::Left(sorted_iter),
-                    Direction::Desc => Either::Right(sorted_iter.rev()),
+                    let direction = order_by.direction.unwrap_or_default();
+                    match direction {
+                        Direction::Asc => Either::Left(sorted_iter),
+                        Direction::Desc => Either::Right(sorted_iter.rev()),
+                    }
+                    .collect_vec()
                 };
-                Either::Right(sorted)
+
+                // Take care of offset
+                let offset_position = offset
+                    .and_then(|offset| sorted.iter().find_position(|record| record.id == offset))
+                    .map(|(position, _)| position);
+
+                let top_records = match offset_position {
+                    None => Either::Left(sorted.into_iter()),
+                    Some(position) => Either::Right(sorted.into_iter().skip(position)),
+                };
+
+                Either::Right(top_records)
             }
         }
         .take(limit)

@@ -1354,18 +1354,18 @@ impl Range {
     }
 }
 
-impl From<std::ops::Range<Bound<f64>>> for Range {
+impl From<(Bound<f64>, Bound<f64>)> for Range {
     /// Assumes start >= end
-    fn from(value: std::ops::Range<Bound<f64>>) -> Self {
+    fn from(value: (Bound<f64>, Bound<f64>)) -> Self {
         let mut range = Range::default();
 
-        match value.start {
+        match value.0 {
             Bound::Included(start) => range.gte = Some(start),
             Bound::Excluded(start) => range.gt = Some(start),
             Bound::Unbounded => range.gt = Some(f64::NEG_INFINITY),
         }
 
-        match value.end {
+        match value.1 {
             Bound::Included(end) => range.lte = Some(end),
             Bound::Excluded(end) => range.lt = Some(end),
             Bound::Unbounded => range.lt = Some(f64::INFINITY),

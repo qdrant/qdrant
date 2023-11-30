@@ -19,6 +19,7 @@ use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
 use super::utils::check_boundaries;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::utils::bound_map;
 use crate::common::Flusher;
 use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -249,10 +250,17 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             .unwrap_or(true)
     }
 
-    pub fn get_range_by_size(&self, size: usize, from: Bound<T>, direction: Direction) -> Bound<T> {
+    pub fn get_range_by_size_excluding(
+        &self,
+        size: usize,
+        from: Bound<T>,
+        direction: Direction,
+    ) -> Bound<T> {
         match direction {
-            Direction::Asc => self.get_histogram().get_range_by_size(from, size),
-            Direction::Desc => self.get_histogram().get_range_by_size_rev(from, size),
+            Direction::Asc => self.get_histogram().get_range_by_size_excluding(from, size),
+            Direction::Desc => self
+                .get_histogram()
+                .get_range_by_size_rev_excluding(from, size),
         }
     }
 }
@@ -315,16 +323,8 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
 
         Ok(match self {
             NumericIndex::Mutable(index) => {
-                let start_bound = match start_bound {
-                    Included(k) => Included(k.encode()),
-                    Excluded(k) => Excluded(k.encode()),
-                    Unbounded => Unbounded,
-                };
-                let end_bound = match end_bound {
-                    Included(k) => Included(k.encode()),
-                    Excluded(k) => Excluded(k.encode()),
-                    Unbounded => Unbounded,
-                };
+                let start_bound = bound_map(start_bound, |k| k.encode());
+                let end_bound = bound_map(end_bound, |k| k.encode());
                 Box::new(index.values_range(start_bound, end_bound))
             }
             NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
