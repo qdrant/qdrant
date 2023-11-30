@@ -52,6 +52,14 @@ pub fn open_simple_sparse_vector_storage(
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
+        let stored_record: StoredRecord = bincode::deserialize(&value)
+            .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
+
+        // Propagate deleted flag
+        if stored_record.deleted {
+            bitvec_set_deleted(&mut deleted, point_id, true);
+            deleted_count += 1;
+        }
         total_vector_count = std::cmp::max(total_vector_count, point_id as usize + 1);
     }
 
