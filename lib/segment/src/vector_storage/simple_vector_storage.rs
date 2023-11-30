@@ -17,6 +17,7 @@ use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
+use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
@@ -151,7 +152,7 @@ impl VectorStorage for SimpleVectorStorage {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
         self.get_dense(key).into()
     }
 
@@ -173,7 +174,8 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other.get_vector(point_id).try_into()?;
+            let other_vector = other.get_vector(point_id);
+            let other_vector = other_vector.as_vec_ref().try_into()?;
             let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted);

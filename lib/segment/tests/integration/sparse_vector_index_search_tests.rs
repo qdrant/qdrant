@@ -118,7 +118,8 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
     let point_count = borrowed_vector_storage.available_vector_count();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
-        let vector: &SparseVector = borrowed_vector_storage.get_vector(id).try_into().unwrap();
+        let vector = borrowed_vector_storage.get_vector(id);
+        let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
         // check posting lists are consistent with storage
         for (dim_id, dim_value) in vector.indices.iter().zip(vector.values.iter()) {
             let posting_list = sparse_vector_index.inverted_index.get(dim_id).unwrap();

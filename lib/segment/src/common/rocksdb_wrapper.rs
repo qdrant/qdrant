@@ -125,6 +125,17 @@ impl DatabaseColumnWrapper {
         Ok(())
     }
 
+    pub fn get<K>(&self, key: K) -> OperationResult<Vec<u8>>
+    where
+        K: AsRef<[u8]>,
+    {
+        let db = self.database.read();
+        let cf_handle = self.get_column_family(&db)?;
+        db.get_cf(cf_handle, key)
+            .map_err(|err| OperationError::service_error(format!("RocksDB get_cf error: {err}")))?
+            .ok_or_else(|| OperationError::service_error("RocksDB get_cf error: key not found"))
+    }
+
     pub fn get_pinned<T, F>(&self, key: &[u8], f: F) -> OperationResult<Option<T>>
     where
         F: FnOnce(&[u8]) -> T,

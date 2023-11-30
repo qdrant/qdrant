@@ -199,7 +199,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let insert_points = |block_point_id| {
             check_process_stopped(stopped)?;
 
-            let vector = vector_storage.get_vector(block_point_id).into();
+            let vector = vector_storage.get_vector(block_point_id);
+            let vector = vector.as_vec_ref().into();
             let raw_scorer = match &quantized_vectors {
                 Some(quantized_storage) => quantized_storage.raw_scorer(
                     vector,
@@ -678,7 +679,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
-                let vector = vector_storage.get_vector(vector_id).into();
+                let vector = vector_storage.get_vector(vector_id);
+                let vector = vector.as_vec_ref().into();
                 let raw_scorer = if let Some(quantized_storage) = &quantized_vectors {
                     quantized_storage.raw_scorer(
                         vector,
