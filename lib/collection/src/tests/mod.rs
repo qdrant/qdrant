@@ -1,4 +1,5 @@
 mod snapshot_test;
+mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
 
 use std::sync::Arc;

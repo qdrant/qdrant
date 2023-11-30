@@ -33,13 +33,14 @@ pub enum WriteOrdering {
     Strong,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStruct {
     /// Point id
     pub id: PointIdType,
     /// Vectors
     #[serde(alias = "vectors")]
+    #[validate]
     pub vector: VectorStruct,
     /// Payload values (optional)
     pub payload: Option<Payload>,
@@ -149,6 +150,7 @@ pub struct PointSyncOperation {
 
 #[derive(Debug, Deserialize, Serialize, Clone, Validate, JsonSchema)]
 pub struct PointsBatch {
+    #[validate]
     pub batch: Batch,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
@@ -156,6 +158,7 @@ pub struct PointsBatch {
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, Validate)]
 pub struct PointsList {
+    #[validate]
     pub points: Vec<PointStruct>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
@@ -225,6 +228,7 @@ impl Validate for Batch {
             errors
         };
 
+        self.vectors.validate()?;
         match &batch.vectors {
             BatchVectorStruct::Single(vectors) => {
                 if batch.ids.len() != vectors.len() {

@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{Filter, PointIdType};
 use serde::{Deserialize, Serialize};
-use validator::{Validate, ValidationError};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::point_ops::PointIdsList;
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
@@ -22,17 +22,29 @@ pub struct UpdateVectors {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct PointVectors {
     /// Point id
     pub id: PointIdType,
     /// Vectors
     #[serde(alias = "vectors")]
-    #[validate(custom(
-        function = "validate_vector_struct_not_empty",
-        message = "must specify vectors to update for point"
-    ))]
     pub vector: VectorStruct,
+}
+
+impl Validate for PointVectors {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        if self.vector.is_empty() {
+            let mut err = ValidationError::new("length");
+            err.message = Some(Cow::from("must specify vectors to update for point"));
+            err.add_param(Cow::from("min"), &1);
+            let mut errors = ValidationErrors::new();
+            errors.add("vector", err);
+            Err(errors)
+        } else {
+            self.vector.validate()
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
@@ -129,15 +141,4 @@ impl SplitByShard for VectorOperations {
             }
         }
     }
-}
-
-/// Validate the vector struct is not empty.
-fn validate_vector_struct_not_empty(value: &VectorStruct) -> Result<(), ValidationError> {
-    if !value.is_empty() {
-        return Ok(());
-    }
-
-    let mut err = ValidationError::new("length");
-    err.add_param(Cow::from("min"), &1);
-    Err(err)
 }
