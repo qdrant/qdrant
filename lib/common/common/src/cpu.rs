@@ -43,7 +43,7 @@ impl CpuPermit {
         }
     }
 
-    /// New CPU permit with given CPU count and no backing permit semaphore.
+    /// New CPU permit with given CPU count without a backing semaphore for a shared pool.
     pub fn dummy(count: u32) -> Self {
         Self {
             num_cpus: count,

@@ -164,7 +164,9 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::cpu::CpuPermit;
     use parking_lot::RwLock;
+    use segment::index::hnsw_index::max_rayon_threads;
     use tempfile::Builder;
 
     use super::*;
@@ -247,10 +249,14 @@ mod tests {
             })
             .collect_vec();
 
+        let permit_cpu_count = max_rayon_threads(0);
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
         merge_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_for_merge,
+                permit,
                 &AtomicBool::new(false),
             )
             .unwrap();

@@ -4,12 +4,14 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use parking_lot::RwLock;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
+use segment::index::hnsw_index::max_rayon_threads;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
     build_multivec_segment, build_simple_segment,
@@ -269,10 +271,14 @@ pub fn optimize_segment(segment: Segment) -> LockedSegment {
 
     let locked_holder: Arc<parking_lot::lock_api::RwLock<_, _>> = Arc::new(RwLock::new(holder));
 
+    let permit_cpu_count = max_rayon_threads(0);
+    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
     optimizer
         .optimize(
             locked_holder.clone(),
             vec![segment_id],
+            permit,
             &AtomicBool::new(false),
         )
         .unwrap();

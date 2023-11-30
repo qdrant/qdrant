@@ -1,7 +1,9 @@
 use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -11,6 +13,7 @@ use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
+use segment::index::hnsw_index::max_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
@@ -320,8 +323,11 @@ fn sparse_vector_index_ram_deleted_points_search() {
         sparse_vector_index.indexed_vector_count() - 1
     );
 
+    let permit_cpu_count = max_rayon_threads(0);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
     // refresh index to remove point
-    sparse_vector_index.build_index(&stopped).unwrap();
+    sparse_vector_index.build_index(permit, &stopped).unwrap();
     assert_eq!(
         sparse_vector_index
             .id_tracker
@@ -505,9 +511,31 @@ fn handling_empty_sparse_vectors() {
         SparseIndexType::ImmutableRam,
     )
     .unwrap();
+    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
+
+    // add empty points to storage
+    for idx in 0..NUM_VECTORS {
+        let vec = &SparseVector::new(vec![], vec![]).unwrap();
+        borrowed_storage
+            .insert_vector(idx as PointOffsetType, vec.into())
+            .unwrap();
+    }
+    drop(borrowed_storage);
+
+    // assert all empty points are in storage
+    assert_eq!(
+        sparse_vector_index
+            .vector_storage
+            .borrow()
+            .available_vector_count(),
+        NUM_VECTORS,
+    );
+
+    let permit_cpu_count = max_rayon_threads(0);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     // empty vectors are not indexed
-    sparse_vector_index.build_index(&stopped).unwrap();
+    sparse_vector_index.build_index(permit, &stopped).unwrap();
     assert_eq!(sparse_vector_index.indexed_vector_count(), 0);
 
     let query_vector: QueryVector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();

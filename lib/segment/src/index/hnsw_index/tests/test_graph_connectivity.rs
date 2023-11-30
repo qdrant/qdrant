@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use rand::thread_rng;
 use tempfile::Builder;
@@ -10,6 +12,7 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_links::{GraphLinks, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
+use crate::index::hnsw_index::max_rayon_threads;
 use crate::index::VectorIndex;
 use crate::segment_constructor::build_segment;
 use crate::types::{
@@ -69,6 +72,9 @@ fn test_graph_connectivity() {
         payload_m: None,
     };
 
+    let permit_cpu_count = max_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
@@ -81,7 +87,7 @@ fn test_graph_connectivity() {
     )
     .unwrap();
 
-    hnsw_index.build_index(&stopped).unwrap();
+    hnsw_index.build_index(permit, &stopped).unwrap();
 
     let graph = hnsw_index.graph().unwrap();
 
