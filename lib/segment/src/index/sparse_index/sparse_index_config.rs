@@ -3,20 +3,23 @@ use std::path::{Path, PathBuf};
 use io::file_operations::{atomic_save_json, read_json};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::OperationResult;
 
 pub const SPARSE_INDEX_CONFIG_FILE: &str = "sparse_index_config.json";
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexConfig {
     /// We prefer a full scan search upto (excluding) this number of vectors.
     ///
     /// Note: this is number of vectors, not KiloBytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub full_scan_threshold: Option<usize>,
     /// Store index on disk. If set to false, the index will be stored in RAM. Default: false
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
 }
 
