@@ -55,6 +55,23 @@ impl<'a> SearchContext<'a> {
         }
     }
 
+    /// Return all results that overlap with the query vector
+    ///
+    /// The resulting sparse vectors are sorted by id and contains only values that overlap with the query vector
+    ///
+    /// This is a plain search without any pruning
+    fn plain_search(&mut self) -> Vec<(u32, SparseVector)> {
+        let mut result = Vec::new();
+        while let Some(next) = self.get_next() {
+            // check for cancellation
+            if self.is_stopped.load(Relaxed) {
+                break;
+            }
+            result.push(next);
+        }
+        result
+    }
+
     /// Advance posting lists iterators and return the next candidate by increasing ids.
     ///
     /// Example
@@ -106,6 +123,26 @@ impl<'a> SearchContext<'a> {
             score,
             idx: min_record_id,
         })
+    }
+
+    fn get_next(&mut self) -> Option<(u32, SparseVector)> {
+        let min_record_id = Self::next_min_id(&self.postings_iterators)?;
+        let mut indices = vec![];
+        let mut values = vec![];
+
+        // Iterate second time to advance posting iterators
+        for posting_iterator in self.postings_iterators.iter_mut() {
+            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
+                // accumulate indices & values for the current record id
+                if element.record_id == min_record_id {
+                    let element = posting_iterator.posting_list_iterator.next().unwrap();
+                    indices.push(self.query.indices[posting_iterator.query_weight_offset]);
+                    values.push(element.weight)
+                }
+            }
+        }
+        let sparse_vector = SparseVector { indices, values };
+        Some((min_record_id, sparse_vector))
     }
 
     /// Returns the next min record id from all posting list iterators
@@ -964,6 +1001,104 @@ mod tests {
                 .posting_list_iterator
                 .len_to_end(),
             3
+        );
+    }
+
+    #[test]
+    fn plain_search_all_test() {
+        let is_stopped = AtomicBool::new(false);
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 2, 3],
+                values: vec![1.0, 1.0, 1.0],
+            },
+            3,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        let sparse_vectors = search_context.plain_search();
+        assert_eq!(
+            sparse_vectors,
+            vec![
+                (
+                    1,
+                    SparseVector {
+                        indices: vec![1, 2, 3],
+                        values: vec![10.0, 10.0, 10.0]
+                    }
+                ),
+                (
+                    2,
+                    SparseVector {
+                        indices: vec![1, 3],
+                        values: vec![20.0, 20.0]
+                    }
+                ),
+                (
+                    3,
+                    SparseVector {
+                        indices: vec![2, 3],
+                        values: vec![30.0, 30.0]
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn plain_search_gap_test() {
+        let is_stopped = AtomicBool::new(false);
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+
+        // query vector has a gap for dimension 2
+        let mut search_context = SearchContext::new(
+            SparseVector {
+                indices: vec![1, 3],
+                values: vec![1.0, 1.0],
+            },
+            3,
+            &inverted_index_ram,
+            &is_stopped,
+        );
+
+        // the dimension 2 is absent in the result vectors
+        let sparse_vectors = search_context.plain_search();
+        assert_eq!(
+            sparse_vectors,
+            vec![
+                (
+                    1,
+                    SparseVector {
+                        indices: vec![1, 3],
+                        values: vec![10.0, 10.0]
+                    }
+                ),
+                (
+                    2,
+                    SparseVector {
+                        indices: vec![1, 3],
+                        values: vec![20.0, 20.0]
+                    }
+                ),
+                (
+                    3,
+                    SparseVector {
+                        indices: vec![3],
+                        values: vec![30.0]
+                    }
+                ),
+            ]
         );
     }
 }
