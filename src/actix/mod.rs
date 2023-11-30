@@ -68,11 +68,7 @@ pub fn init(
             .clone()
             .unwrap_or(DEFAULT_STATIC_DIR.to_string());
 
-        let ready = Arc::new(Ready::new(toc_data.clone().into_inner()));
-        let init = ready.clone().initialize();
-
-        let ready = web::Data::from(ready);
-        drop(actix_web::rt::spawn(init)); // drop `JoinFuture` explicitly to make clippy happy
+        let ready = todo!();
 
         let web_ui_enabled = settings.service.enable_static_content.unwrap_or(true);
         // validate that the static folder exists IF the web UI is enabled

@@ -286,6 +286,8 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
+        let ready = Arc::new(common::health::Ready::new(toc_arc.clone()));
+
         let handle = Consensus::run(
             &slog_logger,
             consensus_state.clone(),
@@ -293,6 +295,7 @@ fn main() -> anyhow::Result<()> {
             args.uri.map(|uri| uri.to_string()),
             settings.clone(),
             channel_service,
+            ready.clone(),
             propose_receiver,
             tonic_telemetry_collector,
             toc_arc.clone(),

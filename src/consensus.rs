@@ -26,8 +26,8 @@ use tokio::sync::watch;
 use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
-use crate::common::helpers;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
+use crate::common::{health, helpers};
 use crate::settings::{ConsensusConfig, Settings};
 use crate::tonic::init_internal;
 
@@ -54,6 +54,7 @@ pub struct Consensus {
     /// ToDo: Make if many
     config: ConsensusConfig,
     broker: RaftMessageBroker,
+    ready: Arc<health::Ready>,
 }
 
 impl Consensus {
@@ -66,6 +67,7 @@ impl Consensus {
         uri: Option<String>,
         settings: Settings,
         channel_service: ChannelService,
+        ready: Arc<health::Ready>,
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
@@ -86,6 +88,7 @@ impl Consensus {
             config,
             tls_client_config,
             channel_service,
+            ready,
             runtime.clone(),
         )?;
 
@@ -159,6 +162,7 @@ impl Consensus {
         config: ConsensusConfig,
         tls_config: Option<ClientTlsConfig>,
         channel_service: ChannelService,
+        ready: Arc<health::Ready>,
         runtime: Handle,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
@@ -237,6 +241,7 @@ impl Consensus {
             runtime,
             config,
             broker,
+            ready,
         };
 
         Ok((consensus, sender))

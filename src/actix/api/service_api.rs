@@ -109,7 +109,7 @@ async fn livez() -> impl Responder {
 
 #[get("/readyz")]
 async fn readyz(ready: web::Data<Ready>) -> impl Responder {
-    let (status, body) = if ready.ready().await {
+    let (status, body) = if ready.check_ready().await {
         (StatusCode::OK, "all shards are ready")
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "some shards are not ready")
