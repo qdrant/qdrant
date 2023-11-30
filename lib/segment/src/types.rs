@@ -718,6 +718,8 @@ impl VectorDataConfig {
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
+pub const DEFAULT_SPARSE_FULL_SCAN_THRESHOLD: usize = 5_000;
+
 /// Persistable state of segment configuration
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
