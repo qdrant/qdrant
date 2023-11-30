@@ -1069,6 +1069,7 @@ dependencies = [
  "indicatif",
  "io",
  "itertools 0.12.1",
+ "lazy_static",
  "log",
  "merge",
  "ordered-float 4.2.0",
@@ -1124,6 +1125,7 @@ dependencies = [
  "serde",
  "thiserror",
  "thread-priority",
+ "tokio",
  "validator",
 ]
 

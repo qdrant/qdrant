@@ -8,6 +8,7 @@ use std::thread;
 use atomic_refcell::AtomicRefCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
+use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use log::debug;
 use memory::mmap_ops;
@@ -28,7 +29,6 @@ use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::max_rayon_threads;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
@@ -636,7 +636,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         }
     }
 
-    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index(&mut self, permit: Arc<CpuPermit>, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
@@ -663,7 +663,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
-            .num_threads(max_rayon_threads(self.config.max_indexing_threads))
+            .num_threads(permit.num_cpus as usize)
             .spawn_handler(|thread| {
                 let mut b = thread::Builder::new();
                 if let Some(name) = thread.name() {

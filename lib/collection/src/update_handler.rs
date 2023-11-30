@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use common::panic;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
@@ -11,7 +12,7 @@ use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{oneshot, Mutex as TokioMutex};
+use tokio::sync::{oneshot, Mutex as TokioMutex, Semaphore, TryAcquireError};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
@@ -26,6 +27,15 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
+
+lazy_static::lazy_static! {
+    /// CPU budget in number of cores for all optimization tasks globally.
+    /// Assigns CPU permits to tasks to limit overall resource utilization.
+    static ref OPTIMIZER_CPU_BUDGET: CpuBudget = Default::default();
+}
+
+/// Number of CPUs to use for optimization tasks, less if available CPU budget is lower.
+const OPTIMIZER_TASK_CPUS: usize = 8;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
@@ -232,12 +242,27 @@ impl UpdateHandler {
         let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
         for optimizer in optimizers.iter() {
+            // Return early if we are out of CPU budget
+            if !OPTIMIZER_CPU_BUDGET.has_budget() {
+                break;
+            }
+
             loop {
                 let nonoptimal_segment_ids =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
                     break;
                 }
+
+                // Aquire CPU permit for optimization task
+                let Some(permit) = OPTIMIZER_CPU_BUDGET.try_aquire() else {
+                    break;
+                };
+                log::trace!(
+                    "Aquired {} CPU permit for {} optimizer",
+                    permit.num_cpus,
+                    optimizer.name()
+                );
 
                 let optimizer = optimizer.clone();
                 let optimizers_log = optimizers_log.clone();
@@ -257,7 +282,12 @@ impl UpdateHandler {
                             optimizers_log.lock().register(tracker);
 
                             // Optimize and handle result
-                            match optimizer.as_ref().optimize(segments.clone(), nsi, stopped) {
+                            match optimizer.as_ref().optimize(
+                                segments.clone(),
+                                nsi,
+                                permit,
+                                stopped,
+                            ) {
                                 // Perform some actions when optimization if finished
                                 Ok(result) => {
                                     tracker_handle.update(TrackerStatus::Done);
@@ -557,5 +587,49 @@ impl UpdateHandler {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
         })
+    }
+}
+
+struct CpuBudget {
+    semaphore: Arc<Semaphore>,
+}
+
+impl CpuBudget {
+    /// Try to aquire CPU permit for optimization task from global CPU budget.
+    pub fn try_aquire(&self) -> Option<CpuPermit> {
+        // Determine what number of CPUs to aquire based on available budget
+        let num_cpus = self.semaphore.available_permits().min(OPTIMIZER_TASK_CPUS) as u32;
+        if num_cpus == 0 {
+            return None;
+        }
+
+        // Try to aquire selected number of CPUs
+        let result = Semaphore::try_acquire_many_owned(self.semaphore.clone(), num_cpus);
+        let permit = match result {
+            Ok(permit) => permit,
+            Err(TryAcquireError::NoPermits) => {
+                log::error!("No more CPU permits, breaking...");
+                return None;
+            }
+            Err(TryAcquireError::Closed) => {
+                log::error!("Semaphore closed, error!");
+                return None;
+            }
+        };
+
+        Some(CpuPermit::new(num_cpus, permit))
+    }
+
+    /// Check if there is any available CPU in this budget.
+    pub fn has_budget(&self) -> bool {
+        self.semaphore.available_permits() > 0
+    }
+}
+
+impl Default for CpuBudget {
+    fn default() -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(common::cpu::get_num_cpus())),
+        }
     }
 }

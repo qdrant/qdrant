@@ -46,6 +46,7 @@ uuid = { workspace = true }
 url = { version = "2", features = ["serde"] }
 validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
+lazy_static = "1.4"
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }

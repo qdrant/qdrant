@@ -13,6 +13,7 @@ publish = false
 num_cpus = "1.16"
 ordered-float = "4.2"
 serde = { workspace = true }
+tokio = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
