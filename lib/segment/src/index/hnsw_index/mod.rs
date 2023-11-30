@@ -15,7 +15,7 @@ mod tests;
 // In case if we are dealing with high-CPU system, creating more than
 // this amount of threads will most likely not improve performance
 // But we still allow to override this value by setting `max_indexing_threads` to non-zero value
-const MAX_AUTO_RAYON_THREADS: usize = 16;
+const MAX_AUTO_RAYON_THREADS: usize = 8;
 
 pub fn max_rayon_threads(max_indexing_threads: usize) -> usize {
     if max_indexing_threads == 0 {
