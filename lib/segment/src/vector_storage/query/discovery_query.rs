@@ -3,6 +3,7 @@ use std::iter;
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
+use validator::Validate;
 
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
@@ -71,6 +72,15 @@ impl<T> Query<T> for DiscoveryQuery<T> {
         let sigmoid_similarity = scaled_fast_sigmoid(target_similarity);
 
         rank as ScoreType + sigmoid_similarity
+    }
+}
+
+impl<T: Validate> Validate for DiscoveryQuery<T> {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        common::validation::merge_validation_results(&[
+            self.target.validate(),
+            common::validation::validate_iter(self.pairs.iter()),
+        ])
     }
 }
 
