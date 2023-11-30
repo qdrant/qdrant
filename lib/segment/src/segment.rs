@@ -435,7 +435,10 @@ impl Segment {
                 .is_deleted_vector(point_offset);
             if !is_vector_deleted {
                 let vector_storage = vector_data.vector_storage.borrow();
-                let vector = vector_storage.get_vector(point_offset).to_vec();
+                let vector = vector_storage
+                    .get_vector(point_offset)
+                    .as_vec_ref()
+                    .to_vec();
                 vectors.insert(vector_name.clone(), vector);
             }
         }

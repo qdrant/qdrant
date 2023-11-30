@@ -9,6 +9,7 @@ use rand::Rng;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef, VectorType};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
@@ -61,7 +62,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
         self.get_dense(key).into()
     }
 

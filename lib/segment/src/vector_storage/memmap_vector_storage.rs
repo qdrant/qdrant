@@ -13,7 +13,8 @@ use memory::mmap_ops;
 use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::named_vectors::CowVector;
+use crate::data_types::vectors::{VectorElementType, VectorRef, VectorType};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;
@@ -109,7 +110,7 @@ impl VectorStorage for MemmapVectorStorage {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
         self.get_dense(key).into()
     }
 
@@ -138,8 +139,8 @@ impl VectorStorage for MemmapVectorStorage {
         let mut deleted_ids = vec![];
         for id in other_ids {
             check_process_stopped(stopped)?;
-            let vector = other.get_vector(id).try_into()?;
-            let raw_bites = mmap_ops::transmute_to_u8_slice(vector);
+            let vector: VectorType = other.get_vector(id).try_into()?;
+            let raw_bites = mmap_ops::transmute_to_u8_slice(&vector);
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
@@ -276,8 +277,8 @@ mod tests {
 
         assert_eq!(borrowed_storage.total_vector_count(), 3);
 
-        let vector: &[_] = borrowed_storage.get_vector(1).try_into().unwrap();
-        let vector = vector.to_vec();
+        let vector = borrowed_storage.get_vector(1).to_owned();
+        let vector: Vec<_> = vector.try_into().unwrap();
 
         assert_eq!(points[1], vector);
 
