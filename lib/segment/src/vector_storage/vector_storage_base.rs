@@ -10,6 +10,7 @@ use super::memmap_vector_storage::MemmapVectorStorage;
 use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::appendable_mmap_vector_storage::AppendableMmapVectorStorage;
@@ -43,7 +44,7 @@ pub trait VectorStorage {
     }
 
     /// Get the vector by the given key
-    fn get_vector(&self, key: PointOffsetType) -> VectorRef;
+    fn get_vector(&self, key: PointOffsetType) -> CowVector;
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
 
@@ -94,7 +95,7 @@ pub trait DenseVectorStorage: VectorStorage {
 }
 
 pub trait SparseVectorStorage: VectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> &SparseVector;
+    fn get_sparse(&self, key: PointOffsetType) -> SparseVector;
 }
 
 pub enum VectorStorageEnum {
@@ -141,7 +142,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
         match self {
             VectorStorageEnum::Simple(v) => v.get_vector(key),
             VectorStorageEnum::Memmap(v) => v.get_vector(key),

@@ -41,7 +41,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
         let stored_vec = borrowed_storage.get_vector(i as PointOffsetType);
-        let sparse: &SparseVector = stored_vec.try_into().unwrap();
+        let sparse: &SparseVector = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, vec);
     }
 

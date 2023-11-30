@@ -110,8 +110,13 @@ impl QuantizedVectors {
     ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
         let count = vector_storage.total_vector_count();
         // TODO(sparse) avoid unwrap
-        let vectors =
-            (0..count as PointOffsetType).map(|i| vector_storage.get_vector(i).try_into().unwrap());
+        let vectors = (0..count as PointOffsetType).map(|i| {
+            vector_storage
+                .get_vector(i)
+                .as_vec_ref()
+                .try_into()
+                .unwrap()
+        });
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
         let dim = vector_storage.vector_dim();
