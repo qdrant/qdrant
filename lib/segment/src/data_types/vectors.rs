@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
+use validator::Validate;
 
 use super::named_vectors::NamedVectors;
 use crate::common::operation_error::OperationError;
@@ -29,6 +30,15 @@ impl Vector {
         match self {
             Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
             Vector::Sparse(v) => VectorRef::Sparse(v),
+        }
+    }
+}
+
+impl Validate for Vector {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            Vector::Dense(_) => Ok(()),
+            Vector::Sparse(v) => v.validate(),
         }
     }
 }
@@ -215,6 +225,15 @@ impl VectorStruct {
     }
 }
 
+impl Validate for VectorStruct {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            VectorStruct::Single(_) => Ok(()),
+            VectorStruct::Multi(v) => common::validation::validate_iter(v.values()),
+        }
+    }
+}
+
 impl From<VectorType> for VectorStruct {
     fn from(v: VectorType) -> Self {
         VectorStruct::Single(v)
@@ -265,12 +284,13 @@ pub struct NamedVector {
 }
 
 /// Sparse vector data with name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedSparseVector {
     /// Name of vector data
     pub name: String,
     /// Vector data
+    #[validate]
     pub vector: SparseVector,
 }
 
@@ -355,6 +375,16 @@ impl NamedVectorStruct {
     }
 }
 
+impl Validate for NamedVectorStruct {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            NamedVectorStruct::Default(_) => Ok(()),
+            NamedVectorStruct::Named(_) => Ok(()),
+            NamedVectorStruct::Sparse(v) => v.validate(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
@@ -384,6 +414,20 @@ impl BatchVectorStruct {
     }
 }
 
+impl Validate for BatchVectorStruct {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            BatchVectorStruct::Single(_) => Ok(()),
+            BatchVectorStruct::Multi(v) => {
+                for batch in v.values() {
+                    common::validation::validate_iter(batch.iter())?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NamedQuery<TQuery> {
     pub query: TQuery,
@@ -396,12 +440,29 @@ impl<T> Named for NamedQuery<T> {
     }
 }
 
+impl<T: Validate> Validate for NamedQuery<T> {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        self.query.validate()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum QueryVector {
     Nearest(Vector),
     Recommend(RecoQuery<Vector>),
     Discovery(DiscoveryQuery<Vector>),
     Context(ContextQuery<Vector>),
+}
+
+impl Validate for QueryVector {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            QueryVector::Nearest(v) => v.validate(),
+            QueryVector::Recommend(v) => v.validate(),
+            QueryVector::Discovery(v) => v.validate(),
+            QueryVector::Context(v) => v.validate(),
+        }
+    }
 }
 
 impl From<VectorType> for QueryVector {
