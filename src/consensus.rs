@@ -477,6 +477,8 @@ impl Consensus {
                 // then we can check if there are any un-synchronized local state left.
                 store.sync_local_state()?;
             }
+
+            self.runtime.block_on(self.ready.check_ready());
         }
         Ok(())
     }

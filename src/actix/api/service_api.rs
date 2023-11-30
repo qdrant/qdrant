@@ -11,7 +11,7 @@ use storage::content_manager::toc::TableOfContent;
 use tokio::sync::Mutex;
 
 use crate::actix::helpers::process_response;
-use crate::common::health::Ready;
+use crate::common::health;
 use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
@@ -108,8 +108,13 @@ async fn livez() -> impl Responder {
 }
 
 #[get("/readyz")]
-async fn readyz(ready: web::Data<Ready>) -> impl Responder {
-    let (status, body) = if ready.check_ready().await {
+async fn readyz(ready: web::Data<Option<health::Ready>>) -> impl Responder {
+    let is_ready = match ready.as_ref() {
+        Some(ready) => ready.check_ready().await,
+        None => true,
+    };
+
+    let (status, body) = if is_ready {
         (StatusCode::OK, "all shards are ready")
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "some shards are not ready")

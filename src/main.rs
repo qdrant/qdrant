@@ -257,7 +257,7 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, dispatcher_arc) = if is_distributed_deployment {
+    let (telemetry_collector, dispatcher_arc, ready) = if is_distributed_deployment {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
             toc_arc.clone(),
@@ -286,7 +286,13 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let ready = Arc::new(common::health::Ready::new(toc_arc.clone()));
+        let ready = Arc::new(common::health::Ready::new(
+            toc_arc.clone(),
+            consensus_state.clone(),
+            runtime_handle.clone(),
+        ));
+
+        runtime_handle.block_on(ready.check_ready());
 
         let handle = Consensus::run(
             &slog_logger,
@@ -339,7 +345,7 @@ fn main() -> anyhow::Result<()> {
             ));
         }
 
-        (telemetry_collector, dispatcher_arc)
+        (telemetry_collector, dispatcher_arc, Some(ready))
     } else {
         log::info!("Distributed mode disabled");
         let dispatcher_arc = Arc::new(dispatcher);
@@ -347,7 +353,7 @@ fn main() -> anyhow::Result<()> {
         // Monitoring and telemetry.
         let telemetry_collector =
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
-        (telemetry_collector, dispatcher_arc)
+        (telemetry_collector, dispatcher_arc, None)
     };
 
     let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
@@ -389,7 +395,7 @@ fn main() -> anyhow::Result<()> {
             .spawn(move || {
                 log_err_if_any(
                     "REST",
-                    actix::init(dispatcher_arc.clone(), telemetry_collector, settings),
+                    actix::init(dispatcher_arc.clone(), telemetry_collector, ready, settings),
                 )
             })
             .unwrap();

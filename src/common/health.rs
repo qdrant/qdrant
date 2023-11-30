@@ -1,299 +1,164 @@
-use std::collections::HashSet;
-use std::sync::atomic::{self, AtomicBool, AtomicU64};
+use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 
-use api::grpc::transport_channel_pool::TransportChannelPool;
-use collection::shards::replica_set::ReplicaState;
-use collection::shards::shard::ShardId;
-use collection::shards::CollectionId;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
-use storage::types::PeerAddressById;
+use tokio::sync::broadcast;
 use tokio::{runtime, sync, task};
 
 pub struct Ready {
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
-    peer_address_by_id: PeerAddressById,
-    transport_channel_pool: Arc<TransportChannelPool>,
     runtime: runtime::Handle,
-    cluster_commit_index_task: sync::Mutex<Option<task::JoinHandle<u64>>>,
-    cluster_commit_index: AtomicU64,
-    is_consensus_ready: AtomicBool,
-    unhealthy_shards: sync::RwLock<Option<HashSet<Shard>>>,
+    ready: Arc<AtomicBool>,
+    task: sync::RwLock<Option<task::JoinHandle<()>>>,
+    check_consensus_ready: broadcast::Sender<()>,
 }
 
 impl Ready {
     pub fn new(
         toc: Arc<TableOfContent>,
         consensus_state: ConsensusStateRef,
-        peer_address_by_id: PeerAddressById,
-        transport_channel_pool: Arc<TransportChannelPool>,
         runtime: runtime::Handle,
     ) -> Self {
+        let (check_consensus_ready, _) = broadcast::channel(1);
+
         Self {
             toc,
             consensus_state,
-            peer_address_by_id,
-            transport_channel_pool,
             runtime,
-            cluster_commit_index_task: Default::default(),
-            cluster_commit_index: Default::default(),
-            is_consensus_ready: Default::default(),
-            unhealthy_shards: Default::default(),
+            ready: Default::default(),
+            task: Default::default(),
+            check_consensus_ready,
         }
     }
 
     pub async fn check_ready(&self) -> bool {
-        if self.check_consensus_ready().await {
-            self.check_shards_health().await
+        let is_ready = self.is_ready();
+
+        if !is_ready {
+            self.notify_task().await;
         } else {
-            false
+            self.cleanup_task().await;
         }
+
+        is_ready
     }
 
-    async fn check_consensus_ready(&self) -> bool {
-        if self.is_consensus_ready.load(atomic::Ordering::Relaxed) {
-            return true;
-        }
+    fn is_ready(&self) -> bool {
+        self.ready.load(atomic::Ordering::Relaxed)
+    }
 
-        let Some(cluster_commit_index) = self.cluster_commit_index().await else {
-            return false;
+    async fn notify_task(&self) {
+        let Err(err) = self.check_consensus_ready.send(()) else {
+            return;
         };
 
-        if cluster_commit_index > self.commit_index() {
-            return false;
+        if self.is_ready() {
+            return;
         }
 
-        self.is_consensus_ready
-            .store(true, atomic::Ordering::Relaxed);
-        true
+        log::warn!("Ready::notify_task: failed to send message to ReadyTask: {err}");
+        self.spawn_task().await;
     }
 
-    async fn cluster_commit_index(&self) -> Option<u64> {
-        if let Some(cluster_commit_index) = self.get_cluster_commit_index() {
-            return Some(cluster_commit_index);
+    async fn spawn_task(&self) {
+        if self.is_running().await {
+            log::warn!("Ready::spawn_task: ReadyTask is already running");
+            return;
         }
 
-        self.check_task().await
-    }
-
-    async fn check_task(&self) -> Option<u64> {
-        let mut task = self.cluster_commit_index_task.lock().await;
-
-        if let Some(cluster_commit_index) = self.get_cluster_commit_index() {
-            return Some(cluster_commit_index);
-        }
-
-        let mut result = None;
-
-        let is_task_finished = task.as_ref().map_or(false, |task| task.is_finished());
-
-        if is_task_finished {
-            if let Some(task) = task.take() {
-                result = Some(task.await);
-            }
-        }
-
-        match result {
-            Some(Ok(cluster_commit_index)) => {
-                // A bit of extra safety...
-                assert!(task.is_none());
-
-                self.cluster_commit_index
-                    .store(cluster_commit_index, atomic::Ordering::Relaxed);
-                Some(cluster_commit_index)
-            }
-
-            Some(Err(err)) => {
-                log::error!("ClusterCommitIndex task failed: {err}");
-
-                // A bit of extra safety...
-                assert!(task.is_none());
-
-                self.spawn_task(task.into()).await;
-                None
-            }
-
-            None => {
-                log::warn!("ClusterCommitIndex task is not spawned");
-
-                if task.is_none() {
-                    self.spawn_task(task.into()).await;
-                }
-
-                None
-            }
-        }
-    }
-
-    fn get_cluster_commit_index(&self) -> Option<u64> {
-        let cluster_commit_index = self.cluster_commit_index.load(atomic::Ordering::Relaxed);
-
-        if cluster_commit_index > 0 {
-            Some(cluster_commit_index)
-        } else {
-            None
-        }
-    }
-
-    async fn spawn_task(&self, task: Option<sync::MutexGuard<'_, Option<task::JoinHandle<u64>>>>) {
-        let mut task = match task {
-            Some(task) => task,
-            None => self.cluster_commit_index_task.lock().await,
+        let Some(mut task) = self.try_cleanup_task().await else {
+            return;
         };
 
-        if task.is_none() {
-            task.insert(self.runtime.spawn(self.task().exec()));
-        } else {
-            log::warn!("ClusterCommitIndex task is already spawned");
+        if self.is_ready() {
+            log::error!("TODO");
+            return;
         }
+
+        *task = Some(self.runtime.spawn(self.task().exec()));
     }
 
-    fn task(&self) -> ClusterCommitIndex {
-        ClusterCommitIndex {
-            peer_address_by_id: self.peer_address_by_id.clone(),
-            transport_channel_pool: self.transport_channel_pool.clone(),
-        }
-    }
+    async fn cleanup_task(&self) {
+        let (is_running, is_spawned) = self.state().await;
 
-    fn commit_index(&self) -> u64 {
-        // TODO: Blocking call in async context!?
-        self.consensus_state
-            .persistent
-            .read()
-            .state
-            .hard_state
-            .commit
-    }
-
-    async fn check_shards_health(&self) -> bool {
-        let (is_healthy, is_initialized) = {
-            let unhealthy_shards = self.unhealthy_shards.read().await;
-
-            let is_healthy = unhealthy_shards
-                .as_ref()
-                .map_or(false, |unhealthy_shards| unhealthy_shards.is_empty());
-
-            let is_initialized = unhealthy_shards.is_some();
-
-            (is_healthy, is_initialized)
-        };
-
-        if is_healthy {
-            return true;
-        }
-
-        if !is_initialized {
-            self.initialize_unhealthy_shards().await
-        } else {
-            self.remove_healthy_shards().await
-        }
-    }
-
-    async fn initialize_unhealthy_shards(&self) -> bool {
-        // Collect "unhealthy" shards
-        let shards = filter(self.shards().await, false);
-
-        let mut unhealthy_shards = self.unhealthy_shards.write().await;
-
-        // TODO: Clarify somehow!? 😭
-
-        if let Some(unhealthy_shards) = unhealthy_shards.as_ref() {
-            log::warn!("unhealthy shards list is already initialized");
-            return unhealthy_shards.is_empty();
-        }
-
-        unhealthy_shards.insert(shards.collect()).is_empty()
-    }
-
-    async fn remove_healthy_shards(&self) -> bool {
-        // Collect "healthy" shards
-        let shards = filter(self.shards().await, true);
-
-        let mut unhealthy_shards = self.unhealthy_shards.write().await;
-
-        let Some(unhealthy_shards) = unhealthy_shards.as_mut() else {
-            log::warn!("unhealthy shards list is not initialized");
-            return false;
-        };
-
-        if unhealthy_shards.is_empty() {
-            return true;
-        }
-
-        for shard in shards {
-            unhealthy_shards.remove(&shard);
-        }
-
-        unhealthy_shards.is_empty()
-    }
-
-    async fn shards(&self) -> Vec<(Shard, bool)> {
-        let this_peer_id = self.toc.this_peer_id;
-        let collections = self.toc.all_collections().await;
-
-        let mut shards = Vec::new();
-
-        for collection in &collections {
-            let state = match self.toc.get_collection(collection).await {
-                Ok(collection) => collection.state().await,
-                Err(_) => continue,
-            };
-
-            for (&shard, info) in state.shards.iter() {
-                let Some(&state) = info.replicas.get(&this_peer_id) else {
-                    continue;
-                };
-
-                shards.push((Shard::new(collection, shard), is_ready(state)));
+        if is_running || !is_spawned {
+            if is_running {
+                log::warn!("Ready::cleanup_task: ReadyTask is still running");
             }
+
+            return;
         }
 
-        shards
+        self.try_cleanup_task().await;
+    }
+
+    async fn try_cleanup_task(
+        &self,
+    ) -> Option<sync::RwLockWriteGuard<'_, Option<task::JoinHandle<()>>>> {
+        let mut task = self.task.write().await;
+
+        if is_task_running(task.as_ref()) {
+            log::debug!("Ready::try_cleanup_task: ReadyTask is running");
+            return None;
+        }
+
+        let result = match task.take() {
+            Some(task) => task.await,
+            None => Ok(()),
+        };
+
+        if let Err(err) = result {
+            log::error!("ReadyTask failed: {err}");
+        }
+
+        Some(task)
+    }
+
+    async fn state(&self) -> (bool, bool) {
+        task_state(self.task.read().await.as_ref())
+    }
+
+    async fn is_running(&self) -> bool {
+        is_task_running(self.task.read().await.as_ref())
+    }
+
+    fn task(&self) -> Task {
+        Task {
+            ready: self.ready.clone(),
+            toc: self.toc.clone(),
+            consensus_state: self.consensus_state.clone(),
+            check_consensus_ready: self.check_consensus_ready.subscribe(),
+        }
     }
 }
 
-#[derive(Clone)]
-struct ClusterCommitIndex {
-    peer_address_by_id: PeerAddressById,
-    transport_channel_pool: Arc<TransportChannelPool>,
+fn task_state<T>(task: Option<&task::JoinHandle<T>>) -> (bool, bool) {
+    (is_task_running(task), is_task_spawned(task))
 }
 
-impl ClusterCommitIndex {
-    pub async fn exec(self) -> u64 {
+fn is_task_running<T>(task: Option<&task::JoinHandle<T>>) -> bool {
+    task.map_or(false, |task| task.is_finished())
+}
+
+fn is_task_spawned<T>(task: Option<&task::JoinHandle<T>>) -> bool {
+    task.is_some()
+}
+
+pub struct Task {
+    ready: Arc<AtomicBool>,
+    toc: Arc<TableOfContent>,
+    consensus_state: ConsensusStateRef,
+    check_consensus_ready: broadcast::Receiver<()>,
+}
+
+impl Task {
+    pub async fn exec(mut self) {
+        let transport_channel_pool = self.toc.get_channel_service().channel_pool.clone();
+        let peer_address_by_id = self.consensus_state.peer_address_by_id();
+
+        // TODO: Implement readiness check (75% implemented in previous iteration)
         todo!()
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct Shard {
-    collection: CollectionId,
-    shard: ShardId,
-}
-
-impl Shard {
-    pub fn new(collection: impl Into<CollectionId>, shard: ShardId) -> Self {
-        Self {
-            collection: collection.into(),
-            shard,
-        }
-    }
-}
-
-fn is_ready(state: ReplicaState) -> bool {
-    matches!(state, ReplicaState::Active | ReplicaState::Listener) // TODO: `ReplicaState::Initializing`?
-}
-
-fn filter(
-    shards: impl IntoIterator<Item = (Shard, bool)>,
-    filter: bool,
-) -> impl Iterator<Item = Shard> {
-    shards.into_iter().filter_map(move |(shard, is_ready)| {
-        if is_ready == filter {
-            Some(shard)
-        } else {
-            None
-        }
-    })
 }
