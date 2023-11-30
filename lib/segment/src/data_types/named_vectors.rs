@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::tiny_map;
-use super::vectors::{Vector, VectorElementType, VectorRef};
+use super::vectors::{Vector, VectorElementType, VectorRef, VectorType};
+use crate::common::operation_error::OperationError;
 use crate::types::Distance;
 
 type CowKey<'a> = Cow<'a, str>;
@@ -49,6 +50,61 @@ impl<'a> From<Vector> for CowVector<'a> {
         match v {
             Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
             Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
+        }
+    }
+}
+
+impl<'a> From<SparseVector> for CowVector<'a> {
+    fn from(v: SparseVector) -> Self {
+        CowVector::Sparse(Cow::Owned(v))
+    }
+}
+
+impl<'a> From<VectorType> for CowVector<'a> {
+    fn from(v: VectorType) -> Self {
+        CowVector::Dense(Cow::Owned(v))
+    }
+}
+
+impl<'a> From<&'a SparseVector> for CowVector<'a> {
+    fn from(v: &'a SparseVector) -> Self {
+        CowVector::Sparse(Cow::Borrowed(v))
+    }
+}
+
+impl<'a> From<&'a [VectorElementType]> for CowVector<'a> {
+    fn from(v: &'a [VectorElementType]) -> Self {
+        CowVector::Dense(Cow::Owned(v.into()))
+    }
+}
+
+impl<'a> TryFrom<CowVector<'a>> for SparseVector {
+    type Error = OperationError;
+
+    fn try_from(value: CowVector<'a>) -> Result<Self, Self::Error> {
+        match value {
+            CowVector::Dense(_) => Err(OperationError::WrongSparse),
+            CowVector::Sparse(v) => Ok(v.into_owned()),
+        }
+    }
+}
+
+impl<'a> TryFrom<CowVector<'a>> for VectorType {
+    type Error = OperationError;
+
+    fn try_from(value: CowVector<'a>) -> Result<Self, Self::Error> {
+        match value {
+            CowVector::Dense(v) => Ok(v.into_owned()),
+            CowVector::Sparse(_) => Err(OperationError::WrongSparse),
+        }
+    }
+}
+
+impl<'a> From<VectorRef<'a>> for CowVector<'a> {
+    fn from(v: VectorRef<'a>) -> Self {
+        match v {
+            VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
+            VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
         }
     }
 }

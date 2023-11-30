@@ -14,6 +14,7 @@ use super::SparseVectorStorage;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
+use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
@@ -23,13 +24,13 @@ pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleSparseVectorStorage {
-    vectors: Vec<SparseVector>,
     db_wrapper: DatabaseColumnWrapper,
     update_buffer: StoredRecord,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
     deleted_count: usize,
+    total_vector_count: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -44,9 +45,9 @@ pub fn open_simple_sparse_vector_storage(
     database_column_name: &str,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
-    let mut vectors = Vec::new();
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
 
+    let mut total_vector_count = 0;
     db_wrapper.lock_db().iter()?;
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
@@ -59,18 +60,11 @@ pub fn open_simple_sparse_vector_storage(
             bitvec_set_deleted(&mut deleted, point_id, true);
             deleted_count += 1;
         }
-
-        // Resize storage if needed
-        vectors.resize_with(
-            std::cmp::max(vectors.len(), point_id as usize + 1),
-            Default::default,
-        );
-        vectors[point_id as usize] = stored_record.vector;
+        total_vector_count = std::cmp::max(total_vector_count, point_id as usize + 1);
     }
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::SparseSimple(SimpleSparseVectorStorage {
-            vectors,
             db_wrapper,
             update_buffer: StoredRecord {
                 deleted: false,
@@ -78,6 +72,7 @@ pub fn open_simple_sparse_vector_storage(
             },
             deleted,
             deleted_count,
+            total_vector_count,
         }),
     )))
 }
@@ -86,7 +81,7 @@ impl SimpleSparseVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
-        if key as usize >= self.vectors.len() {
+        if key as usize >= self.total_vector_count {
             return false;
         }
         let was_deleted = bitvec_set_deleted(&mut self.deleted, key, deleted);
@@ -124,8 +119,12 @@ impl SimpleSparseVectorStorage {
 }
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> &SparseVector {
-        self.vectors.get(key as usize).expect("Invalid point id")
+    fn get_sparse(&self, key: PointOffsetType) -> SparseVector {
+        let data = self.db_wrapper.get(bincode::serialize(&key).unwrap());
+        let record: StoredRecord = bincode::deserialize(&data.unwrap())
+            .map_err(|_| OperationError::service_error("Cannot deserialize vector from db"))
+            .unwrap();
+        record.vector
     }
 }
 
@@ -143,21 +142,17 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn total_vector_count(&self) -> usize {
-        self.vectors.len()
+        self.total_vector_count
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> VectorRef {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
         self.get_sparse(key).into()
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &SparseVector = vector.try_into()?;
         debug_assert!(vector.is_sorted());
-        self.vectors.resize_with(
-            std::cmp::max(self.vectors.len(), key as usize + 1),
-            Default::default,
-        );
-        self.vectors[key as usize] = vector.clone();
+        self.total_vector_count = std::cmp::max(self.total_vector_count, key as usize + 1);
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
         Ok(())
@@ -169,29 +164,19 @@ impl VectorStorage for SimpleSparseVectorStorage {
         other_ids: &mut dyn Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.vectors.len() as PointOffsetType;
+        let start_index = self.total_vector_count as PointOffsetType;
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector: &SparseVector = other.get_vector(point_id).try_into()?;
-            debug_assert!(other_vector.is_sorted());
+            let other_vector = other.get_vector(point_id);
+            let other_vector = other_vector.as_vec_ref().try_into()?;
             let other_deleted = other.is_deleted_vector(point_id);
-            match self.vectors.get(point_id as usize) {
-                Some(_stored_vector) => {
-                    self.set_deleted(point_id, other_deleted);
-                    self.update_stored(point_id, other_deleted, Some(other_vector))?;
-                }
-                None => {
-                    self.vectors
-                        .resize_with(point_id as usize + 1, Default::default);
-                    self.vectors[point_id as usize] = other_vector.clone();
-                }
-            }
-            self.set_deleted(point_id, other_deleted);
-            self.update_stored(point_id, other_deleted, Some(other_vector))?;
+            let new_id = self.total_vector_count as PointOffsetType;
+            self.total_vector_count += 1;
+            self.set_deleted(new_id, other_deleted);
+            self.update_stored(new_id, other_deleted, Some(other_vector))?;
         }
-        let end_index = self.vectors.len() as PointOffsetType;
-        Ok(start_index..end_index)
+        Ok(start_index..self.total_vector_count as PointOffsetType)
     }
 
     fn flusher(&self) -> Flusher {

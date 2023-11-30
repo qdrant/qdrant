@@ -96,7 +96,7 @@ impl<'a, TVectorStorage: SparseVectorStorage> RawScorer for SparseRawScorer<'a, 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.vector_storage.get_sparse(point_a);
         let vector_b = self.vector_storage.get_sparse(point_b);
-        vector_a.score(vector_b).unwrap_or_default()
+        vector_a.score(&vector_b).unwrap_or_default()
     }
 
     fn peek_top_iter(

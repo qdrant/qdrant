@@ -11,7 +11,7 @@ use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::types::{
@@ -22,7 +22,7 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
-use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
@@ -108,10 +108,29 @@ impl QuantizedVectors {
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+        match vector_storage {
+            VectorStorageEnum::Simple(v) => {
+                Self::create_impl(v, quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::Memmap(v) => {
+                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::AppendableMemmap(v) => {
+                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
+        }
+    }
+
+    fn create_impl<TVectorStorage: DenseVectorStorage + Send + Sync>(
+        vector_storage: &TVectorStorage,
+        quantization_config: &QuantizationConfig,
+        path: &Path,
+        max_threads: usize,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
         let count = vector_storage.total_vector_count();
-        // TODO(sparse) avoid unwrap
-        let vectors =
-            (0..count as PointOffsetType).map(|i| vector_storage.get_vector(i).try_into().unwrap());
+        let vectors = (0..count as PointOffsetType).map(|i| vector_storage.get_dense(i));
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
         let dim = vector_storage.vector_dim();
