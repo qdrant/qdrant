@@ -56,19 +56,19 @@ impl<'a> From<Vector> for CowVector<'a> {
 
 impl<'a> From<SparseVector> for CowVector<'a> {
     fn from(v: SparseVector) -> Self {
-        CowVector::Sparse(Cow::Owned(v.into()))
+        CowVector::Sparse(Cow::Owned(v))
     }
 }
 
 impl<'a> From<VectorType> for CowVector<'a> {
     fn from(v: VectorType) -> Self {
-        CowVector::Dense(Cow::Owned(v.into()))
+        CowVector::Dense(Cow::Owned(v))
     }
 }
 
 impl<'a> From<&'a SparseVector> for CowVector<'a> {
     fn from(v: &'a SparseVector) -> Self {
-        CowVector::Sparse(Cow::Borrowed(v.into()))
+        CowVector::Sparse(Cow::Borrowed(v))
     }
 }
 
@@ -83,7 +83,7 @@ impl<'a> TryFrom<CowVector<'a>> for SparseVector {
 
     fn try_from(value: CowVector<'a>) -> Result<Self, Self::Error> {
         match value {
-            CowVector::Dense(v) => Err(OperationError::WrongSparse),
+            CowVector::Dense(_) => Err(OperationError::WrongSparse),
             CowVector::Sparse(v) => Ok(v.into_owned()),
         }
     }
@@ -93,7 +93,10 @@ impl<'a> TryFrom<CowVector<'a>> for VectorType {
     type Error = OperationError;
 
     fn try_from(value: CowVector<'a>) -> Result<Self, Self::Error> {
-        todo!()
+        match value {
+            CowVector::Dense(v) => Ok(v.into_owned()),
+            CowVector::Sparse(_) => Err(OperationError::WrongSparse),
+        }
     }
 }
 

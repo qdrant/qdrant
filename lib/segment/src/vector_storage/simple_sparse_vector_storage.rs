@@ -156,28 +156,19 @@ impl VectorStorage for SimpleSparseVectorStorage {
         other_ids: &mut dyn Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.vectors.len() as PointOffsetType;
+        let start_index = self.total_vector_count as PointOffsetType;
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector: &SparseVector = other.get_vector(point_id).try_into()?;
-            debug_assert!(other_vector.is_sorted());
+            let other_vector = other.get_vector(point_id);
+            let other_vector = other_vector.as_vec_ref().try_into()?;
             let other_deleted = other.is_deleted_vector(point_id);
-            match self.vectors.get(point_id as usize) {
-                Some(_stored_vector) => {
-                    self.set_deleted(point_id, other_deleted);
-                    self.update_stored(point_id, other_deleted, Some(other_vector))?;
-                }
-                None => {
-                    self.vectors
-                        .resize_with(point_id as usize + 1, Default::default);
-                    self.vectors[point_id as usize] = other_vector.clone();
-                }
-            }
-            self.set_deleted(point_id, other_deleted);
-            self.update_stored(point_id, other_deleted, Some(other_vector))?;
+            let new_id = self.total_vector_count as PointOffsetType;
+            self.total_vector_count += 1;
+            self.set_deleted(new_id, other_deleted);
+            self.update_stored(new_id, other_deleted, Some(other_vector))?;
         }
-        Ok(start_index..self.max_key + 1)
+        Ok(start_index..self.total_vector_count as PointOffsetType)
     }
 
     fn flusher(&self) -> Flusher {

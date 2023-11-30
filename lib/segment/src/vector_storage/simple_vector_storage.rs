@@ -174,7 +174,8 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_vector = other.get_vector(point_id).as_vec_ref().try_into()?;
+            let other_vector = other.get_vector(point_id);
+            let other_vector = other_vector.as_vec_ref().try_into()?;
             let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted);
