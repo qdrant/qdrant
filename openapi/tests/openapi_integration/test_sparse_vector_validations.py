@@ -8,15 +8,12 @@ collection_name = 'test_mix_collection_setup'
 
 @pytest.fixture(autouse=True)
 def setup():
-    mix_collection_setup(collection_name=collection_name)
+    sparse_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def mix_collection_setup(
-        collection_name='test_collection',
-        on_disk_payload=False,
-):
+def sparse_collection_setup(collection_name='test_collection'):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
