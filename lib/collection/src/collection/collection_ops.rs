@@ -65,6 +65,24 @@ impl Collection {
         Ok(())
     }
 
+    /// Updates sparse vectors config:
+    /// Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
+    pub async fn update_sparse_vectors_from_other(
+        &self,
+        update_vectors_diff: &SparseVectorsConfig,
+    ) -> CollectionResult<()> {
+        let mut config = self.collection_config.write().await;
+        update_vectors_diff.check_vector_names(&config.params)?;
+        config
+            .params
+            .update_sparse_vectors_from_other(update_vectors_diff)?;
+        config.save(&self.path)?;
+        Ok(())
+    }
+
     /// Updates shard optimization params:
     /// Saves new params on disk
     ///

@@ -13,12 +13,10 @@ pub mod version;
 
 use std::sync::atomic::AtomicBool;
 
-use sparse::common::sparse_vector::SparseVector;
-
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::{QueryVector, VectorElementType, VectorRef};
-use crate::types::{SegmentConfig, VectorDataConfig};
+use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
 
@@ -26,7 +24,11 @@ pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
 ///
 /// Returns an error if incompatible.
 pub fn check_vector_name(vector_name: &str, segment_config: &SegmentConfig) -> OperationResult<()> {
-    get_vector_config_or_error(vector_name, segment_config)?;
+    // TODO(sparse) it's a wrong error check. We use the fact,
+    // that get_vector_config_or_error can return only one type of error - VectorNameNotExists
+    if get_vector_config_or_error(vector_name, segment_config).is_err() {
+        get_sparse_vector_config_or_error(vector_name, segment_config)?;
+    }
     Ok(())
 }
 
@@ -38,8 +40,13 @@ pub fn check_vector(
     query_vector: &QueryVector,
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
-    let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
-    check_query_vector(query_vector, vector_config)
+    let vector_config = get_vector_config_or_error(vector_name, segment_config);
+    if vector_config.is_ok() {
+        check_query_vector(query_vector, vector_config?)
+    } else {
+        let sparse_vector_config = get_sparse_vector_config_or_error(vector_name, segment_config)?;
+        check_query_sparse_vector(query_vector, sparse_vector_config)
+    }
 }
 
 fn check_query_vector(
@@ -68,6 +75,32 @@ fn check_query_vector(
     Ok(())
 }
 
+fn check_query_sparse_vector(
+    query_vector: &QueryVector,
+    vector_config: &SparseVectorDataConfig,
+) -> OperationResult<()> {
+    match query_vector {
+        QueryVector::Nearest(vector) => {
+            check_sparse_vector_against_config(vector.to_vec_ref(), vector_config)?
+        }
+        QueryVector::Recommend(reco_query) => reco_query.flat_iter().try_for_each(|vector| {
+            check_sparse_vector_against_config(vector.to_vec_ref(), vector_config)
+        })?,
+        QueryVector::Discovery(discovery_query) => {
+            discovery_query.flat_iter().try_for_each(|vector| {
+                check_sparse_vector_against_config(vector.to_vec_ref(), vector_config)
+            })?
+        }
+        QueryVector::Context(discovery_context_query) => {
+            discovery_context_query.flat_iter().try_for_each(|vector| {
+                check_sparse_vector_against_config(vector.to_vec_ref(), vector_config)
+            })?
+        }
+    }
+
+    Ok(())
+}
+
 /// Check that the given vector name and elements are compatible with the given segment config.
 ///
 /// Returns an error if incompatible.
@@ -76,10 +109,17 @@ pub fn check_query_vectors(
     query_vectors: &[&QueryVector],
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
-    let vector_config = get_vector_config_or_error(vector_name, segment_config)?;
-    query_vectors
-        .iter()
-        .try_for_each(|qv| check_query_vector(qv, vector_config))?;
+    let vector_config = get_vector_config_or_error(vector_name, segment_config);
+    if let Ok(vector_config) = vector_config {
+        query_vectors
+            .iter()
+            .try_for_each(|qv| check_query_vector(qv, vector_config))?;
+    } else {
+        let sparse_vector_config = get_sparse_vector_config_or_error(vector_name, segment_config)?;
+        query_vectors
+            .iter()
+            .try_for_each(|qv| check_query_sparse_vector(qv, sparse_vector_config))?;
+    }
     Ok(())
 }
 
@@ -111,7 +151,22 @@ fn get_vector_config_or_error<'a>(
         })
 }
 
-/// Check if the given vector data is compatible with the given configuration.
+/// Get the sparse vector config for the given name, or return a name error.
+///
+/// Returns an error if incompatible.
+fn get_sparse_vector_config_or_error<'a>(
+    vector_name: &str,
+    segment_config: &'a SegmentConfig,
+) -> OperationResult<&'a SparseVectorDataConfig> {
+    segment_config
+        .sparse_vector_data
+        .get(vector_name)
+        .ok_or_else(|| OperationError::VectorNameNotExists {
+            received_name: vector_name.into(),
+        })
+}
+
+/// Check if the given dense vector data is compatible with the given configuration.
 ///
 /// Returns an error if incompatible.
 fn check_vector_against_config(
@@ -119,32 +174,29 @@ fn check_vector_against_config(
     vector_config: &VectorDataConfig,
 ) -> OperationResult<()> {
     match vector {
-        VectorRef::Dense(vector) => check_dense_vector(vector, vector_config),
-        VectorRef::Sparse(vector) => check_sparse_vector(vector, vector_config),
+        VectorRef::Dense(vector) => {
+            // Check dimensionality
+            let dim = vector_config.size;
+            if vector.len() != dim {
+                return Err(OperationError::WrongVector {
+                    expected_dim: dim,
+                    received_dim: vector.len(),
+                });
+            }
+            Ok(())
+        }
+        VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
     }
 }
 
-fn check_dense_vector(
-    vector: &[VectorElementType],
-    vector_config: &VectorDataConfig,
+fn check_sparse_vector_against_config(
+    vector: VectorRef,
+    _vector_config: &SparseVectorDataConfig,
 ) -> OperationResult<()> {
-    // Check dimensionality
-    let dim = vector_config.size;
-    if vector.len() != dim {
-        return Err(OperationError::WrongVector {
-            expected_dim: dim,
-            received_dim: vector.len(),
-        });
+    match vector {
+        VectorRef::Dense(_) => Err(OperationError::WrongSparse),
+        VectorRef::Sparse(_vector) => Ok(()), // TODO(sparse) check vector by config
     }
-    Ok(())
-}
-
-fn check_sparse_vector(
-    _vector: &SparseVector,
-    _vector_config: &VectorDataConfig,
-) -> OperationResult<()> {
-    // TODO(sparse)
-    todo!("Check sparse vector against config")
 }
 
 pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {

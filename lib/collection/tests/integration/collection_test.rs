@@ -150,8 +150,9 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             assert_eq!(res.len(), 2);
             assert_eq!(res[0].id, 0.into());
             assert_eq!(res[0].payload.as_ref().unwrap().len(), 1);
+            let vec = vec![1.0, 0.0, 1.0, 1.0];
             match &res[0].vector {
-                Some(VectorStruct::Single(v)) => assert_eq!(v, &vec![1.0, 0.0, 1.0, 1.0]),
+                Some(VectorStruct::Single(v)) => assert_eq!(v.clone(), vec),
                 _ => panic!("vector is not returned"),
             }
         }

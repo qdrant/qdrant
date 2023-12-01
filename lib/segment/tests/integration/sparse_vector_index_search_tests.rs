@@ -12,7 +12,9 @@ use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
-use segment::types::{Condition, FieldCondition, Filter, Payload, DEFAULT_FULL_SCAN_THRESHOLD};
+use segment::types::{
+    Condition, FieldCondition, Filter, Payload, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+};
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
@@ -443,9 +445,12 @@ fn handling_empty_sparse_vectors() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        fixture_open_sparse_index(data_dir.path(), NUM_VECTORS, DEFAULT_FULL_SCAN_THRESHOLD)
-            .unwrap();
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = fixture_open_sparse_index(
+        data_dir.path(),
+        NUM_VECTORS,
+        DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    )
+    .unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
 
     // add empty points to storage

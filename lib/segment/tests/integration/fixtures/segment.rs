@@ -143,6 +143,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     },
                 ),
             ]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
         true,

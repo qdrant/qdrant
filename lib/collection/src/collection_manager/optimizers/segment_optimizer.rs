@@ -82,6 +82,7 @@ pub trait SegmentOptimizer {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
             vector_data: collection_params.into_base_vector_data()?,
+            sparse_vector_data: collection_params.into_sparse_vector_data()?,
             payload_storage_type: if collection_params.on_disk_payload {
                 PayloadStorageType::OnDisk
             } else {
@@ -154,6 +155,7 @@ pub trait SegmentOptimizer {
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let mut vector_data = collection_params.into_base_vector_data()?;
+        let sparse_vector_data = collection_params.into_sparse_vector_data()?;
 
         // If indexing, change to HNSW index and quantization
         if is_indexed {
@@ -191,6 +193,7 @@ pub trait SegmentOptimizer {
 
         let optimized_config = SegmentConfig {
             vector_data,
+            sparse_vector_data,
             payload_storage_type: if collection_params.on_disk_payload {
                 PayloadStorageType::OnDisk
             } else {

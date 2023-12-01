@@ -19,6 +19,7 @@ use segment::data_types::vectors::{
     Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType, VectorRef,
     VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
+use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
     ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
@@ -37,7 +38,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::config_diff;
+use super::config_diff::{self};
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
@@ -1234,6 +1235,21 @@ impl Anonymize for VectorParams {
     }
 }
 
+/// Params of single sparse vector data storage
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct SparseVectorParams {
+    /// Custom params for index. If none - values from collection configuration are used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<SparseIndexConfig>,
+}
+
+impl Anonymize for SparseVectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
+}
+
 /// Vector params separator for single and multiple vector modes
 /// Single mode:
 ///
@@ -1252,6 +1268,12 @@ impl Anonymize for VectorParams {
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
+}
+
+impl Default for VectorsConfig {
+    fn default() -> Self {
+        VectorsConfig::Multi(Default::default())
+    }
 }
 
 impl VectorsConfig {
@@ -1338,6 +1360,41 @@ impl VectorsConfig {
     }
 }
 
+// TODO(sparse): Further unify `check_compatible` and `check_compatible_with_segment_config`?
+pub fn check_sparse_compatible(
+    self_config: &BTreeMap<String, SparseVectorParams>,
+    other_config: &BTreeMap<String, SparseVectorParams>,
+) -> CollectionResult<()> {
+    for (vector_name, _this) in self_config.iter() {
+        let Some(_other) = other_config.get(vector_name) else {
+            return Err(missing_vector_error(vector_name));
+        };
+    }
+
+    Ok(())
+}
+
+pub fn check_sparse_compatible_with_segment_config(
+    self_config: &BTreeMap<String, SparseVectorParams>,
+    other: &HashMap<String, segment::types::SparseVectorDataConfig>,
+    exact: bool,
+) -> CollectionResult<()> {
+    if exact && self_config.len() != other.len() {
+        return Err(incompatible_vectors_error(
+            self_config.keys().map(String::as_str),
+            other.keys().map(String::as_str),
+        ));
+    }
+
+    for (vector_name, _) in self_config.iter() {
+        if other.get(vector_name).is_none() {
+            return Err(missing_vector_error(vector_name));
+        };
+    }
+
+    Ok(())
+}
+
 fn incompatible_vectors_error<'a, 'b>(
     this: impl Iterator<Item = &'a str>,
     other: impl Iterator<Item = &'b str>,
@@ -1375,20 +1432,10 @@ impl Anonymize for VectorsConfig {
 }
 
 impl Validate for VectorsConfig {
-    #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             VectorsConfig::Single(single) => single.validate(),
-            VectorsConfig::Multi(multi) => {
-                let errors = multi
-                    .values()
-                    .filter_map(|v| v.validate().err())
-                    .fold(Err(ValidationErrors::new()), |bag, err| {
-                        ValidationErrors::merge(bag, "?", Err(err))
-                    })
-                    .unwrap_err();
-                errors.errors().is_empty().then_some(()).ok_or(errors)
-            }
+            VectorsConfig::Multi(multi) => common::validation::validate_iter(multi.values()),
         }
     }
 }
@@ -1509,7 +1556,34 @@ impl Validate for VectorsConfigDiff {
 
 impl From<VectorParamsDiff> for VectorsConfigDiff {
     fn from(params: VectorParamsDiff) -> Self {
-        VectorsConfigDiff(BTreeMap::from([("".into(), params)]))
+        VectorsConfigDiff(BTreeMap::from([(DEFAULT_VECTOR_NAME.into(), params)]))
+    }
+}
+
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+pub struct SparseVectorsConfig(pub BTreeMap<String, SparseVectorParams>);
+
+impl SparseVectorsConfig {
+    /// Check that the vector names in this config are part of the given collection.
+    ///
+    /// Returns an error if incompatible.
+    pub fn check_vector_names(&self, collection: &CollectionParams) -> CollectionResult<()> {
+        for vector_name in self.0.keys() {
+            collection
+                .sparse_vectors
+                .as_ref()
+                .and_then(|v| v.get(vector_name).map(|_| ()))
+                .ok_or_else(|| OperationError::VectorNameNotExists {
+                    received_name: vector_name.into(),
+                })?;
+        }
+        Ok(())
+    }
+}
+
+impl Validate for SparseVectorsConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        common::validation::validate_iter(self.0.values())
     }
 }
 

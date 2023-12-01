@@ -51,6 +51,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 
@@ -155,6 +156,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 

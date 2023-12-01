@@ -1226,6 +1226,7 @@ mod tests {
                                 on_disk: None,
                             }
                             .into(),
+                            sparse_vectors: None,
                             hnsw_config: None,
                             wal_config: None,
                             optimizers_config: None,

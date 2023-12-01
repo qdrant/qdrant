@@ -60,6 +60,7 @@ impl From<SegmentConfigV5> for SegmentConfig {
 
         SegmentConfig {
             vector_data,
+            sparse_vector_data: Default::default(),
             payload_storage_type: old_segment.payload_storage_type,
         }
     }
