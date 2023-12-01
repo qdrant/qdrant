@@ -9,6 +9,7 @@ use crate::common::operation_error::OperationResult;
 
 pub const SPARSE_INDEX_CONFIG_FILE: &str = "sparse_index_config.json";
 
+/// Configuration for sparse inverted index.
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexConfig {
