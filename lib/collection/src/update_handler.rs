@@ -2,6 +2,7 @@ use std::cmp::min;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::thread;
 
 use common::cpu::CpuPermit;
 use common::panic;
@@ -233,9 +234,7 @@ impl UpdateHandler {
         callback: F,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
-        F: FnOnce(bool),
-        F: Send + 'static,
-        F: Clone,
+        F: FnOnce(bool) + Send + Clone + 'static,
     {
         let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
@@ -252,6 +251,11 @@ impl UpdateHandler {
                 let desired_cpus = max_rayon_threads(max_indexing_threads);
                 let Some(permit) = OPTIMIZER_CPU_BUDGET.try_acquire(desired_cpus) else {
                     // If there is no CPU budget, break outer loop and return early
+                    // If we have no handles (no optimizations) trigger callback so that we wake up
+                    // our optimization worker to try again later, otherwise it could get stuck
+                    if handles.is_empty() {
+                        callback(false);
+                    }
                     break 'outer;
                 };
                 log::trace!(
@@ -429,11 +433,8 @@ impl UpdateHandler {
                         continue;
                     }
 
-                    // Don't process optimization if we have no CPU budget for it right now
-                    if !OPTIMIZER_CPU_BUDGET.has_budget() {
-                        log::trace!("Skipping optimization check, no available CPU budget");
-                        continue;
-                    }
+                    // Block optimization until CPU budget is available for it
+                    OPTIMIZER_CPU_BUDGET.block_until_budget();
 
                     Self::process_optimization(
                         optimizers.clone(),
@@ -627,6 +628,26 @@ impl CpuBudget {
     /// Check if there is any available CPU in this budget.
     pub fn has_budget(&self) -> bool {
         self.semaphore.available_permits() > 0
+    }
+
+    /// Block until we have any CPU budget available.
+    ///
+    /// Uses an exponential backoff strategy to avoid busy waiting.
+    pub fn block_until_budget(&self) {
+        if self.has_budget() {
+            return;
+        }
+
+        log::trace!("Blocking optimization check, waiting for CPU budget to be available");
+
+        // Wait for CPU budget to be available with exponential backoff
+        let mut delay = Duration::from_micros(100);
+        while !self.has_budget() {
+            thread::sleep(delay);
+            delay = (delay * 2).min(Duration::from_secs(10));
+        }
+
+        log::trace!("Continue with optimizations, new CPU budget available");
     }
 }
 
