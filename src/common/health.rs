@@ -1,10 +1,15 @@
 use std::collections::HashSet;
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
+use std::time::Duration;
 
+use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
+use api::grpc::qdrant::GetCommitIndexRequest;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt as _;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use tokio::sync::broadcast;
@@ -160,9 +165,50 @@ pub struct Task {
 impl Task {
     pub async fn exec(mut self) {
         let transport_channel_pool = self.toc.get_channel_service().channel_pool.clone();
-        let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
-        let cluster_commit_index = todo!();
+        // TODO: Make more efficient and resilient? 🤔
+        let cluster_commit_index = loop {
+            let peer_address_by_id = self.consensus_state.peer_address_by_id();
+            let mut requests = FuturesUnordered::new();
+
+            for (_, uri) in &peer_address_by_id {
+                let request = transport_channel_pool.with_channel_timeout(
+                    &uri,
+                    |channel| async {
+                        let mut client = QdrantInternalClient::new(channel);
+                        let mut request = tonic::Request::new(GetCommitIndexRequest {});
+                        request.set_timeout(Duration::from_secs(10));
+                        client.get_commit_index(request).await
+                    },
+                    Some(Duration::from_secs(10)),
+                    2,
+                );
+
+                requests.push(request);
+            }
+
+            let mut commit_indices = Vec::new();
+
+            while let Some(result) = requests.next().await {
+                match result {
+                    Ok(resp) => commit_indices.push(resp),
+                    Err(err) => log::error!("GetCommiIndex request failed: {err}"),
+                }
+            }
+
+            if commit_indices.len() < peer_address_by_id.len() / 2 {
+                continue;
+            }
+
+            let cluster_commit_index = commit_indices
+                .into_iter()
+                .map(|resp| resp.into_inner().commit)
+                .max();
+
+            if let Some(cluster_commit_index) = cluster_commit_index {
+                break cluster_commit_index as _;
+            }
+        };
 
         loop {
             match self.check_ready.recv().await {
