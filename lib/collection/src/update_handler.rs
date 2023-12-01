@@ -30,7 +30,7 @@ use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
 
 lazy_static::lazy_static! {
-    /// CPU budget in number of cores for all optimization tasks globally.
+    /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
     static ref OPTIMIZER_CPU_BUDGET: CpuBudget = Default::default();
 }
@@ -239,12 +239,7 @@ impl UpdateHandler {
     {
         let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
-        for optimizer in optimizers.iter() {
-            // Return early if we are out of CPU budget
-            if !OPTIMIZER_CPU_BUDGET.has_budget() {
-                break;
-            }
-
+        'outer: for optimizer in optimizers.iter() {
             loop {
                 let nonoptimal_segment_ids =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
@@ -256,7 +251,8 @@ impl UpdateHandler {
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = max_rayon_threads(max_indexing_threads);
                 let Some(permit) = OPTIMIZER_CPU_BUDGET.try_acquire(desired_cpus) else {
-                    break;
+                    // If there is no CPU budget, break outer loop and return early
+                    break 'outer;
                 };
                 log::trace!(
                     "Acquired {} CPU permit for {} optimizer",
@@ -340,6 +336,7 @@ impl UpdateHandler {
                 handles.push(handle);
             }
         }
+
         handles
     }
 
@@ -431,6 +428,13 @@ impl UpdateHandler {
                     {
                         continue;
                     }
+
+                    // Don't process optimization if we have no CPU budget for it right now
+                    if !OPTIMIZER_CPU_BUDGET.has_budget() {
+                        log::trace!("Skipping optimization check, no available CPU budget");
+                        continue;
+                    }
+
                     Self::process_optimization(
                         optimizers.clone(),
                         segments.clone(),
