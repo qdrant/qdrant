@@ -232,6 +232,7 @@ impl UpdateHandler {
         optimizers_log: Arc<Mutex<TrackerLog>>,
         segments: LockedSegmentHolder,
         callback: F,
+        limit: Option<usize>,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
         F: FnOnce(bool) + Send + Clone + 'static,
@@ -240,6 +241,12 @@ impl UpdateHandler {
         let mut handles = vec![];
         'outer: for optimizer in optimizers.iter() {
             loop {
+                // Return early if we reached the optimization job limit
+                if limit.map(|extra| handles.len() >= extra).unwrap_or(false) {
+                    log::trace!("Reached optimization job limit, postponing other optimizations");
+                    break 'outer;
+                }
+
                 let nonoptimal_segment_ids =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
@@ -357,6 +364,7 @@ impl UpdateHandler {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         sender: Sender<OptimizerSignal>,
+        limit: usize,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
@@ -369,6 +377,7 @@ impl UpdateHandler {
                 // If channel is full - optimization will be triggered by some other signal
                 let _ = sender.try_send(OptimizerSignal::Nop);
             },
+            Some(limit),
         );
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
@@ -443,12 +452,16 @@ impl UpdateHandler {
                     // Block optimization until CPU budget is available for it
                     OPTIMIZER_CPU_BUDGET.block_until_budget();
 
+                    // Determine optimization handle limit based on max handles we allow
+                    let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
+
                     Self::process_optimization(
                         optimizers.clone(),
                         segments.clone(),
                         optimization_handles.clone(),
                         optimizers_log.clone(),
                         sender.clone(),
+                        limit,
                     )
                     .await;
                 }

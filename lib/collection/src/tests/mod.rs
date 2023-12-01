@@ -55,6 +55,7 @@ async fn test_optimization_process() {
         optimizers_log.clone(),
         segments.clone(),
         |_| {},
+        None,
     );
 
     assert_eq!(handles.len(), 2);
@@ -76,6 +77,7 @@ async fn test_optimization_process() {
         optimizers_log.clone(),
         segments.clone(),
         |_| {},
+        None,
     );
 
     assert_eq!(handles_2.len(), 0);
@@ -120,6 +122,7 @@ async fn test_cancel_optimization() {
         optimizers_log.clone(),
         segments.clone(),
         |_| {},
+        None,
     );
 
     sleep(Duration::from_millis(100)).await;
