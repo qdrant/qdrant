@@ -4,6 +4,9 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 service QdrantInternal {
+  /*
+  Get current commit and term on the target node.
+   */
   rpc GetCommitIndex (GetCommitIndexRequest) returns (GetCommitIndexResponse) {}
 
   /*
