@@ -1,4 +1,5 @@
 import math
+from os import path
 import random
 
 import pytest
@@ -60,6 +61,7 @@ def create_payload_index(collection_name, field_name, field_schema):
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     upsert_points(collection_name=collection_name, amount=total_points)
+    create_payload_index(collection_name=collection_name, field_name="city", field_schema="keyword")
     create_payload_index(collection_name=collection_name, field_name="price", field_schema="float")
     create_payload_index(
         collection_name=collection_name, field_name="maybe_repeated_float", field_schema="float"
@@ -167,3 +169,80 @@ def test_paginate_whole_collection(key, direction):
 
     assert math.ceil(total_points / limit) == pages
     assert total_points == points_count
+
+
+@pytest.mark.parametrize(
+    "key, direction",
+    [
+        ("payload_id", "asc"),
+        ("payload_id", "desc"),
+        ("price", "asc"),
+        ("price", "desc"),
+        ("maybe_repeated_float", "asc"),
+        ("maybe_repeated_float", "desc"),
+    ],
+)
+@pytest.mark.timeout(60)  # possibly break of an infinite loop
+def test_order_by_with_filters(key, direction):
+    offset = None
+    limit = 30
+    pages = 0
+    points_count = 0
+    points_set = set()
+    
+    filter_ = {
+        "must": [
+            {
+                "key": "city",
+                "match": {
+                    "value": "London",
+                }
+            }
+        ]
+    }
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/count",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "filter": filter_,
+            "exact": True,
+        },
+    )
+    assert response.ok, response.json()
+    
+    expected_points = response.json()["result"]["count"]
+    
+    while True:
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/scroll",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "order_by": {"key": key, "direction": direction},
+                "limit": limit,
+                "offset": offset,
+                "filter": filter_
+            },
+        )
+        assert response.ok, response.json()
+        offset = response.json()["result"]["next_page_offset"]
+
+        points_len = len(response.json()["result"]["points"])
+
+        points_count += points_len
+        pages += 1
+
+        # Check no duplicates
+        for record in response.json()["result"]["points"]:
+            assert record["id"] not in points_set
+            points_set.add(record["id"])
+
+        if offset is None:
+            break
+        else:
+            assert points_len == limit
+
+    assert math.ceil(expected_points / limit) == pages
+    assert expected_points == points_count

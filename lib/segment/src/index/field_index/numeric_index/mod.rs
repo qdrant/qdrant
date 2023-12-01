@@ -104,7 +104,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         }
     }
 
-    pub fn get_histogram(&self) -> &Histogram<T> {
+    fn get_histogram(&self) -> &Histogram<T> {
         match self {
             NumericIndex::Mutable(index) => &index.histogram,
             NumericIndex::Immutable(index) => &index.histogram,
@@ -250,6 +250,8 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             .unwrap_or(true)
     }
 
+    /// Infers boundaries for bucket of given size and starting point, skipping the first
+    /// border next to the starting point.
     pub fn get_range_by_size_excluding(
         &self,
         size: usize,
