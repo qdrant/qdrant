@@ -1,6 +1,10 @@
+use std::collections::HashSet;
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::ShardId;
+use collection::shards::CollectionId;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use tokio::sync::broadcast;
@@ -12,7 +16,7 @@ pub struct Ready {
     runtime: runtime::Handle,
     ready: Arc<AtomicBool>,
     task: sync::RwLock<Option<task::JoinHandle<()>>>,
-    check_consensus_ready: broadcast::Sender<()>,
+    check_ready: broadcast::Sender<()>,
 }
 
 impl Ready {
@@ -21,7 +25,7 @@ impl Ready {
         consensus_state: ConsensusStateRef,
         runtime: runtime::Handle,
     ) -> Self {
-        let (check_consensus_ready, _) = broadcast::channel(1);
+        let (check_ready, _) = broadcast::channel(1);
 
         Self {
             toc,
@@ -29,7 +33,7 @@ impl Ready {
             runtime,
             ready: Default::default(),
             task: Default::default(),
-            check_consensus_ready,
+            check_ready,
         }
     }
 
@@ -50,7 +54,7 @@ impl Ready {
     }
 
     async fn notify_task(&self) {
-        let Err(err) = self.check_consensus_ready.send(()) else {
+        let Err(err) = self.check_ready.send(()) else {
             return;
         };
 
@@ -129,7 +133,7 @@ impl Ready {
             ready: self.ready.clone(),
             toc: self.toc.clone(),
             consensus_state: self.consensus_state.clone(),
-            check_consensus_ready: self.check_consensus_ready.subscribe(),
+            check_ready: self.check_ready.subscribe(),
         }
     }
 }
@@ -150,7 +154,7 @@ pub struct Task {
     ready: Arc<AtomicBool>,
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
-    check_consensus_ready: broadcast::Receiver<()>,
+    check_ready: broadcast::Receiver<()>,
 }
 
 impl Task {
@@ -158,7 +162,107 @@ impl Task {
         let transport_channel_pool = self.toc.get_channel_service().channel_pool.clone();
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
-        // TODO: Implement readiness check (75% implemented in previous iteration)
-        todo!()
+        let cluster_commit_index = todo!();
+
+        loop {
+            match self.check_ready.recv().await {
+                Ok(()) => (),
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+
+            // TODO: Blocking call in async context!?
+            let commit_index = self
+                .consensus_state
+                .persistent
+                .read()
+                .state
+                .hard_state
+                .commit;
+
+            if commit_index >= cluster_commit_index {
+                break;
+            }
+        }
+
+        let mut unhealthy_shards: HashSet<_> = filter_shards(self.shards().await, false).collect();
+
+        loop {
+            match self.check_ready.recv().await {
+                Ok(()) => (),
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+
+            for shard in filter_shards(self.shards().await, true) {
+                unhealthy_shards.remove(&shard);
+
+                if unhealthy_shards.is_empty() {
+                    break;
+                }
+            }
+
+            if unhealthy_shards.is_empty() {
+                break;
+            }
+        }
+
+        self.ready.store(true, atomic::Ordering::Relaxed);
     }
+
+    async fn shards(&self) -> Vec<(Shard, bool)> {
+        let this_peer_id = self.toc.this_peer_id;
+        let collections = self.toc.all_collections().await;
+
+        let mut shards = Vec::new();
+
+        for collection in &collections {
+            let state = match self.toc.get_collection(collection).await {
+                Ok(collection) => collection.state().await,
+                Err(_) => continue,
+            };
+
+            for (&shard, info) in state.shards.iter() {
+                let Some(&state) = info.replicas.get(&this_peer_id) else {
+                    continue;
+                };
+
+                shards.push((Shard::new(collection, shard), is_shard_ready(state)));
+            }
+        }
+
+        shards
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct Shard {
+    collection: CollectionId,
+    shard: ShardId,
+}
+
+impl Shard {
+    pub fn new(collection: impl Into<CollectionId>, shard: ShardId) -> Self {
+        Self {
+            collection: collection.into(),
+            shard,
+        }
+    }
+}
+
+fn is_shard_ready(state: ReplicaState) -> bool {
+    matches!(state, ReplicaState::Active | ReplicaState::Listener) // TODO: `ReplicaState::Initializing`?
+}
+
+fn filter_shards(
+    shards: impl IntoIterator<Item = (Shard, bool)>,
+    is_ready_filter: bool,
+) -> impl Iterator<Item = Shard> {
+    shards.into_iter().filter_map(move |(shard, is_ready)| {
+        if is_ready == is_ready_filter {
+            Some(shard)
+        } else {
+            None
+        }
+    })
 }
