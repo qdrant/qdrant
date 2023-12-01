@@ -182,11 +182,6 @@ def test_sparse_points_search(tmp_path: pathlib.Path):
         "score_threshold": 0.1
     }
 
-    print(q)
-    print(json.dumps(q, indent=2))
-    print(requests.post(
-        f"{peer_api_uris[0]}/collections/test_collection/points/search", json=q
-    ).json())
     # Capture result from first peer
     r_init_search = requests.post(
         f"{peer_api_uris[0]}/collections/test_collection/points/search", json=q
