@@ -1,4 +1,5 @@
 use collection::operations::conversions::sharding_method_from_proto;
+use collection::operations::types::SparseVectorsConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -30,9 +31,12 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
             CreateCollection {
                 vectors: match value.vectors_config.and_then(|config| config.config) {
                     Some(vector_config) => vector_config.try_into()?,
-                    None => return Err(Status::invalid_argument("vectors config is required")),
+                    // TODO(sparse): sparse or dense vectors config is required
+                    None => Default::default(),
                 },
-                sparse_vectors: None, // TODO(sparse) grpc
+                sparse_vectors: value
+                    .sparse_vectors_config
+                    .map(|config| config.map.into_iter().map(|(k, v)| (k, v.into())).collect()),
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
@@ -75,7 +79,11 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .quantization_config
                     .map(TryInto::try_into)
                     .transpose()?,
-                sparse_vectors: None, // TODO(sparse) grpc
+                sparse_vectors: value.sparse_vectors_config.map(|config| {
+                    SparseVectorsConfig(
+                        config.map.into_iter().map(|(k, v)| (k, v.into())).collect(),
+                    )
+                }),
             },
         )))
     }

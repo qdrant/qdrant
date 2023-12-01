@@ -51,6 +51,10 @@
     - [ScalarQuantization](#qdrant-ScalarQuantization)
     - [ShardKey](#qdrant-ShardKey)
     - [ShardTransferInfo](#qdrant-ShardTransferInfo)
+    - [SparseIndexConfig](#qdrant-SparseIndexConfig)
+    - [SparseVectorConfig](#qdrant-SparseVectorConfig)
+    - [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry)
+    - [SparseVectorParams](#qdrant-SparseVectorParams)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
@@ -440,6 +444,7 @@
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
+| sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
 
 
 
@@ -501,6 +506,7 @@
 | init_from_collection | [string](#string) | optional | Specify name of the other collection to copy data from |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
+| sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
 
 
 
@@ -1039,6 +1045,68 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-SparseIndexConfig"></a>
+
+### SparseIndexConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| full_scan_threshold | [uint64](#uint64) | optional | Prefer a full scan search upto (excluding) this number of vectors. Note: this is number of vectors, not KiloBytes. |
+| on_disk | [bool](#bool) | optional | Store inverted index on disk. If set to false, the index will be stored in RAM. |
+
+
+
+
+
+
+<a name="qdrant-SparseVectorConfig"></a>
+
+### SparseVectorConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| map | [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-SparseVectorConfig-MapEntry"></a>
+
+### SparseVectorConfig.MapEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [SparseVectorParams](#qdrant-SparseVectorParams) |  |  |
+
+
+
+
+
+
+<a name="qdrant-SparseVectorParams"></a>
+
+### SparseVectorParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| index | [SparseIndexConfig](#qdrant-SparseIndexConfig) | optional | Configuration of sparse index |
+
+
+
+
+
+
 <a name="qdrant-TextIndexParams"></a>
 
 ### TextIndexParams
@@ -1072,6 +1140,7 @@ Note: 1kB = 1 vector of size 256. |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | New HNSW parameters for the collection index |
 | vectors_config | [VectorsConfigDiff](#qdrant-VectorsConfigDiff) | optional | New vector parameters |
 | quantization_config | [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff) | optional | Quantization configuration of vector |
+| sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | New sparse vector parameters |
 
 
 
