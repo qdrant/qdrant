@@ -528,7 +528,7 @@ impl From<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector
         vectors
             .vectors
             .into_iter()
-            .map(|(name, vector)| (name, vector.data.into()))
+            .map(|(name, vector)| (name, segment::data_types::vectors::Vector::from(vector)))
             .collect()
     }
 }
