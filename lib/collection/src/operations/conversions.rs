@@ -14,6 +14,7 @@ use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
+use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -24,7 +25,7 @@ use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
     PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
-    SearchGroupsRequestInternal, VectorParamsDiff, VectorsConfigDiff,
+    SearchGroupsRequestInternal, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -377,6 +378,16 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     write_consistency_factor: Some(config.params.write_consistency_factor.get()),
                     read_fan_out_factor: config.params.read_fan_out_factor,
                     sharding_method: config.params.sharding_method.map(sharding_method_to_proto),
+                    sparse_vectors_config: config.params.sparse_vectors.map(|sparse_vectors| {
+                        api::grpc::qdrant::SparseVectorConfig {
+                            map: sparse_vectors
+                                .into_iter()
+                                .map(|(name, sparse_vector_params)| {
+                                    (name, sparse_vector_params.into())
+                                })
+                                .collect(),
+                        }
+                    }),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
@@ -549,6 +560,32 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
     }
 }
 
+impl From<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
+    fn from(sparse_vector_params: api::grpc::qdrant::SparseVectorParams) -> Self {
+        Self {
+            index: sparse_vector_params
+                .index
+                .map(|index_config| SparseIndexConfig {
+                    full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
+                    on_disk: index_config.on_disk,
+                }),
+        }
+    }
+}
+
+impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
+    fn from(sparse_vector_params: SparseVectorParams) -> Self {
+        Self {
+            index: sparse_vector_params.index.map(|index_config| {
+                api::grpc::qdrant::SparseIndexConfig {
+                    full_scan_threshold: index_config.full_scan_threshold.map(|v| v as u64),
+                    on_disk: index_config.on_disk,
+                }
+            }),
+        }
+    }
+}
+
 fn grpc_to_segment_quantization_config(
     value: api::grpc::qdrant::QuantizationConfig,
 ) -> Result<QuantizationConfig, Status> {
@@ -602,7 +639,13 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             ),
                         },
                     },
-                    sparse_vectors: None, // TODO(sparse) grpc
+                    sparse_vectors: params.sparse_vectors_config.map(|sparse_vectors| {
+                        sparse_vectors
+                            .map
+                            .into_iter()
+                            .map(|(name, sparse_vector_params)| (name, sparse_vector_params.into()))
+                            .collect()
+                    }),
                     shard_number: NonZeroU32::new(params.shard_number)
                         .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
                     on_disk_payload: params.on_disk_payload,
