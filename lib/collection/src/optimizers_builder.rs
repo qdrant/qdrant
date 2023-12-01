@@ -70,7 +70,10 @@ pub struct OptimizersConfig {
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
-    /// Maximum available threads for optimization workers
+    /// Max number of threads (jobs) for running optimizations per collection.
+    /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+    /// If null - have no limit and choose dynamically to saturate CPU.
+    /// If 0 - optimizations will be disabled.
     #[serde(default)]
     pub max_optimization_threads: Option<usize>,
 }

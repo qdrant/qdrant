@@ -71,7 +71,10 @@ pub struct HnswConfigDiff {
     )]
     #[validate(range(min = 10))]
     pub full_scan_threshold: Option<usize>,
-    /// Number of parallel threads used for background index building. If 0 - auto selection.
+    /// Number of parallel threads used for background index building.
+    /// If 0 - automatically select from 8 to 16.
+    /// Best to keep between 8 and 16 to prevent likelyhood of building broken/inefficient HNSW graphs.
+    /// On small CPUs, less threads are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_indexing_threads: Option<usize>,
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false
@@ -154,7 +157,10 @@ pub struct OptimizersConfigDiff {
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
-    /// Maximum available threads for optimization workers
+    /// Max number of threads (jobs) for running optimizations per collection.
+    /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+    /// If null - have no limit and choose dynamically to saturate CPU.
+    /// If 0 - optimizations will be disabled.
     pub max_optimization_threads: Option<usize>,
 }
 
