@@ -1,15 +1,18 @@
+use std::cmp;
 use std::collections::HashSet;
+use std::future::{self, Future};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
-use api::grpc::qdrant::GetCommitIndexRequest;
+use api::grpc::qdrant::{GetCommitIndexRequest, GetCommitIndexResponse};
+use api::grpc::transport_channel_pool::{self, TransportChannelPool};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt as _;
+use futures::{StreamExt as _, TryStreamExt as _};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use tokio::sync::broadcast;
@@ -166,39 +169,38 @@ impl Task {
         let cluster_commit_index = loop {
             let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
+            // TODO: Handle single-node cluster!
             if peer_address_by_id.is_empty() {
                 time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
 
-            let mut requests = FuturesUnordered::new();
+            // TODO: Limit parallelism? (E.g., `StreamExt::buffer_unordered`)
+            let requests: FuturesUnordered<_> = peer_address_by_id
+                .iter()
+                .map(|(_, uri)| get_commit_index(&transport_channel_pool, uri))
+                .collect();
 
-            for (_, uri) in &peer_address_by_id {
-                let request = transport_channel_pool.with_channel_timeout(
-                    &uri,
-                    |channel| async {
-                        let mut client = QdrantInternalClient::new(channel);
-                        let mut request = tonic::Request::new(GetCommitIndexRequest {});
-                        request.set_timeout(Duration::from_secs(10));
-                        client.get_commit_index(request).await
-                    },
-                    Some(Duration::from_secs(10)),
-                    2,
-                );
+            // TODO: Handle single-node cluster!
+            let required_commit_indices_count = cmp::min(peer_address_by_id.len() / 2, 1);
 
-                requests.push(request);
+            let mut requests = requests
+                .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
+                .filter_map(|res| future::ready(res.ok()));
+
+            let mut commit_indices: Vec<_> = (&mut requests)
+                .take(required_commit_indices_count)
+                .collect()
+                .await;
+
+            let timeout = Instant::now() + Duration::from_secs(1);
+
+            while let Ok(Some(resp)) = time::timeout_at(timeout.into(), requests.next()).await {
+                commit_indices.push(resp);
             }
 
-            let mut commit_indices = Vec::new();
-
-            while let Some(result) = requests.next().await {
-                match result {
-                    Ok(resp) => commit_indices.push(resp),
-                    Err(err) => log::error!("GetCommiIndex request failed: {err}"),
-                }
-            }
-
-            if commit_indices.len() < peer_address_by_id.len() / 2 {
+            if commit_indices.len() < required_commit_indices_count {
+                time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
 
@@ -212,57 +214,54 @@ impl Task {
             }
         };
 
-        loop {
-            // TODO: Blocking call in async context!?
-            let commit_index = self
-                .consensus_state
-                .persistent
-                .read()
-                .state
-                .hard_state
-                .commit;
-
-            if commit_index >= cluster_commit_index {
-                break;
-            }
-
-            match self.check_ready.recv().await {
-                Ok(()) => (),
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => return,
+        while self.commit_index() < cluster_commit_index {
+            if !self.check_ready().await {
+                return;
             }
         }
 
-        let mut unhealthy_shards: HashSet<_> = filter_shards(self.shards().await, false).collect();
+        let mut unhealthy_shards = self.unhealthy_shards().await;
 
         while !unhealthy_shards.is_empty() {
-            for shard in filter_shards(self.shards().await, true) {
-                unhealthy_shards.remove(&shard);
-
-                if unhealthy_shards.is_empty() {
-                    break;
-                }
+            if !self.check_ready().await {
+                return;
             }
 
-            if unhealthy_shards.is_empty() {
-                break;
-            }
-
-            match self.check_ready.recv().await {
-                Ok(()) => (),
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => return,
-            }
+            let current_unhealthy_shards = self.unhealthy_shards().await;
+            unhealthy_shards.retain(|shard| current_unhealthy_shards.contains(shard));
         }
 
         self.ready.store(true, atomic::Ordering::Relaxed);
     }
 
-    async fn shards(&self) -> Vec<(Shard, bool)> {
+    fn commit_index(&self) -> u64 {
+        // TODO: Blocking call in async context!?
+        self.consensus_state
+            .persistent
+            .read()
+            .state
+            .hard_state
+            .commit
+    }
+
+    async fn check_ready(&mut self) -> bool {
+        for _ in 0..10 {
+            match self.check_ready.recv().await {
+                Ok(()) => return true,
+                Err(broadcast::error::RecvError::Closed) => return false,
+                Err(broadcast::error::RecvError::Lagged(_)) => (),
+            }
+        }
+
+        log::warn!("TODO");
+        true
+    }
+
+    async fn unhealthy_shards(&self) -> HashSet<Shard> {
         let this_peer_id = self.toc.this_peer_id;
         let collections = self.toc.all_collections().await;
 
-        let mut shards = Vec::new();
+        let mut unhealthy_shards = HashSet::new();
 
         for collection in &collections {
             let state = match self.toc.get_collection(collection).await {
@@ -271,16 +270,46 @@ impl Task {
             };
 
             for (&shard, info) in state.shards.iter() {
-                let Some(&state) = info.replicas.get(&this_peer_id) else {
+                let Some(state) = info.replicas.get(&this_peer_id) else {
                     continue;
                 };
 
-                shards.push((Shard::new(collection, shard), is_shard_ready(state)));
+                if is_shard_ready(state) {
+                    continue;
+                }
+
+                unhealthy_shards.insert(Shard::new(collection, shard));
             }
         }
 
-        shards
+        unhealthy_shards
     }
+}
+
+fn get_commit_index<'a>(
+    transport_channel_pool: &'a TransportChannelPool,
+    uri: &'a tonic::transport::Uri,
+) -> impl Future<Output = GetCommitIndexResult> + 'a {
+    transport_channel_pool.with_channel_timeout(
+        &uri,
+        |channel| async {
+            let mut client = QdrantInternalClient::new(channel);
+            let mut request = tonic::Request::new(GetCommitIndexRequest {});
+            request.set_timeout(Duration::from_secs(10));
+            client.get_commit_index(request).await
+        },
+        Some(Duration::from_secs(10)),
+        2,
+    )
+}
+
+type GetCommitIndexResult = Result<
+    tonic::Response<GetCommitIndexResponse>,
+    transport_channel_pool::RequestError<tonic::Status>,
+>;
+
+fn is_shard_ready(state: &ReplicaState) -> bool {
+    matches!(state, ReplicaState::Active | ReplicaState::Listener) // TODO: `ReplicaState::Initializing`?
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -296,21 +325,4 @@ impl Shard {
             shard,
         }
     }
-}
-
-fn is_shard_ready(state: ReplicaState) -> bool {
-    matches!(state, ReplicaState::Active | ReplicaState::Listener) // TODO: `ReplicaState::Initializing`?
-}
-
-fn filter_shards(
-    shards: impl IntoIterator<Item = (Shard, bool)>,
-    is_ready_filter: bool,
-) -> impl Iterator<Item = Shard> {
-    shards.into_iter().filter_map(move |(shard, is_ready)| {
-        if is_ready == is_ready_filter {
-            Some(shard)
-        } else {
-            None
-        }
-    })
 }
