@@ -5715,6 +5715,7 @@
         }
       },
       "SparseIndexConfig": {
+        "description": "Configuration for sparse inverted index.",
         "type": "object",
         "properties": {
           "full_scan_threshold": {
