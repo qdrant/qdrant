@@ -6202,7 +6202,7 @@
         ]
       },
       "SparseVector": {
-        "description": "Sparse vector structure\n\nexpects: - indices to be unique - indices and values to be the same length",
+        "description": "Sparse vector structure",
         "type": "object",
         "required": [
           "indices",
@@ -6210,6 +6210,7 @@
         ],
         "properties": {
           "indices": {
+            "description": "indices must be unique",
             "type": "array",
             "items": {
               "type": "integer",
@@ -6218,6 +6219,7 @@
             }
           },
           "values": {
+            "description": "values and indices must be the same length",
             "type": "array",
             "items": {
               "type": "number",
