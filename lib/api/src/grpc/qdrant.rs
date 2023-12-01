@@ -102,6 +102,24 @@ pub mod vectors_config_diff {
         ParamsMap(super::VectorParamsDiffMap),
     }
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SparseVectorParams {
+    /// Configuration of sparse index
+    #[prost(message, optional, tag = "1")]
+    pub index: ::core::option::Option<SparseIndexConfig>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SparseVectorConfig {
+    #[prost(map = "string, message", tag = "1")]
+    pub map: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        SparseVectorParams,
+    >,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -187,6 +205,20 @@ pub struct HnswConfigDiff {
     /// Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
     #[prost(uint64, optional, tag = "6")]
     pub payload_m: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SparseIndexConfig {
+    ///
+    /// Prefer a full scan search upto (excluding) this number of vectors.
+    /// Note: this is number of vectors, not KiloBytes.
+    #[prost(uint64, optional, tag = "1")]
+    pub full_scan_threshold: ::core::option::Option<u64>,
+    ///
+    /// Store inverted index on disk. If set to false, the index will be stored in RAM.
+    #[prost(bool, optional, tag = "2")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -411,6 +443,9 @@ pub struct CreateCollection {
     /// Sharding method
     #[prost(enumeration = "ShardingMethod", optional, tag = "15")]
     pub sharding_method: ::core::option::Option<i32>,
+    /// Configuration for sparse vectors
+    #[prost(message, optional, tag = "16")]
+    pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -445,6 +480,9 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "7")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
+    /// New sparse vector parameters
+    #[prost(message, optional, tag = "8")]
+    pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -498,6 +536,9 @@ pub struct CollectionParams {
     /// Sharding method
     #[prost(enumeration = "ShardingMethod", optional, tag = "9")]
     pub sharding_method: ::core::option::Option<i32>,
+    /// Configuration for sparse vectors
+    #[prost(message, optional, tag = "10")]
+    pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
