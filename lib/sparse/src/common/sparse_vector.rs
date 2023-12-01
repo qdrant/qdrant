@@ -6,14 +6,12 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::types::{DimId, DimWeight};
 
 /// Sparse vector structure
-///
-/// expects:
-/// - indices to be unique
-/// - indices and values to be the same length
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVector {
+    /// indices must be unique
     pub indices: Vec<DimId>,
+    /// values and indices must be the same length
     pub values: Vec<DimWeight>,
 }
 
