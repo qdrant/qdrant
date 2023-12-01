@@ -1130,8 +1130,8 @@ impl SegmentEntry for Segment {
         let index = borrowed_payload_index
             .field_indexes
             .get(&order_by.key)
-            .and_then(|field_indexes| field_indexes.first())
-            .expect("Index should exist for the order_by field");
+            .and_then(|field_indexes| field_indexes.iter().find(|index| index.is_numeric()))
+            .expect("Numeric index must exist for the order_by field");
 
         let search_from = match order_by.value_offset {
             None => Bound::Included(from),
@@ -1154,12 +1154,8 @@ impl SegmentEntry for Segment {
                 let to = float_index.get_range_by_size_excluding(limit, search_from, direction);
                 (from, to)
             }
-            crate::index::field_index::FieldIndex::IntMapIndex(_) => {
-                // Not ideal, but otherwise it would fail for integer schema,
-                // which creates both numeric and map indexes
-                (from, Bound::Unbounded)
-            }
-            crate::index::field_index::FieldIndex::KeywordIndex(_)
+            crate::index::field_index::FieldIndex::IntMapIndex(_)
+            | crate::index::field_index::FieldIndex::KeywordIndex(_)
             | crate::index::field_index::FieldIndex::GeoIndex(_)
             | crate::index::field_index::FieldIndex::FullTextIndex(_)
             | crate::index::field_index::FieldIndex::BinaryIndex(_) => {
@@ -1181,7 +1177,11 @@ impl SegmentEntry for Segment {
         // to make sure we get enough points to sort later
         let estimated_limit = index.estimate_cardinality(&range_cond).ok();
 
-        let extended_limit = estimated_limit.map(|estimation| limit.max(estimation.max));
+        let extended_limit = estimated_limit.map(|estimation| {
+            limit.max(
+                estimation.max + 1, /* To account for next page offset */
+            )
+        });
 
         let range_filter = Filter::new_must(Condition::Field(range_cond));
 

@@ -437,6 +437,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
     fn get_float_payload(value: f64) -> Option<Payload> {
         let mut payload_map = Map::new();
         payload_map.insert("price".to_string(), (value).into());
+        payload_map.insert("price_int".to_string(), (value as i64).into());
         Some(Payload(payload_map))
     }
 
@@ -498,98 +499,109 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    let result_asc = collection
-        .scroll_by(
-            ScrollRequestInternal {
-                offset: None,
-                limit: Some(3),
-                filter: None,
-                with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: false.into(),
-                order_by: Some(OrderByInterface::Struct(OrderBy {
-                    key: "price".into(),
-                    direction: Some(Direction::Asc),
-                    value_offset: None,
-                })),
-            },
-            None,
-            &ShardSelectorInternal::All,
+    collection
+        .create_payload_index_with_wait(
+            "price_int".to_string(),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+            true,
         )
         .await
         .unwrap();
 
-    assert_eq!(result_asc.points.len(), 3);
-    assert_eq!(result_asc.next_page_offset, Some(10.into()));
+    for key in ["price", "price_int"] {
+        let result_asc = collection
+            .scroll_by(
+                ScrollRequestInternal {
+                    offset: None,
+                    limit: Some(3),
+                    filter: None,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: false.into(),
+                    order_by: Some(OrderByInterface::Struct(OrderBy {
+                        key: key.into(),
+                        direction: Some(Direction::Asc),
+                        value_offset: None,
+                    })),
+                },
+                None,
+                &ShardSelectorInternal::All,
+            )
+            .await
+            .unwrap();
 
-    let result_desc = collection
-        .scroll_by(
-            ScrollRequestInternal {
-                offset: None,
-                limit: Some(5),
-                filter: None,
-                with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: false.into(),
-                order_by: Some(OrderByInterface::Struct(OrderBy {
-                    key: "price".into(),
-                    direction: Some(Direction::Desc),
-                    value_offset: None,
-                })),
-            },
-            None,
-            &ShardSelectorInternal::All,
-        )
-        .await
-        .unwrap();
+        assert_eq!(result_asc.points.len(), 3);
+        assert_eq!(result_asc.next_page_offset, Some(10.into()));
 
-    assert_eq!(result_desc.points.len(), 5);
-    assert_eq!(result_desc.next_page_offset, Some(5.into()));
+        let result_desc = collection
+            .scroll_by(
+                ScrollRequestInternal {
+                    offset: None,
+                    limit: Some(5),
+                    filter: None,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: false.into(),
+                    order_by: Some(OrderByInterface::Struct(OrderBy {
+                        key: key.into(),
+                        direction: Some(Direction::Desc),
+                        value_offset: None,
+                    })),
+                },
+                None,
+                &ShardSelectorInternal::All,
+            )
+            .await
+            .unwrap();
 
-    let asc_second_page = collection
-        .scroll_by(
-            ScrollRequestInternal {
-                offset: Some(7.into()),
-                limit: Some(5),
-                filter: None,
-                with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: false.into(),
-                order_by: Some(OrderByInterface::Struct(OrderBy {
-                    key: "price".into(),
-                    direction: Some(Direction::Asc),
-                    value_offset: None,
-                })),
-            },
-            None,
-            &ShardSelectorInternal::All,
-        )
-        .await
-        .unwrap();
+        assert_eq!(result_desc.points.len(), 5);
+        assert_eq!(result_desc.next_page_offset, Some(5.into()));
 
-    assert_eq!(asc_second_page.points.len(), 5);
-    assert_eq!(asc_second_page.next_page_offset, Some(3.into()));
+        let asc_second_page = collection
+            .scroll_by(
+                ScrollRequestInternal {
+                    offset: Some(7.into()),
+                    limit: Some(5),
+                    filter: None,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: false.into(),
+                    order_by: Some(OrderByInterface::Struct(OrderBy {
+                        key: key.into(),
+                        direction: Some(Direction::Asc),
+                        value_offset: None,
+                    })),
+                },
+                None,
+                &ShardSelectorInternal::All,
+            )
+            .await
+            .unwrap();
 
-    let desc_second_page = collection
-        .scroll_by(
-            ScrollRequestInternal {
-                offset: Some(7.into()),
-                limit: Some(4),
-                filter: None,
-                with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: false.into(),
-                order_by: Some(OrderByInterface::Struct(OrderBy {
-                    key: "price".into(),
-                    direction: Some(Direction::Desc),
-                    value_offset: None,
-                })),
-            },
-            None,
-            &ShardSelectorInternal::All,
-        )
-        .await
-        .unwrap();
+        assert_eq!(asc_second_page.points.len(), 5);
+        assert_eq!(asc_second_page.next_page_offset, Some(3.into()));
 
-    assert_eq!(desc_second_page.points.len(), 4);
-    // Order is in (value, id), so should return ids [7, 6, 10, 11] and then offset id is 12
-    assert_eq!(desc_second_page.next_page_offset, Some(12.into()));
+        let desc_second_page = collection
+            .scroll_by(
+                ScrollRequestInternal {
+                    offset: Some(7.into()),
+                    limit: Some(4),
+                    filter: None,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: false.into(),
+                    order_by: Some(OrderByInterface::Struct(OrderBy {
+                        key: key.into(),
+                        direction: Some(Direction::Desc),
+                        value_offset: None,
+                    })),
+                },
+                None,
+                &ShardSelectorInternal::All,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(desc_second_page.points.len(), 4);
+        // Order is in (value, id), so should return ids [7, 6, 10, 11] and then offset id is 12
+        assert_eq!(desc_second_page.next_page_offset, Some(12.into()));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -346,4 +346,15 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
         }
     }
+
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            FieldIndex::IntIndex(_) | FieldIndex::FloatIndex(_) => true,
+            FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BinaryIndex(_)
+            | FieldIndex::FullTextIndex(_) => false,
+        }
+    }
 }
