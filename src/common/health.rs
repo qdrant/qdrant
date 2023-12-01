@@ -13,7 +13,7 @@ use futures::StreamExt as _;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use tokio::sync::broadcast;
-use tokio::{runtime, sync, task};
+use tokio::{runtime, sync, task, time};
 
 pub struct Ready {
     toc: Arc<TableOfContent>,
@@ -42,20 +42,16 @@ impl Ready {
         }
     }
 
-    pub async fn check_ready(&self) -> bool {
-        let is_ready = self.is_ready();
+    pub fn is_ready(&self) -> bool {
+        self.ready.load(atomic::Ordering::Relaxed)
+    }
 
-        if !is_ready {
+    pub async fn check_ready(&self) {
+        if !self.is_ready() {
             self.notify_task().await;
         } else {
             self.cleanup_task().await;
         }
-
-        is_ready
-    }
-
-    fn is_ready(&self) -> bool {
-        self.ready.load(atomic::Ordering::Relaxed)
     }
 
     async fn notify_task(&self) {
@@ -148,7 +144,7 @@ fn task_state<T>(task: Option<&task::JoinHandle<T>>) -> (bool, bool) {
 }
 
 fn is_task_running<T>(task: Option<&task::JoinHandle<T>>) -> bool {
-    task.map_or(false, |task| task.is_finished())
+    task.map_or(false, |task| !task.is_finished())
 }
 
 fn is_task_spawned<T>(task: Option<&task::JoinHandle<T>>) -> bool {
@@ -169,6 +165,12 @@ impl Task {
         // TODO: Make more efficient and resilient? 🤔
         let cluster_commit_index = loop {
             let peer_address_by_id = self.consensus_state.peer_address_by_id();
+
+            if peer_address_by_id.is_empty() {
+                time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
+
             let mut requests = FuturesUnordered::new();
 
             for (_, uri) in &peer_address_by_id {
@@ -211,12 +213,6 @@ impl Task {
         };
 
         loop {
-            match self.check_ready.recv().await {
-                Ok(()) => (),
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => return,
-            }
-
             // TODO: Blocking call in async context!?
             let commit_index = self
                 .consensus_state
@@ -229,17 +225,17 @@ impl Task {
             if commit_index >= cluster_commit_index {
                 break;
             }
-        }
 
-        let mut unhealthy_shards: HashSet<_> = filter_shards(self.shards().await, false).collect();
-
-        loop {
             match self.check_ready.recv().await {
                 Ok(()) => (),
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => return,
             }
+        }
 
+        let mut unhealthy_shards: HashSet<_> = filter_shards(self.shards().await, false).collect();
+
+        while !unhealthy_shards.is_empty() {
             for shard in filter_shards(self.shards().await, true) {
                 unhealthy_shards.remove(&shard);
 
@@ -250,6 +246,12 @@ impl Task {
 
             if unhealthy_shards.is_empty() {
                 break;
+            }
+
+            match self.check_ready.recv().await {
+                Ok(()) => (),
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return,
             }
         }
 
