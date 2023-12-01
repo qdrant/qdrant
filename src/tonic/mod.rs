@@ -99,7 +99,7 @@ impl QdrantInternalService {
 impl QdrantInternal for QdrantInternalService {
     async fn get_commit_index(
         &self,
-        request: tonic::Request<GetCommitIndexRequest>,
+        _: tonic::Request<GetCommitIndexRequest>,
     ) -> Result<Response<GetCommitIndexResponse>, Status> {
         let persistent = self.consensus_state.persistent.read();
         let commit = persistent.state.hard_state.commit as _;

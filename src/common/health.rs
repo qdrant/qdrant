@@ -177,8 +177,8 @@ impl Task {
 
             // TODO: Limit parallelism? (E.g., `StreamExt::buffer_unordered`)
             let requests: FuturesUnordered<_> = peer_address_by_id
-                .iter()
-                .map(|(_, uri)| get_commit_index(&transport_channel_pool, uri))
+                .values()
+                .map(|uri| get_commit_index(&transport_channel_pool, uri))
                 .collect();
 
             // TODO: Handle single-node cluster!
@@ -291,7 +291,7 @@ fn get_commit_index<'a>(
     uri: &'a tonic::transport::Uri,
 ) -> impl Future<Output = GetCommitIndexResult> + 'a {
     transport_channel_pool.with_channel_timeout(
-        &uri,
+        uri,
         |channel| async {
             let mut client = QdrantInternalClient::new(channel);
             let mut request = tonic::Request::new(GetCommitIndexRequest {});

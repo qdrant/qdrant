@@ -301,7 +301,7 @@ fn main() -> anyhow::Result<()> {
             args.uri.map(|uri| uri.to_string()),
             settings.clone(),
             channel_service,
-            ready.clone(),
+            Some(ready.clone()),
             propose_receiver,
             tonic_telemetry_collector,
             toc_arc.clone(),

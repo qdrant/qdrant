@@ -54,7 +54,7 @@ pub struct Consensus {
     /// ToDo: Make if many
     config: ConsensusConfig,
     broker: RaftMessageBroker,
-    ready: Arc<health::Ready>,
+    ready: Option<Arc<health::Ready>>,
 }
 
 impl Consensus {
@@ -67,7 +67,7 @@ impl Consensus {
         uri: Option<String>,
         settings: Settings,
         channel_service: ChannelService,
-        ready: Arc<health::Ready>,
+        ready: Option<Arc<health::Ready>>,
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
@@ -162,7 +162,7 @@ impl Consensus {
         config: ConsensusConfig,
         tls_config: Option<ClientTlsConfig>,
         channel_service: ChannelService,
-        ready: Arc<health::Ready>,
+        ready: Option<Arc<health::Ready>>,
         runtime: Handle,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
@@ -478,7 +478,9 @@ impl Consensus {
                 store.sync_local_state()?;
             }
 
-            self.runtime.block_on(self.ready.check_ready());
+            if let Some(ready) = &self.ready {
+                self.runtime.block_on(ready.check_ready());
+            }
         }
         Ok(())
     }
@@ -1192,6 +1194,7 @@ mod tests {
             ConsensusConfig::default(),
             None,
             ChannelService::new(settings.service.http_port),
+            None,
             handle.clone(),
         )
         .unwrap();
