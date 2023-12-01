@@ -8,8 +8,6 @@ N_PEERS = 5
 N_SHARDS = 4
 N_REPLICA = 2
 
-# TODO(sparse): enable when magic branch is merged
-@pytest.mark.skip(reason="enable with magic branch is merged!")
 def test_sparse_points_search(tmp_path: pathlib.Path):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, N_PEERS)

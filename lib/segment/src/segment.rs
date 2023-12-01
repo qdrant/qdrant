@@ -1627,6 +1627,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -1699,6 +1700,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
 
@@ -1790,6 +1792,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
 
@@ -1881,6 +1884,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
 
@@ -1912,6 +1916,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -2006,6 +2011,7 @@ mod tests {
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -2069,6 +2075,7 @@ mod tests {
                     },
                 ),
             ]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -2174,6 +2181,7 @@ mod tests {
                     },
                 ),
             ]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();

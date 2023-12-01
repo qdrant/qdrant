@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::types::{
-    PayloadIndexInfo, SegmentConfig, SegmentInfo, VectorDataConfig, VectorDataInfo,
+    PayloadIndexInfo, SegmentConfig, SegmentInfo, SparseVectorDataConfig, VectorDataConfig,
+    VectorDataInfo,
 };
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -123,6 +124,7 @@ impl Anonymize for SegmentConfig {
     fn anonymize(&self) -> Self {
         SegmentConfig {
             vector_data: self.vector_data.anonymize(),
+            sparse_vector_data: self.sparse_vector_data.anonymize(),
             payload_storage_type: self.payload_storage_type,
         }
     }
@@ -136,6 +138,14 @@ impl Anonymize for VectorDataConfig {
             storage_type: self.storage_type,
             index: self.index.clone(),
             quantization_config: None,
+        }
+    }
+}
+
+impl Anonymize for SparseVectorDataConfig {
+    fn anonymize(&self) -> Self {
+        SparseVectorDataConfig {
+            index: self.index.anonymize(),
         }
     }
 }

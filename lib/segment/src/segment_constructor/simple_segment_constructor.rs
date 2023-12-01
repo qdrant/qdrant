@@ -31,6 +31,7 @@ pub fn build_simple_segment(
                     quantization_config: None,
                 },
             )]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
         true,
@@ -69,6 +70,7 @@ pub fn build_multivec_segment(
         path,
         &SegmentConfig {
             vector_data: vectors_config,
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
         true,
