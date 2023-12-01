@@ -11,11 +11,11 @@ QDRANT_HOST='localhost:6334'
 docker_grpcurl="docker run --rm --network=host -v ${PWD}/lib/api/src/grpc/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
 
 $docker_grpcurl -d '{
-   "collection_name": "test_collection"
+   "collection_name": "test_sparse_collection"
 }' $QDRANT_HOST qdrant.Collections/Delete
 
 $docker_grpcurl -d '{
-   "collection_name": "test_collection",
+   "collection_name": "test_sparse_collection",
    "sparse_vectors_config": {
       "map": {
         "test": { }
@@ -26,7 +26,7 @@ $docker_grpcurl -d '{
 $docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
 
 $docker_grpcurl -d '{
-  "collection_name": "test_collection",
+  "collection_name": "test_sparse_collection",
   "wait": true,
   "ordering": null,
   "points": [
@@ -104,10 +104,10 @@ $docker_grpcurl -d '{
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
 
-$docker_grpcurl -d '{ "collection_name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
+$docker_grpcurl -d '{ "collection_name": "test_sparse_collection" }' $QDRANT_HOST qdrant.Collections/Get
 
 $docker_grpcurl -d '{
-  "collection_name": "test_collection",
+  "collection_name": "test_sparse_collection",
   "vector": [0.2,0.1,0.9,0.7],
   "sparse_indices": { "data": [0,1,2,3] },
   "vector_name": "test",
@@ -115,7 +115,7 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Points/Search
 
 $docker_grpcurl -d '{
-  "collection_name": "test_collection",
+  "collection_name": "test_sparse_collection",
   "filter": {
     "should": [
       {
@@ -135,7 +135,7 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Points/Search
 
 $docker_grpcurl -d '{
-  "collection_name": "test_collection",
+  "collection_name": "test_sparse_collection",
   "limit": 2,
   "with_vectors": {"enable": true},
   "filter": {
@@ -153,7 +153,7 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Points/Scroll
 
 $docker_grpcurl -d '{
-  "collection_name": "test_collection",
+  "collection_name": "test_sparse_collection",
   "with_vectors": {"enable": true},
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
 }' $QDRANT_HOST qdrant.Points/Get
