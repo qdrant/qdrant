@@ -130,7 +130,7 @@ impl std::fmt::Debug for FieldIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FieldIndex::IntIndex(_index) => write!(f, "IntIndex"),
-            FieldIndex::IntMapIndex(_index) => write!(f, "IntMapInde"),
+            FieldIndex::IntMapIndex(_index) => write!(f, "IntMapIndex"),
             FieldIndex::KeywordIndex(_index) => write!(f, "KeywordIndex"),
             FieldIndex::FloatIndex(_index) => write!(f, "FloatIndex"),
             FieldIndex::GeoIndex(_index) => write!(f, "GeoIndex"),

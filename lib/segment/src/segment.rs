@@ -1154,12 +1154,19 @@ impl SegmentEntry for Segment {
                 let to = float_index.get_range_by_size_excluding(limit, search_from, direction);
                 (from, to)
             }
+            crate::index::field_index::FieldIndex::IntMapIndex(_) => {
+                // Not ideal, but otherwise it would fail for integer schema,
+                // which creates both numeric and map indexes
+                (from, Bound::Unbounded)
+            }
             crate::index::field_index::FieldIndex::KeywordIndex(_)
-            | crate::index::field_index::FieldIndex::IntMapIndex(_)
             | crate::index::field_index::FieldIndex::GeoIndex(_)
             | crate::index::field_index::FieldIndex::FullTextIndex(_)
             | crate::index::field_index::FieldIndex::BinaryIndex(_) => {
-                unimplemented!("Order-by is not implemented for this index type")
+                unimplemented!(
+                    "Order-by is not implemented for this index type: {:?}",
+                    index
+                )
             }
         };
 
