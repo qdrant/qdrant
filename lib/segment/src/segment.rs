@@ -1118,7 +1118,21 @@ impl SegmentEntry for Segment {
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
     ) -> Vec<PointIdType> {
-        let limit = limit.unwrap_or(usize::MAX);
+        let limit = limit.map(|limit| {
+            filter.map_or( limit, |filter| {
+                let payload_index = self.payload_index.borrow();
+                let query_cardinality = payload_index.estimate_cardinality(filter);
+
+                let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
+
+                let point_ratio = available_points as f64
+                / (query_cardinality.exp as f64 + 1.0 /* protect from zero */) ;
+
+                // Expected number points we need from the range filter to fulfill enough points for OrderBy
+                (limit as f64 * point_ratio) as usize
+            })
+        }).unwrap_or(usize::MAX);
+
         let direction = order_by.direction.unwrap_or_default();
         let from = match direction {
             Direction::Asc => order_by.value_offset.unwrap_or(f64::NEG_INFINITY),
