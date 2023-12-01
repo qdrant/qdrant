@@ -5408,9 +5408,6 @@
       },
       "CollectionParams": {
         "type": "object",
-        "required": [
-          "vectors"
-        ],
         "properties": {
           "vectors": {
             "$ref": "#/components/schemas/VectorsConfig"
@@ -5458,6 +5455,14 @@
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": false,
             "type": "boolean"
+          },
+          "sparse_vectors": {
+            "description": "Configuration of the sparse vector storage",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SparseVectorParams"
+            },
+            "nullable": true
           }
         }
       },
@@ -5691,6 +5696,41 @@
           "auto",
           "custom"
         ]
+      },
+      "SparseVectorParams": {
+        "description": "Params of single sparse vector data storage",
+        "type": "object",
+        "properties": {
+          "index": {
+            "description": "Custom params for index. If none - values from collection configuration are used.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SparseIndexConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "SparseIndexConfig": {
+        "description": "Configuration for sparse inverted index.",
+        "type": "object",
+        "properties": {
+          "full_scan_threshold": {
+            "description": "We prefer a full scan search upto (excluding) this number of vectors.\n\nNote: this is number of vectors, not KiloBytes.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "on_disk": {
+            "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -7220,9 +7260,6 @@
       "CreateCollection": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "type": "object",
-        "required": [
-          "vectors"
-        ],
         "properties": {
           "vectors": {
             "$ref": "#/components/schemas/VectorsConfig"
@@ -7325,6 +7362,14 @@
                 "nullable": true
               }
             ]
+          },
+          "sparse_vectors": {
+            "description": "Sparse vector data config.",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SparseVectorParams"
+            },
+            "nullable": true
           }
         }
       },
@@ -7478,6 +7523,17 @@
                 "nullable": true
               }
             ]
+          },
+          "sparse_vectors": {
+            "description": "Map of sparse vector data parameters to update for each sparse vector.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SparseVectorsConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7572,6 +7628,12 @@
             "type": "boolean",
             "nullable": true
           }
+        }
+      },
+      "SparseVectorsConfig": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/SparseVectorParams"
         }
       },
       "ChangeAliasesOperation": {
@@ -8848,14 +8910,20 @@
       "SegmentConfig": {
         "type": "object",
         "required": [
-          "payload_storage_type",
-          "vector_data"
+          "payload_storage_type"
         ],
         "properties": {
           "vector_data": {
+            "default": {},
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/VectorDataConfig"
+            }
+          },
+          "sparse_vector_data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SparseVectorDataConfig"
             }
           },
           "payload_storage_type": {
@@ -8969,6 +9037,23 @@
             }
           }
         ]
+      },
+      "SparseVectorDataConfig": {
+        "description": "Config of single vector data storage",
+        "type": "object",
+        "properties": {
+          "index": {
+            "description": "Type of index used for search",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SparseIndexConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
       },
       "PayloadStorageType": {
         "description": "Type of payload storage",
@@ -10538,23 +10623,6 @@
             "items": {
               "$ref": "#/components/schemas/DiscoverRequest"
             }
-          }
-        }
-      },
-      "SparseIndexConfig": {
-        "type": "object",
-        "properties": {
-          "full_scan_threshold": {
-            "description": "We prefer a full scan search upto (excluding) this number of vectors.\n\nNote: this is number of vectors, not KiloBytes.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "on_disk": {
-            "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
-            "type": "boolean",
-            "nullable": true
           }
         }
       }

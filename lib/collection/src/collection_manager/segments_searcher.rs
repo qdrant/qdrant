@@ -567,6 +567,7 @@ fn is_search_optimized(
         .get(vector_name)
         .ok_or_else(vector_name_error)?;
 
+    // TODO(sparse) do we need some sparse vector check here?
     let vector_size = segment
         .config()
         .vector_data

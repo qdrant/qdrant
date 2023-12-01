@@ -110,6 +110,7 @@ impl TableOfContent {
             params,
             optimizers_config,
             quantization_config,
+            sparse_vectors,
         } = operation.update_collection;
         let collection = self.get_collection(&operation.collection_name).await?;
         let mut recreate_optimizers = false;
@@ -134,6 +135,10 @@ impl TableOfContent {
             collection
                 .update_quantization_config_from_diff(diff)
                 .await?;
+            recreate_optimizers = true;
+        }
+        if let Some(diff) = sparse_vectors {
+            collection.update_sparse_vectors_from_other(&diff).await?;
             recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {

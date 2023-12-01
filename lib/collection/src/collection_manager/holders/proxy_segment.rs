@@ -439,6 +439,18 @@ impl SegmentEntry for ProxySegment {
                 result.insert(vector_name.clone(), vector);
             }
         }
+        for vector_name in self
+            .wrapped_segment
+            .get()
+            .read()
+            .config()
+            .sparse_vector_data
+            .keys()
+        {
+            if let Some(vector) = self.vector(vector_name, point_id)? {
+                result.insert(vector_name.clone(), vector);
+            }
+        }
         Ok(result)
     }
 
@@ -573,7 +585,8 @@ impl SegmentEntry for ProxySegment {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
 
-        let vector_name_count = self.config().vector_data.len();
+        let vector_name_count =
+            self.config().vector_data.len() + self.config().sparse_vector_data.len();
         let deleted_points_count = self.deleted_points.read().len();
 
         // This is a best estimate
@@ -1331,6 +1344,7 @@ mod tests {
                     },
                 ),
             ]),
+            sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         };
         let mut original_segment = build_segment(dir.path(), &config, true).unwrap();

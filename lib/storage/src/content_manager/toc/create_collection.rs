@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use collection::collection::Collection;
@@ -5,7 +6,9 @@ use collection::config::{
     self, default_shard_number, CollectionConfig, CollectionParams, ShardingMethod,
 };
 use collection::operations::config_diff::DiffConfig as _;
-use collection::operations::types::{CollectionResult, VectorsConfig};
+use collection::operations::types::{
+    check_sparse_compatible, CollectionResult, SparseVectorParams, VectorsConfig,
+};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
@@ -42,6 +45,7 @@ impl TableOfContent {
             write_consistency_factor,
             init_from,
             quantization_config,
+            sparse_vectors,
         } = operation;
 
         self.collections
@@ -62,7 +66,7 @@ impl TableOfContent {
         }
 
         if let Some(init_from) = &init_from {
-            self.check_collections_compatibility(&vectors, &init_from.collection)
+            self.check_collections_compatibility(&vectors, &sparse_vectors, &init_from.collection)
                 .await?;
         }
 
@@ -104,6 +108,7 @@ impl TableOfContent {
 
         let collection_params = CollectionParams {
             vectors,
+            sparse_vectors,
             shard_number: NonZeroU32::new(shard_number).ok_or(StorageError::BadInput {
                 description: "`shard_number` cannot be 0".to_string(),
             })?,
@@ -210,11 +215,19 @@ impl TableOfContent {
     async fn check_collections_compatibility(
         &self,
         vectors: &VectorsConfig,
+        sparse_vectors: &Option<BTreeMap<String, SparseVectorParams>>,
         source_collection: &CollectionId,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection(source_collection).await?;
         let collection_vectors_schema = collection.state().await.config.params.vectors;
         collection_vectors_schema.check_compatible(vectors)?;
+        let collection_sparse_vectors_schema =
+            collection.state().await.config.params.sparse_vectors;
+        if let (Some(collection_sparse_vectors_schema), Some(sparse_vectors)) =
+            (&collection_sparse_vectors_schema, sparse_vectors)
+        {
+            check_sparse_compatible(collection_sparse_vectors_schema, sparse_vectors)?;
+        }
         Ok(())
     }
 

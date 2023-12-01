@@ -112,6 +112,7 @@ fn _test_filterable_hnsw(
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 

@@ -45,6 +45,7 @@ fn test_graph_connectivity() {
             },
         )]),
         payload_storage_type: Default::default(),
+        sparse_vector_data: Default::default(),
     };
 
     let mut segment = build_segment(dir.path(), &config, true).unwrap();

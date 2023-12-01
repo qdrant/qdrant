@@ -32,6 +32,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                     Some(vector_config) => vector_config.try_into()?,
                     None => return Err(Status::invalid_argument("vectors config is required")),
                 },
+                sparse_vectors: None, // TODO(sparse) grpc
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
@@ -74,6 +75,7 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .quantization_config
                     .map(TryInto::try_into)
                     .transpose()?,
+                sparse_vectors: None, // TODO(sparse) grpc
             },
         )))
     }

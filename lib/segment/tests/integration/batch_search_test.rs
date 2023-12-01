@@ -40,6 +40,7 @@ fn test_batch_and_single_request_equivalency() {
                 quantization_config: None,
             },
         )]),
+        sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
 
