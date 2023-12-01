@@ -71,7 +71,8 @@ pub struct OptimizersConfig {
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
     /// Maximum available threads for optimization workers
-    pub max_optimization_threads: usize,
+    #[serde(default)]
+    pub max_optimization_threads: Option<usize>,
 }
 
 impl OptimizersConfig {
@@ -85,7 +86,7 @@ impl OptimizersConfig {
             memmap_threshold: None,
             indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
-            max_optimization_threads: 0,
+            max_optimization_threads: Some(0),
         }
     }
 

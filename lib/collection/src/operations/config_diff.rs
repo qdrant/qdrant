@@ -376,7 +376,7 @@ mod tests {
             memmap_threshold: None,
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: 1,
+            max_optimization_threads: Some(1),
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
