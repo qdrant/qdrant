@@ -130,9 +130,10 @@ def test_order_by_int_descending():
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
 def test_paginate_whole_collection(key, direction):
     offset = None
-    limit = 20
+    limit = 30
     pages = 0
     points_count = 0
+    points_set = set()
     while True:
         response = request_with_validation(
             api="/collections/{collection_name}/points/scroll",
@@ -151,6 +152,11 @@ def test_paginate_whole_collection(key, direction):
 
         points_count += points_len
         pages += 1
+        
+        # Check no duplicates
+        for record in response.json()["result"]["points"]:
+            assert record["id"] not in points_set
+            points_set.add(record["id"])
 
         if offset is None:
             break
