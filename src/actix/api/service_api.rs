@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix_web::http::header::ContentType;
 use actix_web::http::StatusCode;
 use actix_web::rt::time::Instant;
@@ -108,7 +110,7 @@ async fn livez() -> impl Responder {
 }
 
 #[get("/readyz")]
-async fn readyz(ready: web::Data<Option<health::Ready>>) -> impl Responder {
+async fn readyz(ready: web::Data<Option<Arc<health::Ready>>>) -> impl Responder {
     let is_ready = match ready.as_ref() {
         Some(ready) => ready.is_ready(),
         None => true,
