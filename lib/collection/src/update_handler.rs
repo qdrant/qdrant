@@ -249,14 +249,21 @@ impl UpdateHandler {
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = max_rayon_threads(max_indexing_threads);
-                let Some(permit) = OPTIMIZER_CPU_BUDGET.try_acquire(desired_cpus) else {
+                let permit = match OPTIMIZER_CPU_BUDGET.try_acquire(desired_cpus) {
+                    Some(permit) => permit,
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
-                    if handles.is_empty() {
-                        callback(false);
+                    None => {
+                        log::trace!(
+                            "No available CPU permit for {} optimizer, postponing",
+                            optimizer.name()
+                        );
+                        if handles.is_empty() {
+                            callback(false);
+                        }
+                        break 'outer;
                     }
-                    break 'outer;
                 };
                 log::trace!(
                     "Acquired {} CPU permit for {} optimizer",
@@ -612,14 +619,8 @@ impl CpuBudget {
         let result = Semaphore::try_acquire_many_owned(self.semaphore.clone(), num_cpus);
         let permit = match result {
             Ok(permit) => permit,
-            Err(TryAcquireError::NoPermits) => {
-                log::error!("No more CPU permits, breaking...");
-                return None;
-            }
-            Err(TryAcquireError::Closed) => {
-                log::error!("Semaphore closed, error!");
-                return None;
-            }
+            Err(TryAcquireError::NoPermits) => return None,
+            Err(TryAcquireError::Closed) => unreachable!("Cannot acquire CPU permit because CPU budget semaphore is closed, this should never happen"),
         };
 
         Some(CpuPermit::new(num_cpus, permit))
