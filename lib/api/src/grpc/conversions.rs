@@ -528,7 +528,18 @@ impl From<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector
         vectors
             .vectors
             .into_iter()
-            .map(|(name, vector)| (name, vector.data.into()))
+            .map(|(name, vector)| {
+                let vec = match vector.indices {
+                    None => segment::data_types::vectors::Vector::Dense(vector.data),
+                    Some(indices) => segment::data_types::vectors::Vector::Sparse(
+                        sparse::common::sparse_vector::SparseVector {
+                            values: vector.data,
+                            indices: indices.data,
+                        },
+                    ),
+                };
+                (name, vec)
+            })
             .collect()
     }
 }
