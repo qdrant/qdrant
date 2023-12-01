@@ -55,7 +55,6 @@ pub struct Consensus {
     config: ConsensusConfig,
     broker: RaftMessageBroker,
     ready: Arc<health::Ready>,
-    applied_first_entry: bool,
 }
 
 impl Consensus {
@@ -243,7 +242,6 @@ impl Consensus {
             config,
             broker,
             ready,
-            applied_first_entry: false,
         };
 
         Ok((consensus, sender))
@@ -480,9 +478,7 @@ impl Consensus {
                 store.sync_local_state()?;
             }
 
-            if self.applied_first_entry {
-                self.runtime.block_on(self.ready.check_ready());
-            }
+            self.runtime.block_on(self.ready.check_ready());
         }
         Ok(())
     }
@@ -708,17 +704,11 @@ impl Consensus {
             self.send_messages(ready.take_persisted_messages());
         }
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
-        let entries = ready.entries().len();
-
         let stop_consensus =
             handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
                 .map_err(|err| anyhow!("Failed to handle committed entries: {}", err))?;
         if stop_consensus {
             return Ok((None, None));
-        }
-
-        if entries > 0 {
-            self.applied_first_entry = true;
         }
 
         // Advance the Raft.
@@ -742,18 +732,10 @@ impl Consensus {
                 .map_err(|err| anyhow!("Failed to set commit index: {}", err))?;
         }
         self.send_messages(light_rd.take_messages());
-
         // Apply all committed entries.
-        let entries = light_rd.committed_entries().len();
-
         let stop_consensus =
             handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
                 .map_err(|err| anyhow!("Failed to apply committed entries: {}", err))?;
-
-        if entries > 0 && !stop_consensus {
-            self.applied_first_entry = true;
-        }
-
         // Advance the apply index.
         self.node.advance_apply();
         Ok(stop_consensus)
