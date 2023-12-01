@@ -419,10 +419,7 @@ impl Validate for BatchVectorStruct {
         match self {
             BatchVectorStruct::Single(_) => Ok(()),
             BatchVectorStruct::Multi(v) => {
-                for batch in v.values() {
-                    common::validation::validate_iter(batch.iter())?;
-                }
-                Ok(())
+                common::validation::validate_iter(v.values().flat_map(|batch| batch.iter()))
             }
         }
     }
@@ -452,17 +449,6 @@ pub enum QueryVector {
     Recommend(RecoQuery<Vector>),
     Discovery(DiscoveryQuery<Vector>),
     Context(ContextQuery<Vector>),
-}
-
-impl Validate for QueryVector {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            QueryVector::Nearest(v) => v.validate(),
-            QueryVector::Recommend(v) => v.validate(),
-            QueryVector::Discovery(v) => v.validate(),
-            QueryVector::Context(v) => v.validate(),
-        }
-    }
 }
 
 impl From<VectorType> for QueryVector {

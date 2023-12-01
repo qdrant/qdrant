@@ -2,7 +2,6 @@ use std::iter;
 
 use common::types::ScoreType;
 use itertools::Itertools;
-use validator::Validate;
 
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
@@ -102,21 +101,6 @@ impl<T> Query<T> for ContextQuery<T> {
             .iter()
             .map(|pair| pair.loss_by(&similarity))
             .sum()
-    }
-}
-
-impl<T: Validate> Validate for ContextPair<T> {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        common::validation::merge_validation_results(&[
-            self.positive.validate(),
-            self.negative.validate(),
-        ])
-    }
-}
-
-impl<T: Validate> Validate for ContextQuery<T> {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        common::validation::validate_iter(self.pairs.iter())
     }
 }
 

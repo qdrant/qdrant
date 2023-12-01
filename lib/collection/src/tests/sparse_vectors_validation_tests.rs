@@ -6,7 +6,7 @@ use validator::Validate;
 
 use crate::operations::point_ops::{Batch, PointStruct, PointsBatch, PointsList};
 use crate::operations::types::{
-    BaseGroupRequest, ContextExamplePair, DiscoverRequestInternal, QueryEnum, RecommendExample,
+    BaseGroupRequest, ContextExamplePair, DiscoverRequestInternal, RecommendExample,
     RecommendRequestInternal, SearchGroupsRequestInternal, SearchRequestInternal,
 };
 use crate::operations::vector_ops::PointVectors;
@@ -86,11 +86,6 @@ fn validate_error_sparse_vector_search_request_internal() {
         with_vector: None,
         score_threshold: None,
     });
-}
-
-#[test]
-fn validate_error_sparse_vector_query_enum() {
-    check_validation_error(QueryEnum::Nearest(wrong_named_vector_struct()));
 }
 
 #[test]

@@ -14,18 +14,6 @@ pub fn validate_iter<T: Validate>(iter: impl Iterator<Item = T>) -> Result<(), V
     errors.errors().is_empty().then_some(()).ok_or(errors)
 }
 
-#[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
-pub fn merge_validation_results(
-    results: &[Result<(), ValidationErrors>],
-) -> Result<(), ValidationErrors> {
-    results
-        .iter()
-        .filter_map(|result| result.clone().err())
-        .fold(Err(ValidationErrors::new()), |bag, err| {
-            ValidationErrors::merge(bag, "?", Err(err))
-        })
-}
-
 /// Validate the value is in `[min, max]`
 #[inline]
 pub fn validate_range_generic<N>(
