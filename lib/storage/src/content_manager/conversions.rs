@@ -31,6 +31,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
             CreateCollection {
                 vectors: match value.vectors_config.and_then(|config| config.config) {
                     Some(vector_config) => vector_config.try_into()?,
+                    // TODO(sparse): sparse or dense vectors config is required
                     None => Default::default(),
                 },
                 sparse_vectors: value
