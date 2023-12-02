@@ -1,5 +1,4 @@
 import math
-from os import path
 import random
 
 import pytest
@@ -41,7 +40,7 @@ def upsert_points(collection_name, amount=100):
             method="PUT",
             path_params={"collection_name": collection_name},
             query_params={"wait": "true"},
-            body={"points": batch},
+            body={"points": list(batch)},
         )
         assert response.ok
 
