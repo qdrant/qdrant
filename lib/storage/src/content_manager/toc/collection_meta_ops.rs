@@ -30,7 +30,7 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         match operation {
             CollectionMetaOperations::CreateCollection(mut operation) => {
-                log::debug!("Creating collection {}", operation.collection_name);
+                log::info!("Creating collection {}", operation.collection_name);
                 let distribution = match operation.take_distribution() {
                     None => match operation
                         .create_collection
@@ -53,11 +53,11 @@ impl TableOfContent {
                 .await
             }
             CollectionMetaOperations::UpdateCollection(operation) => {
-                log::debug!("Updating collection {}", operation.collection_name);
+                log::info!("Updating collection {}", operation.collection_name);
                 self.update_collection(operation).await
             }
             CollectionMetaOperations::DeleteCollection(operation) => {
-                log::debug!("Deleting collection {}", operation.0);
+                log::info!("Deleting collection {}", operation.0);
                 self.delete_collection(&operation.0).await
             }
             CollectionMetaOperations::ChangeAliases(operation) => {
