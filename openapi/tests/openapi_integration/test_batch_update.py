@@ -79,6 +79,23 @@ def test_batch_update():
                         ]
                     }
                 },
+                {
+                    "upsert": {
+                        "points": [
+                            {
+                                "id": 9,
+                                "vector": {
+                                    "sparse-text": {
+                                        "indices": [123, 321],
+                                        "values": [5.5, 5.5]
+                                    }
+                                },
+                                "payload": {},
+                            },
+                        ]
+                    }
+                },
+                {"delete": {"points": [10]}},
             ]
         },
         query_params={"wait": "true"},
@@ -94,6 +111,23 @@ def test_batch_update():
             }
         ],
         nonexisting_ids=[8],
+        with_vectors=True,
+    )
+
+    assert_points(
+        [
+            {
+                "id": 9,
+                "vector":  {
+                    "sparse-text": {
+                        "indices": [123, 321],
+                        "values": [5.5, 5.5]
+                    },
+                },
+                "payload": {},
+            }
+        ],
+        nonexisting_ids=[10],
         with_vectors=True,
     )
 
