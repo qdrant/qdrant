@@ -27,6 +27,11 @@ fn async_raw_scorer_euclid() -> Result<()> {
 }
 
 #[test]
+fn async_raw_scorer_manhattan() -> Result<()> {
+    test_async_raw_scorer_defaults(Distance::Manhattan)
+}
+
+#[test]
 fn async_raw_scorer_dot() -> Result<()> {
     test_async_raw_scorer_defaults(Distance::Dot)
 }
