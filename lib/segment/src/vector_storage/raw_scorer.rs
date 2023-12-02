@@ -13,7 +13,7 @@ use super::{DenseVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{QueryVector, VectorType};
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
@@ -183,6 +183,12 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage>(
             is_stopped,
         ),
         Distance::Dot => new_scorer_with_metric::<DotProductMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Manhattan => new_scorer_with_metric::<ManhattanMetric, _>(
             query,
             vector_storage,
             point_deleted,

@@ -12,7 +12,7 @@ use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::mmap_vectors::MmapVectors;
@@ -245,6 +245,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             Distance::Cosine => self._build_with_metric::<CosineMetric>(),
             Distance::Euclid => self._build_with_metric::<EuclidMetric>(),
             Distance::Dot => self._build_with_metric::<DotProductMetric>(),
+            Distance::Manhattan => self._build_with_metric::<ManhattanMetric>(),
         }
     }
 
