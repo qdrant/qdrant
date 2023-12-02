@@ -1,7 +1,7 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, search, random_vector
+from .fixtures import create_collection, upsert_random_points, search, random_dense_vector
 from .utils import *
 
 logging.basicConfig(level=logging.DEBUG)
@@ -82,7 +82,7 @@ def test_listener_node(tmp_path: pathlib.Path):
 
     upsert_random_points(peer_api_uris[0], 100)
 
-    query_vector = random_vector()
+    query_vector = random_dense_vector()
     res1 = search(peer_api_uris[0], query_vector, city="London", collection=COLLECTION_NAME)
 
     p = processes.pop()

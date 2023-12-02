@@ -2,7 +2,7 @@ import pathlib
 import shutil
 
 from requests import get, post, put, delete
-from .fixtures import create_collection, upsert_random_points, random_vector, search
+from .fixtures import create_collection, upsert_random_points, random_dense_vector, search
 from .utils import *
 from .assertions import assert_http_ok
 

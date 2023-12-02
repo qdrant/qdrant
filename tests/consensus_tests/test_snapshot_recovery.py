@@ -1,6 +1,6 @@
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, random_vector, search
+from .fixtures import create_collection, upsert_random_points, random_dense_vector, search, random_sparse_vector
 from .utils import *
 
 N_PEERS = 3
@@ -71,10 +71,14 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     upsert_random_points(peer_api_uris[0], 100)
 
     query_city = "London"
-    query_vector = random_vector()
 
-    search_result = search(peer_api_uris[0], query_vector, query_city)
-    assert len(search_result) > 0
+    dense_query_vector = random_dense_vector()
+    dense_search_result = search(peer_api_uris[0], dense_query_vector, query_city)
+    assert len(dense_search_result) > 0
+
+    sparse_query_vector = {"name": "sparse-text", "vector": random_sparse_vector()}
+    sparse_search_result = search(peer_api_uris[0], sparse_query_vector, query_city)
+    assert len(sparse_search_result) > 0
 
     collection_info = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
     points_with_indexed_payload = collection_info["payload_schema"]["city"]["points"]
@@ -138,11 +142,17 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     for i in range(len(new_local_shards)):
         assert new_local_shards[i] == local_shards[i]
 
-    new_search_result = search(new_url, query_vector, query_city)
+    # check that the dense vectors are still the same
+    new_dense_search_result = search(new_url, dense_query_vector, query_city)
+    assert len(new_dense_search_result) == len(dense_search_result)
+    for i in range(len(new_dense_search_result)):
+        assert new_dense_search_result[i] == dense_search_result[i]
 
-    assert len(new_search_result) == len(search_result)
-    for i in range(len(new_search_result)):
-        assert new_search_result[i] == search_result[i]
+    # check that the sparse vectors are still the same
+    new_sparse_search_result = search(new_url, sparse_query_vector, query_city)
+    assert len(new_sparse_search_result) == len(sparse_search_result)
+    for i in range(len(new_sparse_search_result)):
+        assert new_sparse_search_result[i] == sparse_search_result[i]
 
     new_collection_info = get_collection_info(new_url, COLLECTION_NAME)
     new_points_with_indexed_payload = new_collection_info["payload_schema"]["city"]["points"]
