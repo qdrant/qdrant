@@ -1009,6 +1009,7 @@ pub enum Distance {
     Cosine = 1,
     Euclid = 2,
     Dot = 3,
+    Manhattan = 4,
 }
 impl Distance {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1021,6 +1022,7 @@ impl Distance {
             Distance::Cosine => "Cosine",
             Distance::Euclid => "Euclid",
             Distance::Dot => "Dot",
+            Distance::Manhattan => "Manhattan",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1030,6 +1032,7 @@ impl Distance {
             "Cosine" => Some(Self::Cosine),
             "Euclid" => Some(Self::Euclid),
             "Dot" => Some(Self::Dot),
+            "Manhattan" => Some(Self::Manhattan),
             _ => None,
         }
     }

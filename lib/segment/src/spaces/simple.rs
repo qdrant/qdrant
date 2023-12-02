@@ -29,6 +29,9 @@ pub struct CosineMetric;
 #[derive(Clone)]
 pub struct EuclidMetric;
 
+#[derive(Clone)]
+pub struct ManhattanMetric;
+
 impl Metric for EuclidMetric {
     fn distance() -> Distance {
         Distance::Euclid
@@ -68,6 +71,48 @@ impl Metric for EuclidMetric {
 
     fn postprocess(score: ScoreType) -> ScoreType {
         score.abs().sqrt()
+    }
+}
+
+impl Metric for ManhattanMetric {
+    fn distance() -> Distance {
+        Distance::Manhattan
+    }
+
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && v1.len() >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { manhattan_similarity_avx(v1, v2) };
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
+                return unsafe { manhattan_similarity_sse(v1, v2) };
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
+                return unsafe { manhattan_similarity_neon(v1, v2) };
+            }
+        }
+
+        manhattan_similarity(v1, v2)
+    }
+
+    fn preprocess(vector: VectorType) -> VectorType {
+        vector
+    }
+
+    fn postprocess(score: ScoreType) -> ScoreType {
+        score.abs()
     }
 }
 
@@ -184,6 +229,13 @@ pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> 
     -v1.iter()
         .zip(v2)
         .map(|(a, b)| (a - b).powi(2))
+        .sum::<ScoreType>()
+}
+
+pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    -v1.iter()
+        .zip(v2)
+        .map(|(a, b)| (a - b).abs())
         .sum::<ScoreType>()
 }
 

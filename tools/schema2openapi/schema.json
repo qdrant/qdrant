@@ -154,7 +154,8 @@
       "enum": [
         "Cosine",
         "Euclid",
-        "Dot"
+        "Dot",
+        "Manhattan"
       ]
     },
     "Indexes": {
