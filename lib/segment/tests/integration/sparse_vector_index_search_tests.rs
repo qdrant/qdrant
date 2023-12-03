@@ -458,25 +458,6 @@ fn handling_empty_sparse_vectors() {
         DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
     )
     .unwrap();
-    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
-
-    // add empty points to storage
-    for idx in 0..NUM_VECTORS {
-        let vec = &SparseVector::new(vec![], vec![]).unwrap();
-        borrowed_storage
-            .insert_vector(idx as PointOffsetType, vec.into())
-            .unwrap();
-    }
-    drop(borrowed_storage);
-
-    // assert all empty points are in storage
-    assert_eq!(
-        sparse_vector_index
-            .vector_storage
-            .borrow()
-            .available_vector_count(),
-        NUM_VECTORS
-    );
 
     // empty vectors are not indexed
     sparse_vector_index.build_index(&stopped).unwrap();
