@@ -20,13 +20,16 @@ pub struct InvertedIndexRam {
     pub vector_count: usize,
 }
 
+impl Default for InvertedIndexRam {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl InvertedIndex for InvertedIndexRam {
     //TODO(sparse) Ram index is not persisted
-    fn open(_path: &Path) -> std::io::Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(InvertedIndexRam::empty())
+    fn open(_path: &Path) -> std::io::Result<Option<Self>> {
+        Ok(None)
     }
 
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
