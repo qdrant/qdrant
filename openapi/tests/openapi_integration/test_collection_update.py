@@ -34,6 +34,13 @@ def test_collection_update():
                     },
                 },
             },
+            "sparse_vectors": {
+                "sparse-text": {
+                    "index": {
+                        "on_disk": True,
+                    }
+                },
+            },
             "optimizers_config": {
                 "default_segment_number": 6,
                 "indexing_threshold": 10000,

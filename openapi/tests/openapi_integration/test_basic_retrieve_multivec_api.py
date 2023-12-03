@@ -38,7 +38,7 @@ def test_points_retrieve():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['vectors_count'] == 12
+    assert response.json()['result']['vectors_count'] == 16
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
@@ -51,6 +51,24 @@ def test_points_retrieve():
     )
     assert response.ok
     assert len(response.json()['result']) == 3
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": {
+                "name": "sparse-image",
+                "vector": {
+                    "indices": [2, 8],
+                    "values": [0.2, 0.3]
+                }
+            },
+            "limit": 2
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 2
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
@@ -89,6 +107,19 @@ def test_points_retrieve():
         assert point['vector'] is not None
         assert len(point['vector']['text']) == 8
         assert len(point['vector']['image']) == 4
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={"offset": 7, "limit": 2, "with_vector": True}
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 2
+    for point in response.json()['result']['points']:
+        assert point['vector'] is not None
+        assert len(point['vector']['sparse-text']) == 2
+        assert len(point['vector']['sparse-image']) == 2
 
 
 def test_retrieve_invalid_vector():

@@ -10,6 +10,7 @@ def drop_collection(collection_name='test_collection'):
     )
     assert response.ok
 
+
 def geo_collection_setup(
         collection_name='test_collection',
         on_disk_payload=False,
@@ -132,6 +133,9 @@ def basic_collection_setup(
                 "distance": "Dot",
                 "on_disk": on_disk_vectors,
             },
+            "sparse_vectors": {
+                "sparse-text": {},
+            },
             "on_disk_payload": on_disk_payload
         }
     )
@@ -190,6 +194,25 @@ def basic_collection_setup(
                     "vector": [0.79, 0.53, 0.72, 0.15],
                     "payload": {"city": []}
                 },
+                {
+                    "id": 9,
+                    "vector": {
+                        "sparse-text": {
+                            "indices": [66, 12],
+                            "values": [0.5, 0.5]
+                        }
+                    }
+                },
+                {
+                    "id": 10,
+                    "vector": {
+                        "sparse-text": {
+                            "indices": [1, 2, 3],
+                            "values": [0.1, 0.2, 0.3]
+                        }
+                    },
+                    "payload": {"city": []}
+                }
             ]
         }
     )
@@ -225,6 +248,10 @@ def multivec_collection_setup(
                     "distance": distance or "Cosine",
                     "on_disk": on_disk_vectors,
                 },
+            },
+            "sparse_vectors": {
+                "sparse-image": {},
+                "sparse-text": {},
             },
             "on_disk_payload": on_disk_payload,
         }
@@ -291,6 +318,33 @@ def multivec_collection_setup(
                         "image": [0.35, 0.08, 0.11, 0.44],
                         "text": [0.35, 0.08, 0.11, 0.44, 0.35, 0.08, 0.11, 0.44],
                     }
+                },
+                {
+                    "id": 7,
+                    "vector": {
+                        "sparse-image": {
+                            "indices": [1, 2, 4, 8],
+                            "values": [1.5, 1.5, 1.5, 1.5]
+                        },
+                        "sparse-text": {
+                            "indices": [66, 12],
+                            "values": [0.5, 0.5]
+                        }
+                    }
+                },
+                {
+                    "id": 8,
+                    "vector": {
+                        "sparse-image": {
+                            "indices": [2, 8],
+                            "values": [2.5, 2.5]
+                        },
+                        "sparse-text": {
+                            "indices": [1, 2, 3],
+                            "values": [0.1, 0.2, 0.3]
+                        }
+                    },
+                    "payload": {"count": 0}
                 }
             ]
         }
