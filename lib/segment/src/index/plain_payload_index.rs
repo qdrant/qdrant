@@ -27,6 +27,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     SearchParams,
 };
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{new_stoppable_raw_scorer, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
@@ -300,6 +301,16 @@ impl VectorIndex for PlainIndex {
 
     fn update_vector(&mut self, _id: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Ok(())
+    }
+
+    fn set_quantized_vectors(
+        &mut self,
+        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
+    ) {
+        debug_assert!(
+            quantized_vectors.is_none(),
+            "Quantized vectors are not supported for plain index"
+        );
     }
 }
 
