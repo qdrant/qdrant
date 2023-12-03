@@ -1,4 +1,5 @@
 import random
+from typing import List
 
 import requests
 
@@ -6,9 +7,25 @@ from consensus_tests.assertions import assert_http_ok
 
 CITIES = ["London", "New York", "Paris", "Tokyo", "Berlin", "Rome", "Madrid", "Moscow"]
 
+# dense vector sizing
+DENSE_VECTOR_SIZE = 4
 
-def random_vector():
-    return [random.random() for _ in range(4)]
+# sparse vector sizing
+SPARSE_VECTOR_SIZE = 1000
+SPARSE_VECTOR_DENSITY = 0.1
+
+
+# Generate a random dense vector
+def random_dense_vector():
+    return [random.random() for _ in range(DENSE_VECTOR_SIZE)]
+
+
+# Generate a random sparse vector
+def random_sparse_vector():
+    num_non_zero = int(SPARSE_VECTOR_SIZE * SPARSE_VECTOR_DENSITY)
+    indices: List[int] = random.sample(range(SPARSE_VECTOR_SIZE), num_non_zero)
+    values: List[float] = [round(random.random(), 6) for _ in range(num_non_zero)]
+    return {"indices": indices, "values": values}
 
 
 def upsert_random_points(peer_url, num, collection_name="test_collection", fail_on_error=True, offset=0, wait='true', ordering ='weak'):
@@ -18,7 +35,10 @@ def upsert_random_points(peer_url, num, collection_name="test_collection", fail_
             "points": [
                 {
                     "id": i + offset,
-                    "vector": random_vector(),
+                    "vector": {
+                        "": random_dense_vector(),
+                        "sparse-text": random_sparse_vector(),
+                    },
                     "payload": {"city": random.choice(CITIES)}
                 } for i in range(num)
             ]
@@ -32,8 +52,11 @@ def create_collection(peer_url, collection="test_collection", shard_number=1, re
     r_batch = requests.put(
         f"{peer_url}/collections/{collection}?timeout={timeout}", json={
             "vectors": {
-                "size": 4,
+                "size": DENSE_VECTOR_SIZE,
                 "distance": "Dot"
+            },
+            "sparse_vectors": {
+                "sparse-text": {}
             },
             "shard_number": shard_number,
             "replication_factor": replication_factor,

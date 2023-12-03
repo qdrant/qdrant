@@ -442,14 +442,27 @@ def wait_for_peer_online(peer_api_uri: str):
         raise e
 
 
-def check_collection_size(peer_api_uri: str, collection_name: str, expected_size: int) -> bool:
+def check_collection_vectors_count(peer_api_uri: str, collection_name: str, expected_size: int) -> bool:
+    collection_cluster_info = get_collection_info(peer_api_uri, collection_name)
+    return collection_cluster_info['vectors_count'] == expected_size
+
+
+def check_collection_points_count(peer_api_uri: str, collection_name: str, expected_size: int) -> bool:
     collection_cluster_info = get_collection_info(peer_api_uri, collection_name)
     return collection_cluster_info['points_count'] == expected_size
 
 
-def wait_collection_size(peer_api_uri: str, collection_name: str, expected_size: int):
+def wait_collection_points_count(peer_api_uri: str, collection_name: str, expected_size: int):
     try:
-        wait_for(check_collection_size, peer_api_uri, collection_name, expected_size)
+        wait_for(check_collection_points_count, peer_api_uri, collection_name, expected_size)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
+def wait_collection_vectors_count(peer_api_uri: str, collection_name: str, expected_size: int):
+    try:
+        wait_for(check_collection_vectors_count, peer_api_uri, collection_name, expected_size)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
         raise e
