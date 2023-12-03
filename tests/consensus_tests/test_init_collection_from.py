@@ -8,6 +8,8 @@ N_PEERS = 3
 N_SHARDS = 3
 N_REPLICA = 2
 
+NUM_POINTS = 500
+
 
 def create_collection_from(
         peer_url,
@@ -23,6 +25,9 @@ def create_collection_from(
             "vectors": {
                 "size": 4,
                 "distance": "Dot"
+            },
+            "sparse_vectors": {
+                "sparse-text": {}
             },
             "shard_number": shard_number,
             "replication_factor": replication_factor,
@@ -54,7 +59,7 @@ def test_init_collection_from(tmp_path: pathlib.Path):
     )
 
     create_payload_index(peer_api_uris[0], "test_collection")
-    upsert_random_points(peer_api_uris[0], collection_name="test_collection", num=500)
+    upsert_random_points(peer_api_uris[0], collection_name="test_collection", num=NUM_POINTS)
 
     create_collection_from(peer_api_uris[1], from_collection_name="test_collection", collection="test_collection_2")
 
@@ -63,10 +68,10 @@ def test_init_collection_from(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    wait_collection_size(
+    wait_collection_vectors_count(
         peer_api_uris[0],
         "test_collection_2",
-        500
+        NUM_POINTS * 2  # 1 dense + 1 sparse per point
     )
 
     collection_info = get_collection_info(peer_api_uris[0], "test_collection_2")
