@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -13,6 +15,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 /// Trait for vector searching
 pub trait VectorIndex {
@@ -38,6 +41,11 @@ pub trait VectorIndex {
 
     /// Update index for a single vector
     fn update_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
+
+    fn set_quantized_vectors(
+        &mut self,
+        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
+    );
 }
 
 pub enum VectorIndexEnum {
@@ -133,6 +141,19 @@ impl VectorIndex for VectorIndexEnum {
             Self::HnswMmap(index) => index.update_vector(id, vector),
             Self::SparseRam(index) => index.update_vector(id, vector),
             Self::SparseMmap(index) => index.update_vector(id, vector),
+        }
+    }
+
+    fn set_quantized_vectors(
+        &mut self,
+        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
+    ) {
+        match self {
+            Self::Plain(index) => index.set_quantized_vectors(quantized_vectors),
+            Self::HnswRam(index) => index.set_quantized_vectors(quantized_vectors),
+            Self::HnswMmap(index) => index.set_quantized_vectors(quantized_vectors),
+            Self::SparseRam(index) => index.set_quantized_vectors(quantized_vectors),
+            Self::SparseMmap(index) => index.set_quantized_vectors(quantized_vectors),
         }
     }
 }

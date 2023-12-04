@@ -22,6 +22,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::sparse_raw_scorer::sparse_check_vector;
 use crate::vector_storage::{new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum};
 
@@ -276,5 +277,15 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             self.inverted_index.upsert(id, vector.clone());
         }
         Ok(())
+    }
+
+    fn set_quantized_vectors(
+        &mut self,
+        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
+    ) {
+        debug_assert!(
+            quantized_vectors.is_none(),
+            "Sparse index does not support quantization"
+        );
     }
 }

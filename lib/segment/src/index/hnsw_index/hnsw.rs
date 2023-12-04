@@ -831,4 +831,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
     fn update_vector(&mut self, _id: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }
+    fn set_quantized_vectors(
+        &mut self,
+        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
+    ) {
+        self.quantized_vectors = quantized_vectors;
+    }
 }
