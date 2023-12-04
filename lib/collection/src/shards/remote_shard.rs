@@ -475,7 +475,7 @@ impl RemoteShard {
             .with_shard_snapshots_client_timeout(
                 |mut client| async move {
                     client
-                        .recover_shard(RecoverShardSnapshotRequest {
+                        .recover(RecoverShardSnapshotRequest {
                             collection_name: collection_name.into(),
                             shard_id,
                             snapshot_location: Some(ShardSnapshotLocation {

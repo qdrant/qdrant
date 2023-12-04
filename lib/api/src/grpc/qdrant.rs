@@ -10727,7 +10727,7 @@ pub mod shard_snapshots_client {
         }
         ///
         /// Create shard snapshot
-        pub async fn create_shard(
+        pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateShardSnapshotRequest>,
         ) -> std::result::Result<
@@ -10745,16 +10745,16 @@ pub mod shard_snapshots_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardSnapshots/CreateShard",
+                "/qdrant.ShardSnapshots/Create",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "CreateShard"));
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "Create"));
             self.inner.unary(req, path, codec).await
         }
         ///
         /// List shard snapshots
-        pub async fn list_shard(
+        pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListShardSnapshotsRequest>,
         ) -> std::result::Result<
@@ -10772,16 +10772,16 @@ pub mod shard_snapshots_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardSnapshots/ListShard",
+                "/qdrant.ShardSnapshots/List",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "ListShard"));
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "List"));
             self.inner.unary(req, path, codec).await
         }
         ///
         /// Delete shard snapshot
-        pub async fn delete_shard(
+        pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteShardSnapshotRequest>,
         ) -> std::result::Result<
@@ -10799,16 +10799,16 @@ pub mod shard_snapshots_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardSnapshots/DeleteShard",
+                "/qdrant.ShardSnapshots/Delete",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "DeleteShard"));
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "Delete"));
             self.inner.unary(req, path, codec).await
         }
         ///
         /// Recover shard snapshot
-        pub async fn recover_shard(
+        pub async fn recover(
             &mut self,
             request: impl tonic::IntoRequest<super::RecoverShardSnapshotRequest>,
         ) -> std::result::Result<
@@ -10826,11 +10826,11 @@ pub mod shard_snapshots_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.ShardSnapshots/RecoverShard",
+                "/qdrant.ShardSnapshots/Recover",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "RecoverShard"));
+                .insert(GrpcMethod::new("qdrant.ShardSnapshots", "Recover"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -10844,7 +10844,7 @@ pub mod shard_snapshots_server {
     pub trait ShardSnapshots: Send + Sync + 'static {
         ///
         /// Create shard snapshot
-        async fn create_shard(
+        async fn create(
             &self,
             request: tonic::Request<super::CreateShardSnapshotRequest>,
         ) -> std::result::Result<
@@ -10853,7 +10853,7 @@ pub mod shard_snapshots_server {
         >;
         ///
         /// List shard snapshots
-        async fn list_shard(
+        async fn list(
             &self,
             request: tonic::Request<super::ListShardSnapshotsRequest>,
         ) -> std::result::Result<
@@ -10862,7 +10862,7 @@ pub mod shard_snapshots_server {
         >;
         ///
         /// Delete shard snapshot
-        async fn delete_shard(
+        async fn delete(
             &self,
             request: tonic::Request<super::DeleteShardSnapshotRequest>,
         ) -> std::result::Result<
@@ -10871,7 +10871,7 @@ pub mod shard_snapshots_server {
         >;
         ///
         /// Recover shard snapshot
-        async fn recover_shard(
+        async fn recover(
             &self,
             request: tonic::Request<super::RecoverShardSnapshotRequest>,
         ) -> std::result::Result<
@@ -10958,13 +10958,13 @@ pub mod shard_snapshots_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/qdrant.ShardSnapshots/CreateShard" => {
+                "/qdrant.ShardSnapshots/Create" => {
                     #[allow(non_camel_case_types)]
-                    struct CreateShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    struct CreateSvc<T: ShardSnapshots>(pub Arc<T>);
                     impl<
                         T: ShardSnapshots,
                     > tonic::server::UnaryService<super::CreateShardSnapshotRequest>
-                    for CreateShardSvc<T> {
+                    for CreateSvc<T> {
                         type Response = super::CreateSnapshotResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -10976,7 +10976,7 @@ pub mod shard_snapshots_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ShardSnapshots>::create_shard(&inner, request).await
+                                <T as ShardSnapshots>::create(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -10988,7 +10988,7 @@ pub mod shard_snapshots_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = CreateShardSvc(inner);
+                        let method = CreateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -11004,13 +11004,13 @@ pub mod shard_snapshots_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.ShardSnapshots/ListShard" => {
+                "/qdrant.ShardSnapshots/List" => {
                     #[allow(non_camel_case_types)]
-                    struct ListShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    struct ListSvc<T: ShardSnapshots>(pub Arc<T>);
                     impl<
                         T: ShardSnapshots,
                     > tonic::server::UnaryService<super::ListShardSnapshotsRequest>
-                    for ListShardSvc<T> {
+                    for ListSvc<T> {
                         type Response = super::ListSnapshotsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -11022,7 +11022,7 @@ pub mod shard_snapshots_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ShardSnapshots>::list_shard(&inner, request).await
+                                <T as ShardSnapshots>::list(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -11034,7 +11034,7 @@ pub mod shard_snapshots_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = ListShardSvc(inner);
+                        let method = ListSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -11050,13 +11050,13 @@ pub mod shard_snapshots_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.ShardSnapshots/DeleteShard" => {
+                "/qdrant.ShardSnapshots/Delete" => {
                     #[allow(non_camel_case_types)]
-                    struct DeleteShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    struct DeleteSvc<T: ShardSnapshots>(pub Arc<T>);
                     impl<
                         T: ShardSnapshots,
                     > tonic::server::UnaryService<super::DeleteShardSnapshotRequest>
-                    for DeleteShardSvc<T> {
+                    for DeleteSvc<T> {
                         type Response = super::DeleteSnapshotResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -11068,7 +11068,7 @@ pub mod shard_snapshots_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ShardSnapshots>::delete_shard(&inner, request).await
+                                <T as ShardSnapshots>::delete(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -11080,7 +11080,7 @@ pub mod shard_snapshots_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = DeleteShardSvc(inner);
+                        let method = DeleteSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -11096,13 +11096,13 @@ pub mod shard_snapshots_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.ShardSnapshots/RecoverShard" => {
+                "/qdrant.ShardSnapshots/Recover" => {
                     #[allow(non_camel_case_types)]
-                    struct RecoverShardSvc<T: ShardSnapshots>(pub Arc<T>);
+                    struct RecoverSvc<T: ShardSnapshots>(pub Arc<T>);
                     impl<
                         T: ShardSnapshots,
                     > tonic::server::UnaryService<super::RecoverShardSnapshotRequest>
-                    for RecoverShardSvc<T> {
+                    for RecoverSvc<T> {
                         type Response = super::RecoverSnapshotResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -11114,7 +11114,7 @@ pub mod shard_snapshots_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ShardSnapshots>::recover_shard(&inner, request).await
+                                <T as ShardSnapshots>::recover(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -11126,7 +11126,7 @@ pub mod shard_snapshots_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = RecoverShardSvc(inner);
+                        let method = RecoverSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
