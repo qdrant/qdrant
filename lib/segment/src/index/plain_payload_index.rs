@@ -305,12 +305,9 @@ impl VectorIndex for PlainIndex {
 
     fn set_quantized_vectors(
         &mut self,
-        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
+        _quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
     ) {
-        debug_assert!(
-            quantized_vectors.is_none(),
-            "Quantized vectors are not supported for plain index"
-        );
+        // ToDo: maybe use quantized vectors for plain index as well?
     }
 }
 
