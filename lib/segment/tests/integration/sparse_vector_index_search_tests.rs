@@ -1,19 +1,24 @@
 use std::cmp::max;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::operation_error::OperationResult;
-use segment::data_types::vectors::QueryVector;
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{QueryVector, Vector};
+use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    Condition, FieldCondition, Filter, Payload, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    Condition, FieldCondition, Filter, Payload, SegmentConfig, SeqNumberType,
+    SparseVectorDataConfig, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
@@ -33,6 +38,8 @@ const NUM_VECTORS: usize = 2000;
 /// Default full scan threshold in tests
 /// very low value to force usage of index
 const LOW_FULL_SCAN_THRESHOLD: usize = 1;
+
+const SPARSE_VECTOR_NAME: &str = "sparse_vector";
 
 /// Expects the filter to match ALL points in order to compare the results with/without filter
 fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize) {
@@ -451,25 +458,6 @@ fn handling_empty_sparse_vectors() {
         DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
     )
     .unwrap();
-    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
-
-    // add empty points to storage
-    for idx in 0..NUM_VECTORS {
-        let vec = &SparseVector::new(vec![], vec![]).unwrap();
-        borrowed_storage
-            .insert_vector(idx as PointOffsetType, vec.into())
-            .unwrap();
-    }
-    drop(borrowed_storage);
-
-    // assert all empty points are in storage
-    assert_eq!(
-        sparse_vector_index
-            .vector_storage
-            .borrow()
-            .available_vector_count(),
-        NUM_VECTORS
-    );
 
     // empty vectors are not indexed
     sparse_vector_index.build_index(&stopped).unwrap();
@@ -483,4 +471,75 @@ fn handling_empty_sparse_vectors() {
         .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].len(), 0);
+}
+
+#[test]
+fn sparse_vector_persistence_test() {
+    let stopped = AtomicBool::new(false);
+
+    let dim = 8;
+    let num_vectors: u64 = 5_000;
+    let top = 3;
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let config = SegmentConfig {
+        vector_data: Default::default(),
+        sparse_vector_data: HashMap::from([(
+            SPARSE_VECTOR_NAME.to_owned(),
+            SparseVectorDataConfig { index: None },
+        )]),
+        payload_storage_type: Default::default(),
+    };
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+    for n in 0..num_vectors {
+        let vector: Vector = random_sparse_vector(&mut rnd, dim).into();
+        let mut named_vector = NamedVectors::default();
+        named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
+        let idx = n.into();
+        segment
+            .upsert_point(n as SeqNumberType, idx, named_vector)
+            .unwrap();
+    }
+    segment.flush(true).unwrap();
+
+    let search_vector = random_sparse_vector(&mut rnd, dim);
+    let query_vector: QueryVector = search_vector.into();
+
+    let search_result = segment
+        .search(
+            SPARSE_VECTOR_NAME,
+            &query_vector,
+            &Default::default(),
+            &Default::default(),
+            None,
+            top,
+            None,
+            &stopped,
+        )
+        .unwrap();
+
+    assert_eq!(search_result.len(), top);
+
+    let path = segment.current_path.clone();
+    drop(segment);
+
+    let segment = load_segment(&path).unwrap().unwrap();
+    let search_after_reload_result = segment
+        .search(
+            SPARSE_VECTOR_NAME,
+            &query_vector,
+            &Default::default(),
+            &Default::default(),
+            None,
+            top,
+            None,
+            &stopped,
+        )
+        .unwrap();
+
+    assert_eq!(search_after_reload_result.len(), top);
+    assert_eq!(search_result, search_after_reload_result);
 }

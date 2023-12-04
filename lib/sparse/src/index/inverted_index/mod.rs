@@ -10,11 +10,9 @@ use crate::index::posting_list::PostingListIterator;
 pub mod inverted_index_mmap;
 pub mod inverted_index_ram;
 
-pub trait InvertedIndex {
+pub trait InvertedIndex: Sized {
     /// Open existing index based on path
-    fn open(path: &Path) -> std::io::Result<Self>
-    where
-        Self: Sized;
+    fn open(path: &Path) -> std::io::Result<Option<Self>>;
 
     /// Get posting list for dimension id
     fn get(&self, id: &DimId) -> Option<PostingListIterator>;

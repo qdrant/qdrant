@@ -5,6 +5,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 use rand::Rng;
+use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
@@ -23,7 +24,7 @@ use crate::vector_storage::VectorStorage;
 /// Helper to open a test sparse vector index
 pub fn fixture_open_sparse_index<I: InvertedIndex>(
     data_dir: &Path,
-    num_vectors: usize, // used to size the id tracker
+    num_vectors: usize,
     full_scan_threshold: usize,
 ) -> OperationResult<SparseVectorIndex<I>> {
     // directories
@@ -45,6 +46,22 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
 
     let db = open_db(storage_dir, &[DB_VECTOR_CF]).unwrap();
     let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF)?;
+    let mut borrowed_storage = vector_storage.borrow_mut();
+
+    // add empty points to storage
+    for idx in 0..num_vectors {
+        let vec = &SparseVector::new(vec![], vec![]).unwrap();
+        borrowed_storage
+            .insert_vector(idx as PointOffsetType, vec.into())
+            .unwrap();
+    }
+    drop(borrowed_storage);
+
+    // assert all empty points are in storage
+    assert_eq!(
+        vector_storage.borrow().available_vector_count(),
+        num_vectors,
+    );
 
     let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), None);
     let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
