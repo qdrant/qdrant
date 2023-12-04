@@ -3,7 +3,7 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_sparse_vector_validation'
+collection_name = 'test_sparse_vector_persistence'
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def sparse_collection_setup(collection_name='test_collection'):
         path_params={'collection_name': collection_name},
         body={
             "sparse_vectors": {
-                "text": { }
+                "text": {}
             },
         }
     )
@@ -41,7 +41,7 @@ def sparse_collection_setup(collection_name='test_collection'):
     assert response.ok
 
 
-def test_sparse_vector_validations():
+def test_sparse_vector_persisted_sorted():
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -52,32 +52,37 @@ def test_sparse_vector_validations():
                 {
                     "id": 1,
                     "vector": {
-                        "text": {"indices": [100, 500], "values": [0.9, 0.8, 0.5]}
+                        "text": {"indices": [3, 2, 1], "values": [0.3, 0.2, 0.1]}
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "text": {"indices": [1, 3, 2], "values": [0.1, 0.3, 0.2]}
+                    }
+                },
+                {
+                    "id": 3,
+                    "vector": {
+                        "text": {"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}
                     }
                 },
             ]
         }
     )
-    assert not response.ok
-    assert 'Validation error' in response.json()["status"]["error"]
-    assert 'points[0].vector.?.values: Validation error: must be the same length as indices [{}]' in response.json()["status"]["error"]
+    assert response.ok
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points',
-        method="PUT",
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={
-            "points": [
-                {
-                    "id": 1,
-                    "vector": {
-                        "text": {"indices": [100, 500, 500], "values": [0.9, 0.8, 0.5]}
-                    }
-                },
-            ]
-        }
+        body={"limit": 10, "with_vector": True}
     )
-    assert not response.ok
-    assert 'Validation error' in response.json()["status"]["error"]
-    assert 'points[0].vector.?.indices: Validation error: must be unique [{}]' in response.json()["status"]["error"]
+    assert response.ok
+    assert len(response.json()['result']['points']) == 3
+    results = response.json()['result']['points']
+
+    for i in range(3):
+        assert results[i]['id'] == i + 1
+        assert results[i]['vector']['text']['indices'] == [1, 2, 3]  # sorted by indices
+        assert results[i]['vector']['text']['values'] == [0.1, 0.2, 0.3]  # aligned to respective indices
