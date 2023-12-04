@@ -41,12 +41,6 @@ struct PostingListFileHeader {
     pub end_offset: u64,
 }
 
-impl Default for InvertedIndexMmap {
-    fn default() -> Self {
-        unreachable!("InvertedIndexMmap cannot be created with default");
-    }
-}
-
 impl InvertedIndex for InvertedIndexMmap {
     fn open(path: &Path) -> std::io::Result<Option<Self>> {
         Self::load(path).map(Some)
