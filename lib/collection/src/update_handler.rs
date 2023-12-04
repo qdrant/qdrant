@@ -456,7 +456,14 @@ impl UpdateHandler {
                     OPTIMIZER_CPU_BUDGET.block_until_budget();
 
                     // Determine optimization handle limit based on max handles we allow
+                    // Skip if we reached limit, an ongoing optimization that finishes will trigger this loop again
                     let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
+                    if limit == 0 {
+                        log::trace!(
+                            "Skipping optimization check, we reached optimization thread limit"
+                        );
+                        continue;
+                    }
 
                     Self::process_optimization(
                         optimizers.clone(),
