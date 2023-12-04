@@ -67,7 +67,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         InvertedIndexMmap::convert_and_save(&sparse_vector_index.inverted_index, &mmap_index_dir)
             .unwrap();
     drop(_mmap_inverted_index);
-    let sparse_index_config = SparseIndexConfig::new(FULL_SCAN_THRESHOLD, None);
+    let sparse_index_config = SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), None);
     let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
         sparse_index_config,
         sparse_vector_index.id_tracker.clone(),
