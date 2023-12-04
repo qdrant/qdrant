@@ -23,9 +23,9 @@ pub struct Ready {
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
     runtime: runtime::Handle,
-    is_ready: AtomicBool,
+    is_ready: Arc<AtomicBool>,
+    notify_ready: Arc<sync::Notify>,
     task: sync::RwLock<Option<task::JoinHandle<()>>>,
-    ready: Arc<sync::Notify>,
     check_ready: sync::broadcast::Sender<()>,
 }
 
@@ -42,8 +42,8 @@ impl Ready {
             consensus_state,
             runtime,
             is_ready: Default::default(),
+            notify_ready: Default::default(),
             task: Default::default(),
-            ready: Default::default(),
             check_ready,
         }
     }
@@ -53,7 +53,7 @@ impl Ready {
             true
         } else {
             self.notify_task().await;
-            self.wait_ready(Duration::from_millis(500)).await
+            self.wait_ready().await
         }
     }
 
@@ -61,13 +61,10 @@ impl Ready {
         self.is_ready.load(atomic::Ordering::Relaxed)
     }
 
-    async fn wait_ready(&self, timeout: Duration) -> bool {
-        if let Ok(()) = time::timeout(timeout, self.ready.notified()).await {
-            self.is_ready.store(true, atomic::Ordering::Relaxed);
-            true
-        } else {
-            false
-        }
+    async fn wait_ready(&self) -> bool {
+        time::timeout(Duration::from_millis(500), self.notify_ready.notified())
+            .await
+            .is_ok()
     }
 
     pub async fn notify_task(&self) {
@@ -75,7 +72,7 @@ impl Ready {
             return;
         };
 
-        if self.wait_ready(Duration::ZERO).await || self.is_ready() {
+        if self.is_ready() {
             return;
         }
 
@@ -133,7 +130,8 @@ impl Ready {
 
     fn task(&self) -> Task {
         Task {
-            ready: self.ready.clone(),
+            is_ready: self.is_ready.clone(),
+            notify_ready: self.notify_ready.clone(),
             toc: self.toc.clone(),
             consensus_state: self.consensus_state.clone(),
             check_ready: self.check_ready.subscribe(),
@@ -154,7 +152,8 @@ fn is_task_spawned<T>(task: Option<&task::JoinHandle<T>>) -> bool {
 }
 
 pub struct Task {
-    ready: Arc<sync::Notify>,
+    is_ready: Arc<AtomicBool>,
+    notify_ready: Arc<sync::Notify>,
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
     check_ready: broadcast::Receiver<()>,
@@ -194,7 +193,8 @@ impl Task {
             unhealthy_shards.retain(|shard| current_unhealthy_shards.contains(shard));
         }
 
-        self.ready.notify_waiters();
+        self.is_ready.store(true, atomic::Ordering::Relaxed);
+        self.notify_ready.notify_waiters();
     }
 
     /// Set ready to `true` if there is only one node in the cluster.
@@ -202,7 +202,8 @@ impl Task {
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
         if peer_address_by_id.len() <= 1 {
-            self.ready.notify_waiters();
+            self.is_ready.store(true, atomic::Ordering::Relaxed);
+            self.notify_ready.notify_waiters();
             true
         } else {
             false
