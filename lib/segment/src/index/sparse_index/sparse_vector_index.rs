@@ -58,7 +58,17 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         };
 
         let searches_telemetry = SparseSearchesTelemetry::new();
-        let inverted_index = TInvertedIndex::open(path)?;
+        let inverted_index = if let Some(inverted_index) = TInvertedIndex::open(path)? {
+            inverted_index
+        } else {
+            Self::build_inverted_index(
+                id_tracker.clone(),
+                vector_storage.clone(),
+                path,
+                &AtomicBool::new(false),
+            )?
+        };
+
         let path = path.to_path_buf();
         let index = Self {
             config,
@@ -75,6 +85,35 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     fn save_config(&self) -> OperationResult<()> {
         let config_path = SparseIndexConfig::get_config_path(&self.path);
         self.config.save(&config_path)
+    }
+
+    fn build_inverted_index(
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+        path: &Path,
+        stopped: &AtomicBool,
+    ) -> OperationResult<TInvertedIndex> {
+        let borrowed_vector_storage = vector_storage.borrow();
+        let borrowed_id_tracker = id_tracker.borrow();
+        let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
+        let mut ram_index = InvertedIndexRam::empty();
+        let mut index_point_count: usize = 0;
+        for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
+            check_process_stopped(stopped)?;
+            let vector = borrowed_vector_storage.get_vector(id);
+            let vector: &SparseVector = vector.as_vec_ref().try_into()?;
+            // do not index empty vectors
+            if vector.is_empty() {
+                continue;
+            }
+            ram_index.upsert(id, vector.to_owned());
+            index_point_count += 1;
+        }
+        // the underlying upsert operation does not guarantee that the indexed vector count is correct
+        // so we set the indexed vector count to the number of points we have seen
+        ram_index.vector_count = index_point_count;
+        // TODO(sparse) this operation loads the entire index into memory which can cause OOM on large storage
+        Ok(TInvertedIndex::from_ram_index(ram_index, path)?)
     }
 
     /// Search index using sparse vector query
@@ -230,27 +269,12 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
-        let borrowed_vector_storage = self.vector_storage.borrow();
-        let borrowed_id_tracker = self.id_tracker.borrow();
-        let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
-        let mut ram_index = InvertedIndexRam::empty();
-        let mut index_point_count: usize = 0;
-        for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
-            check_process_stopped(stopped)?;
-            let vector = borrowed_vector_storage.get_vector(id);
-            let vector: &SparseVector = vector.as_vec_ref().try_into()?;
-            // do not index empty vectors
-            if vector.is_empty() {
-                continue;
-            }
-            ram_index.upsert(id, vector.to_owned());
-            index_point_count += 1;
-        }
-        // the underlying upsert operation does not guarantee that the indexed vector count is correct
-        // so we set the indexed vector count to the number of points we have seen
-        ram_index.vector_count = index_point_count;
-        // TODO(sparse) this operation loads the entire index into memory which can cause OOM on large storage
-        self.inverted_index = TInvertedIndex::from_ram_index(ram_index, &self.path)?;
+        self.inverted_index = Self::build_inverted_index(
+            self.id_tracker.clone(),
+            self.vector_storage.clone(),
+            &self.path,
+            stopped,
+        )?;
 
         // save config to mark successful build
         self.save_config()?;
