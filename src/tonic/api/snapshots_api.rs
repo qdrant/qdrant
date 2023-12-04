@@ -148,7 +148,7 @@ impl ShardSnapshotsService {
 
 #[async_trait]
 impl ShardSnapshots for ShardSnapshotsService {
-    async fn create_shard(
+    async fn create(
         &self,
         request: Request<CreateShardSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
@@ -171,7 +171,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         }))
     }
 
-    async fn list_shard(
+    async fn list(
         &self,
         request: Request<ListShardSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
@@ -194,7 +194,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         }))
     }
 
-    async fn delete_shard(
+    async fn delete(
         &self,
         request: Request<DeleteShardSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
@@ -217,7 +217,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         }))
     }
 
-    async fn recover_shard(
+    async fn recover(
         &self,
         request: Request<RecoverShardSnapshotRequest>,
     ) -> Result<Response<RecoverSnapshotResponse>, Status> {
