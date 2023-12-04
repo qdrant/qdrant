@@ -394,7 +394,12 @@ fn main() -> anyhow::Result<()> {
             .spawn(move || {
                 log_err_if_any(
                     "REST",
-                    actix::init(dispatcher_arc.clone(), telemetry_collector, health_checker, settings),
+                    actix::init(
+                        dispatcher_arc.clone(),
+                        telemetry_collector,
+                        health_checker,
+                        settings,
+                    ),
                 )
             })
             .unwrap();
