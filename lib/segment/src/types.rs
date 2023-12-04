@@ -652,6 +652,7 @@ impl SegmentConfig {
         }
     }
 
+    /// Check if any vector storages are indexed
     pub fn is_any_vector_indexed(&self) -> bool {
         self.vector_data
             .values()
@@ -662,6 +663,7 @@ impl SegmentConfig {
                 .any(|config| config.is_indexed())
     }
 
+    /// Check if all vector storages are indexed
     pub fn are_all_vectors_indexed(&self) -> bool {
         self.vector_data
             .values()
@@ -677,7 +679,10 @@ impl SegmentConfig {
         self.vector_data
             .values()
             .any(|config| config.storage_type.is_on_disk())
-            || !self.sparse_vector_data.is_empty()
+            || self
+                .sparse_vector_data
+                .values()
+                .any(|config| config.is_index_on_disk())
     }
 }
 
@@ -754,11 +759,17 @@ pub struct SparseVectorDataConfig {
 
 impl SparseVectorDataConfig {
     pub fn is_appendable(&self) -> bool {
-        true
+        !self.is_index_on_disk()
     }
 
     pub fn is_indexed(&self) -> bool {
         true
+    }
+
+    pub fn is_index_on_disk(&self) -> bool {
+        self.index
+            .and_then(|config| config.on_disk)
+            .unwrap_or(false)
     }
 }
 
