@@ -3,7 +3,7 @@ use std::future::{self, Future};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{cmp, panic, thread};
+use std::{any, cmp, panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetCommitIndexRequest, GetCommitIndexResponse};
@@ -96,8 +96,11 @@ pub struct Task {
 
 impl Task {
     pub async fn exec(mut self) {
-        while self.exec_catch_unwind().await.is_err() {
-            log::error!("health::Task panicked") // TODO!?
+        while let Err(err) = self.exec_catch_unwind().await {
+            let message = downcast_str(&err).unwrap_or("");
+            let separator = if !message.is_empty() { ": " } else { "" };
+
+            log::error!("HealthChecker task panicked, retrying{separator}{message}");
         }
     }
 
@@ -112,7 +115,7 @@ impl Task {
     }
 
     async fn exec_impl(&mut self) {
-        // Do not wait for `check_ready_signal` during first `cluster_commit_index` call
+        // Do not wait for `/readyz` signal during first check
         self.check_ready_signal.notify_one();
 
         // Get *cluster* commit index
@@ -125,9 +128,6 @@ impl Task {
         while cluster_commit_index > self.commit_index() {
             // If not:
             //
-            // - Backoff 1 second
-            time::sleep(Duration::from_secs(1)).await;
-
             // - Refresh cluster commit index
             let Some(current_cluster_commit_index) = self.cluster_commit_index().await else {
                 self.set_ready();
@@ -158,69 +158,85 @@ impl Task {
         self.set_ready();
     }
 
-    pub async fn cluster_commit_index(&self) -> Option<u64> {
-        let this_peer_id = self.toc.this_peer_id;
-        let transport_channel_pool = self.toc.get_channel_service().channel_pool.clone();
-
+    async fn cluster_commit_index(&self) -> Option<u64> {
         loop {
-            let peer_address_by_id = self.consensus_state.peer_address_by_id();
+            // Wait for `/readyz` signal
+            self.check_ready_signal.notified().await;
 
-            if peer_address_by_id.len() <= 1 {
+            // Check if there is only 1 node in the cluster
+            if self.consensus_state.peer_count() <= 1 {
                 return None;
             }
 
-            self.check_ready_signal.notified().await;
-
-            let mut requests = peer_address_by_id
-                .iter()
-                .filter_map(|(&peer_id, uri)| {
-                    if peer_id != this_peer_id {
-                        Some(get_commit_index(&transport_channel_pool, uri))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<FuturesUnordered<_>>()
-                .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
-                .filter_map(|res| future::ready(res.ok()));
-
-            // Example:
-            //
-            // Total nodes: 2
-            // Required: 2 / 2 = 1
-            //
-            // Total nodes: 3
-            // Required: 3 / 2 = 1
-            //
-            // Total nodes: 4
-            // Required: 4 / 2 = 2
-            //
-            // Total nodes: 5
-            // Required: 5 / 2 = 2
-            let required_commit_indices_count = peer_address_by_id.len() / 2;
-
-            let mut commit_indices: Vec<_> = (&mut requests)
-                .take(required_commit_indices_count)
-                .collect()
-                .await;
-
-            while let Ok(Some(resp)) = time::timeout(Duration::ZERO, requests.next()).await {
-                commit_indices.push(resp);
+            // Get *cluster* commit index
+            if let Some(consensus_commit_index) = self.cluster_commit_index_impl().await {
+                return Some(consensus_commit_index);
             }
-
-            if commit_indices.len() < required_commit_indices_count {
-                log::warn!("More than 50% of cluster is not responding to commit index requests");
-                continue;
-            }
-
-            let cluster_commit_index = commit_indices
-                .into_iter()
-                .map(|resp| resp.into_inner().commit)
-                .max()
-                .unwrap_or(0);
-
-            break Some(cluster_commit_index as _);
         }
+    }
+
+    async fn cluster_commit_index_impl(&self) -> Option<u64> {
+        let this_peer_id = self.toc.this_peer_id;
+        let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
+
+        let peer_address_by_id = self.consensus_state.peer_address_by_id();
+
+        let mut requests = peer_address_by_id
+            .iter()
+            .filter_map(|(&peer_id, uri)| {
+                if peer_id != this_peer_id {
+                    Some(get_commit_index(transport_channel_pool, uri))
+                } else {
+                    None
+                }
+            })
+            .collect::<FuturesUnordered<_>>()
+            .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
+            .filter_map(|res| future::ready(res.ok()));
+
+        // Example:
+        //
+        // Total nodes: 2
+        // Required: 2 / 2 = 1
+        //
+        // Total nodes: 3
+        // Required: 3 / 2 = 1
+        //
+        // Total nodes: 4
+        // Required: 4 / 2 = 2
+        //
+        // Total nodes: 5
+        // Required: 5 / 2 = 2
+        let required_commit_indices_count = peer_address_by_id.len() / 2;
+
+        let mut commit_indices: Vec<_> = (&mut requests)
+            .take(required_commit_indices_count)
+            .collect()
+            .await;
+
+        while let Ok(Some(resp)) = time::timeout(Duration::ZERO, requests.next()).await {
+            commit_indices.push(resp);
+        }
+
+        if commit_indices.len() < required_commit_indices_count {
+            log::warn!(
+                "Not enough cluster nodes responded to GetConsensusCommit request: \
+                 required {required_commit_indices_count},
+                 responded {} out of {}",
+                commit_indices.len(),
+                peer_address_by_id.len(),
+            );
+
+            return None;
+        }
+
+        let cluster_commit_index = commit_indices
+            .into_iter()
+            .map(|resp| resp.into_inner().commit)
+            .max()
+            .unwrap_or(0);
+
+        Some(cluster_commit_index as _)
     }
 
     fn commit_index(&self) -> u64 {
@@ -265,6 +281,18 @@ impl Task {
         self.is_ready.store(true, atomic::Ordering::Relaxed);
         self.is_ready_signal.notify_one();
     }
+}
+
+fn downcast_str(any: &dyn any::Any) -> Option<&str> {
+    if let Some(str) = any.downcast_ref::<&'static str>() {
+        return Some(str);
+    }
+
+    if let Some(str) = any.downcast_ref::<String>() {
+        return Some(str);
+    }
+
+    None
 }
 
 fn get_commit_index<'a>(
