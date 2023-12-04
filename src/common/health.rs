@@ -112,6 +112,9 @@ impl Task {
     }
 
     async fn exec_impl(&mut self) {
+        // Do not wait for `check_ready_signal` during first `cluster_commit_index` call
+        self.check_ready_signal.notify_one();
+
         // Get *cluster* commit index
         let Some(mut cluster_commit_index) = self.cluster_commit_index().await else {
             self.set_ready();
@@ -165,6 +168,8 @@ impl Task {
             if peer_address_by_id.len() <= 1 {
                 return None;
             }
+
+            self.check_ready_signal.notified().await;
 
             let mut requests = peer_address_by_id
                 .iter()
