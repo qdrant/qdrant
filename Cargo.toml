@@ -56,7 +56,7 @@ schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"
 itertools = "0.12"
 anyhow = "1.0.75"
 futures = "0.3.28"
-futures-util = "0.3.27"
+futures-util = "0.3.29"
 clap = { version = "4.4.8", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
 uuid = { version = "1.5", features = ["v4", "serde"] }
