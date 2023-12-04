@@ -172,13 +172,32 @@ fn sparse_vector_index_consistent_with_storage() {
     check_index_storage_consistency(&sparse_vector_ram_index);
 
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-    // copy index mmap and save to disk
-    let mmap_inverted_index = InvertedIndexMmap::convert_and_save(
-        &sparse_vector_ram_index.inverted_index,
-        &mmap_index_dir,
-    )
-    .unwrap();
-    drop(mmap_inverted_index);
+
+    // create mmap sparse vector index
+    let sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
+        SparseVectorIndex::open(
+            sparse_index_config,
+            sparse_vector_ram_index.id_tracker.clone(),
+            sparse_vector_ram_index.vector_storage.clone(),
+            sparse_vector_ram_index.payload_index.clone(),
+            mmap_index_dir.path(),
+        )
+        .unwrap();
+
+    // build index
+    sparse_vector_mmap_index.build_index(&stopped).unwrap();
+
+    assert_eq!(
+        sparse_vector_mmap_index.indexed_vector_count(),
+        sparse_vector_ram_index.indexed_vector_count()
+    );
+
+    // check consistency with underlying mmap inverted index
+    check_index_storage_consistency(&sparse_vector_mmap_index);
+
+    // drop and reload index
+    drop(sparse_vector_mmap_index);
 
     // load index from memmap file
     let sparse_index_config = sparse_vector_ram_index.config;
