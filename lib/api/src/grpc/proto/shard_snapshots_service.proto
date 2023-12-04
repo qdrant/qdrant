@@ -9,19 +9,19 @@ service ShardSnapshots {
   /*
   Create shard snapshot
    */
-  rpc CreateShard (CreateShardSnapshotRequest) returns (CreateSnapshotResponse) {}
+  rpc Create (CreateShardSnapshotRequest) returns (CreateSnapshotResponse) {}
   /*
   List shard snapshots
    */
-  rpc ListShard (ListShardSnapshotsRequest) returns (ListSnapshotsResponse) {}
+  rpc List (ListShardSnapshotsRequest) returns (ListSnapshotsResponse) {}
   /*
   Delete shard snapshot
    */
-  rpc DeleteShard (DeleteShardSnapshotRequest) returns (DeleteSnapshotResponse) {}
+  rpc Delete (DeleteShardSnapshotRequest) returns (DeleteSnapshotResponse) {}
   /*
   Recover shard snapshot
    */
-  rpc RecoverShard (RecoverShardSnapshotRequest) returns (RecoverSnapshotResponse) {}
+  rpc Recover (RecoverShardSnapshotRequest) returns (RecoverSnapshotResponse) {}
 }
 
 message CreateShardSnapshotRequest {
