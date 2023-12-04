@@ -479,7 +479,9 @@ impl Consensus {
             }
 
             if let Some(ready) = &self.ready {
-                self.runtime.block_on(ready.check_ready());
+                if !ready.is_ready() {
+                    self.runtime.block_on(ready.notify_task());
+                }
             }
         }
         Ok(())
