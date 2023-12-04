@@ -204,12 +204,12 @@ message WithVectorsSelector {
 message QuantizationSearchParams {
   /*
   If set to true, search will ignore quantized vector data
-   */
+  */
   optional bool ignore = 1;
 
   /*
   If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not.
-   */
+  */
   optional bool rescore = 2;
 
   /*
@@ -220,7 +220,7 @@ message QuantizationSearchParams {
 
   For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
   and then top-100 will be returned after re-scoring.
-   */
+  */
   optional double oversampling = 3;
 }
 
@@ -228,7 +228,7 @@ message SearchParams {
   /*
   Params relevant to HNSW index. Size of the beam in a beam-search.
   Larger the value - more accurate the result, more time required for search.
-   */
+  */
   optional uint64 hnsw_ef = 1;
 
   /*
@@ -244,7 +244,7 @@ message SearchParams {
   If enabled, the engine will only perform search among indexed or small segments.
   Using this option prevents slow searches in case of delayed index, but does not
   guarantee that all uploaded vectors will be included in search results
-   */
+  */
   optional bool indexed_only = 4;
 }
 
