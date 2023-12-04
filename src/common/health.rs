@@ -1,9 +1,9 @@
-use std::cmp::min;
 use std::collections::HashSet;
 use std::future::{self, Future};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{cmp, panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetCommitIndexRequest, GetCommitIndexResponse};
@@ -14,260 +14,209 @@ use collection::shards::CollectionId;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt as _, TryStreamExt as _};
+use futures_util::FutureExt;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
-use tokio::sync::broadcast;
-use tokio::{runtime, sync, task, time};
+use tokio::{runtime, sync, time};
 
 const DEFAULT_READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub struct HealthChecker {
-    toc: Arc<TableOfContent>,
-    consensus_state: ConsensusStateRef,
-    runtime: runtime::Handle,
     is_ready: Arc<AtomicBool>,
-    notify_ready: Arc<sync::Notify>,
-    task: sync::RwLock<Option<task::JoinHandle<()>>>,
-    check_ready: sync::broadcast::Sender<()>,
+    is_ready_signal: Arc<sync::Notify>,
+    check_ready_signal: Arc<sync::Notify>,
+    cancel: cancel::DropGuard,
 }
 
 impl HealthChecker {
-    pub fn new(
+    pub fn spawn(
         toc: Arc<TableOfContent>,
         consensus_state: ConsensusStateRef,
         runtime: runtime::Handle,
     ) -> Self {
-        let (check_ready, _) = broadcast::channel(1);
-
-        Self {
+        let task = Task {
             toc,
             consensus_state,
-            runtime,
             is_ready: Default::default(),
-            notify_ready: Default::default(),
-            task: Default::default(),
-            check_ready,
-        }
+            is_ready_signal: Default::default(),
+            check_ready_signal: Default::default(),
+            cancel: Default::default(),
+        };
+
+        let health_checker = Self {
+            is_ready: task.is_ready.clone(),
+            is_ready_signal: task.is_ready_signal.clone(),
+            check_ready_signal: task.check_ready_signal.clone(),
+            cancel: task.cancel.clone().drop_guard(),
+        };
+
+        let task = runtime.spawn(task.exec());
+        drop(task); // drop `JoinFuture` explicitly to make clippy happy
+
+        health_checker
     }
 
     pub async fn check_ready(&self) -> bool {
         if self.is_ready() {
-            true
-        } else {
-            self.notify_task().await;
-            self.wait_ready().await
+            return true;
         }
+
+        self.notify_task().await;
+        self.wait_ready().await
     }
 
     pub fn is_ready(&self) -> bool {
         self.is_ready.load(atomic::Ordering::Relaxed)
     }
 
+    pub async fn notify_task(&self) {
+        self.check_ready_signal.notify_one();
+    }
+
     async fn wait_ready(&self) -> bool {
-        time::timeout(DEFAULT_READY_CHECK_TIMEOUT, self.notify_ready.notified())
+        let is_ready_signal = self.is_ready_signal.notified();
+
+        if self.is_ready() {
+            return true;
+        }
+
+        time::timeout(DEFAULT_READY_CHECK_TIMEOUT, is_ready_signal)
             .await
             .is_ok()
     }
-
-    pub async fn notify_task(&self) {
-        let Err(err) = self.check_ready.send(()) else {
-            return;
-        };
-
-        if self.is_ready() {
-            return;
-        }
-
-        log::warn!("Ready::notify_task: failed to send message to ReadyTask: {err}");
-        self.spawn_task().await;
-    }
-
-    async fn spawn_task(&self) {
-        if self.is_running().await {
-            log::warn!("Ready::spawn_task: ReadyTask is already running");
-            return;
-        }
-
-        let Some(mut task) = self.try_cleanup_task().await else {
-            return;
-        };
-
-        if self.is_ready() {
-            log::error!("TODO");
-            return;
-        }
-
-        *task = Some(self.runtime.spawn(self.task().exec()));
-    }
-
-    async fn try_cleanup_task(
-        &self,
-    ) -> Option<sync::RwLockWriteGuard<'_, Option<task::JoinHandle<()>>>> {
-        let mut task = self.task.write().await;
-
-        if is_task_running(task.as_ref()) {
-            log::debug!("Ready::try_cleanup_task: ReadyTask is running");
-            return None;
-        }
-
-        let result = match task.take() {
-            Some(task) => task.await,
-            None => Ok(()),
-        };
-
-        if let Err(err) = result {
-            log::error!("ReadyTask failed: {err}");
-        }
-
-        Some(task)
-    }
-
-    async fn state(&self) -> (bool, bool) {
-        task_state(self.task.read().await.as_ref())
-    }
-
-    async fn is_running(&self) -> bool {
-        is_task_running(self.task.read().await.as_ref())
-    }
-
-    fn task(&self) -> Task {
-        Task {
-            is_ready: self.is_ready.clone(),
-            notify_ready: self.notify_ready.clone(),
-            toc: self.toc.clone(),
-            consensus_state: self.consensus_state.clone(),
-            check_ready: self.check_ready.subscribe(),
-        }
-    }
-}
-
-fn task_state<T>(task: Option<&task::JoinHandle<T>>) -> (bool, bool) {
-    (is_task_running(task), is_task_spawned(task))
-}
-
-fn is_task_running<T>(task: Option<&task::JoinHandle<T>>) -> bool {
-    task.map_or(false, |task| !task.is_finished())
-}
-
-fn is_task_spawned<T>(task: Option<&task::JoinHandle<T>>) -> bool {
-    task.is_some()
 }
 
 pub struct Task {
-    is_ready: Arc<AtomicBool>,
-    notify_ready: Arc<sync::Notify>,
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
-    check_ready: broadcast::Receiver<()>,
+    is_ready: Arc<AtomicBool>,
+    is_ready_signal: Arc<sync::Notify>,
+    check_ready_signal: Arc<sync::Notify>,
+    cancel: cancel::CancellationToken,
 }
 
 impl Task {
     pub async fn exec(mut self) {
-        if self.check_shortcut() {
+        while self.exec_catch_unwind().await.is_err() {
+            log::error!("health::Task panicked") // TODO!?
+        }
+    }
+
+    async fn exec_catch_unwind(&mut self) -> thread::Result<()> {
+        panic::AssertUnwindSafe(self.exec_cancel())
+            .catch_unwind()
+            .await
+    }
+
+    async fn exec_cancel(&mut self) {
+        let _ = cancel::future::cancel_on_token(self.cancel.clone(), self.exec_impl()).await;
+    }
+
+    async fn exec_impl(&mut self) {
+        // Get *cluster* commit index
+        let Some(mut cluster_commit_index) = self.cluster_commit_index().await else {
+            self.set_ready();
             return;
-        }
+        };
 
-        let mut commit_to_await = u64::MAX;
+        // Check if *local* commit index >= *cluster* commit index...
+        while cluster_commit_index > self.commit_index() {
+            // If not:
+            //
+            // - Backoff 1 second
+            time::sleep(Duration::from_secs(1)).await;
 
-        loop {
-            let Some(cluster_commit_index) = self.get_largest_commit_in_cluster().await else {
-                continue;
+            // - Refresh cluster commit index
+            let Some(current_cluster_commit_index) = self.cluster_commit_index().await else {
+                self.set_ready();
+                return;
             };
-            commit_to_await = min(commit_to_await, cluster_commit_index);
 
-            if self.commit_index() < commit_to_await {
-                if !self.check_ready().await {
-                    return;
-                }
-            } else {
-                break;
-            }
+            // - Check if cluster commit index *decresed* since last check
+            cluster_commit_index = cmp::min(current_cluster_commit_index, cluster_commit_index);
         }
 
+        // Collect "unhealthy" shards list
         let mut unhealthy_shards = self.unhealthy_shards().await;
 
+        // Check if all shards are "healthy"...
         while !unhealthy_shards.is_empty() {
-            if !self.check_ready().await {
-                return;
-            }
+            // If not:
+            //
+            // - Wait for `/readyz` signal
+            self.check_ready_signal.notified().await;
 
+            // - Refresh "unhealthy" shards list
             let current_unhealthy_shards = self.unhealthy_shards().await;
+
+            // - Check if any shards "healed" since last check
             unhealthy_shards.retain(|shard| current_unhealthy_shards.contains(shard));
         }
 
-        self.make_ready_and_notify();
+        self.set_ready();
     }
 
-    fn make_ready_and_notify(&self) {
-        self.is_ready.store(true, atomic::Ordering::Relaxed);
-        self.notify_ready.notify_waiters();
-    }
-
-    /// Set ready to `true` if there is only one node in the cluster.
-    fn check_shortcut(&self) -> bool {
-        let peer_address_by_id = self.consensus_state.peer_address_by_id();
-
-        if peer_address_by_id.len() <= 1 {
-            self.make_ready_and_notify();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub async fn get_largest_commit_in_cluster(&self) -> Option<u64> {
+    pub async fn cluster_commit_index(&self) -> Option<u64> {
         let this_peer_id = self.toc.this_peer_id;
-
         let transport_channel_pool = self.toc.get_channel_service().channel_pool.clone();
-        let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
-        let requests: FuturesUnordered<_> = peer_address_by_id
-            .iter()
-            .filter_map(|(&peer_id, uri)| {
-                if peer_id != this_peer_id {
-                    Some(uri)
-                } else {
-                    None
-                }
-            })
-            .map(|uri| get_commit_index(&transport_channel_pool, uri))
-            .collect();
+        loop {
+            let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
-        // Example:
-        // Total nodes: 2
-        // Required: 2 / 2 = 1
-        //
-        // Total nodes: 3
-        // Required: 3 / 2 = 1
-        //
-        // Total nodes: 4
-        // Required: 4 / 2 = 2
-        //
-        // Total nodes: 5
-        // Required: 5 / 2 = 2
-        let required_commit_indices_count = peer_address_by_id.len() / 2;
+            if peer_address_by_id.len() <= 1 {
+                return None;
+            }
 
-        let mut requests = requests
-            .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
-            .filter_map(|res| future::ready(res.ok()));
+            let mut requests = peer_address_by_id
+                .iter()
+                .filter_map(|(&peer_id, uri)| {
+                    if peer_id != this_peer_id {
+                        Some(get_commit_index(&transport_channel_pool, uri))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<FuturesUnordered<_>>()
+                .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
+                .filter_map(|res| future::ready(res.ok()));
 
-        let commit_indices: Vec<_> = (&mut requests)
-            .take(required_commit_indices_count)
-            .collect()
-            .await;
+            // Example:
+            //
+            // Total nodes: 2
+            // Required: 2 / 2 = 1
+            //
+            // Total nodes: 3
+            // Required: 3 / 2 = 1
+            //
+            // Total nodes: 4
+            // Required: 4 / 2 = 2
+            //
+            // Total nodes: 5
+            // Required: 5 / 2 = 2
+            let required_commit_indices_count = peer_address_by_id.len() / 2;
 
-        if commit_indices.len() < required_commit_indices_count {
-            log::warn!("More than 50% of cluster is not responding to commit index requests");
-            return None;
+            let mut commit_indices: Vec<_> = (&mut requests)
+                .take(required_commit_indices_count)
+                .collect()
+                .await;
+
+            while let Ok(Some(resp)) = time::timeout(Duration::ZERO, requests.next()).await {
+                commit_indices.push(resp);
+            }
+
+            if commit_indices.len() < required_commit_indices_count {
+                log::warn!("More than 50% of cluster is not responding to commit index requests");
+                continue;
+            }
+
+            let cluster_commit_index = commit_indices
+                .into_iter()
+                .map(|resp| resp.into_inner().commit)
+                .max()
+                .unwrap_or(0);
+
+            break Some(cluster_commit_index as _);
         }
-
-        let cluster_commit_index = commit_indices
-            .into_iter()
-            .map(|resp| resp.into_inner().commit)
-            .max()
-            .unwrap_or(0);
-
-        Some(cluster_commit_index as _)
     }
 
     fn commit_index(&self) -> u64 {
@@ -278,19 +227,6 @@ impl Task {
             .state
             .hard_state
             .commit
-    }
-
-    async fn check_ready(&mut self) -> bool {
-        for _ in 0..10 {
-            match self.check_ready.recv().await {
-                Ok(()) => return true,
-                Err(broadcast::error::RecvError::Closed) => return false,
-                Err(broadcast::error::RecvError::Lagged(_)) => (),
-            }
-        }
-
-        log::warn!("TODO");
-        true
     }
 
     async fn unhealthy_shards(&self) -> HashSet<Shard> {
@@ -319,6 +255,11 @@ impl Task {
         }
 
         unhealthy_shards
+    }
+
+    fn set_ready(&self) {
+        self.is_ready.store(true, atomic::Ordering::Relaxed);
+        self.is_ready_signal.notify_one();
     }
 }
 

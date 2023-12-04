@@ -286,13 +286,11 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let health_checker = Arc::new(common::health::HealthChecker::new(
+        let health_checker = Arc::new(common::health::HealthChecker::spawn(
             toc_arc.clone(),
             consensus_state.clone(),
             runtime_handle.clone(),
         ));
-
-        runtime_handle.block_on(health_checker.check_ready());
 
         let handle = Consensus::run(
             &slog_logger,
