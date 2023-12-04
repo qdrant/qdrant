@@ -36,7 +36,7 @@ def mix_collection_setup(
                 }
             },
             "sparse_vectors": {
-                "text": { }
+                "text": {}
             },
             "on_disk_payload": on_disk_payload,
         }
