@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{any, cmp, panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
-use api::grpc::qdrant::{GetCommitIndexRequest, GetCommitIndexResponse};
+use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
 use api::grpc::transport_channel_pool::{self, TransportChannelPool};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
@@ -185,7 +185,7 @@ impl Task {
             .iter()
             .filter_map(|(&peer_id, uri)| {
                 if peer_id != this_peer_id {
-                    Some(get_commit_index(transport_channel_pool, uri))
+                    Some(get_consensus_commit(transport_channel_pool, uri))
                 } else {
                     None
                 }
@@ -295,25 +295,25 @@ fn downcast_str(any: &dyn any::Any) -> Option<&str> {
     None
 }
 
-fn get_commit_index<'a>(
+fn get_consensus_commit<'a>(
     transport_channel_pool: &'a TransportChannelPool,
     uri: &'a tonic::transport::Uri,
-) -> impl Future<Output = GetCommitIndexResult> + 'a {
+) -> impl Future<Output = GetConsensusCommitResult> + 'a {
     transport_channel_pool.with_channel_timeout(
         uri,
         |channel| async {
             let mut client = QdrantInternalClient::new(channel);
-            let mut request = tonic::Request::new(GetCommitIndexRequest {});
+            let mut request = tonic::Request::new(GetConsensusCommitRequest {});
             request.set_timeout(defaults::CONSENSUS_META_OP_WAIT);
-            client.get_commit_index(request).await
+            client.get_consensus_commit(request).await
         },
         Some(defaults::CONSENSUS_META_OP_WAIT),
         2,
     )
 }
 
-type GetCommitIndexResult = Result<
-    tonic::Response<GetCommitIndexResponse>,
+type GetConsensusCommitResult = Result<
+    tonic::Response<GetConsensusCommitResponse>,
     transport_channel_pool::RequestError<tonic::Status>,
 >;
 

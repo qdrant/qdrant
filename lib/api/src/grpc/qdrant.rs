@@ -8830,11 +8830,11 @@ pub mod points_internal_server {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCommitIndexRequest {}
+pub struct GetConsensusCommitRequest {}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCommitIndexResponse {
+pub struct GetConsensusCommitResponse {
     /// Raft commit as u64
     #[prost(int64, tag = "1")]
     pub commit: i64,
@@ -8951,11 +8951,11 @@ pub mod qdrant_internal_client {
         }
         ///
         /// Get current commit and term on the target node.
-        pub async fn get_commit_index(
+        pub async fn get_consensus_commit(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetCommitIndexRequest>,
+            request: impl tonic::IntoRequest<super::GetConsensusCommitRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetCommitIndexResponse>,
+            tonic::Response<super::GetConsensusCommitResponse>,
             tonic::Status,
         > {
             self.inner
@@ -8969,11 +8969,11 @@ pub mod qdrant_internal_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.QdrantInternal/GetCommitIndex",
+                "/qdrant.QdrantInternal/GetConsensusCommit",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetCommitIndex"));
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetConsensusCommit"));
             self.inner.unary(req, path, codec).await
         }
         ///
@@ -9016,11 +9016,11 @@ pub mod qdrant_internal_server {
     pub trait QdrantInternal: Send + Sync + 'static {
         ///
         /// Get current commit and term on the target node.
-        async fn get_commit_index(
+        async fn get_consensus_commit(
             &self,
-            request: tonic::Request<super::GetCommitIndexRequest>,
+            request: tonic::Request<super::GetConsensusCommitRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetCommitIndexResponse>,
+            tonic::Response<super::GetConsensusCommitResponse>,
             tonic::Status,
         >;
         ///
@@ -9112,25 +9112,25 @@ pub mod qdrant_internal_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/qdrant.QdrantInternal/GetCommitIndex" => {
+                "/qdrant.QdrantInternal/GetConsensusCommit" => {
                     #[allow(non_camel_case_types)]
-                    struct GetCommitIndexSvc<T: QdrantInternal>(pub Arc<T>);
+                    struct GetConsensusCommitSvc<T: QdrantInternal>(pub Arc<T>);
                     impl<
                         T: QdrantInternal,
-                    > tonic::server::UnaryService<super::GetCommitIndexRequest>
-                    for GetCommitIndexSvc<T> {
-                        type Response = super::GetCommitIndexResponse;
+                    > tonic::server::UnaryService<super::GetConsensusCommitRequest>
+                    for GetConsensusCommitSvc<T> {
+                        type Response = super::GetConsensusCommitResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetCommitIndexRequest>,
+                            request: tonic::Request<super::GetConsensusCommitRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as QdrantInternal>::get_commit_index(&inner, request)
+                                <T as QdrantInternal>::get_consensus_commit(&inner, request)
                                     .await
                             };
                             Box::pin(fut)
@@ -9143,7 +9143,7 @@ pub mod qdrant_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = GetCommitIndexSvc(inner);
+                        let method = GetConsensusCommitSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -24,7 +24,7 @@ use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::shard_snapshots_server::ShardSnapshotsServer;
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{
-    GetCommitIndexRequest, GetCommitIndexResponse, HealthCheckReply, HealthCheckRequest,
+    GetConsensusCommitRequest, GetConsensusCommitResponse, HealthCheckReply, HealthCheckRequest,
     WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
@@ -97,14 +97,14 @@ impl QdrantInternalService {
 
 #[tonic::async_trait]
 impl QdrantInternal for QdrantInternalService {
-    async fn get_commit_index(
+    async fn get_consensus_commit(
         &self,
-        _: tonic::Request<GetCommitIndexRequest>,
-    ) -> Result<Response<GetCommitIndexResponse>, Status> {
+        _: tonic::Request<GetConsensusCommitRequest>,
+    ) -> Result<Response<GetConsensusCommitResponse>, Status> {
         let persistent = self.consensus_state.persistent.read();
         let commit = persistent.state.hard_state.commit as _;
         let term = persistent.state.hard_state.term as _;
-        Ok(Response::new(GetCommitIndexResponse { commit, term }))
+        Ok(Response::new(GetConsensusCommitResponse { commit, term }))
     }
 
     async fn wait_on_consensus_commit(

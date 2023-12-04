@@ -7,7 +7,7 @@ service QdrantInternal {
   /*
   Get current commit and term on the target node.
    */
-  rpc GetCommitIndex (GetCommitIndexRequest) returns (GetCommitIndexResponse) {}
+  rpc GetConsensusCommit (GetConsensusCommitRequest) returns (GetConsensusCommitResponse) {}
 
   /*
   Wait until the target node reached the given commit ID.
@@ -15,9 +15,9 @@ service QdrantInternal {
   rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
 }
 
-message GetCommitIndexRequest {}
+message GetConsensusCommitRequest {}
 
-message GetCommitIndexResponse {
+message GetConsensusCommitResponse {
   int64 commit = 1; // Raft commit as u64
   int64 term = 2; // Raft term as u64
 }
