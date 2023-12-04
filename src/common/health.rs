@@ -125,7 +125,7 @@ impl Task {
         };
 
         // Check if *local* commit index >= *cluster* commit index...
-        while cluster_commit_index > self.commit_index() {
+        while self.commit_index() < cluster_commit_index {
             // If not:
             //
             // - Refresh cluster commit index
