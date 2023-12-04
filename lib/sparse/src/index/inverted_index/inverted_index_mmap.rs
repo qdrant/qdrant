@@ -108,7 +108,7 @@ impl InvertedIndexMmap {
         create_and_ensure_length(file_path.as_ref(), file_length)?;
 
         let mut mmap = open_write_mmap(file_path.as_ref())?;
-        madvise::madvise(&mmap, madvise::get_global())?;
+        madvise::madvise(&mmap, madvise::Advice::Normal)?;
 
         // file index data
         Self::save_posting_headers(&mut mmap, inverted_index_ram, total_posting_headers_size);
@@ -141,7 +141,7 @@ impl InvertedIndexMmap {
         // read index data into mmap
         let file_path = Self::index_file_path(path.as_ref());
         let mmap = open_read_mmap(file_path.as_ref())?;
-        madvise::madvise(&mmap, madvise::get_global())?;
+        madvise::madvise(&mmap, madvise::Advice::Normal)?;
         Ok(Self {
             path: path.as_ref().to_owned(),
             mmap: Arc::new(mmap),
