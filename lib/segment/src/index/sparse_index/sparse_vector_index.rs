@@ -53,6 +53,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let config = if config_path.exists() {
             SparseIndexConfig::load(&config_path)?
         } else {
+            // create new files if they do not exist
+            TInvertedIndex::from_ram_index(InvertedIndexRam::empty(), path)?;
             // use provided config if no config file exists
             config
         };
