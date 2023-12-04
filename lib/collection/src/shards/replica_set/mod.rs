@@ -344,6 +344,14 @@ impl ShardReplicaSet {
             .await
     }
 
+    pub fn wait_for_state_condition_sync<F>(&self, check: F, timeout: Duration) -> bool
+    where
+        F: Fn(&ReplicaSetState) -> bool,
+    {
+        let replica_state = self.replica_state.clone();
+        replica_state.wait_for(check, timeout)
+    }
+
     /// Wait for a local shard to get into `state`
     ///
     /// Uses a blocking thread internally.
