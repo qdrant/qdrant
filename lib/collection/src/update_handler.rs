@@ -669,6 +669,7 @@ impl CpuBudget {
         log::trace!("Blocking optimization check, waiting for CPU budget to be available");
 
         // Wait for CPU budget to be available with exponential backoff
+        // TODO: find better way, don't busy wait
         let mut delay = Duration::from_micros(100);
         while !self.has_budget() {
             thread::sleep(delay);
@@ -682,6 +683,7 @@ impl CpuBudget {
 impl Default for CpuBudget {
     fn default() -> Self {
         // Utilize all but one CPU for optimization tasks
+        // TODO: Make configurable? Or reserve bigger number on big CPUs?
         let utilize_cpus = (common::cpu::get_num_cpus() - 1).max(1);
         Self {
             semaphore: Arc::new(Semaphore::new(utilize_cpus)),
