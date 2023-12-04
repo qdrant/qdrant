@@ -257,7 +257,7 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, dispatcher_arc, ready) = if is_distributed_deployment {
+    let (telemetry_collector, dispatcher_arc, health_checker) = if is_distributed_deployment {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
             toc_arc.clone(),
@@ -394,7 +394,7 @@ fn main() -> anyhow::Result<()> {
             .spawn(move || {
                 log_err_if_any(
                     "REST",
-                    actix::init(dispatcher_arc.clone(), telemetry_collector, ready, settings),
+                    actix::init(dispatcher_arc.clone(), telemetry_collector, health_checker, settings),
                 )
             })
             .unwrap();
