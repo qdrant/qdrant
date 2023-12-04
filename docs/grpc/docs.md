@@ -213,8 +213,8 @@
     - [Qdrant](#qdrant-Qdrant)
   
 - [qdrant_internal_service.proto](#qdrant_internal_service-proto)
-    - [GetCommitIndexRequest](#qdrant-GetCommitIndexRequest)
-    - [GetCommitIndexResponse](#qdrant-GetCommitIndexResponse)
+    - [GetConsensusCommitRequest](#qdrant-GetConsensusCommitRequest)
+    - [GetConsensusCommitResponse](#qdrant-GetConsensusCommitResponse)
     - [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest)
     - [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse)
   
@@ -3593,19 +3593,19 @@ When using target (with or without context), the score behaves a little differen
 
 
 
-<a name="qdrant-GetCommitIndexRequest"></a>
+<a name="qdrant-GetConsensusCommitRequest"></a>
 
-### GetCommitIndexRequest
-
-
+### GetConsensusCommitRequest
 
 
 
 
 
-<a name="qdrant-GetCommitIndexResponse"></a>
 
-### GetCommitIndexResponse
+
+<a name="qdrant-GetConsensusCommitResponse"></a>
+
+### GetConsensusCommitResponse
 
 
 
@@ -3664,7 +3664,7 @@ When using target (with or without context), the score behaves a little differen
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| GetCommitIndex | [GetCommitIndexRequest](#qdrant-GetCommitIndexRequest) | [GetCommitIndexResponse](#qdrant-GetCommitIndexResponse) | Get current commit and term on the target node. |
+| GetConsensusCommit | [GetConsensusCommitRequest](#qdrant-GetConsensusCommitRequest) | [GetConsensusCommitResponse](#qdrant-GetConsensusCommitResponse) | Get current commit and term on the target node. |
 | WaitOnConsensusCommit | [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest) | [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse) | Wait until the target node reached the given commit ID. |
 
  
