@@ -524,9 +524,9 @@ fn execute_batch_search(
         .unwrap_or(false);
     if ignore_plain_index
         && !is_search_optimized(
-        read_segment.deref(),
-        search_optimized_threshold_kb,
-        search_params.vector_name,
+            read_segment.deref(),
+            search_optimized_threshold_kb,
+            search_params.vector_name,
         )?
     {
         let batch_len = vectors_batch.len();

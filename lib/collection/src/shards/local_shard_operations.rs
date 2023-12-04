@@ -38,9 +38,7 @@ impl LocalShard {
                     .optimizer_config
                     .indexing_threshold
                     .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
-                collection_config
-                    .hnsw_config
-                    .full_scan_threshold
+                collection_config.hnsw_config.full_scan_threshold,
             )
         };
 
