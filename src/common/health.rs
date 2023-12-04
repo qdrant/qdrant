@@ -11,10 +11,9 @@ use api::grpc::transport_channel_pool::{self, TransportChannelPool};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
-use common::defaults::CONSENSUS_META_OP_WAIT;
+use common::defaults;
 use futures::stream::FuturesUnordered;
-use futures::{StreamExt as _, TryStreamExt as _};
-use futures_util::FutureExt;
+use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use tokio::{runtime, sync, time};
@@ -272,10 +271,10 @@ fn get_commit_index<'a>(
         |channel| async {
             let mut client = QdrantInternalClient::new(channel);
             let mut request = tonic::Request::new(GetCommitIndexRequest {});
-            request.set_timeout(CONSENSUS_META_OP_WAIT);
+            request.set_timeout(defaults::CONSENSUS_META_OP_WAIT);
             client.get_commit_index(request).await
         },
-        Some(CONSENSUS_META_OP_WAIT),
+        Some(defaults::CONSENSUS_META_OP_WAIT),
         2,
     )
 }
