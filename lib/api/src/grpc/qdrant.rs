@@ -222,7 +222,7 @@ pub struct HnswConfigDiff {
     ///
     /// Number of parallel threads used for background index building.
     /// If 0 - automatically select from 8 to 16.
-    /// Best to keep between 8 and 16 to prevent likelyhood of building broken/inefficient HNSW graphs.
+    /// Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
     /// On small CPUs, less threads are used.
     #[prost(uint64, optional, tag = "4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
