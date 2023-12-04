@@ -8,11 +8,14 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram;
+use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{Condition, FieldCondition, Filter, Payload};
 use serde_json::json;
 use sparse::common::sparse_vector_fixture::random_positive_sparse_vector;
+use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 50_000;
@@ -57,6 +60,33 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let sparse_vector = random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
     eprintln!("sparse_vector size = {:#?}", sparse_vector.values.len());
     let query_vector = sparse_vector.into();
+
+    // mmap inverted index
+    let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
+    let _mmap_inverted_index =
+        InvertedIndexMmap::convert_and_save(&sparse_vector_index.inverted_index, &mmap_index_dir)
+            .unwrap();
+    drop(_mmap_inverted_index);
+    let sparse_index_config = SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), None);
+    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
+        sparse_index_config,
+        sparse_vector_index.id_tracker.clone(),
+        sparse_vector_index.vector_storage.clone(),
+        sparse_vector_index.payload_index.clone(),
+        mmap_index_dir.path(),
+    )
+    .unwrap();
+
+    // intent: bench `search` without filter on mmap inverted index
+    group.bench_function("mmap-inverted-index", |b| {
+        b.iter(|| {
+            let results = sparse_vector_index_mmap
+                .search(&[&query_vector], None, TOP, None, &stopped)
+                .unwrap();
+
+            assert_eq!(results[0].len(), TOP);
+        })
+    });
 
     // intent: bench `search` without filter
     group.bench_function("inverted-index", |b| {
