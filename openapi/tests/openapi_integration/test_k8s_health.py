@@ -12,4 +12,4 @@ def test_k8s_health(endpoint):
         method="GET",
     )
     assert response.ok
-    assert response.text == "healthz check passed"
+    assert response.text == "all shards are ready"
