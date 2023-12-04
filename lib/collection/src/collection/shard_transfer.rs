@@ -322,19 +322,20 @@ impl Collection {
 
                 // It is not enough to check for shard_transfer_registered,
                 // because it is registered before the state of the shard is changed.
-                shard_transfer_registered && replica_set.wait_for_state_condition_sync(
-                    |state| {
-                        state
-                            .get_peer_state(&this_peer_id)
-                            .map_or(false, |peer_state| {
-                                matches!(
-                                    peer_state,
-                                    ReplicaState::Partial | ReplicaState::PartialSnapshot
-                                )
-                            })
-                    },
-                    defaults::CONSENSUS_META_OP_WAIT,
-                )
+                shard_transfer_registered
+                    && replica_set.wait_for_state_condition_sync(
+                        |state| {
+                            state
+                                .get_peer_state(&this_peer_id)
+                                .map_or(false, |peer_state| {
+                                    matches!(
+                                        peer_state,
+                                        ReplicaState::Partial | ReplicaState::PartialSnapshot
+                                    )
+                                })
+                        },
+                        defaults::CONSENSUS_META_OP_WAIT,
+                    )
             });
 
             match shard_transfer_requested.await {
