@@ -1,4 +1,3 @@
-use std::cmp;
 use std::collections::HashSet;
 use std::future::{self, Future};
 use std::sync::atomic::{self, AtomicBool};
@@ -169,20 +168,13 @@ impl Task {
         let cluster_commit_index = loop {
             let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
-            // TODO: Handle single-node cluster!
-            if peer_address_by_id.is_empty() {
-                time::sleep(Duration::from_secs(1)).await;
-                continue;
-            }
-
             // TODO: Limit parallelism? (E.g., `StreamExt::buffer_unordered`)
             let requests: FuturesUnordered<_> = peer_address_by_id
                 .values()
                 .map(|uri| get_commit_index(&transport_channel_pool, uri))
                 .collect();
 
-            // TODO: Handle single-node cluster!
-            let required_commit_indices_count = cmp::min(peer_address_by_id.len() / 2, 1);
+            let required_commit_indices_count = peer_address_by_id.len() / 2;
 
             let mut requests = requests
                 .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
@@ -207,11 +199,10 @@ impl Task {
             let cluster_commit_index = commit_indices
                 .into_iter()
                 .map(|resp| resp.into_inner().commit)
-                .max();
+                .max()
+                .unwrap_or(0);
 
-            if let Some(cluster_commit_index) = cluster_commit_index {
-                break cluster_commit_index as _;
-            }
+            break cluster_commit_index as _;
         };
 
         while self.commit_index() < cluster_commit_index {
