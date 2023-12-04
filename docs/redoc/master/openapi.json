@@ -5805,7 +5805,7 @@
             "minimum": 0
           },
           "max_optimization_threads": {
-            "description": "Max number of threads (jobs) for running optimizations per collection. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - optimizations will be disabled.",
+            "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
             "default": null,
             "type": "integer",
             "format": "uint",
@@ -7443,7 +7443,7 @@
             "nullable": true
           },
           "max_optimization_threads": {
-            "description": "Max number of threads (jobs) for running optimizations per collection. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - optimizations will be disabled.",
+            "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,

@@ -107,7 +107,7 @@ pub struct UpdateHandler {
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
     pub(super) max_ack_version: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
-    /// Maximum number of concurrent optimization jobs.
+    /// Maximum number of concurrent optimization jobs in this update handler.
     max_optimization_threads: Option<usize>,
 }
 

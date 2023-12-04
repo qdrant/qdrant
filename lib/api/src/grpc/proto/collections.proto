@@ -230,10 +230,10 @@ message OptimizersConfigDiff {
   */
   optional uint64 flush_interval_sec = 7;
   /*
-  Max number of threads (jobs) for running optimizations per collection.
+  Max number of threads (jobs) for running optimizations per shard.
   Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
   If null - have no limit and choose dynamically to saturate CPU.
-  If 0 - optimizations will be disabled.
+  If 0 - no optimization threads, optimizations will be disabled.
   */
   optional uint64 max_optimization_threads = 8;
 }
