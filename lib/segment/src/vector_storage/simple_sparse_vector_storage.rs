@@ -127,6 +127,11 @@ impl SimpleSparseVectorStorage {
         Ok(())
     }
 
+    /// Estimate average vector size based on total number of non-zero elements in all vectors.
+    ///
+    /// This is needed because the optimizer relies on the vector dimension * size_of_f32 * point_count to
+    /// trigger reindexing and on_disk data move.
+    /// TODO(sparse) get a separate function to get the vector storage instead for the optimizer
     pub fn get_average_dimension(&self) -> usize {
         if self.total_vector_count == 0 {
             // default dimension to play nice with optimizers
