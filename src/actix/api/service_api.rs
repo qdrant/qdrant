@@ -110,7 +110,7 @@ async fn livez() -> impl Responder {
 }
 
 #[get("/readyz")]
-async fn readyz(ready: web::Data<Option<Arc<health::Ready>>>) -> impl Responder {
+async fn readyz(ready: web::Data<Option<Arc<health::HealthChecker>>>) -> impl Responder {
     let is_ready = match ready.as_ref() {
         Some(ready) => ready.check_ready().await,
         None => true,

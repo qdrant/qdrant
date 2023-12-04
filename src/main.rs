@@ -286,13 +286,13 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let ready = Arc::new(common::health::Ready::new(
+        let health_checker = Arc::new(common::health::HealthChecker::new(
             toc_arc.clone(),
             consensus_state.clone(),
             runtime_handle.clone(),
         ));
 
-        runtime_handle.block_on(ready.check_ready());
+        runtime_handle.block_on(health_checker.check_ready());
 
         let handle = Consensus::run(
             &slog_logger,
@@ -301,7 +301,6 @@ fn main() -> anyhow::Result<()> {
             args.uri.map(|uri| uri.to_string()),
             settings.clone(),
             channel_service,
-            Some(ready.clone()),
             propose_receiver,
             tonic_telemetry_collector,
             toc_arc.clone(),
@@ -345,7 +344,7 @@ fn main() -> anyhow::Result<()> {
             ));
         }
 
-        (telemetry_collector, dispatcher_arc, Some(ready))
+        (telemetry_collector, dispatcher_arc, Some(health_checker))
     } else {
         log::info!("Distributed mode disabled");
         let dispatcher_arc = Arc::new(dispatcher);

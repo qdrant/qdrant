@@ -49,7 +49,7 @@ pub async fn index() -> impl Responder {
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
-    ready: Option<Arc<health::Ready>>,
+    ready: Option<Arc<health::HealthChecker>>,
     settings: Settings,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {

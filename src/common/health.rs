@@ -19,7 +19,9 @@ use storage::content_manager::toc::TableOfContent;
 use tokio::sync::broadcast;
 use tokio::{runtime, sync, task, time};
 
-pub struct Ready {
+const DEFAULT_READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
+
+pub struct HealthChecker {
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
     runtime: runtime::Handle,
@@ -29,7 +31,7 @@ pub struct Ready {
     check_ready: sync::broadcast::Sender<()>,
 }
 
-impl Ready {
+impl HealthChecker {
     pub fn new(
         toc: Arc<TableOfContent>,
         consensus_state: ConsensusStateRef,
@@ -62,7 +64,7 @@ impl Ready {
     }
 
     async fn wait_ready(&self) -> bool {
-        time::timeout(Duration::from_millis(500), self.notify_ready.notified())
+        time::timeout(DEFAULT_READY_CHECK_TIMEOUT, self.notify_ready.notified())
             .await
             .is_ok()
     }
@@ -193,6 +195,10 @@ impl Task {
             unhealthy_shards.retain(|shard| current_unhealthy_shards.contains(shard));
         }
 
+        self.make_ready_and_notify();
+    }
+
+    fn make_ready_and_notify(&self) {
         self.is_ready.store(true, atomic::Ordering::Relaxed);
         self.notify_ready.notify_waiters();
     }
@@ -202,8 +208,7 @@ impl Task {
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
         if peer_address_by_id.len() <= 1 {
-            self.is_ready.store(true, atomic::Ordering::Relaxed);
-            self.notify_ready.notify_waiters();
+            self.make_ready_and_notify();
             true
         } else {
             false
