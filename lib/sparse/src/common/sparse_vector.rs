@@ -86,15 +86,15 @@ impl SparseVector {
         }
     }
 }
-impl TryFrom<Vec<(i32, f64)>> for SparseVector {
+impl TryFrom<Vec<(u32, f32)>> for SparseVector {
     type Error = ValidationErrors;
 
-    fn try_from(tuples: Vec<(i32, f64)>) -> Result<Self, Self::Error> {
+    fn try_from(tuples: Vec<(u32, f32)>) -> Result<Self, Self::Error> {
         let mut indices = Vec::with_capacity(tuples.len());
         let mut values = Vec::with_capacity(tuples.len());
         for (i, w) in tuples {
-            indices.push(i as u32);
-            values.push(w as f32);
+            indices.push(i);
+            values.push(w);
         }
         SparseVector::new(indices, values)
     }
