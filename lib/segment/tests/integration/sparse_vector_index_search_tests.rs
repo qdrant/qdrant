@@ -205,8 +205,9 @@ fn sparse_vector_index_load_missing_mmap() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
         fixture_open_sparse_index(data_dir.path(), 0, 10_000);
-    // fails to open index if mmap file is missing
-    assert!(sparse_vector_index.is_err())
+    // absent configuration file for mmap are ignored
+    // a new index is created
+    assert!(sparse_vector_index.is_ok())
 }
 
 #[test]
