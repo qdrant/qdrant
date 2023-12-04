@@ -155,7 +155,7 @@ pub trait SegmentOptimizer {
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let mut vector_data = collection_params.into_base_vector_data()?;
-        let sparse_vector_data = collection_params.into_sparse_vector_data()?;
+        let mut sparse_vector_data = collection_params.into_sparse_vector_data()?;
 
         // If indexing, change to HNSW index and quantization
         if is_indexed {
@@ -189,6 +189,19 @@ pub trait SegmentOptimizer {
             vector_data.values_mut().for_each(|config| {
                 config.storage_type = VectorStorageType::Mmap;
             });
+
+            sparse_vector_data
+                .iter_mut()
+                .for_each(|(vector_name, config)| {
+                    // Assign sparse index on disk
+                    if let Some(sparse_config) = &collection_params.sparse_vectors {
+                        if let Some(params) = sparse_config.get(vector_name) {
+                            if let Some(index) = params.index.as_ref() {
+                                config.index = Some(*index);
+                            }
+                        }
+                    }
+                });
         }
 
         let optimized_config = SegmentConfig {
