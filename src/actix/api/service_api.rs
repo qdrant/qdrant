@@ -109,28 +109,19 @@ async fn livez() -> impl Responder {
     kubernetes_healthz().await
 }
 
-async fn check_ready(ready: web::Data<Option<Arc<health::Ready>>>) -> (StatusCode, &'static str) {
-    let Some(ready) = ready.get_ref() else {
-        return (StatusCode::OK, "all shards are ready");
-    };
-
-    let is_ready = ready.check_ready().await;
-    if is_ready {
-        return (StatusCode::OK, "all shards are ready");
-    }
-
-    // TODO: exit early if `ready` is true before timeout
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    if ready.is_ready() {
-        return (StatusCode::OK, "all shards are ready");
-    }
-
-    (StatusCode::SERVICE_UNAVAILABLE, "some shards are not ready")
-}
-
 #[get("/readyz")]
 async fn readyz(ready: web::Data<Option<Arc<health::Ready>>>) -> impl Responder {
-    let (status, body) = check_ready(ready).await;
+    let is_ready = match ready.as_ref() {
+        Some(ready) => ready.check_ready().await,
+        None => true,
+    };
+
+    let (status, body) = if is_ready {
+        (StatusCode::OK, "all shards are ready")
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, "some shards are not ready")
+    };
+
     HttpResponse::build(status)
         .content_type(ContentType::plaintext())
         .body(body)
