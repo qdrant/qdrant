@@ -30,7 +30,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let (collection_params, indexing_threshold_kb) = {
+        let (collection_params, indexing_threshold_kb, full_scan_threshold_kb) = {
             let collection_config = self.collection_config.read().await;
             (
                 collection_config.params.clone(),
@@ -38,6 +38,7 @@ impl LocalShard {
                     .optimizer_config
                     .indexing_threshold
                     .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
+                collection_config.hnsw_config.full_scan_threshold,
             )
         };
 
@@ -54,7 +55,7 @@ impl LocalShard {
             search_runtime_handle,
             true,
             is_stopped.get_is_stopped(),
-            indexing_threshold_kb,
+            indexing_threshold_kb.max(full_scan_threshold_kb),
         );
 
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);

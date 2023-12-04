@@ -157,7 +157,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
         is_stopped: Arc<AtomicBool>,
-        indexing_threshold_kb: usize,
+        search_optimized_threshold_kb: usize,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let task = {
@@ -211,7 +211,7 @@ impl SegmentsSearcher {
                                 available_point_count,
                                 use_sampling,
                                 &is_stopped_clone,
-                                indexing_threshold_kb,
+                                search_optimized_threshold_kb,
                             )
                         }
                     });
@@ -261,7 +261,7 @@ impl SegmentsSearcher {
                             0,
                             false,
                             &is_stopped_clone,
-                            indexing_threshold_kb,
+                            search_optimized_threshold_kb,
                         )
                     }))
                 }
@@ -422,7 +422,7 @@ fn search_in_segment(
     total_points: usize,
     use_sampling: bool,
     is_stopped: &AtomicBool,
-    indexing_threshold_kb: usize,
+    search_optimized_threshold_kb: usize,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
 
@@ -463,7 +463,7 @@ fn search_in_segment(
                     use_sampling,
                     total_points,
                     is_stopped,
-                    indexing_threshold_kb,
+                    search_optimized_threshold_kb,
                 )?;
                 further_results.append(&mut further);
                 result.append(&mut res);
@@ -484,7 +484,7 @@ fn search_in_segment(
             use_sampling,
             total_points,
             is_stopped,
-            indexing_threshold_kb,
+            search_optimized_threshold_kb,
         )?;
         further_results.append(&mut further);
         result.append(&mut res);
@@ -500,7 +500,7 @@ fn execute_batch_search(
     use_sampling: bool,
     total_points: usize,
     is_stopped: &AtomicBool,
-    indexing_threshold_kb: usize,
+    search_optimized_threshold_kb: usize,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let locked_segment = segment.get();
     let read_segment = locked_segment.read();
@@ -525,7 +525,7 @@ fn execute_batch_search(
     if ignore_plain_index
         && !is_search_optimized(
             read_segment.deref(),
-            indexing_threshold_kb,
+            search_optimized_threshold_kb,
             search_params.vector_name,
         )?
     {
@@ -555,7 +555,7 @@ fn execute_batch_search(
 /// Check if the segment is indexed enough to be searched with `indexed_only` parameter
 fn is_search_optimized(
     segment: &dyn SegmentEntry,
-    indexing_threshold_kb: usize,
+    search_optimized_threshold_kb: usize,
     vector_name: &str,
 ) -> CollectionResult<bool> {
     let segment_info = segment.info();
@@ -583,7 +583,7 @@ fn is_search_optimized(
 
     let unindexed_volume = vector_size_bytes.saturating_mul(unindexed_vectors);
 
-    let indexing_threshold_bytes = indexing_threshold_kb * BYTES_IN_KB;
+    let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
     // Examples:
     // Threshold = 20_000 Kb
