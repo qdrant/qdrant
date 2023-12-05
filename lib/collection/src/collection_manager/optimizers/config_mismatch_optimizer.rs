@@ -192,10 +192,15 @@ impl ConfigMismatchOptimizer {
                         .sparse_vector_data
                         .iter()
                         .any(|(vector_name, vector_data)| {
+                            // Check index on disk mismatch
+                            // Ignore check for appendable segments, they always have index in RAM
                             if let Some(is_required_on_disk) =
                                 self.check_if_sparse_vectors_index_on_disk(vector_name)
                             {
-                                if is_required_on_disk != vector_data.is_index_on_disk() {
+                                let is_appendable = read_segment.is_appendable();
+                                if !is_appendable
+                                    && (is_required_on_disk != vector_data.is_index_on_disk())
+                                {
                                     return true;
                                 }
                             }
