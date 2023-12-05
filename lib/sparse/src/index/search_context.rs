@@ -55,21 +55,42 @@ impl<'a> SearchContext<'a> {
         }
     }
 
-    /// Return all results that overlap with the query vector
+    /// Score the query vector against the given ids.
     ///
-    /// The resulting sparse vectors are sorted by id and contains only values that overlap with the query vector
+    /// This is a plain search without any pruning.
     ///
-    /// This is a plain search without any pruning
-    fn plain_search(&mut self) -> Vec<(u32, SparseVector)> {
-        let mut result = Vec::new();
-        while let Some(next) = self.get_next() {
-            // check for cancellation
-            if self.is_stopped.load(Relaxed) {
-                break;
+    /// The results are not sorted.
+    fn plain_search(&mut self, ids: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
+        let mut scores = Vec::with_capacity(ids.len());
+        for id in ids {
+            let mut indices = Vec::with_capacity(self.query.indices.len());
+            let mut values = Vec::with_capacity(self.query.values.len());
+            // collect indices and values for the current record id from the query's posting lists *only*
+            for posting_iterator in &self.postings_iterators {
+                // rely on binary search as the posting lists are sorted by record id
+                match posting_iterator
+                    .posting_list_iterator
+                    .elements
+                    .binary_search_by(|element| element.record_id.cmp(id))
+                {
+                    Err(_missing) => {} // no match for posting list
+                    Ok(element_index) => {
+                        // match for posting list
+                        let element =
+                            &posting_iterator.posting_list_iterator.elements[element_index];
+                        indices.push(self.query.indices[posting_iterator.query_weight_offset]);
+                        values.push(element.weight);
+                    }
+                }
             }
-            result.push(next);
+            // reconstruct sparse vector and score against query
+            let sparse_vector = SparseVector { indices, values };
+            scores.push(ScoredPointOffset {
+                score: sparse_vector.score(&self.query).unwrap_or(0.0),
+                idx: *id,
+            });
         }
-        result
+        scores
     }
 
     /// Advance posting lists iterators and return the next candidate by increasing ids.
@@ -123,26 +144,6 @@ impl<'a> SearchContext<'a> {
             score,
             idx: min_record_id,
         })
-    }
-
-    fn get_next(&mut self) -> Option<(u32, SparseVector)> {
-        let min_record_id = Self::next_min_id(&self.postings_iterators)?;
-        let mut indices = vec![];
-        let mut values = vec![];
-
-        // Iterate second time to advance posting iterators
-        for posting_iterator in self.postings_iterators.iter_mut() {
-            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
-                // accumulate indices & values for the current record id
-                if element.record_id == min_record_id {
-                    let element = posting_iterator.posting_list_iterator.next().unwrap();
-                    indices.push(self.query.indices[posting_iterator.query_weight_offset]);
-                    values.push(element.weight)
-                }
-            }
-        }
-        let sparse_vector = SparseVector { indices, values };
-        Some((min_record_id, sparse_vector))
     }
 
     /// Returns the next min record id from all posting list iterators
@@ -1023,31 +1024,22 @@ mod tests {
             &is_stopped,
         );
 
-        let sparse_vectors = search_context.plain_search();
+        let scores = search_context.plain_search(&[1, 2, 3]);
         assert_eq!(
-            sparse_vectors,
+            scores,
             vec![
-                (
-                    1,
-                    SparseVector {
-                        indices: vec![1, 2, 3],
-                        values: vec![10.0, 10.0, 10.0]
-                    }
-                ),
-                (
-                    2,
-                    SparseVector {
-                        indices: vec![1, 3],
-                        values: vec![20.0, 20.0]
-                    }
-                ),
-                (
-                    3,
-                    SparseVector {
-                        indices: vec![2, 3],
-                        values: vec![30.0, 30.0]
-                    }
-                ),
+                ScoredPointOffset {
+                    idx: 1,
+                    score: 30.0
+                },
+                ScoredPointOffset {
+                    idx: 2,
+                    score: 40.0
+                },
+                ScoredPointOffset {
+                    idx: 3,
+                    score: 60.0
+                }
             ]
         );
     }
@@ -1072,32 +1064,22 @@ mod tests {
             &is_stopped,
         );
 
-        // the dimension 2 is absent in the result vectors
-        let sparse_vectors = search_context.plain_search();
+        let scores = search_context.plain_search(&[1, 2, 3]);
         assert_eq!(
-            sparse_vectors,
+            scores,
             vec![
-                (
-                    1,
-                    SparseVector {
-                        indices: vec![1, 3],
-                        values: vec![10.0, 10.0]
-                    }
-                ),
-                (
-                    2,
-                    SparseVector {
-                        indices: vec![1, 3],
-                        values: vec![20.0, 20.0]
-                    }
-                ),
-                (
-                    3,
-                    SparseVector {
-                        indices: vec![3],
-                        values: vec![30.0]
-                    }
-                ),
+                ScoredPointOffset {
+                    idx: 1,
+                    score: 20.0 // the dimension 2 did not contribute to the score
+                },
+                ScoredPointOffset {
+                    idx: 2,
+                    score: 40.0
+                },
+                ScoredPointOffset {
+                    idx: 3,
+                    score: 30.0 // the dimension 2 did not contribute to the score
+                }
             ]
         );
     }
