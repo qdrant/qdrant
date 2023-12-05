@@ -10,7 +10,7 @@ use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::{
-    BinaryQuantization, CompressionRatio, Direction, GeoLineString, GroupId, SparseIndices, OrderBy,
+    BinaryQuantization, CompressionRatio, Direction, GeoLineString, GroupId, OrderBy, SparseIndices,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
