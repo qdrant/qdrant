@@ -4,7 +4,7 @@ use std::any;
 ///
 /// Downcast `&'static str` and `String` panic payloads into a `&str`
 pub fn downcast_str(any: &dyn any::Any) -> Option<&str> {
-    if let Some(str) = any.downcast_ref::<&'static str>() {
+    if let Some(str) = any.downcast_ref::<&str>() {
         return Some(str);
     }
 
