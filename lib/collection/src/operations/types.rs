@@ -100,16 +100,16 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// Deprecated - Number of vectors in collection.
+    /// Approximate number of vectors in collection.
     /// All vectors in collection are available for querying.
     /// Calculated as `points_count x vectors_per_point`.
     /// Where `vectors_per_point` is a number of named vectors in schema.
     pub vectors_count: Option<usize>,
-    /// Deprecated - Number of indexed vectors in the collection.
+    /// Approximate umber of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).
     pub indexed_vectors_count: Option<usize>,
-    /// Deprecated - Number of points (vectors + payloads) in collection.
+    /// Approximate number of points (vectors + payloads) in collection.
     /// Each point could be accessed by unique id.
     pub points_count: Option<usize>,
     /// Number of segments in collection.
@@ -159,16 +159,16 @@ pub struct CollectionInfoInternal {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// Deprecated - Number of vectors in collection.
+    /// Approximate number of vectors in collection.
     /// All vectors in collection are available for querying.
     /// Calculated as `points_count x vectors_per_point`.
     /// Where `vectors_per_point` is a number of named vectors in schema.
     pub vectors_count: usize,
-    /// Deprecated - Number of indexed vectors in the collection.
+    /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).
     pub indexed_vectors_count: usize,
-    /// Deprecated - Number of points (vectors + payloads) in collection.
+    /// Approximate number of points (vectors + payloads) in collection.
     /// Each point could be accessed by unique id.
     pub points_count: usize,
     /// Number of segments in collection.

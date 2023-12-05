@@ -641,7 +641,7 @@ pub struct CollectionInfo {
     /// status of collection optimizers
     #[prost(message, optional, tag = "2")]
     pub optimizer_status: ::core::option::Option<OptimizerStatus>,
-    /// Deprecated - number of vectors in the collection
+    /// Approximate number of vectors in the collection
     #[prost(uint64, optional, tag = "3")]
     pub vectors_count: ::core::option::Option<u64>,
     /// Number of independent segments
@@ -656,10 +656,10 @@ pub struct CollectionInfo {
         ::prost::alloc::string::String,
         PayloadSchemaInfo,
     >,
-    /// Deprecated - number of points in the collection
+    /// Approximate number of points in the collection
     #[prost(uint64, optional, tag = "9")]
     pub points_count: ::core::option::Option<u64>,
-    /// Deprecated - number of indexed vectors in the collection.
+    /// Approximate number of indexed vectors in the collection.
     #[prost(uint64, optional, tag = "10")]
     pub indexed_vectors_count: ::core::option::Option<u64>,
 }
