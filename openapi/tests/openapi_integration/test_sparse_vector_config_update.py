@@ -66,7 +66,6 @@ def test_sparse_vector_config_update():
                 "sparse-text": {
                     "index": {
                         "on_disk": True,
-                        "ef_construct": 100,
                     }
                 },
             },
