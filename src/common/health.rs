@@ -3,7 +3,7 @@ use std::future::{self, Future};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{any, cmp, panic, thread};
+use std::{cmp, panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
@@ -12,6 +12,7 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
 use common::defaults;
+use common::panic::panic_payload_into_string;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
@@ -97,10 +98,10 @@ pub struct Task {
 impl Task {
     pub async fn exec(mut self) {
         while let Err(err) = self.exec_catch_unwind().await {
-            let message = downcast_str(&err).unwrap_or("");
-            let separator = if !message.is_empty() { ": " } else { "" };
-
-            log::error!("HealthChecker task panicked, retrying{separator}{message}");
+            log::error!(
+                "HealthChecker task panicked, retrying: {}",
+                panic_payload_into_string(err)
+            );
         }
     }
 
@@ -281,18 +282,6 @@ impl Task {
         self.is_ready.store(true, atomic::Ordering::Relaxed);
         self.is_ready_signal.notify_one();
     }
-}
-
-fn downcast_str(any: &dyn any::Any) -> Option<&str> {
-    if let Some(str) = any.downcast_ref::<&'static str>() {
-        return Some(str);
-    }
-
-    if let Some(str) = any.downcast_ref::<String>() {
-        return Some(str);
-    }
-
-    None
 }
 
 fn get_consensus_commit<'a>(

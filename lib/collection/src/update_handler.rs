@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+use common::panic::panic_payload_into_string;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
@@ -19,9 +20,7 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
-use crate::common::stoppable_task::{
-    panic_payload_into_string, spawn_stoppable, StoppableTaskHandle,
-};
+use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
