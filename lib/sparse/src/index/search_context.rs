@@ -55,14 +55,14 @@ impl<'a> SearchContext<'a> {
         }
     }
 
-    /// Score the query vector against the given ids.
-    ///
-    /// This is a plain search without any pruning.
-    ///
-    /// The results are not sorted.
-    fn plain_search(&mut self, ids: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
-        let mut scores = Vec::with_capacity(ids.len());
+    /// Plain search against the given ids without any pruning
+    pub fn plain_search(&mut self, ids: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
         for id in ids {
+            // check for cancellation
+            if self.is_stopped.load(Relaxed) {
+                break;
+            }
+
             let mut indices = Vec::with_capacity(self.query.indices.len());
             let mut values = Vec::with_capacity(self.query.values.len());
             // collect indices and values for the current record id from the query's posting lists *only*
@@ -85,12 +85,13 @@ impl<'a> SearchContext<'a> {
             }
             // reconstruct sparse vector and score against query
             let sparse_vector = SparseVector { indices, values };
-            scores.push(ScoredPointOffset {
+            self.result_queue.push(ScoredPointOffset {
                 score: sparse_vector.score(&self.query).unwrap_or(0.0),
                 idx: *id,
             });
         }
-        scores
+        let queue = std::mem::take(&mut self.result_queue);
+        queue.into_vec()
     }
 
     /// Advance posting lists iterators and return the next candidate by increasing ids.
@@ -1029,17 +1030,17 @@ mod tests {
             scores,
             vec![
                 ScoredPointOffset {
-                    idx: 1,
-                    score: 30.0
+                    idx: 3,
+                    score: 60.0
                 },
                 ScoredPointOffset {
                     idx: 2,
                     score: 40.0
                 },
                 ScoredPointOffset {
-                    idx: 3,
-                    score: 60.0
-                }
+                    idx: 1,
+                    score: 30.0
+                },
             ]
         );
     }
@@ -1069,17 +1070,17 @@ mod tests {
             scores,
             vec![
                 ScoredPointOffset {
-                    idx: 1,
-                    score: 20.0 // the dimension 2 did not contribute to the score
-                },
-                ScoredPointOffset {
                     idx: 2,
                     score: 40.0
                 },
                 ScoredPointOffset {
                     idx: 3,
                     score: 30.0 // the dimension 2 did not contribute to the score
-                }
+                },
+                ScoredPointOffset {
+                    idx: 1,
+                    score: 20.0 // the dimension 2 did not contribute to the score
+                },
             ]
         );
     }

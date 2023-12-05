@@ -25,7 +25,7 @@ impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer<[VectorElementType]>
     for MetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]

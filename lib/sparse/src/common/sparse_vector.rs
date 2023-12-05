@@ -85,7 +85,55 @@ impl SparseVector {
             None
         }
     }
+
+    /// Construct a new vector that is the result of performing all indices-wise operations
+    pub fn combine_aggregate(
+        &self,
+        other: &SparseVector,
+        op: impl Fn(DimWeight, DimWeight) -> DimWeight,
+    ) -> Self {
+        debug_assert!(self.is_sorted());
+        debug_assert!(other.is_sorted());
+
+        let mut result = SparseVector::default();
+        let mut i = 0;
+        let mut j = 0;
+        while i < self.indices.len() && j < other.indices.len() {
+            match self.indices[i].cmp(&other.indices[j]) {
+                std::cmp::Ordering::Less => {
+                    result.indices.push(self.indices[i]);
+                    result.values.push(op(self.values[i], 0.0));
+                    i += 1;
+                }
+                std::cmp::Ordering::Greater => {
+                    result.indices.push(other.indices[j]);
+                    result.values.push(op(0.0, other.values[j]));
+                    j += 1;
+                }
+                std::cmp::Ordering::Equal => {
+                    result.indices.push(self.indices[i]);
+                    result.values.push(op(self.values[i], other.values[j]));
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+        while i < self.indices.len() {
+            result.indices.push(self.indices[i]);
+            result.values.push(op(self.values[i], 0.0));
+            i += 1;
+        }
+        while j < other.indices.len() {
+            result.indices.push(other.indices[j]);
+            result.values.push(op(0.0, other.values[j]));
+            j += 1;
+        }
+        debug_assert!(result.is_sorted());
+        debug_assert!(result.validate().is_ok());
+        result
+    }
 }
+
 impl TryFrom<Vec<(u32, f32)>> for SparseVector {
     type Error = ValidationErrors;
 
@@ -190,5 +238,18 @@ mod tests {
         assert!(!not_sorted.is_sorted());
         not_sorted.sort_by_indices();
         assert!(not_sorted.is_sorted());
+    }
+
+    #[test]
+    fn combine_aggregate_test() {
+        let a = SparseVector::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3]).unwrap();
+        let b = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
+        let sum = a.combine_aggregate(&b, |x, y| x + 2.0 * y);
+        assert_eq!(sum.indices, vec![1, 2, 3, 4]);
+        assert_eq!(sum.values, vec![0.1, 4.2, 6.3, 8.0]);
+
+        let sum = b.combine_aggregate(&a, |x, y| x + 2.0 * y);
+        assert_eq!(sum.indices, vec![1, 2, 3, 4]);
+        assert_eq!(sum.values, vec![0.2, 2.4, 3.6, 4.0]);
     }
 }
