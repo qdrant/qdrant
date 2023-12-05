@@ -570,6 +570,36 @@ fn sparse_vector_persistence_test() {
     let path = segment.current_path.clone();
     drop(segment);
 
+    // persistence using rebuild.
+    // for appendable segment vector index has to be rebuilt
+    let mut segment = load_segment(&path).unwrap().unwrap();
+    let search_after_reload_result = segment
+        .search(
+            SPARSE_VECTOR_NAME,
+            &query_vector,
+            &Default::default(),
+            &Default::default(),
+            None,
+            top,
+            None,
+            &stopped,
+        )
+        .unwrap();
+
+    assert_eq!(search_after_reload_result.len(), top);
+    assert_eq!(search_result, search_after_reload_result);
+
+    // persistence using loading. To mark index as saved we need to build it
+    segment.vector_data.iter_mut().for_each(|(_, vector_data)| {
+        vector_data
+            .vector_index
+            .borrow_mut()
+            .build_index(&false.into())
+            .unwrap()
+    });
+
+    drop(segment);
+
     let segment = load_segment(&path).unwrap().unwrap();
     let search_after_reload_result = segment
         .search(

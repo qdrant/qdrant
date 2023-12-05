@@ -25,14 +25,14 @@ const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct InvertedIndexFileHeader {
     pub posting_count: usize, // number oof posting lists
-    vector_count: usize,      // number of unique vectors indexed
+    pub vector_count: usize,  // number of unique vectors indexed
 }
 
 /// Inverted flatten index from dimension id to posting list
 pub struct InvertedIndexMmap {
     path: PathBuf,
     mmap: Arc<Mmap>,
-    file_header: InvertedIndexFileHeader,
+    pub file_header: InvertedIndexFileHeader,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -42,8 +42,16 @@ struct PostingListFileHeader {
 }
 
 impl InvertedIndex for InvertedIndexMmap {
-    fn open(path: &Path) -> std::io::Result<Option<Self>> {
-        Self::load(path).map(Some)
+    fn open(path: &Path) -> std::io::Result<Self> {
+        Self::load(path)
+    }
+
+    fn save(&self, path: &Path) -> std::io::Result<()> {
+        if path != self.path {
+            // TODO(sparse): do we need to save index to another direction?
+            todo!("Cannot save to a different path")
+        }
+        Ok(())
     }
 
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
@@ -113,6 +121,9 @@ impl InvertedIndexMmap {
         // file index data
         Self::save_posting_headers(&mut mmap, inverted_index_ram, total_posting_headers_size);
         Self::save_posting_elements(&mut mmap, inverted_index_ram, total_posting_headers_size);
+        if file_length > 0 {
+            mmap.flush()?;
+        }
 
         // save header properties
         let posting_count = inverted_index_ram.postings.len();

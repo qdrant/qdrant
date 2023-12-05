@@ -24,7 +24,7 @@ use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD};
+use crate::types::{Filter, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
@@ -52,32 +52,31 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> OperationResult<Self> {
         // create directory if it does not exist
         create_dir_all(path)?;
+        let is_appendable = config.index_type == SparseIndexType::MutableRam;
 
-        // load config
         let config_path = SparseIndexConfig::get_config_path(path);
-        let config = if config_path.exists() {
-            SparseIndexConfig::load(&config_path)?
-        } else {
-            // create new files if they do not exist
-            TInvertedIndex::from_ram_index(InvertedIndexRam::empty(), path)?;
-            // use provided config if no config file exists
-            config
-        };
-
-        let searches_telemetry = SparseSearchesTelemetry::new();
-        let inverted_index = if let Some(inverted_index) = TInvertedIndex::open(path)? {
-            inverted_index
-        } else {
-            Self::build_inverted_index(
+        let (config, inverted_index) = if is_appendable {
+            // RAM mutable case - build inverted index from scratch and use provided config
+            let inverted_index = Self::build_inverted_index(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 path,
                 &AtomicBool::new(false),
-            )?
+            )?;
+            (config, inverted_index)
+        } else if config_path.exists() {
+            // Load inverted index and config
+            let loaded_config = SparseIndexConfig::load(&config_path)?;
+            let inverted_index = TInvertedIndex::open(path)?;
+            (loaded_config, inverted_index)
+        } else {
+            // Inverted index and config are not presented - initialize empty inverted index
+            let inverted_index = TInvertedIndex::from_ram_index(InvertedIndexRam::empty(), path)?;
+            (config, inverted_index)
         };
 
+        let searches_telemetry = SparseSearchesTelemetry::new();
         let path = path.to_path_buf();
-        let is_appendable = config.index_type == SparseIndexType::MutableRam;
         Ok(Self {
             config,
             id_tracker,
@@ -120,7 +119,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         // the underlying upsert operation does not guarantee that the indexed vector count is correct
         // so we set the indexed vector count to the number of points we have seen
         ram_index.vector_count = index_point_count;
-        // TODO(sparse) this operation loads the entire index into memory which can cause OOM on large storage
         Ok(TInvertedIndex::from_ram_index(ram_index, path)?)
     }
 
@@ -272,10 +270,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             Some(filter) => {
                 // if cardinality is small - use plain search
                 let query_cardinality = self.get_query_cardinality(filter);
-                let threshold = self
-                    .config
-                    .full_scan_threshold
-                    .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
+                let threshold = self.config.full_scan_threshold;
                 if query_cardinality.max < threshold {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
@@ -346,12 +341,21 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
+        // do nothing for appendable index, it will be built on the fly while loading
+        if self.is_appendable {
+            log::warn!("Try to build mutable sparse index");
+            return Ok(());
+        }
+
         self.inverted_index = Self::build_inverted_index(
             self.id_tracker.clone(),
             self.vector_storage.clone(),
             &self.path,
             stopped,
         )?;
+
+        // save inverted index
+        self.inverted_index.save(&self.path)?;
 
         // save config to mark successful build
         self.save_config()?;

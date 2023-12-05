@@ -12,7 +12,10 @@ pub mod inverted_index_ram;
 
 pub trait InvertedIndex: Sized {
     /// Open existing index based on path
-    fn open(path: &Path) -> std::io::Result<Option<Self>>;
+    fn open(path: &Path) -> std::io::Result<Self>;
+
+    /// Save index
+    fn save(&self, path: &Path) -> std::io::Result<()>;
 
     /// Get posting list for dimension id
     fn get(&self, id: &DimId) -> Option<PostingListIterator>;
@@ -27,9 +30,7 @@ pub trait InvertedIndex: Sized {
     fn from_ram_index<P: AsRef<Path>>(
         ram_index: InvertedIndexRam,
         path: P,
-    ) -> std::io::Result<Self>
-    where
-        Self: Sized;
+    ) -> std::io::Result<Self>;
 
     /// Number of indexed vectors
     fn vector_count(&self) -> usize;
