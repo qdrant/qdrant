@@ -80,6 +80,12 @@ To run Qdrant on local development environment you need to install below:
 
     ./target/release/qdrant
     ```
+- Use the web UI
+  
+    Web UI repo is [in a separate repo](https://github.com/qdrant/qdrant-web-ui), but there's a utility script to sync it to the `static` folder:
+    ```shell
+    ./tools/sync-web-ui.sh
+    ```
 
 ## Profiling
 
