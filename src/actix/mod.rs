@@ -32,6 +32,7 @@ use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::api_key::{ApiKey, WhitelistItem};
 use crate::common::auth::AuthKeys;
+use crate::common::health;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
@@ -48,6 +49,7 @@ pub async fn index() -> impl Responder {
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+    ready: Option<Arc<health::HealthChecker>>,
     settings: Settings,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
@@ -60,6 +62,7 @@ pub fn init(
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
+        let ready = web::Data::new(ready);
         let auth_keys = AuthKeys::try_create(&settings.service);
         let static_folder = settings
             .service
@@ -129,6 +132,7 @@ pub fn init(
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
                 .app_data(http_client.clone())
+                .app_data(ready.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)
