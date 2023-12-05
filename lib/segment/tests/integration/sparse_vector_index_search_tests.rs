@@ -39,6 +39,9 @@ const NUM_VECTORS: usize = 2000;
 /// very low value to force usage of index
 const LOW_FULL_SCAN_THRESHOLD: usize = 1;
 
+/// Full scan threshold to force plain search
+const LARGE_FULL_SCAN_THRESHOLD: usize = 10 * NUM_VECTORS;
+
 const SPARSE_VECTOR_NAME: &str = "sparse_vector";
 
 /// Expects the filter to match ALL points in order to compare the results with/without filter
@@ -100,8 +103,11 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 filter_result,
                 no_filter_result,
             );
-            for (filter_result, no_filter_result) in
-                filter_result.iter().zip(no_filter_result.iter())
+            // skip zero scores because index skips non-overlapping points, but plain search does not
+            for (filter_result, no_filter_result) in filter_result
+                .iter()
+                .filter(|s| s.score != 0.0)
+                .zip(no_filter_result.iter().filter(|s| s.score != 0.0))
             {
                 assert_eq!(filter_result, no_filter_result);
             }
@@ -419,7 +425,7 @@ fn sparse_vector_index_plain_search() {
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
-        LOW_FULL_SCAN_THRESHOLD,
+        LARGE_FULL_SCAN_THRESHOLD,
         data_dir.path(),
         &stopped,
     );
@@ -437,7 +443,7 @@ fn sparse_vector_index_plain_search() {
 
     // empty when searching payload index directly
     let before_plain_results = sparse_vector_index
-        .search_plain(&[&query_vector], &filter, 10, &stopped)
+        .search(&[&query_vector], Some(&filter), 10, None, &stopped)
         .unwrap();
 
     assert_eq!(before_plain_results.len(), 1);
@@ -459,11 +465,20 @@ fn sparse_vector_index_plain_search() {
 
     // same results when searching payload index directly
     let after_plain_results = sparse_vector_index
-        .search_plain(&[&query_vector], &filter, NUM_VECTORS, &stopped)
+        .search(&[&query_vector], Some(&filter), NUM_VECTORS, None, &stopped)
         .unwrap();
 
     assert_eq!(after_plain_results.len(), 1);
     assert_eq!(after_plain_results[0].len(), NUM_VECTORS);
+
+    // check that plain searchers were used
+    assert_eq!(
+        sparse_vector_index
+            .get_telemetry_data()
+            .filtered_small_cardinality
+            .count,
+        2
+    );
 }
 
 #[test]

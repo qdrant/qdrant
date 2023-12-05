@@ -57,9 +57,10 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     drop(payload_index);
 
     // shared query vector (positive values to test pruning)
-    let sparse_vector = random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
-    eprintln!("sparse_vector size = {:#?}", sparse_vector.values.len());
-    let query_vector = sparse_vector.into();
+    let vector = random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
+    eprintln!("sparse_vector size = {:#?}", vector.values.len());
+    let sparse_vector = vector.clone();
+    let query_vector = vector.into();
 
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
@@ -105,25 +106,38 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         field_value.to_owned().into(),
     )));
 
-    // intent: bench `search` when the filtered payload key is not indexed
+    // intent: bench plain search when the filtered payload key is not indexed
     group.bench_function("inverted-index-filtered-plain", |b| {
         b.iter(|| {
+            let mut prefiltered_points = None;
             let results = sparse_vector_index
-                .search(&[&query_vector], Some(&filter), TOP, None, &stopped)
+                .search_plain(
+                    &sparse_vector,
+                    &filter,
+                    TOP,
+                    &stopped,
+                    &mut prefiltered_points,
+                )
                 .unwrap();
 
-            assert_eq!(results[0].len(), TOP);
+            assert_eq!(results.len(), TOP);
         })
     });
 
-    // intent: bench `search_plain` when the filtered payload key is not indexed
     group.bench_function("plain-storage", |b| {
         b.iter(|| {
+            let mut prefiltered_points = None;
             let results = sparse_vector_index
-                .search_plain(&[&query_vector], &filter, TOP, &stopped)
+                .search_plain(
+                    &sparse_vector,
+                    &filter,
+                    TOP,
+                    &stopped,
+                    &mut prefiltered_points,
+                )
                 .unwrap();
 
-            assert_eq!(results[0].len(), TOP);
+            assert_eq!(results.len(), TOP);
         })
     });
 
@@ -147,14 +161,21 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         })
     });
 
-    // intent: bench `search_plain` when the filterer payload key is indexed
-    group.bench_function("payload-index", |b| {
+    // intent: bench plain search when the filterer payload key is indexed
+    group.bench_function("plain-filtered-payload-index", |b| {
         b.iter(|| {
+            let mut prefiltered_points = None;
             let results = sparse_vector_index
-                .search_plain(&[&query_vector], &filter, TOP, &stopped)
+                .search_plain(
+                    &sparse_vector,
+                    &filter,
+                    TOP,
+                    &stopped,
+                    &mut prefiltered_points,
+                )
                 .unwrap();
 
-            assert_eq!(results[0].len(), TOP);
+            assert_eq!(results.len(), TOP);
         })
     });
 
