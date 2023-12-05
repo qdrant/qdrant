@@ -3,7 +3,7 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_mix_collection_setup'
+collection_name = 'test_sparse_dense_collection_setup'
 
 
 @pytest.fixture(autouse=True)
