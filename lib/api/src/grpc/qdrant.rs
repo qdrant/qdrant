@@ -108,12 +108,12 @@ pub mod vectors_config_diff {
 pub struct SparseVectorParams {
     /// Configuration of sparse index
     #[prost(message, optional, tag = "1")]
-    pub index: ::core::option::Option<SparseIndexConfig>,
+    pub index: ::core::option::Option<SparseIndexParams>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SparseVectorConfig {
+pub struct SparseVectorParamsMap {
     #[prost(map = "string, message", tag = "1")]
     pub map: ::std::collections::HashMap<
         ::prost::alloc::string::String,
@@ -209,7 +209,7 @@ pub struct HnswConfigDiff {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SparseIndexConfig {
+pub struct SparseIndexParams {
     ///
     /// Prefer a full scan search upto (excluding) this number of vectors.
     /// Note: this is number of vectors, not KiloBytes.
@@ -445,7 +445,7 @@ pub struct CreateCollection {
     pub sharding_method: ::core::option::Option<i32>,
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "16")]
-    pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    pub sparse_vectors_config: ::core::option::Option<SparseVectorParamsMap>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -482,7 +482,7 @@ pub struct UpdateCollection {
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
     /// New sparse vector parameters
     #[prost(message, optional, tag = "8")]
-    pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    pub sparse_vectors_config: ::core::option::Option<SparseVectorParamsMap>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -538,7 +538,7 @@ pub struct CollectionParams {
     pub sharding_method: ::core::option::Option<i32>,
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "10")]
-    pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    pub sparse_vectors_config: ::core::option::Option<SparseVectorParamsMap>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

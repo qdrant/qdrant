@@ -11,6 +11,7 @@ use segment::common::operation_time_statistics::{
 };
 use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -189,20 +190,37 @@ pub trait SegmentOptimizer {
             vector_data.values_mut().for_each(|config| {
                 config.storage_type = VectorStorageType::Mmap;
             });
-
-            sparse_vector_data
-                .iter_mut()
-                .for_each(|(vector_name, config)| {
-                    // Assign sparse index on disk
-                    if let Some(sparse_config) = &collection_params.sparse_vectors {
-                        if let Some(params) = sparse_config.get(vector_name) {
-                            if let Some(index) = params.index.as_ref() {
-                                config.index = Some(*index);
-                            }
-                        }
-                    }
-                });
         }
+
+        sparse_vector_data
+            .iter_mut()
+            .for_each(|(vector_name, config)| {
+                // Assign sparse index on disk
+                if let Some(sparse_config) = &collection_params.sparse_vectors {
+                    if let Some(params) = sparse_config.get(vector_name) {
+                        let full_scan_threshold = params
+                            .index
+                            .and_then(|index_params| index_params.full_scan_threshold);
+
+                        let on_disk = is_on_disk
+                            || params
+                                .index
+                                .and_then(|index_params| index_params.on_disk)
+                                .unwrap_or(false);
+
+                        let index_type = if on_disk {
+                            SparseIndexType::Mmap
+                        } else {
+                            SparseIndexType::ImmutableRam
+                        };
+
+                        config.index = SparseIndexConfig {
+                            full_scan_threshold,
+                            index_type,
+                        };
+                    }
+                }
+            });
 
         let optimized_config = SegmentConfig {
             vector_data,

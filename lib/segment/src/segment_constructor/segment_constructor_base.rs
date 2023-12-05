@@ -20,6 +20,7 @@ use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
+use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
@@ -218,21 +219,23 @@ fn create_segment(
             );
         }
 
-        let vector_index = match sparse_vector_config.index.and_then(|c| c.on_disk) {
-            Some(true) => sp(VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
-                sparse_vector_config.index.unwrap_or_default(),
+        let vector_index = match sparse_vector_config.index.index_type {
+            SparseIndexType::Mmap => sp(VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
+                sparse_vector_config.index,
                 id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
                 &vector_index_path,
             )?)),
-            _ => sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
-                sparse_vector_config.index.unwrap_or_default(),
-                id_tracker.clone(),
-                vector_storage.clone(),
-                payload_index.clone(),
-                &vector_index_path,
-            )?)),
+            SparseIndexType::MutableRam | SparseIndexType::ImmutableRam => {
+                sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
+                    sparse_vector_config.index,
+                    id_tracker.clone(),
+                    vector_storage.clone(),
+                    payload_index.clone(),
+                    &vector_index_path,
+                )?))
+            }
         };
 
         vector_data.insert(

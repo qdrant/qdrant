@@ -27,7 +27,7 @@ use crate::common::utils::{
 };
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
-use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
@@ -752,14 +752,13 @@ impl VectorDataConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorDataConfig {
-    /// Type of index used for search
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub index: Option<SparseIndexConfig>,
+    /// Sparse inverted index config
+    pub index: SparseIndexConfig,
 }
 
 impl SparseVectorDataConfig {
     pub fn is_appendable(&self) -> bool {
-        !self.is_index_on_disk()
+        self.index.index_type == SparseIndexType::MutableRam
     }
 
     pub fn is_indexed(&self) -> bool {
@@ -767,9 +766,7 @@ impl SparseVectorDataConfig {
     }
 
     pub fn is_index_on_disk(&self) -> bool {
-        self.index
-            .and_then(|config| config.on_disk)
-            .unwrap_or(false)
+        self.index.index_type == SparseIndexType::Mmap
     }
 }
 

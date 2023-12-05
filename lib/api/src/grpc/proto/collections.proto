@@ -39,10 +39,10 @@ message VectorsConfigDiff {
 }
 
 message SparseVectorParams {
-  optional SparseIndexConfig index = 1; // Configuration of sparse index
+  optional SparseIndexParams index = 1; // Configuration of sparse index
 }
 
-message SparseVectorConfig {
+message SparseVectorParamsMap {
   map<string, SparseVectorParams> map = 1;
 }
 
@@ -140,7 +140,7 @@ message HnswConfigDiff {
   optional uint64 payload_m = 6;
 }
 
-message SparseIndexConfig {
+message SparseIndexParams {
   /*
     Prefer a full scan search upto (excluding) this number of vectors.
     Note: this is number of vectors, not KiloBytes.
@@ -276,7 +276,7 @@ message CreateCollection {
   optional string init_from_collection = 13; // Specify name of the other collection to copy data from
   optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
   optional ShardingMethod sharding_method = 15; // Sharding method
-  optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
+  optional SparseVectorParamsMap sparse_vectors_config = 16; // Configuration for sparse vectors
 }
 
 message UpdateCollection {
@@ -287,7 +287,7 @@ message UpdateCollection {
   optional HnswConfigDiff hnsw_config = 5; // New HNSW parameters for the collection index
   optional VectorsConfigDiff vectors_config = 6; // New vector parameters
   optional QuantizationConfigDiff quantization_config = 7; // Quantization configuration of vector
-  optional SparseVectorConfig sparse_vectors_config = 8; // New sparse vector parameters
+  optional SparseVectorParamsMap sparse_vectors_config = 8; // New sparse vector parameters
 }
 
 message DeleteCollection {
@@ -310,7 +310,7 @@ message CollectionParams {
   optional uint32 write_consistency_factor = 7; // How many replicas should apply the operation for us to consider it successful
   optional uint32 read_fan_out_factor = 8; // Fan-out every read request to these many additional remote nodes (and return first available response)
   optional ShardingMethod sharding_method = 9; // Sharding method
-  optional SparseVectorConfig sparse_vectors_config = 10; // Configuration for sparse vectors
+  optional SparseVectorParamsMap sparse_vectors_config = 10; // Configuration for sparse vectors
 }
 
 message CollectionParamsDiff {

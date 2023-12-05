@@ -11,7 +11,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::VectorIndex;
@@ -64,7 +64,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     drop(borrowed_storage);
 
     // save index config to disk
-    let index_config = SparseIndexConfig::new(Some(10_000), None);
+    let index_config = SparseIndexConfig::new(Some(10_000), SparseIndexType::ImmutableRam);
 
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
