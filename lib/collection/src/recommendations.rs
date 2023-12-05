@@ -10,6 +10,7 @@ use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
 };
 use segment::vector_storage::query::reco_query::RecoQuery;
+use sparse::common::sparse_vector::SparseVector;
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
@@ -26,34 +27,56 @@ use crate::operations::types::{
     RecommendRequestInternal, RecommendStrategy, UsingVector,
 };
 
-// TODO(sparse): support avg for sparse vectors
-fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> Vector {
-    let mut count: usize = 0;
-    let mut avg_vector: VectorType = Default::default();
+fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
+    let mut avg_dense = VectorType::default();
+    let mut avg_sparse = SparseVector::default();
+    let mut dense_count = 0;
+    let mut sparse_count = 0;
     for vector in vectors {
         match vector {
             VectorRef::Dense(vector) => {
-                count += 1;
+                dense_count += 1;
                 for i in 0..vector.len() {
-                    if i >= avg_vector.len() {
-                        avg_vector.push(vector[i])
+                    if i >= avg_dense.len() {
+                        avg_dense.push(vector[i])
                     } else {
-                        avg_vector[i] += vector[i];
+                        avg_dense[i] += vector[i];
                     }
                 }
             }
-            VectorRef::Sparse(_) => unimplemented!(), // TODO(sparse)
+            VectorRef::Sparse(vector) => {
+                sparse_count += 1;
+                avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
+            }
         }
     }
 
-    for item in &mut avg_vector {
-        *item /= count as VectorElementType;
+    match (dense_count, sparse_count) {
+        // TODO(sparse): what if vectors iterator is empty? We added CollectionError::BadRequest,
+        // but it's not clear if it's the best solution.
+        // Currently it's hard to return an zeroed vector, because we don't know its type: dense or sparse.
+        (0, 0) => Err(CollectionError::bad_input(
+            "Positive vectors should not be empty with `average` strategy".to_owned(),
+        )),
+        (_, 0) => {
+            for item in &mut avg_dense {
+                *item /= dense_count as VectorElementType;
+            }
+            Ok(avg_dense.into())
+        }
+        (0, _) => {
+            for item in &mut avg_sparse.values {
+                *item /= sparse_count as VectorElementType;
+            }
+            Ok(avg_sparse.into())
+        }
+        (_, _) => Err(CollectionError::bad_input(
+            "Can't average dense and sparse vectors together".to_owned(),
+        )),
     }
-
-    avg_vector.into()
 }
 
-fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Vector {
+fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> CollectionResult<Vector> {
     match (positive, negative) {
         (Vector::Dense(positive), Vector::Dense(negative)) => {
             let vector: VectorType = positive
@@ -61,9 +84,14 @@ fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Vector
                 .zip(negative.iter())
                 .map(|(pos, neg)| pos + pos - neg)
                 .collect();
-            vector.into()
+            Ok(vector.into())
         }
-        _ => unimplemented!(), // TODO(sparse)
+        (Vector::Sparse(positive), Vector::Sparse(negative)) => Ok(positive
+            .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
+            .into()),
+        _ => Err(CollectionError::bad_input(
+            "Positive and negative vectors should be of the same type, either all dense or all sparse".to_owned(),
+        )),
     }
 }
 
@@ -119,15 +147,16 @@ pub fn recommend_into_core_search(
         }
     }
 
-    let res = match request.strategy.unwrap_or_default() {
+    match request.strategy.unwrap_or_default() {
         RecommendStrategy::AverageVector => {
             recommend_by_avg_vector(request, reference_vectors_ids, all_vectors_records_map)
         }
-        RecommendStrategy::BestScore => {
-            recommend_by_best_score(request, reference_vectors_ids, all_vectors_records_map)
-        }
-    };
-    Ok(res)
+        RecommendStrategy::BestScore => Ok(recommend_by_best_score(
+            request,
+            reference_vectors_ids,
+            all_vectors_records_map,
+        )),
+    }
 }
 
 /// Search points in a collection by already existing points in this or another collection.
@@ -235,7 +264,7 @@ fn recommend_by_avg_vector(
     request: RecommendRequestInternal,
     reference_vectors_ids: Vec<ExtendedPointId>,
     all_vectors_records_map: &ReferencedVectors,
-) -> CoreSearchRequest {
+) -> CollectionResult<CoreSearchRequest> {
     let lookup_vector_name = request.get_search_vector_name();
 
     let RecommendRequestInternal {
@@ -274,17 +303,17 @@ fn recommend_by_avg_vector(
         Some(UsingVector::Name(name)) => name,
     };
 
-    let avg_positive = avg_vectors(positive_vectors);
+    let avg_positive = avg_vectors(positive_vectors)?;
     let negative = negative_vectors.collect_vec();
 
     let search_vector = if negative.is_empty() {
         avg_positive
     } else {
-        let avg_negative = avg_vectors(negative.into_iter());
-        merge_positive_and_negative_avg(avg_positive, avg_negative)
+        let avg_negative = avg_vectors(negative.into_iter())?;
+        merge_positive_and_negative_avg(avg_positive, avg_negative)?
     };
 
-    CoreSearchRequest {
+    Ok(CoreSearchRequest {
         query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
             search_vector.clone(),
             vector_name,
@@ -302,7 +331,7 @@ fn recommend_by_avg_vector(
         limit,
         score_threshold,
         offset: offset.unwrap_or_default(),
-    }
+    })
 }
 
 fn recommend_by_best_score(
@@ -365,5 +394,49 @@ fn recommend_by_best_score(
         with_payload,
         with_vector,
         score_threshold,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::data_types::vectors::Vector;
+    use sparse::common::sparse_vector::SparseVector;
+
+    use super::avg_vectors;
+
+    #[test]
+    fn test_avg_vectors() {
+        let vectors: Vec<Vector> = vec![
+            vec![1.0, 2.0, 3.0].into(),
+            vec![1.0, 2.0, 3.0].into(),
+            vec![1.0, 2.0, 3.0].into(),
+        ];
+        assert_eq!(
+            avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).unwrap(),
+            vec![1.0, 2.0, 3.0].into(),
+        );
+
+        let vectors: Vec<Vector> = vec![
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
+                .unwrap()
+                .into(),
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
+                .unwrap()
+                .into(),
+        ];
+        assert_eq!(
+            avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).unwrap(),
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
+                .unwrap()
+                .into(),
+        );
+
+        let vectors: Vec<Vector> = vec![
+            vec![1.0, 2.0, 3.0].into(),
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
+                .unwrap()
+                .into(),
+        ];
+        assert!(avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).is_err());
     }
 }

@@ -35,7 +35,7 @@ where
     }
 }
 
-impl<TEncodedQuery, TEncodedVectors> QueryScorer
+impl<TEncodedQuery, TEncodedVectors> QueryScorer<[VectorElementType]>
     for QuantizedQueryScorer<'_, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,

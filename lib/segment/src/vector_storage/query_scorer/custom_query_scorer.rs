@@ -39,8 +39,8 @@ impl<
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage, TQuery: Query<VectorType>> QueryScorer
-    for CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage, TQuery: Query<VectorType>>
+    QueryScorer<[VectorElementType]> for CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

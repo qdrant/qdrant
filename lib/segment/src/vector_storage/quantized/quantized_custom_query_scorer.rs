@@ -62,7 +62,7 @@ impl<
         TEncodedVectors,
         TOriginalQuery: Query<VectorType>,
         TQuery: Query<TEncodedQuery>,
-    > QueryScorer
+    > QueryScorer<[VectorElementType]>
     for QuantizedCustomQueryScorer<'_, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
