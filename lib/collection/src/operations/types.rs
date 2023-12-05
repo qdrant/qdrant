@@ -294,7 +294,7 @@ impl From<OrderByInterface> for OrderBy {
 pub struct ScrollRequestInternal {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
-    
+
     /// Page size. Default: 10
     #[validate(range(min = 1))]
     pub limit: Option<usize>,

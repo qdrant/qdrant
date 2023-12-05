@@ -13,6 +13,7 @@ use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::operations::CollectionUpdateOperations;
+use crate::shards::local_shard_operations::from_offset_sorted;
 use crate::shards::shard::ShardId;
 
 impl Collection {
@@ -257,33 +258,8 @@ impl Collection {
 
         let retrieved_iter = retrieved_points.into_iter().flatten();
         let mut points = match order_by {
-            None => Either::Left(retrieved_iter.sorted_by_key(|point| point.id)),
-            Some(order_by) => {
-                // Sort
-                let sorted = {
-                    let sorted_iter =
-                        retrieved_iter.sorted_unstable_by_key(|point| (point.ordered_by, point.id));
-
-                    let direction = order_by.direction.unwrap_or_default();
-                    match direction {
-                        Direction::Asc => Either::Left(sorted_iter),
-                        Direction::Desc => Either::Right(sorted_iter.rev()),
-                    }
-                    .collect_vec()
-                };
-
-                // Take care of offset
-                let offset_position = offset
-                    .and_then(|offset| sorted.iter().find_position(|record| record.id == offset))
-                    .map(|(position, _)| position);
-
-                let top_records = match offset_position {
-                    None => Either::Left(sorted.into_iter()),
-                    Some(position) => Either::Right(sorted.into_iter().skip(position)),
-                };
-
-                Either::Right(top_records)
-            }
+            None => Either::Left(retrieved_iter.sorted_unstable_by_key(|point| point.id)),
+            Some(order_by) => Either::Right(from_offset_sorted(retrieved_iter, &order_by, offset)),
         }
         .take(limit)
         .collect_vec();

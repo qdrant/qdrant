@@ -54,6 +54,7 @@ impl ShardReplicaSet {
         )
         .await
     }
+
     pub async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
