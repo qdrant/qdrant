@@ -344,6 +344,14 @@ impl ShardReplicaSet {
             .await
     }
 
+    pub fn wait_for_state_condition_sync<F>(&self, check: F, timeout: Duration) -> bool
+    where
+        F: Fn(&ReplicaSetState) -> bool,
+    {
+        let replica_state = self.replica_state.clone();
+        replica_state.wait_for(check, timeout)
+    }
+
     /// Wait for a local shard to get into `state`
     ///
     /// Uses a blocking thread internally.
@@ -869,6 +877,19 @@ pub enum ReplicaState {
     Listener,
     // Snapshot shard transfer is in progress, updates aren't sent to the shard
     PartialSnapshot,
+}
+
+impl ReplicaState {
+    /// Check whether the replica state is partial or partial-like.
+    pub fn is_partial_like(self) -> bool {
+        match self {
+            ReplicaState::Partial | ReplicaState::PartialSnapshot => true,
+            ReplicaState::Active
+            | ReplicaState::Dead
+            | ReplicaState::Initializing
+            | ReplicaState::Listener => false,
+        }
+    }
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
