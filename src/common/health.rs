@@ -279,7 +279,7 @@ impl Task {
 
     fn set_ready(&self) {
         self.is_ready.store(true, atomic::Ordering::Relaxed);
-        self.is_ready_signal.notify_one();
+        self.is_ready_signal.notify_waiters();
     }
 }
 
