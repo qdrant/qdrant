@@ -880,10 +880,25 @@ pub enum ReplicaState {
 }
 
 impl ReplicaState {
+    /// Check whether the replica state is active or listener.
+    pub fn is_active_or_listener(self) -> bool {
+        // Use explicit match, to catch future changes to `ReplicaState`
+        match self {
+            ReplicaState::Active | ReplicaState::Listener => true,
+
+            ReplicaState::Dead
+            | ReplicaState::Initializing
+            | ReplicaState::Partial
+            | ReplicaState::PartialSnapshot => false,
+        }
+    }
+
     /// Check whether the replica state is partial or partial-like.
     pub fn is_partial_like(self) -> bool {
+        // Use explicit match, to catch future changes to `ReplicaState`
         match self {
             ReplicaState::Partial | ReplicaState::PartialSnapshot => true,
+
             ReplicaState::Active
             | ReplicaState::Dead
             | ReplicaState::Initializing

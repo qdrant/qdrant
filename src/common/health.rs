@@ -8,7 +8,6 @@ use std::{cmp, panic, thread};
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
 use api::grpc::transport_channel_pool::{self, TransportChannelPool};
-use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
 use common::defaults;
@@ -18,7 +17,8 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use tokio::{runtime, sync, time};
 
-const DEFAULT_READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
+const READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
+const GET_CONSENSUS_COMMITS_RETRIES: usize = 2;
 
 pub struct HealthChecker {
     is_ready: Arc<AtomicBool>,
@@ -79,7 +79,7 @@ impl HealthChecker {
             return true;
         }
 
-        time::timeout(DEFAULT_READY_CHECK_TIMEOUT, is_ready_signal)
+        time::timeout(READY_CHECK_TIMEOUT, is_ready_signal)
             .await
             .is_ok()
     }
@@ -266,7 +266,7 @@ impl Task {
                     continue;
                 };
 
-                if is_shard_ready(state) {
+                if state.is_active_or_listener() {
                     continue;
                 }
 
@@ -296,7 +296,7 @@ fn get_consensus_commit<'a>(
             client.get_consensus_commit(request).await
         },
         Some(defaults::CONSENSUS_META_OP_WAIT),
-        2,
+        GET_CONSENSUS_COMMITS_RETRIES,
     )
 }
 
@@ -304,10 +304,6 @@ type GetConsensusCommitResult = Result<
     tonic::Response<GetConsensusCommitResponse>,
     transport_channel_pool::RequestError<tonic::Status>,
 >;
-
-fn is_shard_ready(state: &ReplicaState) -> bool {
-    matches!(state, ReplicaState::Active | ReplicaState::Listener)
-}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct Shard {
