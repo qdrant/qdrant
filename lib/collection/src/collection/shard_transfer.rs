@@ -327,12 +327,7 @@ impl Collection {
                         |state| {
                             state
                                 .get_peer_state(&this_peer_id)
-                                .map_or(false, |peer_state| {
-                                    matches!(
-                                        peer_state,
-                                        ReplicaState::Partial | ReplicaState::PartialSnapshot
-                                    )
-                                })
+                                .map_or(false, |peer_state| peer_state.is_partial_like())
                         },
                         defaults::CONSENSUS_META_OP_WAIT,
                     )

@@ -879,6 +879,19 @@ pub enum ReplicaState {
     PartialSnapshot,
 }
 
+impl ReplicaState {
+    /// Check whether the replica state is partial or partial-like.
+    pub fn is_partial_like(self) -> bool {
+        match self {
+            ReplicaState::Partial | ReplicaState::PartialSnapshot => true,
+            ReplicaState::Active
+            | ReplicaState::Dead
+            | ReplicaState::Initializing
+            | ReplicaState::Listener => false,
+        }
+    }
+}
+
 /// Represents a change in replica set, due to scaling of `replication_factor`
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
