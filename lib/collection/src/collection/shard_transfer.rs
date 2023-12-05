@@ -307,14 +307,30 @@ impl Collection {
             let this_peer_id = replica_set.this_peer_id();
 
             let shard_transfer_requested = tokio::task::spawn_blocking(move || {
-                shards_holder.shard_transfers.wait_for(
+                // We can guarantee that replica_set is not None, cause we checked it before
+                // and `shards_holder` is holding the lock.
+                // This is a workaround for lifetime checker.
+                let replica_set = shards_holder.get_shard(&shard_id).unwrap();
+                let shard_transfer_registered = shards_holder.shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers.iter().any(|shard_transfer| {
                             shard_transfer.shard_id == shard_id && shard_transfer.to == this_peer_id
                         })
                     },
                     Duration::from_secs(60),
-                )
+                );
+
+                // It is not enough to check for shard_transfer_registered,
+                // because it is registered before the state of the shard is changed.
+                shard_transfer_registered
+                    && replica_set.wait_for_state_condition_sync(
+                        |state| {
+                            state
+                                .get_peer_state(&this_peer_id)
+                                .map_or(false, |peer_state| peer_state.is_partial_like())
+                        },
+                        defaults::CONSENSUS_META_OP_WAIT,
+                    )
             });
 
             match shard_transfer_requested.await {
