@@ -59,6 +59,16 @@ impl ConfigMismatchOptimizer {
             .and_then(|vector_params| vector_params.on_disk)
     }
 
+    /// Check if current configuration requires sparse vectors index to be stored on disk
+    fn check_if_sparse_vectors_on_disk(&self, vector_name: &str) -> Option<bool> {
+        self.collection_params
+            .sparse_vectors
+            .as_ref()
+            .and_then(|vector_params| vector_params.get(vector_name))
+            .and_then(|params| params.index)
+            .and_then(|index| index.on_disk)
+    }
+
     /// Calculates and HNSW config that should be used for a given vector
     /// with current configuration.
     ///
@@ -122,9 +132,8 @@ impl ConfigMismatchOptimizer {
                     return Some((*idx, vector_size)); // Skip segments with payload mismatch
                 }
 
-                // Determine whether segment has mismatch
-                // TODO(sparse) do we have some mismathces in sparse config?
-                let has_mismatch =
+                // Determine whether dense data in segment has mismatch
+                let dense_has_mismatch =
                     segment_config
                         .vector_data
                         .iter()
@@ -177,7 +186,23 @@ impl ConfigMismatchOptimizer {
                             quantization_mismatch
                         });
 
-                has_mismatch.then_some((*idx, vector_size))
+                // Determine whether dense data in segment has mismatch
+                let sparse_has_mismatch =
+                    segment_config
+                        .sparse_vector_data
+                        .iter()
+                        .any(|(vector_name, vector_data)| {
+                            if let Some(is_required_on_disk) =
+                                self.check_if_sparse_vectors_on_disk(vector_name)
+                            {
+                                if is_required_on_disk != vector_data.is_index_on_disk() {
+                                    return true;
+                                }
+                            }
+                            false
+                        });
+
+                (sparse_has_mismatch || dense_has_mismatch).then_some((*idx, vector_size))
             })
             .collect();
 
