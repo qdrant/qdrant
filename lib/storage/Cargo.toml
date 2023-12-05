@@ -52,7 +52,7 @@ api = { path = "../api" }
 futures = "0.3.28"
 anyhow = "1.0.75"
 uuid = "1.5.0"
-url = "2.4.1"
+url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
 tempfile = "3.8.1"
 
