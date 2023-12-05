@@ -1,15 +1,16 @@
-use std::any::Any;
+use std::any;
 
-type PanicPayload = Box<dyn Any + Send + 'static>;
-
-/// Convert a panic payload into a string
+/// Downcast panic payload into a string
 ///
-/// This converts `String` and `&str` panic payloads into a string.
-/// Other payload types are formatted as is, and may be non descriptive.
-pub fn panic_payload_into_string(payload: PanicPayload) -> String {
-    payload
-        .downcast::<&str>()
-        .map(|msg| msg.to_string())
-        .or_else(|payload| payload.downcast::<String>().map(|msg| msg.to_string()))
-        .unwrap_or_else(|payload| format!("{payload:?}"))
+/// Downcast `&'static str` and `String` panic payloads into a `&str`
+pub fn downcast_str(any: &dyn any::Any) -> Option<&str> {
+    if let Some(str) = any.downcast_ref::<&'static str>() {
+        return Some(str);
+    }
+
+    if let Some(str) = any.downcast_ref::<String>() {
+        return Some(str);
+    }
+
+    None
 }

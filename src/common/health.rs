@@ -12,7 +12,6 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
 use common::defaults;
-use common::panic::panic_payload_into_string;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
@@ -98,10 +97,10 @@ pub struct Task {
 impl Task {
     pub async fn exec(mut self) {
         while let Err(err) = self.exec_catch_unwind().await {
-            log::error!(
-                "HealthChecker task panicked, retrying: {}",
-                panic_payload_into_string(err)
-            );
+            let message = common::panic::downcast_str(&err).unwrap_or("");
+            let separator = if !message.is_empty() { ": " } else { "" };
+
+            log::error!("HealthChecker task panicked, retrying{separator}{message}",);
         }
     }
 

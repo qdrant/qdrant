@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use common::panic::panic_payload_into_string;
+use common::panic;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
@@ -292,14 +292,18 @@ impl UpdateHandler {
                     },
                     // Panic handler
                     Some(Box::new(move |panic_payload| {
-                        let panic_msg = panic_payload_into_string(panic_payload);
+                        let message = panic::downcast_str(&panic_payload).unwrap_or("");
+                        let separator = if !message.is_empty() { ": " } else { "" };
+
                         warn!(
-                            "Optimization task panicked, collection may be in unstable state: {panic_msg}"
+                            "Optimization task panicked, collection may be in unstable state\
+                             {separator}{message}"
                         );
+
                         segments
                             .write()
                             .report_optimizer_error(CollectionError::service_error(format!(
-                                "Optimization task panicked: {panic_msg}"
+                                "Optimization task panicked{separator}{message}"
                             )));
                     })),
                 );

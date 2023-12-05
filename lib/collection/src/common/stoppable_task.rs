@@ -111,7 +111,7 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use common::panic::panic_payload_into_string;
+    use common::panic;
     use tokio::time::sleep;
 
     use super::*;
@@ -190,6 +190,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_task_panic() {
         let panic_payload = Arc::new(Mutex::new(String::new()));
+
         let handle = spawn_stoppable(
             |_| {
                 thread::sleep(STEP * 50);
@@ -197,8 +198,10 @@ mod tests {
             },
             Some(Box::new({
                 let panic_payload = panic_payload.clone();
+
                 move |payload| {
-                    *panic_payload.lock().unwrap() = panic_payload_into_string(payload);
+                    *panic_payload.lock().unwrap() =
+                        panic::downcast_str(&payload).unwrap_or("").into();
                 }
             })),
         );

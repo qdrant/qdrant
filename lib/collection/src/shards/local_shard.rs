@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::thread;
 
 use arc_swap::ArcSwap;
-use common::panic::panic_payload_into_string;
+use common::panic;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
@@ -392,11 +392,14 @@ impl LocalShard {
 
         for join_result in join_results {
             let segment = join_result.map_err(|err| {
+                let message = panic::downcast_str(&err).unwrap_or("");
+                let separator = if !message.is_empty() { "with:\n" } else { "" };
+
                 CollectionError::service_error(format!(
-                    "Segment DB create panicked with:\n{}",
-                    panic_payload_into_string(err)
+                    "Segment DB create panicked{separator}{message}",
                 ))
             })??;
+
             segment_holder.add(segment);
         }
 
