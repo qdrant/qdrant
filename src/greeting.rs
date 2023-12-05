@@ -38,8 +38,9 @@ pub fn welcome(settings: &Settings) {
     println!("{}", paint(r#"    |_|                           "#, true_color));
     println!();
     let ui_link = format!(
-        "http{}://localhost:{}/dashboard",
+        "http{}://{}:{}/dashboard",
         if settings.service.enable_tls { "s" } else { "" },
+        settings.service.host,
         settings.service.http_port
     );
 
