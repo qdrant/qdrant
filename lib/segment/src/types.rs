@@ -1840,7 +1840,7 @@ pub enum WithVector {
 }
 
 impl WithVector {
-    pub fn is_some(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         match self {
             WithVector::Bool(b) => *b,
             WithVector::Selector(_) => true,

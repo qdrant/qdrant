@@ -194,6 +194,8 @@ impl ShardOperation for LocalShard {
 
         let all_points = try_join_all(read_handles).await?;
 
+        let with_order_by_payload: WithPayload;
+
         match order_by {
             None => {
                 let point_ids = all_points
@@ -215,18 +217,17 @@ impl ShardOperation for LocalShard {
             }
             Some(order_by) => {
                 let preliminary_ids = all_points.into_iter().flatten().flatten().collect_vec();
+                with_order_by_payload = (&WithPayloadInterface::Fields(vec![order_by.key.clone()])).into();
 
-                let with_payload = &WithPayloadInterface::Fields(vec![order_by.key.clone()]);
-
+                // Fetch values to add to the internal `ordered_by` field of each record
                 let points_with_order_key = SegmentsSearcher::retrieve(
                     segments,
                     &preliminary_ids,
-                    &with_payload.into(),
+                    &with_order_by_payload,
                     &false.into(),
                 )?;
 
                 let direction = order_by.direction.unwrap_or_default();
-
                 let default_value = match direction {
                     Direction::Asc => f64::INFINITY,
                     Direction::Desc => f64::NEG_INFINITY,
@@ -257,6 +258,7 @@ impl ShardOperation for LocalShard {
                 .dedup()
                 .collect_vec();
 
+                // Find whether we have an offset position to cut from
                 let offset_position = offset
                     .and_then(|offset| sorted.iter().find_position(|record| record.id == offset))
                     .map(|(position, _)| position);
@@ -268,19 +270,40 @@ impl ShardOperation for LocalShard {
                 .take(limit)
                 .collect_vec();
 
-                let point_ids = top_records.iter().map(|record| record.id).collect_vec();
-
                 let with_payload = WithPayload::from(with_payload_interface);
 
-                let mut points =
-                    SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+                // Fetch with the actual requested payload and vector
+                let points =
+                    if with_payload == with_order_by_payload && !with_vector.is_enabled() {
+                        top_records
+                    } else if with_payload.enable || with_vector.is_enabled() {
+                        let point_ids = top_records.iter().map(|record| record.id).collect_vec();
+                        let mut points = SegmentsSearcher::retrieve(
+                            segments,
+                            &point_ids,
+                            &with_payload,
+                            with_vector,
+                        )?;
+                        points
+                            .iter_mut()
+                            .zip(top_records)
+                            .for_each(|(point, record)| {
+                                point.ordered_by = record.ordered_by;
+                            });
+                        points
+                    } else {
+                        top_records
+                            .into_iter()
+                            .map(|record| Record {
+                                id: record.id,
+                                payload: None,
+                                vector: None,
+                                shard_key: record.shard_key,
+                                ordered_by: record.ordered_by,
+                            })
+                            .collect_vec()
+                    };
 
-                points
-                    .iter_mut()
-                    .zip(top_records)
-                    .for_each(|(point, record)| {
-                        point.ordered_by = record.ordered_by;
-                    });
                 Ok(points)
             }
         }

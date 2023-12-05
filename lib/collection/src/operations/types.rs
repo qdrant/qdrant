@@ -294,19 +294,23 @@ impl From<OrderByInterface> for OrderBy {
 pub struct ScrollRequestInternal {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
+    
     /// Page size. Default: 10
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
+
     /// Look only for points which satisfies this conditions. If not provided - all points.
     #[validate]
     pub filter: Option<Filter>,
+
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
+
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 
-    /// order by
+    /// Order the records by a payload field, then by the point id.
     pub order_by: Option<OrderByInterface>,
 }
 
