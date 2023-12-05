@@ -33,8 +33,8 @@ use crate::common::file_utils::move_dir;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfo, CollectionResult,
-    CollectionStatus, OptimizersStatus,
+    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
+    CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
@@ -767,17 +767,10 @@ impl LocalShard {
             })
             .sum();
 
-        // The points count is currently always set. This provides a safeguard as we likely
-        // refactor this behavior in the future. In that case, points should be counted in a
-        // different manner.
-        debug_assert!(
-            info.points_count.is_some(),
-            "Must have points count to estimate vector data size",
-        );
-        vector_size * info.points_count.unwrap_or(0)
+        vector_size * info.points_count
     }
 
-    pub async fn local_shard_info(&self) -> CollectionInfo {
+    pub async fn local_shard_info(&self) -> CollectionInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
         let segments = self.segments().read();
         let mut vectors_count = 0;
@@ -813,12 +806,12 @@ impl LocalShard {
             Some(error) => OptimizersStatus::Error(error.to_string()),
         };
 
-        CollectionInfo {
+        CollectionInfoInternal {
             status,
             optimizer_status,
-            vectors_count: Some(vectors_count),
-            indexed_vectors_count: Some(indexed_vectors_count),
-            points_count: Some(points_count),
+            vectors_count,
+            indexed_vectors_count,
+            points_count,
             segments_count,
             config: collection_config,
             payload_schema: schema,

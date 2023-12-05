@@ -137,6 +137,49 @@ impl CollectionInfo {
     }
 }
 
+impl From<CollectionInfoInternal> for CollectionInfo {
+    fn from(info: CollectionInfoInternal) -> Self {
+        Self {
+            status: info.status,
+            optimizer_status: info.optimizer_status,
+            vectors_count: Some(info.vectors_count),
+            indexed_vectors_count: Some(info.indexed_vectors_count),
+            points_count: Some(info.points_count),
+            segments_count: info.segments_count,
+            config: info.config,
+            payload_schema: info.payload_schema,
+        }
+    }
+}
+
+/// Internal statistics and configuration of the collection.
+#[derive(Debug)]
+pub struct CollectionInfoInternal {
+    /// Status of the collection
+    pub status: CollectionStatus,
+    /// Status of optimizers
+    pub optimizer_status: OptimizersStatus,
+    /// Deprecated - Number of vectors in collection.
+    /// All vectors in collection are available for querying.
+    /// Calculated as `points_count x vectors_per_point`.
+    /// Where `vectors_per_point` is a number of named vectors in schema.
+    pub vectors_count: usize,
+    /// Deprecated - Number of indexed vectors in the collection.
+    /// Indexed vectors in large segments are faster to query,
+    /// as it is stored in vector index (HNSW).
+    pub indexed_vectors_count: usize,
+    /// Deprecated - Number of points (vectors + payloads) in collection.
+    /// Each point could be accessed by unique id.
+    pub points_count: usize,
+    /// Number of segments in collection.
+    /// Each segment has independent vector as payload indexes
+    pub segments_count: usize,
+    /// Collection settings
+    pub config: CollectionConfig,
+    /// Types of stored payload
+    pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+}
+
 /// Current clustering distribution for the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionClusterInfo {
