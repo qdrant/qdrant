@@ -8830,6 +8830,21 @@ pub mod points_internal_server {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetConsensusCommitRequest {}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetConsensusCommitResponse {
+    /// Raft commit as u64
+    #[prost(int64, tag = "1")]
+    pub commit: i64,
+    /// Raft term as u64
+    #[prost(int64, tag = "2")]
+    pub term: i64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitOnConsensusCommitRequest {
     /// Raft commit as u64
     #[prost(int64, tag = "1")]
@@ -8935,6 +8950,33 @@ pub mod qdrant_internal_client {
             self
         }
         ///
+        /// Get current commit and term on the target node.
+        pub async fn get_consensus_commit(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetConsensusCommitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetConsensusCommitResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetConsensusCommit",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetConsensusCommit"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
         /// Wait until the target node reached the given commit ID.
         pub async fn wait_on_consensus_commit(
             &mut self,
@@ -8972,6 +9014,15 @@ pub mod qdrant_internal_server {
     /// Generated trait containing gRPC methods that should be implemented for use with QdrantInternalServer.
     #[async_trait]
     pub trait QdrantInternal: Send + Sync + 'static {
+        ///
+        /// Get current commit and term on the target node.
+        async fn get_consensus_commit(
+            &self,
+            request: tonic::Request<super::GetConsensusCommitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetConsensusCommitResponse>,
+            tonic::Status,
+        >;
         ///
         /// Wait until the target node reached the given commit ID.
         async fn wait_on_consensus_commit(
@@ -9061,6 +9112,53 @@ pub mod qdrant_internal_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
+                "/qdrant.QdrantInternal/GetConsensusCommit" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetConsensusCommitSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetConsensusCommitRequest>
+                    for GetConsensusCommitSvc<T> {
+                        type Response = super::GetConsensusCommitResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetConsensusCommitRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_consensus_commit(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetConsensusCommitSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/qdrant.QdrantInternal/WaitOnConsensusCommit" => {
                     #[allow(non_camel_case_types)]
                     struct WaitOnConsensusCommitSvc<T: QdrantInternal>(pub Arc<T>);

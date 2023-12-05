@@ -213,6 +213,8 @@
     - [Qdrant](#qdrant-Qdrant)
   
 - [qdrant_internal_service.proto](#qdrant_internal_service-proto)
+    - [GetConsensusCommitRequest](#qdrant-GetConsensusCommitRequest)
+    - [GetConsensusCommitResponse](#qdrant-GetConsensusCommitResponse)
     - [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest)
     - [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse)
   
@@ -3591,6 +3593,32 @@ When using target (with or without context), the score behaves a little differen
 
 
 
+<a name="qdrant-GetConsensusCommitRequest"></a>
+
+### GetConsensusCommitRequest
+
+
+
+
+
+
+
+<a name="qdrant-GetConsensusCommitResponse"></a>
+
+### GetConsensusCommitResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| commit | [int64](#int64) |  | Raft commit as u64 |
+| term | [int64](#int64) |  | Raft term as u64 |
+
+
+
+
+
+
 <a name="qdrant-WaitOnConsensusCommitRequest"></a>
 
 ### WaitOnConsensusCommitRequest
@@ -3636,6 +3664,7 @@ When using target (with or without context), the score behaves a little differen
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
+| GetConsensusCommit | [GetConsensusCommitRequest](#qdrant-GetConsensusCommitRequest) | [GetConsensusCommitResponse](#qdrant-GetConsensusCommitResponse) | Get current commit and term on the target node. |
 | WaitOnConsensusCommit | [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest) | [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse) | Wait until the target node reached the given commit ID. |
 
  
