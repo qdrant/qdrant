@@ -14,7 +14,7 @@ use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{Distance, QuantizationConfig};
+use segment::types::{Distance, OrderBy, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -23,8 +23,8 @@ use tonic::Status;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
-    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
-    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
+    OrderByInterface, PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal,
+    RecommendStrategy, SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
     VectorsConfigDiff,
 };
 use crate::config::{
@@ -1709,5 +1709,22 @@ impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
         } else {
             ShardSelectorInternal::ShardKeys(shard_keys)
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::OrderBy) -> Result<Self, Self::Error> {
+        let direction = value
+            .direction
+            .and_then(api::grpc::qdrant::Direction::from_i32)
+            .map(segment::types::Direction::from);
+
+        Ok(Self::Struct(OrderBy {
+            key: value.key,
+            direction,
+            value_offset: None,
+        }))
     }
 }

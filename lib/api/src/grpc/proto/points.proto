@@ -299,6 +299,16 @@ message SearchPointGroups {
   optional SparseIndices sparse_indices = 16;
 }
 
+enum Direction {
+  Asc = 0;
+  Desc = 1;
+}
+
+message OrderBy {
+  string key = 1; // Payload key to order by
+  optional Direction direction = 2; // Ascending or descending order
+}
+
 message ScrollPoints {
   string collection_name = 1;
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
@@ -309,6 +319,7 @@ message ScrollPoints {
   optional WithVectorsSelector with_vectors = 7; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
   optional ShardKeySelector shard_key_selector = 9; // Specify in which shards to look for the points, if not specified - look in all shards
+  optional OrderBy order_by = 10; // Order of the results by a payload key
 }
 
 // How to use positive and negative vectors to find the results, default is `AverageVector`:

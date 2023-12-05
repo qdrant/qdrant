@@ -170,10 +170,11 @@ impl ShardOperation for LocalShard {
 
                     match order_by {
                         None => search_runtime_handle.spawn_blocking(move || {
-                            segment
-                                .get()
-                                .read()
-                                .read_filtered(offset, Some(limit), filter.as_ref())
+                            Ok(segment.get().read().read_filtered(
+                                offset,
+                                Some(limit),
+                                filter.as_ref(),
+                            ))
                         }),
                         Some(order_by) => {
                             let order_by = order_by.clone();
@@ -198,6 +199,7 @@ impl ShardOperation for LocalShard {
                 let point_ids = all_points
                     .into_iter()
                     .flatten()
+                    .flatten()
                     .sorted()
                     .dedup()
                     .take(limit)
@@ -212,7 +214,7 @@ impl ShardOperation for LocalShard {
                 Ok(points)
             }
             Some(order_by) => {
-                let preliminary_ids = all_points.into_iter().flatten().collect_vec();
+                let preliminary_ids = all_points.into_iter().flatten().flatten().collect_vec();
 
                 let with_payload = &WithPayloadInterface::Fields(vec![order_by.key.clone()]);
 

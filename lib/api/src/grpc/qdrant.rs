@@ -3759,6 +3759,17 @@ pub struct SearchPointGroups {
     #[prost(message, optional, tag = "16")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OrderBy {
+    /// Payload key to order by
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// Ascending or descending order
+    #[prost(enumeration = "Direction", optional, tag = "2")]
+    pub direction: ::core::option::Option<i32>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3790,6 +3801,9 @@ pub struct ScrollPoints {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "9")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// Order of the results by a payload key
+    #[prost(message, optional, tag = "10")]
+    pub order_by: ::core::option::Option<OrderBy>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4871,6 +4885,33 @@ impl FieldType {
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
             "FieldTypeBool" => Some(Self::Bool),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Direction {
+    Asc = 0,
+    Desc = 1,
+}
+impl Direction {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Direction::Asc => "Asc",
+            Direction::Desc => "Desc",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Asc" => Some(Self::Asc),
+            "Desc" => Some(Self::Desc),
             _ => None,
         }
     }

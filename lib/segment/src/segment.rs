@@ -1117,7 +1117,7 @@ impl SegmentEntry for Segment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let limit = limit.map(|limit| {
             filter.map_or( limit, |filter| {
                 let payload_index = self.payload_index.borrow();
@@ -1125,11 +1125,11 @@ impl SegmentEntry for Segment {
 
                 let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
 
-                let point_ratio = available_points as f64
+                let points_to_filtered_ratio = available_points as f64
                 / (query_cardinality.exp as f64 + 1.0 /* protect from zero */) ;
 
                 // Expected number points we need from the range filter to fulfill enough points for OrderBy
-                (limit as f64 * point_ratio) as usize
+                (limit as f64 * points_to_filtered_ratio) as usize
             })
         }).unwrap_or(usize::MAX);
 
@@ -1145,13 +1145,16 @@ impl SegmentEntry for Segment {
             .field_indexes
             .get(&order_by.key)
             .and_then(|field_indexes| field_indexes.iter().find(|index| index.is_numeric()))
-            .expect("Numeric index must exist for the order_by field");
+            // SAFETY: Protected by schema validation earlier in the chain
+            .ok_or_else(|| OperationError::ValidationError {
+                description: "Numeric index must exist for the order_by field".to_string(),
+            })?;
 
         let search_from = match order_by.value_offset {
             None => Bound::Included(from),
 
-            // We don't know where the offset id will be, so we search for the
-            // target value excluding `from`, but include it to estimate the extended_limit
+            // We don't know where the offset id will be, if there are many records with the same value,
+            // so we exclude `from` when searching for the end value
             Some(_) => Bound::Excluded(from),
         };
 
@@ -1188,7 +1191,7 @@ impl SegmentEntry for Segment {
         let range_cond = FieldCondition::new_range(order_by.key.clone(), Range::from(range_bounds));
 
         // We can have many records with same value, so we need to expand the limit
-        // to make sure we get enough points to sort later
+        // to make sure we get enough points to sort and cut at offset later
         let estimated_limit = index.estimate_cardinality(&range_cond).ok();
 
         let extended_limit = estimated_limit.map(|estimation| {
@@ -1207,7 +1210,7 @@ impl SegmentEntry for Segment {
             reads.reverse()
         }
 
-        reads
+        Ok(reads)
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {

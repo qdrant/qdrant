@@ -568,6 +568,7 @@ impl ShardOperation for RemoteShard {
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
             shard_key_selector: None,
+            order_by: order_by.map(|o| o.clone().into()),
         };
         let request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),

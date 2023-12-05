@@ -135,6 +135,7 @@
     - [NamedVectors](#qdrant-NamedVectors)
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
     - [NestedCondition](#qdrant-NestedCondition)
+    - [OrderBy](#qdrant-OrderBy)
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointGroup](#qdrant-PointGroup)
@@ -198,6 +199,7 @@
     - [WithVectorsSelector](#qdrant-WithVectorsSelector)
     - [WriteOrdering](#qdrant-WriteOrdering)
   
+    - [Direction](#qdrant-Direction)
     - [FieldType](#qdrant-FieldType)
     - [ReadConsistencyType](#qdrant-ReadConsistencyType)
     - [RecommendStrategy](#qdrant-RecommendStrategy)
@@ -2324,6 +2326,22 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
+<a name="qdrant-OrderBy"></a>
+
+### OrderBy
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  | Payload key to order by |
+| direction | [Direction](#qdrant-Direction) | optional | Ascending or descending order |
+
+
+
+
+
+
 <a name="qdrant-PayloadExcludeSelector"></a>
 
 ### PayloadExcludeSelector
@@ -2941,6 +2959,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
+| order_by | [OrderBy](#qdrant-OrderBy) | optional | Order of the results by a payload key |
 
 
 
@@ -3423,6 +3442,18 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
  
+
+
+<a name="qdrant-Direction"></a>
+
+### Direction
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Asc | 0 |  |
+| Desc | 1 |  |
+
 
 
 <a name="qdrant-FieldType"></a>

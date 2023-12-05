@@ -511,13 +511,13 @@ impl SegmentEntry for ProxySegment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a segment::types::OrderBy,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_ordered_filtered(limit, filter, order_by)
+                .read_ordered_filtered(limit, filter, order_by)?
         } else {
             let wrapped_filter =
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
@@ -525,16 +525,16 @@ impl SegmentEntry for ProxySegment {
                 limit,
                 Some(&wrapped_filter),
                 order_by,
-            )
+            )?
         };
         let mut write_segment_points = self
             .write_segment
             .get()
             .read()
-            .read_ordered_filtered(limit, filter, order_by);
+            .read_ordered_filtered(limit, filter, order_by)?;
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
-        read_points
+        Ok(read_points)
     }
 
     /// Read points in [from; to) range

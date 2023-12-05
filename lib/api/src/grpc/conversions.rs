@@ -9,7 +9,9 @@ use segment::types::default_quantization_ignore_value;
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId, SparseIndices};
+use super::qdrant::{
+    BinaryQuantization, CompressionRatio, Direction, GeoLineString, GroupId, SparseIndices, OrderBy,
+};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -1193,6 +1195,33 @@ impl From<segment::types::Match> for Match {
         };
         Self {
             match_value: Some(match_value),
+        }
+    }
+}
+
+impl From<Direction> for segment::types::Direction {
+    fn from(value: Direction) -> Self {
+        match value {
+            Direction::Asc => segment::types::Direction::Asc,
+            Direction::Desc => segment::types::Direction::Desc,
+        }
+    }
+}
+
+impl From<segment::types::Direction> for Direction {
+    fn from(value: segment::types::Direction) -> Self {
+        match value {
+            segment::types::Direction::Asc => Direction::Asc,
+            segment::types::Direction::Desc => Direction::Desc,
+        }
+    }
+}
+
+impl From<segment::types::OrderBy> for OrderBy {
+    fn from(value: segment::types::OrderBy) -> Self {
+        Self {
+            key: value.key,
+            direction: value.direction.map(|d| Direction::from(d) as i32),
         }
     }
 }

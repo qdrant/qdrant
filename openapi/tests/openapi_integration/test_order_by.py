@@ -60,7 +60,9 @@ def create_payload_index(collection_name, field_name, field_schema):
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     upsert_points(collection_name=collection_name, amount=total_points)
-    create_payload_index(collection_name=collection_name, field_name="city", field_schema="keyword")
+    create_payload_index(
+        collection_name=collection_name, field_name="city", field_schema="keyword"
+    )
     create_payload_index(collection_name=collection_name, field_name="price", field_schema="float")
     create_payload_index(
         collection_name=collection_name, field_name="maybe_repeated_float", field_schema="float"
@@ -188,18 +190,18 @@ def test_order_by_with_filters(key, direction):
     pages = 0
     points_count = 0
     points_set = set()
-    
+
     filter_ = {
         "must": [
             {
                 "key": "city",
                 "match": {
                     "value": "London",
-                }
+                },
             }
         ]
     }
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/points/count",
         method="POST",
@@ -210,9 +212,9 @@ def test_order_by_with_filters(key, direction):
         },
     )
     assert response.ok, response.json()
-    
+
     expected_points = response.json()["result"]["count"]
-    
+
     while True:
         response = request_with_validation(
             api="/collections/{collection_name}/points/scroll",
@@ -222,7 +224,7 @@ def test_order_by_with_filters(key, direction):
                 "order_by": {"key": key, "direction": direction},
                 "limit": limit,
                 "offset": offset,
-                "filter": filter_
+                "filter": filter_,
             },
         )
         assert response.ok, response.json()

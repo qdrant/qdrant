@@ -7154,9 +7154,11 @@
         ],
         "properties": {
           "key": {
+            "description": "Payload key to order by",
             "type": "string"
           },
           "direction": {
+            "description": "Direction of ordering: `asc` or `desc`. Default is ascending.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Direction"

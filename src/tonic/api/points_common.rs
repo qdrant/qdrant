@@ -25,8 +25,8 @@ use collection::operations::point_ops::{
 use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
-    QueryEnum, RecommendExample, ScrollRequestInternal,
+    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, OrderByInterface,
+    PointRequestInternal, QueryEnum, RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -1282,6 +1282,7 @@ pub async fn scroll(
         with_vectors,
         read_consistency,
         shard_key_selector,
+        order_by,
     } = scroll_points;
 
     let scroll_request = ScrollRequestInternal {
@@ -1292,7 +1293,7 @@ pub async fn scroll(
         with_vector: with_vectors
             .map(|selector| selector.into())
             .unwrap_or_default(),
-        order_by: None,
+        order_by: order_by.map(OrderByInterface::try_from).transpose()?,
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;

@@ -129,7 +129,7 @@ pub trait SegmentEntry {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> Vec<PointIdType>;
+    ) -> OperationResult<Vec<PointIdType>>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
