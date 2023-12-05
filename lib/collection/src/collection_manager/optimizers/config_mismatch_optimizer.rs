@@ -60,7 +60,7 @@ impl ConfigMismatchOptimizer {
     }
 
     /// Check if current configuration requires sparse vectors index to be stored on disk
-    fn check_if_sparse_vectors_on_disk(&self, vector_name: &str) -> Option<bool> {
+    fn check_if_sparse_vectors_index_on_disk(&self, vector_name: &str) -> Option<bool> {
         self.collection_params
             .sparse_vectors
             .as_ref()
@@ -193,7 +193,7 @@ impl ConfigMismatchOptimizer {
                         .iter()
                         .any(|(vector_name, vector_data)| {
                             if let Some(is_required_on_disk) =
-                                self.check_if_sparse_vectors_on_disk(vector_name)
+                                self.check_if_sparse_vectors_index_on_disk(vector_name)
                             {
                                 if is_required_on_disk != vector_data.is_index_on_disk() {
                                     return true;
