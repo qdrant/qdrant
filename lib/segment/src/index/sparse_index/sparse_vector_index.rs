@@ -254,6 +254,42 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         }
     }
 
+    fn search_nearest_query(
+        &self,
+        vector: &SparseVector,
+        filter: Option<&Filter>,
+        top: usize,
+        is_stopped: &AtomicBool,
+        prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let mut vector = vector.clone();
+        vector.sort_by_indices();
+
+        match filter {
+            Some(filter) => {
+                // if cardinality is small - use plain search
+                let query_cardinality = self.get_query_cardinality(filter);
+                let threshold = self
+                    .config
+                    .full_scan_threshold
+                    .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
+                if query_cardinality.max < threshold {
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
+                    self.search_plain(&vector, filter, top, is_stopped, prefiltered_points)
+                } else {
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
+                    self.search_sparse(&vector, Some(filter), top, is_stopped)
+                }
+            }
+            None => {
+                let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
+                self.search_sparse(&vector, filter, top, is_stopped)
+            }
+        }
+    }
+
     pub fn search_query(
         &self,
         query_vector: &QueryVector,
@@ -267,37 +303,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         }
 
         match query_vector {
-            QueryVector::Nearest(vector) => {
-                let vector: &SparseVector = vector.try_into()?;
-                let mut vector = vector.clone();
-                vector.sort_by_indices();
-                match filter {
-                    Some(filter) => {
-                        // if cardinality is small - use plain search
-                        let query_cardinality = self.get_query_cardinality(filter);
-                        let threshold = self
-                            .config
-                            .full_scan_threshold
-                            .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
-                        if query_cardinality.max < threshold {
-                            let _timer = ScopeDurationMeasurer::new(
-                                &self.searches_telemetry.small_cardinality,
-                            );
-                            self.search_plain(&vector, filter, top, is_stopped, prefiltered_points)
-                        } else {
-                            let _timer = ScopeDurationMeasurer::new(
-                                &self.searches_telemetry.filtered_sparse,
-                            );
-                            self.search_sparse(&vector, Some(filter), top, is_stopped)
-                        }
-                    }
-                    None => {
-                        let _timer =
-                            ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
-                        self.search_sparse(&vector, filter, top, is_stopped)
-                    }
-                }
-            }
+            QueryVector::Nearest(vector) => self.search_nearest_query(
+                vector.try_into()?,
+                filter,
+                top,
+                is_stopped,
+                prefiltered_points,
+            ),
             QueryVector::Recommend(_) | QueryVector::Discovery(_) | QueryVector::Context(_) => {
                 let _timer = if filter.is_some() {
                     ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_plain)
