@@ -125,21 +125,34 @@ impl IndexingOptimizer {
                 let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
                 let is_any_on_disk = segment_config.is_any_on_disk();
 
-                let big_for_mmap = vector_size
-                    >= self
-                        .thresholds_config
-                        .memmap_threshold
-                        .saturating_mul(BYTES_IN_KB);
                 let big_for_index = vector_size
                     >= self
                         .thresholds_config
                         .indexing_threshold
                         .saturating_mul(BYTES_IN_KB);
+                let big_for_mmap = vector_size
+                    >= self
+                        .thresholds_config
+                        .memmap_threshold
+                        .saturating_mul(BYTES_IN_KB);
 
-                let require_indexing = (big_for_mmap && !is_any_on_disk)
-                    || (big_for_index && !are_all_vectors_indexed);
+                // Check whether all vectors have `on_disk` specified, either true or false,
+                // because then we don't want to override it with the mmap threshold
+                let all_vectors_specify_on_disk =
+                    segment_config.vector_data.keys().all(|vector_name| {
+                        self.collection_params
+                            .vectors
+                            .get_params(vector_name)
+                            .map_or(false, |vector_config| vector_config.on_disk.is_some())
+                    });
 
-                require_indexing.then_some((*idx, vector_size))
+                // Whether we want to optimize this segment to create an index or mmap
+                let optimize_for_index = big_for_index && !are_all_vectors_indexed;
+                let optimize_for_mmap =
+                    big_for_mmap && !is_any_on_disk && !all_vectors_specify_on_disk;
+                let do_optimize = optimize_for_index || optimize_for_mmap;
+
+                do_optimize.then_some((*idx, vector_size))
             })
             .collect();
 
