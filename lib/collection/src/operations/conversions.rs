@@ -379,7 +379,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     read_fan_out_factor: config.params.read_fan_out_factor,
                     sharding_method: config.params.sharding_method.map(sharding_method_to_proto),
                     sparse_vectors_config: config.params.sparse_vectors.map(|sparse_vectors| {
-                        api::grpc::qdrant::SparseVectorParamsMap {
+                        api::grpc::qdrant::SparseVectorConfig {
                             map: sparse_vectors
                                 .into_iter()
                                 .map(|(name, sparse_vector_params)| {
@@ -577,7 +577,7 @@ impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
     fn from(sparse_vector_params: SparseVectorParams) -> Self {
         Self {
             index: sparse_vector_params.index.map(|index_config| {
-                api::grpc::qdrant::SparseIndexParams {
+                api::grpc::qdrant::SparseIndexConfig {
                     full_scan_threshold: index_config.full_scan_threshold.map(|v| v as u64),
                     on_disk: index_config.on_disk,
                 }
