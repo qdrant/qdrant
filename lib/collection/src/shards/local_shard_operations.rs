@@ -334,24 +334,30 @@ pub fn from_offset_sorted(
     order_by: &OrderBy,
     offset: Option<ExtendedPointId>,
 ) -> impl Iterator<Item = Record> {
-    let sorted = {
-        let sorted_iter = points.sorted_unstable_by_key(|point| (point.ordered_by, point.id));
+    let mut offset_is_present = false;
+    let sorted_iter = {
+        let sorted_iter = match offset.as_ref() {
+            None => Either::Left(points),
+            Some(offset) => Either::Right(points.inspect(|point| {
+                if point.id == *offset {
+                    offset_is_present = true;
+                }
+            })),
+        }
+        .sorted_unstable_by_key(|point| (point.ordered_by, point.id));
 
         let direction = order_by.direction.unwrap_or_default();
         match direction {
             Direction::Asc => Either::Left(sorted_iter),
             Direction::Desc => Either::Right(sorted_iter.rev()),
         }
-        .collect_vec()
     };
 
     // Take care of offset
-    let offset_position = offset
-        .and_then(|offset| sorted.iter().find_position(|record| record.id == offset))
-        .map(|(position, _)| position);
-
-    match offset_position {
-        None => Either::Left(sorted.into_iter()),
-        Some(position) => Either::Right(sorted.into_iter().skip(position)),
+    match offset {
+        Some(offset) if offset_is_present => {
+            Either::Left(sorted_iter.skip_while(move |record| record.id != offset))
+        }
+        _ => Either::Right(sorted_iter),
     }
 }
