@@ -186,26 +186,31 @@ impl ConfigMismatchOptimizer {
                             quantization_mismatch
                         });
 
-                // Determine whether dense data in segment has mismatch
-                let sparse_has_mismatch =
-                    segment_config
-                        .sparse_vector_data
-                        .iter()
-                        .any(|(vector_name, vector_data)| {
-                            // Check index on disk mismatch
-                            // Ignore check for appendable segments, they always have index in RAM
-                            if let Some(is_required_on_disk) =
-                                self.check_if_sparse_vectors_index_on_disk(vector_name)
-                            {
-                                let is_appendable = read_segment.is_appendable();
-                                if !is_appendable
-                                    && (is_required_on_disk != vector_data.is_index_on_disk())
-                                {
-                                    return true;
-                                }
-                            }
-                            false
-                        });
+                // TODO: we should implement config mismatch for sparse vectors here
+                // TODO:
+                // TODO: // Determine whether dense data in segment has mismatch
+                // TODO: let sparse_has_mismatch =
+                // TODO:     segment_config
+                // TODO:         .sparse_vector_data
+                // TODO:         .iter()
+                // TODO:         .any(|(vector_name, vector_data)| {
+                // TODO:             // Check index on disk mismatch
+                // TODO:             // Ignore check for appendable segments, they always have index in RAM
+                // TODO:             if let Some(is_required_on_disk) =
+                // TODO:                 self.check_if_sparse_vectors_index_on_disk(vector_name)
+                // TODO:             {
+                // TODO:                 // TODO: - never on disk if not big enough
+                // TODO:                 // TODO: - on disk if on_disk=true || memmap_threshold reached
+
+                // TODO:                 let is_appendable = read_segment.is_appendable();
+                // TODO:                 if !is_appendable
+                // TODO:                     && (is_required_on_disk != vector_data.is_index_on_disk())
+                // TODO:                 {
+                // TODO:                     return true;
+                // TODO:                 }
+                // TODO:             }
+                // TODO:             false
+                // TODO:         });
 
                 (sparse_has_mismatch || dense_has_mismatch).then_some((*idx, vector_size))
             })

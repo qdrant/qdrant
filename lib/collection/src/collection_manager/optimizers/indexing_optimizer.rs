@@ -166,7 +166,7 @@ impl IndexingOptimizer {
                                 let vector_dim =
                                     read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
 
-                                let is_index_immutable = sparse_vector_data.is_index_immutable();
+                                let is_index_immutable = !sparse_vector_data.is_index_immutable();
 
                                 let is_on_disk = sparse_vector_data.is_index_on_disk();
                                 let storage_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
