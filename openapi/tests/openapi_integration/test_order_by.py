@@ -13,6 +13,7 @@ total_points = 1000
 
 def upsert_points(collection_name, amount=100):
     def maybe_repeated():
+        """Descending sequence of possibly repeated floats"""
         repeated_float = float(amount)
         while True:
             repeated_float = repeated_float if random.random() > 0.5 else repeated_float - 1.0
@@ -25,6 +26,7 @@ def upsert_points(collection_name, amount=100):
             "vector": [0.1 * i] * 4,
             "payload": {
                 "city": "London" if i % 3 == 0 else "Moscow",
+                "is_middle_split": i > amount * 0.25 and i < amount * 0.75,
                 "price": float(amount - i),
                 "payload_id": i,
                 "multi_id": [i, amount - i],
@@ -62,6 +64,9 @@ def setup(on_disk_vectors):
     upsert_points(collection_name=collection_name, amount=total_points)
     create_payload_index(
         collection_name=collection_name, field_name="city", field_schema="keyword"
+    )
+    create_payload_index(
+        collection_name=collection_name, field_name="is_middle_split", field_schema="bool"
     )
     create_payload_index(collection_name=collection_name, field_name="price", field_schema="float")
     create_payload_index(
@@ -185,65 +190,96 @@ def test_paginate_whole_collection(key, direction):
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
 def test_order_by_with_filters(key, direction):
-    offset = None
-    limit = 30
-    pages = 0
-    points_count = 0
-    points_set = set()
+    limit = 33
 
-    filter_ = {
-        "must": [
-            {
-                "key": "city",
-                "match": {
-                    "value": "London",
-                },
-            }
-        ]
-    }
-
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/count",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "filter": filter_,
-            "exact": True,
+    filters = [
+        {
+            "must": [
+                {
+                    "key": "city",
+                    "match": {
+                        "value": "London",
+                    },
+                }
+            ]
         },
-    )
-    assert response.ok, response.json()
+        {
+            "must": [
+                {
+                    "key": "is_middle_split",
+                    "match": {
+                        "value": False,
+                    },
+                }
+            ]
+        },
+    ]
 
-    expected_points = response.json()["result"]["count"]
+    for filter_ in filters:
+        offset = None
+        pages = 0
+        points_count = 0
+        points_set = set()
 
-    while True:
+        # Get filtered total points
         response = request_with_validation(
-            api="/collections/{collection_name}/points/scroll",
+            api="/collections/{collection_name}/points/count",
             method="POST",
             path_params={"collection_name": collection_name},
             body={
-                "order_by": {"key": key, "direction": direction},
-                "limit": limit,
-                "offset": offset,
                 "filter": filter_,
+                "exact": True,
             },
         )
         assert response.ok, response.json()
-        offset = response.json()["result"]["next_page_offset"]
 
-        points_len = len(response.json()["result"]["points"])
+        expected_points = response.json()["result"]["count"]
 
-        points_count += points_len
-        pages += 1
+        while True:
+            response = request_with_validation(
+                api="/collections/{collection_name}/points/scroll",
+                method="POST",
+                path_params={"collection_name": collection_name},
+                body={
+                    "order_by": {"key": key, "direction": direction},
+                    "limit": limit,
+                    "offset": offset,
+                    "filter": filter_,
+                },
+            )
+            assert response.ok, response.json()
+            offset = response.json()["result"]["next_page_offset"]
 
-        # Check no duplicates
-        for record in response.json()["result"]["points"]:
-            assert record["id"] not in points_set
-            points_set.add(record["id"])
+            points_len = len(response.json()["result"]["points"])
 
-        if offset is None:
-            break
-        else:
-            assert points_len == limit
+            points_count += points_len
+            pages += 1
 
-    assert math.ceil(expected_points / limit) == pages
-    assert expected_points == points_count
+            # Check no duplicates
+            for record in response.json()["result"]["points"]:
+                assert record["id"] not in points_set
+                points_set.add(record["id"])
+
+            if offset is None:
+                break
+            else:
+                assert points_len == limit
+
+        try:
+            assert math.ceil(expected_points / limit) == pages
+            assert expected_points == points_count
+        except AssertionError:
+            # Check which points we're missing
+            response = request_with_validation(
+                api="/collections/{collection_name}/points/scroll",
+                method="POST",
+                path_params={"collection_name": collection_name},
+                body={
+                    "limit": total_points,
+                    "filter": filter_,
+                },
+            )
+            assert response.ok, response.json()
+            filtered_points = set([point["id"] for point in response.json()["result"]["points"]])
+
+            assert filtered_points == points_set, f"Missing points: {filtered_points - points_set}"
