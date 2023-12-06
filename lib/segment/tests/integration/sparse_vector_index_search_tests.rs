@@ -672,9 +672,8 @@ fn sparse_vector_index_files() {
             mutable_index_dir.path(),
         )
         .unwrap();
-    sparse_vector_mutable_index.build_index(&stopped).unwrap();
 
-    // we do not been to rebuild index because it has to be rebuilded while loading
+    sparse_vector_mutable_index.build_index(&stopped).unwrap();
     assert_eq!(
         sparse_vector_mutable_index.indexed_vector_count(),
         sparse_vector_mmap_index.indexed_vector_count(),
