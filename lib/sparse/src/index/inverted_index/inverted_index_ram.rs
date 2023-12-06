@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 
+use super::inverted_index_mmap::InvertedIndexMmap;
 use crate::common::sparse_vector::SparseVector;
 use crate::common::types::DimId;
 use crate::index::inverted_index::InvertedIndex;
@@ -21,9 +22,31 @@ pub struct InvertedIndexRam {
 }
 
 impl InvertedIndex for InvertedIndexRam {
-    //TODO(sparse) Ram index is not persisted
-    fn open(_path: &Path) -> std::io::Result<Option<Self>> {
-        Ok(None)
+    fn open(path: &Path) -> std::io::Result<Self> {
+        let mmap_inverted_index = InvertedIndexMmap::load(path)?;
+        let mut inverted_index = InvertedIndexRam {
+            postings: Default::default(),
+            vector_count: mmap_inverted_index.file_header.vector_count,
+        };
+
+        for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
+            let posting_list = mmap_inverted_index.get(&i).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Posting list {} not found", i),
+                )
+            })?;
+            inverted_index.postings.push(PostingList {
+                elements: posting_list.to_owned(),
+            });
+        }
+
+        Ok(inverted_index)
+    }
+
+    fn save(&self, path: &Path) -> std::io::Result<()> {
+        InvertedIndexMmap::convert_and_save(self, path)?;
+        Ok(())
     }
 
     fn get(&self, id: &DimId) -> Option<PostingListIterator> {
@@ -31,8 +54,14 @@ impl InvertedIndex for InvertedIndexRam {
             .map(|posting_list| PostingListIterator::new(&posting_list.elements))
     }
 
-    fn files(&self) -> Vec<PathBuf> {
-        vec![]
+    fn files(path: &Path) -> Vec<PathBuf> {
+        [
+            InvertedIndexMmap::index_file_path(path),
+            InvertedIndexMmap::index_config_file_path(path),
+        ]
+        .into_iter()
+        .filter(|p| p.exists())
+        .collect()
     }
 
     fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
@@ -144,6 +173,8 @@ impl InvertedIndexBuilder {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::Builder;
+
     use super::*;
 
     #[test]
@@ -240,5 +271,21 @@ mod tests {
             inverted_index_ram_upserted.postings.len()
         );
         assert_eq!(inverted_index_ram_built, inverted_index_ram_upserted);
+    }
+
+    #[test]
+    fn inverted_index_ram_save_load() {
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+        assert_eq!(inverted_index_ram.vector_count, 3);
+
+        let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
+        inverted_index_ram.save(tmp_dir_path.path()).unwrap();
+
+        let loaded_inverted_index_ram = InvertedIndexRam::open(tmp_dir_path.path()).unwrap();
+        assert_eq!(inverted_index_ram, loaded_inverted_index_ram);
     }
 }

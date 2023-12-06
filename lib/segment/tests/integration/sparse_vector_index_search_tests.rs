@@ -513,7 +513,7 @@ fn handling_empty_sparse_vectors() {
 }
 
 #[test]
-fn sparse_vector_persistence_test() {
+fn sparse_vector_index_persistence_test() {
     let stopped = AtomicBool::new(false);
 
     let dim = 8;
@@ -570,6 +570,8 @@ fn sparse_vector_persistence_test() {
     let path = segment.current_path.clone();
     drop(segment);
 
+    // persistence using rebuild of inverted index
+    // for appendable segment vector index has to be rebuilt
     let segment = load_segment(&path).unwrap().unwrap();
     let search_after_reload_result = segment
         .search(
@@ -586,6 +588,117 @@ fn sparse_vector_persistence_test() {
 
     assert_eq!(search_after_reload_result.len(), top);
     assert_eq!(search_result, search_after_reload_result);
+
+    // persistence using loading RAM index from file
+    // because `segment` is appendable, create sparse index manually
+    let inverted_index_dir = Builder::new()
+        .prefix("inverted_index_ram")
+        .tempdir()
+        .unwrap();
+    let mut sparse_vector_index_ram: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
+        SparseIndexConfig {
+            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+            index_type: SparseIndexType::ImmutableRam,
+        },
+        segment.id_tracker.clone(),
+        segment.vector_data[SPARSE_VECTOR_NAME]
+            .vector_storage
+            .clone(),
+        segment.payload_index.clone(),
+        inverted_index_dir.path(),
+    )
+    .unwrap();
+    // call build index to create inverted index files
+    sparse_vector_index_ram.build_index(&stopped).unwrap();
+
+    // reload sparse index from file
+    drop(sparse_vector_index_ram);
+    let sparse_vector_index_ram: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
+        SparseIndexConfig {
+            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+            index_type: SparseIndexType::ImmutableRam,
+        },
+        segment.id_tracker.clone(),
+        segment.vector_data[SPARSE_VECTOR_NAME]
+            .vector_storage
+            .clone(),
+        segment.payload_index.clone(),
+        inverted_index_dir.path(),
+    )
+    .unwrap();
+
+    // check that the loaded index performs the same search
+    let search_after_reload_result = sparse_vector_index_ram
+        .search(&[&query_vector], None, top, None, &stopped)
+        .unwrap();
+    assert_eq!(search_after_reload_result[0].len(), top);
+    for (search_1, search_2) in search_result
+        .iter()
+        .zip(search_after_reload_result[0].iter())
+    {
+        let id_1 = segment
+            .id_tracker
+            .borrow_mut()
+            .internal_id(search_1.id)
+            .unwrap();
+        assert_eq!(id_1, search_2.idx);
+    }
+
+    // MMAP persistence
+    // because `segment` is appendable, create sparse index manually
+    let inverted_index_dir = Builder::new()
+        .prefix("inverted_index_ram")
+        .tempdir()
+        .unwrap();
+    let mut sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
+        SparseVectorIndex::open(
+            SparseIndexConfig {
+                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                index_type: SparseIndexType::Mmap,
+            },
+            segment.id_tracker.clone(),
+            segment.vector_data[SPARSE_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            segment.payload_index.clone(),
+            inverted_index_dir.path(),
+        )
+        .unwrap();
+    // call build index to create inverted index files
+    sparse_vector_index_mmap.build_index(&stopped).unwrap();
+
+    // reload sparse index from file
+    drop(sparse_vector_index_mmap);
+    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
+        SparseIndexConfig {
+            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+            index_type: SparseIndexType::Mmap,
+        },
+        segment.id_tracker.clone(),
+        segment.vector_data[SPARSE_VECTOR_NAME]
+            .vector_storage
+            .clone(),
+        segment.payload_index.clone(),
+        inverted_index_dir.path(),
+    )
+    .unwrap();
+
+    // check that the loaded index performs the same search
+    let search_after_reload_result = sparse_vector_index_mmap
+        .search(&[&query_vector], None, top, None, &stopped)
+        .unwrap();
+    assert_eq!(search_after_reload_result[0].len(), top);
+    for (search_1, search_2) in search_result
+        .iter()
+        .zip(search_after_reload_result[0].iter())
+    {
+        let id_1 = segment
+            .id_tracker
+            .borrow_mut()
+            .internal_id(search_1.id)
+            .unwrap();
+        assert_eq!(id_1, search_2.idx);
+    }
 }
 
 #[test]
@@ -606,7 +719,8 @@ fn sparse_vector_index_files() {
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
 
     // create mmap sparse vector index
-    let sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config;
+    sparse_index_config.index_type = SparseIndexType::Mmap;
     let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(
             sparse_index_config,
@@ -620,11 +734,35 @@ fn sparse_vector_index_files() {
     // build index
     sparse_vector_mmap_index.build_index(&stopped).unwrap();
 
-    // files for RAM index
+    // files for immutable RAM index
     let ram_files = sparse_vector_ram_index.files();
-    assert_eq!(ram_files.len(), 1); // only the sparse index config file
+    assert_eq!(ram_files.len(), 3); // only the sparse index config file
 
     // files for mmap index
     let mmap_files = sparse_vector_mmap_index.files();
     assert_eq!(mmap_files.len(), 3); // sparse index config + inverted index config + inverted index data
+
+    // create mutable RAM sparse vector index
+    let mutable_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
+    let mut sparse_index_config = sparse_vector_ram_index.config;
+    sparse_index_config.index_type = SparseIndexType::MutableRam;
+    let mut sparse_vector_mutable_index: SparseVectorIndex<InvertedIndexRam> =
+        SparseVectorIndex::open(
+            sparse_index_config,
+            sparse_vector_ram_index.id_tracker.clone(),
+            sparse_vector_ram_index.vector_storage.clone(),
+            sparse_vector_ram_index.payload_index.clone(),
+            mutable_index_dir.path(),
+        )
+        .unwrap();
+
+    sparse_vector_mutable_index.build_index(&stopped).unwrap();
+    assert_eq!(
+        sparse_vector_mutable_index.indexed_vector_count(),
+        sparse_vector_mmap_index.indexed_vector_count(),
+    );
+
+    // files for mutable index
+    let mutable_index_files = sparse_vector_mutable_index.files();
+    assert_eq!(mutable_index_files.len(), 1);
 }
