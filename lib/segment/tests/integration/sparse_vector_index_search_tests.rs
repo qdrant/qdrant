@@ -578,3 +578,44 @@ fn sparse_vector_persistence_test() {
     assert_eq!(search_after_reload_result.len(), top);
     assert_eq!(search_result, search_after_reload_result);
 }
+
+#[test]
+fn sparse_vector_index_files() {
+    let stopped = AtomicBool::new(false);
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
+    let sparse_vector_ram_index = fixture_sparse_index_ram(
+        &mut rnd,
+        1,
+        MAX_SPARSE_DIM,
+        LOW_FULL_SCAN_THRESHOLD,
+        data_dir.path(),
+        &stopped,
+    );
+
+    let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
+
+    // create mmap sparse vector index
+    let sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
+        SparseVectorIndex::open(
+            sparse_index_config,
+            sparse_vector_ram_index.id_tracker.clone(),
+            sparse_vector_ram_index.vector_storage.clone(),
+            sparse_vector_ram_index.payload_index.clone(),
+            mmap_index_dir.path(),
+        )
+        .unwrap();
+
+    // build index
+    sparse_vector_mmap_index.build_index(&stopped).unwrap();
+
+    // files for RAM index
+    let ram_files = sparse_vector_ram_index.files();
+    assert_eq!(ram_files.len(), 1); // only the sparse index config file
+
+    // files for mmap index
+    let mmap_files = sparse_vector_mmap_index.files();
+    assert_eq!(mmap_files.len(), 3); // sparse index config + inverted index config + inverted index data
+}
