@@ -222,7 +222,7 @@ pub trait SegmentOptimizer {
                             .unwrap_or(false);
 
                         // If mmap OR index is exceeded
-                        let is_big = is_on_disk || is_indexed;
+                        let is_big = threshold_is_on_disk || threshold_is_indexed;
 
                         let index_type = match (config_on_disk, is_big) {
                             (true, true) => SparseIndexType::Mmap, // Big and configured on disk
