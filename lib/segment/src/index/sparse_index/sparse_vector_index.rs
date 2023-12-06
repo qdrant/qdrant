@@ -24,7 +24,7 @@ use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams};
+use crate::types::{Filter, SearchParams, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
@@ -270,7 +270,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             Some(filter) => {
                 // if cardinality is small - use plain search
                 let query_cardinality = self.get_query_cardinality(filter);
-                let threshold = self.config.full_scan_threshold;
+                let threshold = self
+                    .config
+                    .full_scan_threshold
+                    .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
                 if query_cardinality.max < threshold {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);

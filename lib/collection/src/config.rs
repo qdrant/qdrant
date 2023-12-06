@@ -12,7 +12,7 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
     Distance, HnswConfig, Indexes, QuantizationConfig, SparseVectorDataConfig, VectorDataConfig,
-    VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
