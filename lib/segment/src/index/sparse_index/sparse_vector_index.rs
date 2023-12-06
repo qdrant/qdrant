@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
+use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
@@ -344,12 +345,6 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
-        // do nothing for appendable index, it will be built on the fly while loading
-        if self.is_appendable {
-            log::warn!("Try to build mutable sparse index");
-            return Ok(());
-        }
-
         self.inverted_index = Self::build_inverted_index(
             self.id_tracker.clone(),
             self.vector_storage.clone(),
@@ -358,7 +353,9 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         )?;
 
         // save inverted index
-        self.inverted_index.save(&self.path)?;
+        if !self.is_appendable {
+            self.inverted_index.save(&self.path)?;
+        }
 
         // save config to mark successful build
         self.save_config()?;
@@ -371,15 +368,14 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let config_file = SparseIndexConfig::get_config_path(&self.path);
-        if !config_file.exists() {
-            return vec![];
-        }
-
-        let mut all_files = vec![];
-        all_files.push(config_file);
-        all_files.extend_from_slice(&self.inverted_index.files());
-        all_files
+        [
+            SparseIndexConfig::get_config_path(&self.path),
+            InvertedIndexMmap::index_file_path(&self.path),
+            InvertedIndexMmap::index_config_file_path(&self.path),
+        ]
+        .into_iter()
+        .filter(|p| p.exists())
+        .collect()
     }
 
     fn indexed_vector_count(&self) -> usize {
