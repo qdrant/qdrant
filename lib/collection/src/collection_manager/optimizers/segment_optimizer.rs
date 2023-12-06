@@ -186,7 +186,6 @@ pub trait SegmentOptimizer {
         }
 
         // If storing on disk, set storage type in current segment (not in collection config)
-<<<<<<< HEAD
         if threshold_is_on_disk {
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 // Check whether on_disk is explicitly configured, if not, set it to true
@@ -208,19 +207,6 @@ pub trait SegmentOptimizer {
                         log::warn!("Collection config for vector {vector_name} has on_disk={config_on_disk:?} configured, but storage type for segment doesn't match it");
                     }
                 }
-=======
-        if is_on_disk {
-            vector_data.values_mut().for_each(|config| {
-                config.storage_type = VectorStorageType::Mmap;
-            });
-
-            sparse_vector_data.values_mut().for_each(|config| {
-                config
-                    .index
-                    .get_or_insert_with(Default::default)
-                    .on_disk
-                    .replace(true);
->>>>>>> dedebe1bb (Fix compilation warning)
             });
         }
 
@@ -236,7 +222,7 @@ pub trait SegmentOptimizer {
                             .unwrap_or(false);
 
                         // If mmap OR index is exceeded
-                        let is_big = is_on_disk || is_indexed;
+                        let is_big = threshold_is_on_disk || threshold_is_indexed;
 
                         let index_type = match (config_on_disk, is_big) {
                             (true, true) => SparseIndexType::Mmap, // Big and configured on disk
