@@ -167,6 +167,8 @@ impl InvertedIndexBuilder {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::Builder;
+
     use super::*;
 
     #[test]
@@ -263,5 +265,21 @@ mod tests {
             inverted_index_ram_upserted.postings.len()
         );
         assert_eq!(inverted_index_ram_built, inverted_index_ram_upserted);
+    }
+
+    #[test]
+    fn inverted_index_ram_save_load() {
+        let inverted_index_ram = InvertedIndexBuilder::new()
+            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .build();
+        assert_eq!(inverted_index_ram.vector_count, 3);
+
+        let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
+        inverted_index_ram.save(tmp_dir_path.path()).unwrap();
+
+        let loaded_inverted_index_ram = InvertedIndexRam::open(tmp_dir_path.path()).unwrap();
+        assert_eq!(inverted_index_ram, loaded_inverted_index_ram);
     }
 }
