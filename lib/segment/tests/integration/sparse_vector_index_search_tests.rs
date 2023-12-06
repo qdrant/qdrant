@@ -636,7 +636,8 @@ fn sparse_vector_index_files() {
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
 
     // create mmap sparse vector index
-    let sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config;
+    sparse_index_config.index_type = SparseIndexType::Mmap;
     let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(
             sparse_index_config,
@@ -650,11 +651,36 @@ fn sparse_vector_index_files() {
     // build index
     sparse_vector_mmap_index.build_index(&stopped).unwrap();
 
-    // files for RAM index
+    // files for immutable RAM index
     let ram_files = sparse_vector_ram_index.files();
-    assert_eq!(ram_files.len(), 1); // only the sparse index config file
+    assert_eq!(ram_files.len(), 3); // only the sparse index config file
 
     // files for mmap index
     let mmap_files = sparse_vector_mmap_index.files();
     assert_eq!(mmap_files.len(), 3); // sparse index config + inverted index config + inverted index data
+
+    // create mutable RAM sparse vector index
+    let mutable_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
+    let mut sparse_index_config = sparse_vector_ram_index.config;
+    sparse_index_config.index_type = SparseIndexType::MutableRam;
+    let mut sparse_vector_mutable_index: SparseVectorIndex<InvertedIndexRam> =
+        SparseVectorIndex::open(
+            sparse_index_config,
+            sparse_vector_ram_index.id_tracker.clone(),
+            sparse_vector_ram_index.vector_storage.clone(),
+            sparse_vector_ram_index.payload_index.clone(),
+            mutable_index_dir.path(),
+        )
+        .unwrap();
+    sparse_vector_mutable_index.build_index(&stopped).unwrap();
+
+    // we do not been to rebuild index because it has to be rebuilded while loading
+    assert_eq!(
+        sparse_vector_mutable_index.indexed_vector_count(),
+        sparse_vector_mmap_index.indexed_vector_count(),
+    );
+
+    // files for mutable index
+    let mutable_index_files = sparse_vector_mutable_index.files();
+    assert_eq!(mutable_index_files.len(), 1);
 }
