@@ -11,6 +11,7 @@ use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::{build_segment, load_segment};
@@ -180,7 +181,8 @@ fn sparse_vector_index_consistent_with_storage() {
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
 
     // create mmap sparse vector index
-    let sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config;
+    sparse_index_config.index_type = SparseIndexType::Mmap;
     let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(
             sparse_index_config,
@@ -206,7 +208,8 @@ fn sparse_vector_index_consistent_with_storage() {
     drop(sparse_vector_mmap_index);
 
     // load index from memmap file
-    let sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config;
+    sparse_index_config.index_type = SparseIndexType::Mmap;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
         sparse_index_config,
         sparse_vector_ram_index.id_tracker.clone(),
@@ -229,7 +232,7 @@ fn sparse_vector_index_consistent_with_storage() {
 fn sparse_vector_index_load_missing_mmap() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
-        fixture_open_sparse_index(data_dir.path(), 0, 10_000);
+        fixture_open_sparse_index(data_dir.path(), 0, 10_000, SparseIndexType::Mmap);
     // absent configuration file for mmap are ignored
     // a new index is created
     assert!(sparse_vector_index.is_ok())
@@ -491,6 +494,7 @@ fn handling_empty_sparse_vectors() {
         data_dir.path(),
         NUM_VECTORS,
         DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+        SparseIndexType::ImmutableRam,
     )
     .unwrap();
 
@@ -523,7 +527,12 @@ fn sparse_vector_persistence_test() {
         vector_data: Default::default(),
         sparse_vector_data: HashMap::from([(
             SPARSE_VECTOR_NAME.to_owned(),
-            SparseVectorDataConfig { index: None },
+            SparseVectorDataConfig {
+                index: SparseIndexConfig {
+                    full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                    index_type: SparseIndexType::MutableRam,
+                },
+            },
         )]),
         payload_storage_type: Default::default(),
     };

@@ -5706,7 +5706,7 @@
             "description": "Custom params for index. If none - values from collection configuration are used.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SparseIndexConfig"
+                "$ref": "#/components/schemas/SparseIndexParams"
               },
               {
                 "nullable": true
@@ -5715,7 +5715,7 @@
           }
         }
       },
-      "SparseIndexConfig": {
+      "SparseIndexParams": {
         "description": "Configuration for sparse inverted index.",
         "type": "object",
         "properties": {
@@ -9044,19 +9044,59 @@
       "SparseVectorDataConfig": {
         "description": "Config of single vector data storage",
         "type": "object",
+        "required": [
+          "index"
+        ],
         "properties": {
           "index": {
-            "description": "Type of index used for search",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SparseIndexConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SparseIndexConfig"
           }
         }
+      },
+      "SparseIndexConfig": {
+        "description": "Configuration for sparse inverted index.",
+        "type": "object",
+        "required": [
+          "index_type"
+        ],
+        "properties": {
+          "full_scan_threshold": {
+            "description": "We prefer a full scan search upto (excluding) this number of vectors.\n\nNote: this is number of vectors, not KiloBytes.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "index_type": {
+            "$ref": "#/components/schemas/SparseIndexType"
+          }
+        }
+      },
+      "SparseIndexType": {
+        "description": "Sparse index types",
+        "oneOf": [
+          {
+            "description": "Mutable RAM sparse index",
+            "type": "string",
+            "enum": [
+              "MutableRam"
+            ]
+          },
+          {
+            "description": "Immutable RAM sparse index",
+            "type": "string",
+            "enum": [
+              "ImmutableRam"
+            ]
+          },
+          {
+            "description": "Mmap sparse index",
+            "type": "string",
+            "enum": [
+              "Mmap"
+            ]
+          }
+        ]
       },
       "PayloadStorageType": {
         "description": "Type of payload storage",

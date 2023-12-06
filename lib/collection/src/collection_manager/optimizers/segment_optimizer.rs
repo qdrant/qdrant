@@ -11,6 +11,7 @@ use segment::common::operation_time_statistics::{
 };
 use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
+use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -189,20 +190,33 @@ pub trait SegmentOptimizer {
             vector_data.values_mut().for_each(|config| {
                 config.storage_type = VectorStorageType::Mmap;
             });
-
-            sparse_vector_data
-                .iter_mut()
-                .for_each(|(vector_name, config)| {
-                    // Assign sparse index on disk
-                    if let Some(sparse_config) = &collection_params.sparse_vectors {
-                        if let Some(params) = sparse_config.get(vector_name) {
-                            if let Some(index) = params.index.as_ref() {
-                                config.index = Some(*index);
-                            }
-                        }
-                    }
-                });
         }
+
+        sparse_vector_data
+            .iter_mut()
+            .for_each(|(vector_name, config)| {
+                // Assign sparse index on disk
+                if let Some(sparse_config) = &collection_params.sparse_vectors {
+                    if let Some(params) = sparse_config.get(vector_name) {
+                        let config_on_disk = params
+                            .index
+                            .and_then(|index_params| index_params.on_disk)
+                            .unwrap_or(false);
+
+                        // If mmap OR index is exceeded
+                        let is_big = is_on_disk || is_indexed;
+
+                        let index_type = match (config_on_disk, is_big) {
+                            (true, true) => SparseIndexType::Mmap, // Big and configured on disk
+                            (true, false) => SparseIndexType::MutableRam, // Small
+                            (false, true) => SparseIndexType::ImmutableRam, // Big and configured in RAM
+                            (false, false) => SparseIndexType::MutableRam,  // Small
+                        };
+
+                        config.index.index_type = index_type;
+                    }
+                }
+            });
 
         let optimized_config = SegmentConfig {
             vector_data,

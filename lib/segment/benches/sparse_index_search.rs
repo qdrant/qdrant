@@ -8,7 +8,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram;
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::types::PayloadSchemaType::Keyword;
@@ -64,7 +64,8 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
 
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-    let sparse_index_config = SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), None);
+    let sparse_index_config =
+        SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap);
     let mut sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(
             sparse_index_config,

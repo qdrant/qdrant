@@ -9,7 +9,7 @@ use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
     Distance, HnswConfig, Indexes, QuantizationConfig, SparseVectorDataConfig, VectorDataConfig,
     VectorStorageType,
@@ -357,12 +357,12 @@ impl CollectionParams {
                     (
                         name.into(),
                         SparseVectorDataConfig {
-                            index: Some(SparseIndexConfig {
+                            index: SparseIndexConfig {
                                 full_scan_threshold: params
                                     .index
                                     .and_then(|index| index.full_scan_threshold),
-                                on_disk: None,
-                            }),
+                                index_type: SparseIndexType::MutableRam,
+                            },
                         },
                     )
                 })
