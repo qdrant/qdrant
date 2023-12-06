@@ -55,10 +55,13 @@ impl InvertedIndex for InvertedIndexRam {
     }
 
     fn files(path: &Path) -> Vec<PathBuf> {
-        vec![
+        [
             InvertedIndexMmap::index_file_path(path),
             InvertedIndexMmap::index_config_file_path(path),
         ]
+        .into_iter()
+        .filter(|p| p.exists())
+        .collect()
     }
 
     fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
