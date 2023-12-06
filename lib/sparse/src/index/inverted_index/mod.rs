@@ -21,7 +21,7 @@ pub trait InvertedIndex: Sized {
     fn get(&self, id: &DimId) -> Option<PostingListIterator>;
 
     /// Files used by this index
-    fn files(&self) -> Vec<PathBuf>;
+    fn files(path: &Path) -> Vec<PathBuf>;
 
     /// Upsert a vector into the inverted index.
     fn upsert(&mut self, id: PointOffsetType, vector: SparseVector);

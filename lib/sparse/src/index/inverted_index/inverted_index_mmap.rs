@@ -58,10 +58,10 @@ impl InvertedIndex for InvertedIndexMmap {
         self.get(id).map(PostingListIterator::new)
     }
 
-    fn files(&self) -> Vec<PathBuf> {
+    fn files(path: &Path) -> Vec<PathBuf> {
         vec![
-            Self::index_file_path(&self.path),
-            Self::index_config_file_path(&self.path),
+            Self::index_file_path(path),
+            Self::index_config_file_path(path),
         ]
     }
 

@@ -54,8 +54,11 @@ impl InvertedIndex for InvertedIndexRam {
             .map(|posting_list| PostingListIterator::new(&posting_list.elements))
     }
 
-    fn files(&self) -> Vec<PathBuf> {
-        vec![]
+    fn files(path: &Path) -> Vec<PathBuf> {
+        vec![
+            InvertedIndexMmap::index_file_path(path),
+            InvertedIndexMmap::index_config_file_path(path),
+        ]
     }
 
     fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {

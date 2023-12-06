@@ -8,7 +8,6 @@ use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
@@ -368,14 +367,15 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        [
-            SparseIndexConfig::get_config_path(&self.path),
-            InvertedIndexMmap::index_file_path(&self.path),
-            InvertedIndexMmap::index_config_file_path(&self.path),
-        ]
-        .into_iter()
-        .filter(|p| p.exists())
-        .collect()
+        let config_file = SparseIndexConfig::get_config_path(&self.path);
+        if !config_file.exists() {
+            return vec![];
+        }
+
+        let mut all_files = vec![];
+        all_files.push(config_file);
+        all_files.extend_from_slice(&TInvertedIndex::files(&self.path));
+        all_files
     }
 
     fn indexed_vector_count(&self) -> usize {
