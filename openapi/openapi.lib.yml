@@ -24,7 +24,6 @@ default:
             description: Time spent to process this request
           status:
             type: string
-            enum: [ "ok" ]
           result: #@ model
 #@ end
 
@@ -54,7 +53,6 @@ default:
             description: Time spent to process this request
           status:
             type: string
-            enum: [ "ok" ]
           result: #@ model
 "202":
   description: operation is accepted
@@ -69,7 +67,6 @@ default:
             description: Time spent to process this request
           status:
             type: string
-            enum: [ "accepted" ]
 #@ end
 
 #@ def reference(model_name):
