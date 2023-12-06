@@ -1,4 +1,3 @@
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
@@ -35,8 +34,8 @@ use crate::common::file_utils::move_dir;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfo, CollectionResult,
-    CollectionStatus, OptimizersStatus,
+    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
+    CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
@@ -771,7 +770,7 @@ impl LocalShard {
         vector_size * info.points_count
     }
 
-    pub async fn local_shard_info(&self) -> CollectionInfo {
+    pub async fn local_shard_info(&self) -> CollectionInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
         let segments = self.segments().read();
         let mut vectors_count = 0;
@@ -792,14 +791,10 @@ impl LocalShard {
             indexed_vectors_count += segment_info.num_indexed_vectors;
             points_count += segment_info.num_points;
             for (key, val) in segment_info.index_schema {
-                match schema.entry(key) {
-                    Entry::Occupied(o) => {
-                        o.into_mut().points += val.points;
-                    }
-                    Entry::Vacant(v) => {
-                        v.insert(val);
-                    }
-                }
+                schema
+                    .entry(key)
+                    .and_modify(|entry| entry.points += val.points)
+                    .or_insert(val);
             }
         }
         if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
@@ -811,7 +806,7 @@ impl LocalShard {
             Some(error) => OptimizersStatus::Error(error.to_string()),
         };
 
-        CollectionInfo {
+        CollectionInfoInternal {
             status,
             optimizer_status,
             vectors_count,

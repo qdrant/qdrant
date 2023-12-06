@@ -56,7 +56,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             .await
             .unwrap()
             .vectors_count,
-        2
+        Some(2),
     );
 }
 

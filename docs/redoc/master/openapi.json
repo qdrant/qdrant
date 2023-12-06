@@ -5287,13 +5287,10 @@
         "type": "object",
         "required": [
           "config",
-          "indexed_vectors_count",
           "optimizer_status",
           "payload_schema",
-          "points_count",
           "segments_count",
-          "status",
-          "vectors_count"
+          "status"
         ],
         "properties": {
           "status": {
@@ -5303,22 +5300,25 @@
             "$ref": "#/components/schemas/OptimizersStatus"
           },
           "vectors_count": {
-            "description": "Number of vectors in collection All vectors in collection are available for querying Calculated as `points_count x vectors_per_point` Where `vectors_per_point` is a number of named vectors in schema",
+            "description": "Approximate number of vectors in collection. All vectors in collection are available for querying. Calculated as `points_count x vectors_per_point`. Where `vectors_per_point` is a number of named vectors in schema.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "indexed_vectors_count": {
-            "description": "Number of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in vector index (HNSW)",
+            "description": "Approximate umber of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in vector index (HNSW).",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "points_count": {
-            "description": "Number of points (vectors + payloads) in collection Each point could be accessed by unique id",
+            "description": "Approximate number of points (vectors + payloads) in collection. Each point could be accessed by unique id.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "segments_count": {
             "description": "Number of segments in collection. Each segment has independent vector as payload indexes",
