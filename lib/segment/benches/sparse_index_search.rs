@@ -64,22 +64,21 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
 
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-    let _mmap_inverted_index =
-        InvertedIndexMmap::convert_and_save(&sparse_vector_index.inverted_index, &mmap_index_dir)
-            .unwrap();
-    drop(_mmap_inverted_index);
     let sparse_index_config = SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), None);
-    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
-        sparse_index_config,
-        sparse_vector_index.id_tracker.clone(),
-        sparse_vector_index.vector_storage.clone(),
-        sparse_vector_index.payload_index.clone(),
-        mmap_index_dir.path(),
-    )
-    .unwrap();
+    let mut sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
+        SparseVectorIndex::open(
+            sparse_index_config,
+            sparse_vector_index.id_tracker.clone(),
+            sparse_vector_index.vector_storage.clone(),
+            sparse_vector_index.payload_index.clone(),
+            mmap_index_dir.path(),
+        )
+        .unwrap();
+    sparse_vector_index_mmap.build_index(&stopped).unwrap();
+    assert_eq!(sparse_vector_index_mmap.indexed_vector_count(), NUM_VECTORS);
 
     // intent: bench `search` without filter on mmap inverted index
-    group.bench_function("mmap-inverted-index", |b| {
+    group.bench_function("mmap-inverted-index-search", |b| {
         b.iter(|| {
             let results = sparse_vector_index_mmap
                 .search(&[&query_vector], None, TOP, None, &stopped)
@@ -90,7 +89,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     });
 
     // intent: bench `search` without filter
-    group.bench_function("inverted-index", |b| {
+    group.bench_function("inverted-index-search", |b| {
         b.iter(|| {
             let results = sparse_vector_index
                 .search(&[&query_vector], None, TOP, None, &stopped)
@@ -124,23 +123,6 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         })
     });
 
-    group.bench_function("plain-storage", |b| {
-        b.iter(|| {
-            let mut prefiltered_points = None;
-            let results = sparse_vector_index
-                .search_plain(
-                    &sparse_vector,
-                    &filter,
-                    TOP,
-                    &stopped,
-                    &mut prefiltered_points,
-                )
-                .unwrap();
-
-            assert_eq!(results.len(), TOP);
-        })
-    });
-
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
 
     // create payload field index
@@ -150,7 +132,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
 
     drop(payload_index);
 
-    // intent: bench `search` when the filterer payload key is indexed
+    // intent: bench `search` when the filtered payload key is indexed
     group.bench_function("inverted-index-filtered-payload-index", |b| {
         b.iter(|| {
             let results = sparse_vector_index
@@ -161,7 +143,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
         })
     });
 
-    // intent: bench plain search when the filterer payload key is indexed
+    // intent: bench plain search when the filtered payload key is indexed
     group.bench_function("plain-filtered-payload-index", |b| {
         b.iter(|| {
             let mut prefiltered_points = None;
