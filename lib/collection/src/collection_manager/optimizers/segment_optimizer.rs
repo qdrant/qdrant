@@ -224,11 +224,10 @@ pub trait SegmentOptimizer {
                         // If mmap OR index is exceeded
                         let is_big = threshold_is_on_disk || threshold_is_indexed;
 
-                        let index_type = match (is_big, config_on_disk, threshold_is_on_disk) {
-                            (true, true, _) => SparseIndexType::Mmap, // Big and configured on disk
-                            (true, _, true) => SparseIndexType::Mmap, // Big and reached mmap threshold
-                            (true, false, false) => SparseIndexType::ImmutableRam, // Big and not on disk nor reached threshold
-                            (false, _, _) => SparseIndexType::MutableRam,          // Small
+                        let index_type = match (is_big, config_on_disk || threshold_is_on_disk) {
+                            (true, true) => SparseIndexType::Mmap, // Big and configured on disk
+                            (true, false) => SparseIndexType::ImmutableRam, // Big and not on disk nor reached threshold
+                            (false, _) => SparseIndexType::MutableRam,      // Small
                         };
 
                         config.index.index_type = index_type;

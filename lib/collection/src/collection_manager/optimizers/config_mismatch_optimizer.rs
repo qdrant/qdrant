@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
+use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
@@ -187,34 +188,25 @@ impl ConfigMismatchOptimizer {
                             quantization_mismatch
                         });
 
-                // TODO: we should implement config mismatch for sparse vectors here
-                // TODO:
-                // TODO: // Determine whether dense data in segment has mismatch
-                // TODO: let sparse_has_mismatch =
-                // TODO:     segment_config
-                // TODO:         .sparse_vector_data
-                // TODO:         .iter()
-                // TODO:         .any(|(vector_name, vector_data)| {
-                // TODO:             // Check index on disk mismatch
-                // TODO:             // Ignore check for appendable segments, they always have index in RAM
-                // TODO:             if let Some(is_required_on_disk) =
-                // TODO:                 self.check_if_sparse_vectors_index_on_disk(vector_name)
-                // TODO:             {
-                // TODO:                 // TODO: - never on disk if not big enough
-                // TODO:                 // TODO: - on disk if on_disk=true || memmap_threshold reached
+                // Determine whether dense data in segment has mismatch
+                let sparse_has_mismatch =
+                    segment_config
+                        .sparse_vector_data
+                        .iter()
+                        .any(|(vector_name, vector_data)| {
+                            let Some(is_required_on_disk) =
+                                self.check_if_sparse_vectors_index_on_disk(vector_name)
+                            else {
+                                return false; // Do nothing if not specified
+                            };
 
-                // TODO:                 let is_appendable = read_segment.is_appendable();
-                // TODO:                 if !is_appendable
-                // TODO:                     && (is_required_on_disk != vector_data.is_index_on_disk())
-                // TODO:                 {
-                // TODO:                     return true;
-                // TODO:                 }
-                // TODO:             }
-                // TODO:             false
-                // TODO:         });
-                // TODO: (sparse_has_mismatch || dense_has_mismatch).then_some((*idx, vector_size))
-
-                dense_has_mismatch.then_some((*idx, vector_size))
+                            match vector_data.index.index_type {
+                                SparseIndexType::MutableRam => false, // Do nothing for mutable RAM
+                                SparseIndexType::ImmutableRam => is_required_on_disk, // Rebuild if we require on disk
+                                SparseIndexType::Mmap => !is_required_on_disk, // Rebuild if we require in RAM
+                            }
+                        });
+                (sparse_has_mismatch || dense_has_mismatch).then_some((*idx, vector_size))
             })
             .collect();
 
