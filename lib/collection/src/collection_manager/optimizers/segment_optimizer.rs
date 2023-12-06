@@ -11,7 +11,7 @@ use segment::common::operation_time_statistics::{
 };
 use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -198,26 +198,22 @@ pub trait SegmentOptimizer {
                 // Assign sparse index on disk
                 if let Some(sparse_config) = &collection_params.sparse_vectors {
                     if let Some(params) = sparse_config.get(vector_name) {
-                        let full_scan_threshold = params
+                        let config_on_disk = params
                             .index
-                            .and_then(|index_params| index_params.full_scan_threshold);
+                            .and_then(|index_params| index_params.on_disk)
+                            .unwrap_or(false);
 
-                        let on_disk = is_on_disk
-                            || params
-                                .index
-                                .and_then(|index_params| index_params.on_disk)
-                                .unwrap_or(false);
+                        // If mmap OR index is exceeded
+                        let is_big = is_on_disk || is_indexed;
 
-                        let index_type = if on_disk {
-                            SparseIndexType::Mmap
-                        } else {
-                            SparseIndexType::ImmutableRam
+                        let index_type = match (config_on_disk, is_big) {
+                            (true, true) => SparseIndexType::Mmap, // Big and configured on disk
+                            (true, false) => SparseIndexType::MutableRam, // Small
+                            (false, true) => SparseIndexType::ImmutableRam, // Big and configured in RAM
+                            (false, false) => SparseIndexType::MutableRam,  // Small
                         };
 
-                        config.index = SparseIndexConfig {
-                            full_scan_threshold,
-                            index_type,
-                        };
+                        config.index.index_type = index_type;
                     }
                 }
             });

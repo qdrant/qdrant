@@ -346,12 +346,6 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
-        // do nothing for appendable index, it will be built on the fly while loading
-        if self.is_appendable {
-            log::warn!("Try to build mutable sparse index");
-            return Ok(());
-        }
-
         self.inverted_index = Self::build_inverted_index(
             self.id_tracker.clone(),
             self.vector_storage.clone(),
