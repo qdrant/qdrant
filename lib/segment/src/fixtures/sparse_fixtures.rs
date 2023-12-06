@@ -13,7 +13,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndex;
@@ -26,6 +26,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     data_dir: &Path,
     num_vectors: usize,
     full_scan_threshold: usize,
+    index_type: SparseIndexType,
 ) -> OperationResult<SparseVectorIndex<I>> {
     // directories
     let index_dir = &data_dir.join("index");
@@ -63,7 +64,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
         num_vectors,
     );
 
-    let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), None);
+    let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), index_type);
     let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
         sparse_index_config,
         id_tracker,
@@ -84,8 +85,13 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
     data_dir: &Path,
     stopped: &AtomicBool,
 ) -> SparseVectorIndex<InvertedIndexRam> {
-    let mut sparse_vector_index =
-        fixture_open_sparse_index(data_dir, num_vectors, full_scan_threshold).unwrap();
+    let mut sparse_vector_index = fixture_open_sparse_index(
+        data_dir,
+        num_vectors,
+        full_scan_threshold,
+        SparseIndexType::ImmutableRam,
+    )
+    .unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
 
     // add points to storage

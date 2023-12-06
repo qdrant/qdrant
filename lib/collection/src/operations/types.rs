@@ -19,7 +19,6 @@ use segment::data_types::vectors::{
     Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType, VectorRef,
     VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
     ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
@@ -1273,12 +1272,55 @@ impl Anonymize for VectorParams {
 pub struct SparseVectorParams {
     /// Custom params for index. If none - values from collection configuration are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub index: Option<SparseIndexConfig>,
+    pub index: Option<SparseIndexParams>,
 }
 
 impl Anonymize for SparseVectorParams {
     fn anonymize(&self) -> Self {
-        self.clone()
+        Self {
+            index: self.index.anonymize(),
+        }
+    }
+}
+
+/// Configuration for sparse inverted index.
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub struct SparseIndexParams {
+    /// We prefer a full scan search upto (excluding) this number of vectors.
+    ///
+    /// Note: this is number of vectors, not KiloBytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_scan_threshold: Option<usize>,
+    /// Store index on disk. If set to false, the index will be stored in RAM. Default: false
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_disk: Option<bool>,
+}
+
+impl Anonymize for SparseIndexParams {
+    fn anonymize(&self) -> Self {
+        SparseIndexParams {
+            full_scan_threshold: self.full_scan_threshold,
+            on_disk: self.on_disk,
+        }
+    }
+}
+
+impl SparseIndexParams {
+    pub fn new(full_scan_threshold: Option<usize>, on_disk: Option<bool>) -> Self {
+        SparseIndexParams {
+            full_scan_threshold,
+            on_disk,
+        }
+    }
+
+    pub fn update_from_other(&mut self, other: &SparseIndexParams) {
+        if let Some(full_scan_threshold) = other.full_scan_threshold {
+            self.full_scan_threshold = Some(full_scan_threshold);
+        }
+        if let Some(on_disk) = other.on_disk {
+            self.on_disk = Some(on_disk);
+        }
     }
 }
 

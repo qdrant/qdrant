@@ -14,7 +14,6 @@ use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -25,7 +24,8 @@ use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
     PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
-    SearchGroupsRequestInternal, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
+    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
+    VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -565,7 +565,7 @@ impl From<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
         Self {
             index: sparse_vector_params
                 .index
-                .map(|index_config| SparseIndexConfig {
+                .map(|index_config| SparseIndexParams {
                     full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
                     on_disk: index_config.on_disk,
                 }),
