@@ -135,10 +135,10 @@ impl IndexingOptimizer {
                     if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
                         let is_indexed = vector_data.index.is_indexed();
                         let is_on_disk = vector_data.storage_type.is_on_disk();
-                        let vector_size = point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
+                        let storage_size = point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
 
-                        let is_big_for_index = vector_size >= indexing_threshold_kb;
-                        let is_big_for_mmap = vector_size >= mmap_threshold_kb;
+                        let is_big_for_index = storage_size >= indexing_threshold_kb;
+                        let is_big_for_mmap = storage_size >= mmap_threshold_kb;
 
                         let optimize_for_index = is_big_for_index && !is_indexed;
                         let optimize_for_mmap = if let Some(on_disk_config) = vector_config.on_disk
@@ -164,10 +164,10 @@ impl IndexingOptimizer {
                                 read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
                             let is_indexed = sparse_vector_data.is_indexed();
                             let is_on_disk = sparse_vector_data.is_index_on_disk();
-                            let vector_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
+                            let storage_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
 
-                            let is_big_for_index = vector_size >= indexing_threshold_kb;
-                            let is_big_for_mmap = vector_size >= mmap_threshold_kb;
+                            let is_big_for_index = storage_size >= indexing_threshold_kb;
+                            let is_big_for_mmap = storage_size >= mmap_threshold_kb;
 
                             let optimize_for_index = is_big_for_index && !is_indexed;
                             let optimize_for_mmap = if let Some(on_disk_config) =
