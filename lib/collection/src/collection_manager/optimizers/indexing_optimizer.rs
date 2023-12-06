@@ -150,36 +150,41 @@ impl IndexingOptimizer {
 
                         if optimize_for_index || optimize_for_mmap {
                             require_optimization = true;
+                            break;
                         }
                     }
                 }
 
-                if let Some(sparse_vectors_params) = self.collection_params.sparse_vectors.as_ref()
-                {
-                    for (sparse_vector_name, sparse_vector_config) in sparse_vectors_params {
-                        if let Some(sparse_vector_data) =
-                            segment_config.sparse_vector_data.get(sparse_vector_name)
-                        {
-                            let vector_dim =
-                                read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
-                            let is_indexed = sparse_vector_data.is_indexed();
-                            let is_on_disk = sparse_vector_data.is_index_on_disk();
-                            let storage_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
-
-                            let is_big_for_index = storage_size >= indexing_threshold_kb;
-                            let is_big_for_mmap = storage_size >= mmap_threshold_kb;
-
-                            let optimize_for_index = is_big_for_index && !is_indexed;
-                            let optimize_for_mmap = if let Some(on_disk_config) =
-                                sparse_vector_config.index.and_then(|x| x.on_disk)
+                if !require_optimization {
+                    if let Some(sparse_vectors_params) =
+                        self.collection_params.sparse_vectors.as_ref()
+                    {
+                        for (sparse_vector_name, sparse_vector_config) in sparse_vectors_params {
+                            if let Some(sparse_vector_data) =
+                                segment_config.sparse_vector_data.get(sparse_vector_name)
                             {
-                                on_disk_config && !is_on_disk
-                            } else {
-                                is_big_for_mmap && !is_on_disk
-                            };
+                                let vector_dim =
+                                    read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
+                                let is_indexed = sparse_vector_data.is_indexed();
+                                let is_on_disk = sparse_vector_data.is_index_on_disk();
+                                let storage_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
 
-                            if optimize_for_index || optimize_for_mmap {
-                                require_optimization = true;
+                                let is_big_for_index = storage_size >= indexing_threshold_kb;
+                                let is_big_for_mmap = storage_size >= mmap_threshold_kb;
+
+                                let optimize_for_index = is_big_for_index && !is_indexed;
+                                let optimize_for_mmap = if let Some(on_disk_config) =
+                                    sparse_vector_config.index.and_then(|x| x.on_disk)
+                                {
+                                    on_disk_config && !is_on_disk
+                                } else {
+                                    is_big_for_mmap && !is_on_disk
+                                };
+
+                                if optimize_for_index || optimize_for_mmap {
+                                    require_optimization = true;
+                                    break;
+                                }
                             }
                         }
                     }
