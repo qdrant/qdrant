@@ -47,10 +47,7 @@ impl InvertedIndex for InvertedIndexMmap {
     }
 
     fn save(&self, path: &Path) -> std::io::Result<()> {
-        if path != self.path {
-            // TODO(sparse): do we need to save index to another direction?
-            todo!("Cannot save to a different path")
-        }
+        debug_assert_eq!(path, self.path);
         Ok(())
     }
 
