@@ -149,17 +149,17 @@ pub trait SegmentOptimizer {
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
 
-        let is_indexed = maximal_vector_store_size_bytes
+        let threshold_is_indexed = maximal_vector_store_size_bytes
             >= thresholds.indexing_threshold.saturating_mul(BYTES_IN_KB);
 
-        let is_on_disk = maximal_vector_store_size_bytes
+        let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let mut vector_data = collection_params.into_base_vector_data()?;
         let mut sparse_vector_data = collection_params.into_sparse_vector_data()?;
 
         // If indexing, change to HNSW index and quantization
-        if is_indexed {
+        if threshold_is_indexed {
             let collection_hnsw = self.hnsw_config();
             let collection_quantization = self.quantization_config();
             vector_data.iter_mut().for_each(|(vector_name, config)| {
@@ -185,10 +185,28 @@ pub trait SegmentOptimizer {
             });
         }
 
-        // If storing on disk, set storage type
-        if is_on_disk {
-            vector_data.values_mut().for_each(|config| {
-                config.storage_type = VectorStorageType::Mmap;
+        // If storing on disk, set storage type in current segment (not in collection config)
+        if threshold_is_on_disk {
+            vector_data.iter_mut().for_each(|(vector_name, config)| {
+                // Check whether on_disk is explicitly configured, if not, set it to true
+                let config_on_disk = collection_params
+                    .vectors
+                    .get_params(vector_name)
+                    .and_then(|config| config.on_disk);
+
+                match config_on_disk {
+                    Some(true) => config.storage_type = VectorStorageType::Mmap, // Both agree, but prefer mmap storage type
+                    Some(false) => {}, // on_disk=false wins, do nothing
+                    None => config.storage_type = VectorStorageType::Mmap, // Mmap threshold wins
+                }
+
+                // If we explicitly configure on_disk, but the segment storage type uses something
+                // that doesn't match, warn about it
+                if let Some(config_on_disk) = config_on_disk {
+                    if config_on_disk != config.storage_type.is_on_disk() {
+                        log::warn!("Collection config for vector {vector_name} has on_disk={config_on_disk:?} configured, but storage type for segment doesn't match it");
+                    }
+                }
             });
         }
 
