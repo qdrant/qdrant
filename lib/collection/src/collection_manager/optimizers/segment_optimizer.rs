@@ -188,17 +188,20 @@ pub trait SegmentOptimizer {
         if threshold_is_on_disk {
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 // Check whether on_disk is explicitly configured, if not, set it to true
-                let has_explicit_on_disk = collection_params
+                let config_on_disk = collection_params
                     .vectors
                     .get_params(vector_name)
                     .and_then(|config| config.on_disk);
-                if has_explicit_on_disk.is_none() {
-                    config.storage_type = VectorStorageType::Mmap;
+
+                match config_on_disk {
+                    Some(true) => config.storage_type = VectorStorageType::Mmap, // Both agree, but prefer mmap storage type
+                    Some(false) => {}, // on_disk=false wins, do nothing
+                    None => config.storage_type = VectorStorageType::Mmap, // Mmap threshold wins
                 }
 
                 // If we explicitly configure on_disk, but the segment storage type uses something
                 // that doesn't match, warn about it
-                if let Some(config_on_disk) = has_explicit_on_disk {
+                if let Some(config_on_disk) = config_on_disk {
                     if config_on_disk != config.storage_type.is_on_disk() {
                         log::warn!("Collection config for vector {vector_name} has on_disk={config_on_disk:?} configured, but storage type for segment doesn't match it");
                     }

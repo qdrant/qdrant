@@ -121,38 +121,71 @@ impl IndexingOptimizer {
                     return None; // Never optimize already optimized segment
                 }
 
-                // Apply indexing to plain segments which have grown too big
-                let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
-                let is_any_on_disk = segment_config.is_any_on_disk();
+                let indexing_threshold_kb = self
+                    .thresholds_config
+                    .indexing_threshold
+                    .saturating_mul(BYTES_IN_KB);
+                let mmap_threshold_kb = self
+                    .thresholds_config
+                    .memmap_threshold
+                    .saturating_mul(BYTES_IN_KB);
+                let mut require_optimization = false;
 
-                let big_for_index = vector_size
-                    >= self
-                        .thresholds_config
-                        .indexing_threshold
-                        .saturating_mul(BYTES_IN_KB);
-                let big_for_mmap = vector_size
-                    >= self
-                        .thresholds_config
-                        .memmap_threshold
-                        .saturating_mul(BYTES_IN_KB);
+                for (vector_name, vector_config) in self.collection_params.vectors.params_iter() {
+                    if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
+                        let is_indexed = vector_data.index.is_indexed();
+                        let is_on_disk = vector_data.storage_type.is_on_disk();
+                        let vector_size = vector_data.size * VECTOR_ELEMENT_SIZE;
 
-                // Check whether all vectors have `on_disk` specified, either true or false,
-                // because then we don't want to override it with the mmap threshold
-                let all_vectors_specify_on_disk =
-                    segment_config.vector_data.keys().all(|vector_name| {
-                        self.collection_params
-                            .vectors
-                            .get_params(vector_name)
-                            .map_or(false, |vector_config| vector_config.on_disk.is_some())
-                    });
+                        let is_big_for_index = vector_size >= indexing_threshold_kb;
+                        let is_big_for_mmap = vector_size >= mmap_threshold_kb;
 
-                // Whether we want to optimize this segment to create an index or mmap
-                let optimize_for_index = big_for_index && !are_all_vectors_indexed;
-                let optimize_for_mmap =
-                    big_for_mmap && !is_any_on_disk && !all_vectors_specify_on_disk;
-                let do_optimize = optimize_for_index || optimize_for_mmap;
+                        let optimize_for_index = is_big_for_index && !is_indexed;
+                        let optimize_for_mmap = if let Some(on_disk_config) = vector_config.on_disk
+                        {
+                            on_disk_config && !is_on_disk
+                        } else {
+                            is_big_for_mmap && !is_on_disk
+                        };
 
-                do_optimize.then_some((*idx, vector_size))
+                        if optimize_for_index || optimize_for_mmap {
+                            require_optimization = true;
+                        }
+                    }
+                }
+
+                if let Some(sparse_vectors_params) = self.collection_params.sparse_vectors.as_ref()
+                {
+                    for (sparse_vector_name, sparse_vector_config) in sparse_vectors_params {
+                        if let Some(sparse_vector_data) =
+                            segment_config.sparse_vector_data.get(sparse_vector_name)
+                        {
+                            let vector_dim =
+                                read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
+                            let is_indexed = sparse_vector_data.is_indexed();
+                            let is_on_disk = sparse_vector_data.is_index_on_disk();
+                            let vector_size = vector_dim * VECTOR_ELEMENT_SIZE;
+
+                            let is_big_for_index = vector_size >= indexing_threshold_kb;
+                            let is_big_for_mmap = vector_size >= mmap_threshold_kb;
+
+                            let optimize_for_index = is_big_for_index && !is_indexed;
+                            let optimize_for_mmap = if let Some(on_disk_config) =
+                                sparse_vector_config.index.and_then(|x| x.on_disk)
+                            {
+                                on_disk_config && !is_on_disk
+                            } else {
+                                is_big_for_mmap && !is_on_disk
+                            };
+
+                            if optimize_for_index || optimize_for_mmap {
+                                require_optimization = true;
+                            }
+                        }
+                    }
+                }
+
+                require_optimization.then_some((*idx, vector_size))
             })
             .collect();
 
