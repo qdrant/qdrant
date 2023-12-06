@@ -294,14 +294,16 @@ mod tests {
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+    use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::types::{Payload, PayloadSchemaType};
+    use segment::types::{Distance, Payload, PayloadSchemaType};
     use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
-    use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+    use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
@@ -684,5 +686,177 @@ mod tests {
             insert_point_ops,
         )
         .unwrap();
+    }
+
+    /// This tests things are as we expect when we define both `on_disk: false` and `memmap_threshold`
+    ///
+    /// Before this PR (<https://github.com/qdrant/qdrant/pull/3167>) such configuration would create an infinite optimization loop.
+    ///
+    /// It tests whether:
+    /// - the on_disk flag is preferred over memmap_threshold
+    /// - the index optimizer and config mismatch optimizer don't conflict with this preference
+    /// - there is no infinite optiization loop with the above configuration
+    ///
+    /// In short, this is what happens in this test:
+    /// - create randomized segment as base with `on_disk: false` and `memmap_threshold`
+    /// - test that indexing optimizer and config mismatch optimizer dont trigger
+    /// - test that current storage is in memory
+    /// - change `on_disk: None`
+    /// - test that indexing optimizer now wants to optimize for `memmap_threshold`
+    /// - optimize with indexing optimizer to put storage on disk
+    /// - test that config mismatch optimizer doesn't try to revert on disk storage
+    #[test]
+    fn test_on_disk_memmap_threshold_conflict() {
+        // Collection configuration
+        let (point_count, dim) = (1000, 10);
+        let thresholds_config = OptimizerThresholds {
+            max_segment_size: std::usize::MAX,
+            memmap_threshold: 10,
+            indexing_threshold: std::usize::MAX,
+        };
+        let mut collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParams {
+                size: dim.try_into().unwrap(),
+                distance: Distance::Dot,
+                hnsw_config: None,
+                quantization_config: None,
+                on_disk: Some(false),
+            }),
+            ..CollectionParams::empty()
+        };
+
+        // Base segment
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+
+        let segment = random_segment(dir.path(), 100, point_count, dim as usize);
+
+        let segment_id = holder.add(segment);
+        let locked_holder: Arc<parking_lot::RwLock<_>> = Arc::new(RwLock::new(holder));
+
+        let hnsw_config = HnswConfig {
+            m: 16,
+            ef_construct: 100,
+            full_scan_threshold: 10,
+            max_indexing_threads: 0,
+            on_disk: None,
+            payload_m: None,
+        };
+
+        {
+            // Optimizers used in test
+            let index_optimizer = IndexingOptimizer::new(
+                thresholds_config.clone(),
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params.clone(),
+                hnsw_config.clone(),
+                Default::default(),
+            );
+            let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
+                thresholds_config.clone(),
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params.clone(),
+                hnsw_config.clone(),
+                Default::default(),
+            );
+
+            // Index optimizer should not optimize and put storage back in memory, nothing changed
+            let suggested_to_optimize =
+                index_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            assert_eq!(
+                suggested_to_optimize.len(),
+                0,
+                "index optimizer should not run for index nor mmap"
+            );
+
+            // Config mismatch optimizer should not try to change the current state
+            let suggested_to_optimize = config_mismatch_optimizer
+                .check_condition(locked_holder.clone(), &Default::default());
+            assert_eq!(
+                suggested_to_optimize.len(),
+                0,
+                "config mismatch optimizer should not change anything"
+            );
+
+            // Ensure segment is not on disk
+            locked_holder
+                .read()
+                .iter()
+                .map(|(_, segment)| match segment {
+                    LockedSegment::Original(s) => s.read(),
+                    LockedSegment::Proxy(_) => unreachable!(),
+                })
+                .filter(|segment| segment.total_point_count() > 0)
+                .for_each(|segment| {
+                    assert!(
+                        !segment.config().vector_data[""].storage_type.is_on_disk(),
+                        "segment must not be on disk with mmap",
+                    );
+                });
+        }
+
+        // Remove explicit on_disk flag and go back to default
+        collection_params
+            .vectors
+            .get_params_mut("")
+            .unwrap()
+            .on_disk
+            .take();
+
+        // Optimizers used in test
+        let index_optimizer = IndexingOptimizer::new(
+            thresholds_config.clone(),
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params.clone(),
+            hnsw_config.clone(),
+            Default::default(),
+        );
+        let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
+            thresholds_config,
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params,
+            hnsw_config.clone(),
+            Default::default(),
+        );
+
+        // Use indexing optimizer to build mmap
+        let changed = index_optimizer
+            .optimize(locked_holder.clone(), vec![segment_id], &false.into())
+            .unwrap();
+        assert!(
+            changed,
+            "optimizer should have rebuilt this segment for mmap"
+        );
+        assert!(
+            locked_holder.read().get(segment_id).is_none(),
+            "optimized segment should be gone",
+        );
+        assert_eq!(locked_holder.read().len(), 2, "mmap must be built");
+
+        // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
+        let suggested_to_optimize =
+            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        assert_eq!(suggested_to_optimize.len(), 0);
+
+        // Ensure new segment is on disk now
+        locked_holder
+            .read()
+            .iter()
+            .map(|(_, segment)| match segment {
+                LockedSegment::Original(s) => s.read(),
+                LockedSegment::Proxy(_) => unreachable!(),
+            })
+            .filter(|segment| segment.total_point_count() > 0)
+            .for_each(|segment| {
+                assert!(
+                    segment.config().vector_data[""].storage_type.is_on_disk(),
+                    "segment must be on disk with mmap",
+                );
+            });
     }
 }
