@@ -361,7 +361,15 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        self.inverted_index.files()
+        let config_file = SparseIndexConfig::get_config_path(&self.path);
+        if !config_file.exists() {
+            return vec![];
+        }
+
+        let mut all_files = vec![];
+        all_files.push(config_file);
+        all_files.extend_from_slice(&self.inverted_index.files());
+        all_files
     }
 
     fn indexed_vector_count(&self) -> usize {
