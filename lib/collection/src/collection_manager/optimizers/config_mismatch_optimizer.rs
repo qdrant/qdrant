@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
+use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
@@ -57,6 +58,17 @@ impl ConfigMismatchOptimizer {
             .vectors
             .get_params(vector_name)
             .and_then(|vector_params| vector_params.on_disk)
+    }
+
+    /// Check if current configuration requires sparse vectors index to be stored on disk
+    #[allow(dead_code)]
+    fn check_if_sparse_vectors_index_on_disk(&self, vector_name: &str) -> Option<bool> {
+        self.collection_params
+            .sparse_vectors
+            .as_ref()
+            .and_then(|vector_params| vector_params.get(vector_name))
+            .and_then(|params| params.index)
+            .and_then(|index| index.on_disk)
     }
 
     /// Calculates and HNSW config that should be used for a given vector
@@ -122,9 +134,8 @@ impl ConfigMismatchOptimizer {
                     return Some((*idx, vector_size)); // Skip segments with payload mismatch
                 }
 
-                // Determine whether segment has mismatch
-                // TODO(sparse) do we have some mismathces in sparse config?
-                let has_mismatch =
+                // Determine whether dense data in segment has mismatch
+                let dense_has_mismatch =
                     segment_config
                         .vector_data
                         .iter()
@@ -177,7 +188,25 @@ impl ConfigMismatchOptimizer {
                             quantization_mismatch
                         });
 
-                has_mismatch.then_some((*idx, vector_size))
+                // Determine whether dense data in segment has mismatch
+                let sparse_has_mismatch =
+                    segment_config
+                        .sparse_vector_data
+                        .iter()
+                        .any(|(vector_name, vector_data)| {
+                            let Some(is_required_on_disk) =
+                                self.check_if_sparse_vectors_index_on_disk(vector_name)
+                            else {
+                                return false; // Do nothing if not specified
+                            };
+
+                            match vector_data.index.index_type {
+                                SparseIndexType::MutableRam => false, // Do nothing for mutable RAM
+                                SparseIndexType::ImmutableRam => is_required_on_disk, // Rebuild if we require on disk
+                                SparseIndexType::Mmap => !is_required_on_disk, // Rebuild if we require in RAM
+                            }
+                        });
+                (sparse_has_mismatch || dense_has_mismatch).then_some((*idx, vector_size))
             })
             .collect();
 
