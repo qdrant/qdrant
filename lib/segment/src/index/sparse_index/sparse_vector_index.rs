@@ -12,7 +12,8 @@ use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
 
-use crate::common::operation_error::{check_process_stopped, OperationResult};
+use super::sparse_index_config::SparseIndexType;
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
@@ -37,6 +38,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     path: PathBuf,
     pub inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
+    is_appendable: bool,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -75,7 +77,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         };
 
         let path = path.to_path_buf();
-        let index = Self {
+        let is_appendable = config.index_type == SparseIndexType::MutableRam;
+        Ok(Self {
             config,
             id_tracker,
             vector_storage,
@@ -83,8 +86,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             inverted_index,
             searches_telemetry,
-        };
-        Ok(index)
+            is_appendable,
+        })
     }
 
     fn save_config(&self) -> OperationResult<()> {
@@ -377,6 +380,12 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn update_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        if !self.is_appendable {
+            return Err(OperationError::service_error(
+                "Cannot update vector in non-appendable index",
+            ));
+        }
+
         let vector: &SparseVector = vector.try_into()?;
         // do not upsert empty vectors into the index
         if !vector.is_empty() {

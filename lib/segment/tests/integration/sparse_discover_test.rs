@@ -8,13 +8,13 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Distance, Indexes, SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig,
-    VectorStorageType,
+    VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::query::context_query::ContextPair;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -110,7 +110,12 @@ fn sparse_index_discover_test() {
         vector_data: Default::default(),
         sparse_vector_data: HashMap::from([(
             SPARSE_VECTOR_NAME.to_owned(),
-            SparseVectorDataConfig { index: None },
+            SparseVectorDataConfig {
+                index: SparseIndexConfig {
+                    full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                    index_type: SparseIndexType::MutableRam,
+                },
+            },
         )]),
         payload_storage_type: Default::default(),
     };
@@ -149,8 +154,8 @@ fn sparse_index_discover_test() {
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let mut sparse_index = SparseVectorIndex::<InvertedIndexRam>::open(
         SparseIndexConfig {
-            full_scan_threshold: None,
-            on_disk: None,
+            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+            index_type: SparseIndexType::ImmutableRam,
         },
         sparse_segment.id_tracker.clone(),
         vector_storage.clone(),
