@@ -339,13 +339,12 @@ impl SegmentsSearcher {
             }
             Ok(true)
         })?;
-        // Order the results
-        let mut ordered_records: Vec<Record> = Vec::with_capacity(points.len());
-        for &point in points.iter() {
-            if let Some(record) = point_records.remove(&point) {
-                ordered_records.push(record);
-            }
-        }
+
+        // Restore the order the ids came in
+        let ordered_records = points
+            .iter()
+            .flat_map(|point| point_records.remove(point))
+            .collect();
 
         Ok(ordered_records)
     }
