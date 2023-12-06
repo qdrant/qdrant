@@ -635,10 +635,10 @@ pub struct PayloadSchemaInfo {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
-    /// Operating condition of the collection
+    /// operating condition of the collection
     #[prost(enumeration = "CollectionStatus", tag = "1")]
     pub status: i32,
-    /// Status of collection optimizers
+    /// status of collection optimizers
     #[prost(message, optional, tag = "2")]
     pub optimizer_status: ::core::option::Option<OptimizerStatus>,
     /// Approximate number of vectors in the collection
