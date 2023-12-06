@@ -748,7 +748,7 @@ impl VectorDataConfig {
     }
 }
 
-/// Config of single vector data storage
+/// Config of single sparse vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorDataConfig {
