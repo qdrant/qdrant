@@ -106,7 +106,7 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let point_count = read_segment.available_point_count();
-                let vector_size = point_count
+                let max_vector_size = point_count
                     * read_segment
                         .vector_dims()
                         .values()
@@ -135,7 +135,7 @@ impl IndexingOptimizer {
                     if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
                         let is_indexed = vector_data.index.is_indexed();
                         let is_on_disk = vector_data.storage_type.is_on_disk();
-                        let vector_size = vector_data.size * VECTOR_ELEMENT_SIZE;
+                        let vector_size = point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
 
                         let is_big_for_index = vector_size >= indexing_threshold_kb;
                         let is_big_for_mmap = vector_size >= mmap_threshold_kb;
@@ -164,7 +164,7 @@ impl IndexingOptimizer {
                                 read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
                             let is_indexed = sparse_vector_data.is_indexed();
                             let is_on_disk = sparse_vector_data.is_index_on_disk();
-                            let vector_size = vector_dim * VECTOR_ELEMENT_SIZE;
+                            let vector_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
 
                             let is_big_for_index = vector_size >= indexing_threshold_kb;
                             let is_big_for_mmap = vector_size >= mmap_threshold_kb;
@@ -185,7 +185,7 @@ impl IndexingOptimizer {
                     }
                 }
 
-                require_optimization.then_some((*idx, vector_size))
+                require_optimization.then_some((*idx, max_vector_size))
             })
             .collect();
 
