@@ -176,7 +176,8 @@ impl IndexingOptimizer {
                                 let optimize_for_mmap = if let Some(on_disk_config) =
                                     sparse_vector_config.index.and_then(|x| x.on_disk)
                                 {
-                                    on_disk_config && !is_on_disk
+                                    // Only ever put big vectors on disk
+                                    is_big_for_mmap && on_disk_config && !is_on_disk
                                 } else {
                                     is_big_for_mmap && !is_on_disk
                                 };
