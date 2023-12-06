@@ -358,14 +358,14 @@ message PayloadSchemaInfo {
 message CollectionInfo {
   CollectionStatus status = 1; // operating condition of the collection
   OptimizerStatus optimizer_status = 2; // status of collection optimizers
-  uint64 vectors_count = 3; // number of vectors in the collection
+  optional uint64 vectors_count = 3; // Approximate number of vectors in the collection
   uint64 segments_count = 4; // Number of independent segments
   reserved 5; // Deprecated
   reserved 6; // Deprecated
   CollectionConfig config = 7; // Configuration
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
-  uint64 points_count = 9; // number of points in the collection
-  optional uint64 indexed_vectors_count = 10; // number of indexed vectors in the collection.
+  optional uint64 points_count = 9; // Approximate number of points in the collection
+  optional uint64 indexed_vectors_count = 10; // Approximate number of indexed vectors in the collection.
 }
 
 message ChangeAliases {
