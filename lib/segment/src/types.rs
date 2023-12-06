@@ -761,6 +761,10 @@ impl SparseVectorDataConfig {
         self.index.index_type == SparseIndexType::MutableRam
     }
 
+    pub fn is_index_immutable(&self) -> bool {
+        self.index.index_type != SparseIndexType::MutableRam
+    }
+
     pub fn is_indexed(&self) -> bool {
         true
     }
