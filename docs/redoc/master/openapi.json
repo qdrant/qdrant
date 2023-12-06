@@ -5307,7 +5307,7 @@
             "nullable": true
           },
           "indexed_vectors_count": {
-            "description": "Approximate umber of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in vector index (HNSW).",
+            "description": "Approximate number of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in a specialized vector index.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -9042,7 +9042,7 @@
         ]
       },
       "SparseVectorDataConfig": {
-        "description": "Config of single vector data storage",
+        "description": "Config of single sparse vector data storage",
         "type": "object",
         "required": [
           "index"

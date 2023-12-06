@@ -104,9 +104,9 @@ pub struct CollectionInfo {
     /// Calculated as `points_count x vectors_per_point`.
     /// Where `vectors_per_point` is a number of named vectors in schema.
     pub vectors_count: Option<usize>,
-    /// Approximate umber of indexed vectors in the collection.
+    /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
-    /// as it is stored in vector index (HNSW).
+    /// as it is stored in a specialized vector index.
     pub indexed_vectors_count: Option<usize>,
     /// Approximate number of points (vectors + payloads) in collection.
     /// Each point could be accessed by unique id.
