@@ -13,6 +13,11 @@ fn paint(text: &str, true_color: bool) -> ColoredString {
     }
 }
 
+/// Check whether the given IP is `0.0.0.0` or the IPv6 equivalent.
+fn is_zero_ip(host: &str) -> bool {
+    host == "0.0.0.0" || host == "::" || host == "0:0:0:0:0:0:0:0"
+}
+
 /// Prints welcome message
 #[rustfmt::skip]
 #[allow(clippy::needless_raw_string_hashes)]
@@ -40,7 +45,11 @@ pub fn welcome(settings: &Settings) {
     let ui_link = format!(
         "http{}://{}:{}/dashboard",
         if settings.service.enable_tls { "s" } else { "" },
-        settings.service.host,
+        if is_zero_ip(&settings.service.host) {
+            "localhost"
+        } else {
+            &settings.service.host
+        },
         settings.service.http_port
     );
 
