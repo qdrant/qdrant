@@ -110,11 +110,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // It is possible that the vector is not present in the storage in case of crash.
             // Because:
             // - the `id_tracker` is flushed before the `vector_storage`
-            // - the sparse index *before* recovering the WAL when loading a segment
+            // - the sparse index is built *before* recovering the WAL when loading a segment
             match borrowed_vector_storage.get_vector_opt(id) {
                 None => {
-                    // this means the vector was lost in a crash
-                    log::warn!("Sparse vector with id {} is not found", id)
+                    // the vector was lost in a crash but will be recored by the WAL
+                    log::debug!("Sparse vector with id {} is not found", id)
                 }
                 Some(vector) => {
                     let vector: &SparseVector = vector.as_vec_ref().try_into()?;

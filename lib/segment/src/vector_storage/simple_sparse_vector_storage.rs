@@ -148,8 +148,9 @@ impl SparseVectorStorage for SimpleSparseVectorStorage {
         let bin_key = bincode::serialize(&key)
             .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
         let data = self.db_wrapper.get(bin_key)?;
-        let record: StoredRecord = bincode::deserialize(&data)
-            .map_err(|_| OperationError::service_error("Cannot deserialize vector from db"))?;
+        let record: StoredRecord = bincode::deserialize(&data).map_err(|_| {
+            OperationError::service_error("Cannot deserialize sparse vector from db")
+        })?;
         Ok(record.vector)
     }
 }
