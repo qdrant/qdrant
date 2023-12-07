@@ -107,14 +107,25 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let mut index_point_count: usize = 0;
         for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
-            let vector = borrowed_vector_storage.get_vector(id);
-            let vector: &SparseVector = vector.as_vec_ref().try_into()?;
-            // do not index empty vectors
-            if vector.is_empty() {
-                continue;
+            // It is possible that the vector is not present in the storage in case of crash.
+            // Because:
+            // - the `id_tracker` is flushed before the `vector_storage`
+            // - the sparse index *before* recovering the WAL when loading a segment
+            match borrowed_vector_storage.get_vector_opt(id) {
+                None => {
+                    // this means the vector was lost in a crash
+                    log::warn!("Sparse vector with id {} is not found", id)
+                }
+                Some(vector) => {
+                    let vector: &SparseVector = vector.as_vec_ref().try_into()?;
+                    // do not index empty vectors
+                    if vector.is_empty() {
+                        continue;
+                    }
+                    ram_index.upsert(id, vector.to_owned());
+                    index_point_count += 1;
+                }
             }
-            ram_index.upsert(id, vector.to_owned());
-            index_point_count += 1;
         }
         // the underlying upsert operation does not guarantee that the indexed vector count is correct
         // so we set the indexed vector count to the number of points we have seen

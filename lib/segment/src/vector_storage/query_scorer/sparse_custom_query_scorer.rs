@@ -39,7 +39,10 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_sparse(idx);
+        let stored = self
+            .vector_storage
+            .get_sparse(idx)
+            .expect("Failed to get sparse vector");
         self.query
             .score_by(|example| stored.score(example).unwrap_or(0.0))
     }
