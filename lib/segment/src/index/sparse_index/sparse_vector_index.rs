@@ -113,7 +113,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // - the sparse index is built *before* recovering the WAL when loading a segment
             match borrowed_vector_storage.get_vector_opt(id) {
                 None => {
-                    // the vector was lost in a crash but will be recored by the WAL
+                    // the vector was lost in a crash but will be recovered by the WAL
                     log::debug!("Sparse vector with id {} is not found", id)
                 }
                 Some(vector) => {
