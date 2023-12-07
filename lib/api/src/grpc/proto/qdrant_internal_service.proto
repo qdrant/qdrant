@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 package qdrant;
-option csharp_namespace = "Qdrant.Client.Grpc";
 
 service QdrantInternal {
   /*
