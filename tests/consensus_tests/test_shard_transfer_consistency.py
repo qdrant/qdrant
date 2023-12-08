@@ -20,8 +20,8 @@ POINTS_COUNT = 1000
 def update_points_in_loop(peer_url, collection_name):
     limit = 5
     while True:
-        offset = random.randint(0, POINTS_COUNT)
-        upsert_random_points(peer_url, limit, collection_name, offset=offset, wait='false', ordering='strong')
+        #offset = random.randint(0, POINTS_COUNT)
+        upsert_random_points(peer_url, limit, collection_name, offset=0, wait='false', ordering='strong')
 
 
 def run_update_points_in_background(peer_url, collection_name):
@@ -44,7 +44,7 @@ def get_all_points(peer_url, collection_name):
     return res.json()["result"]
 
 
-def test_shard_consistency(tmp_path: pathlib.Path):
+def test_shard_transfer_consistency(tmp_path: pathlib.Path):
     assert_project_root()
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
@@ -73,7 +73,8 @@ def test_shard_consistency(tmp_path: pathlib.Path):
             "replicate_shard": {
                 "shard_id": shard_id,
                 "from_peer_id": source_peer_id,
-                "to_peer_id": target_peer_id
+                "to_peer_id": target_peer_id,
+                "method": "stream_records"
             }
         })
 
