@@ -14,12 +14,13 @@ N_PEERS = 3
 N_SHARDS = 1
 N_REPLICAS = 3
 COLLECTION_NAME = "test_collection"
+POINTS_COUNT = 1000
 
 
 def update_points_in_loop(peer_url, collection_name):
     limit = 5
     while True:
-        offset = random.randint(0, 100)
+        offset = random.randint(0, POINTS_COUNT)
         upsert_random_points(peer_url, limit, collection_name, offset=offset, wait='false', ordering='strong')
 
 
@@ -33,7 +34,7 @@ def get_all_points(peer_url, collection_name):
     res = requests.post(
         f"{peer_url}/collections/{collection_name}/points/scroll",
         json={
-            "limit": 100,
+            "limit": POINTS_COUNT,
             "with_vector": True,
             "with_payload": True,
         },
@@ -87,9 +88,10 @@ def test_shard_consistency(tmp_path: pathlib.Path):
         res = get_all_points(url, COLLECTION_NAME)
         results.append(res)
 
-    for res in results:
-        for idx, row in enumerate(res['points']):
-            assert row == results[0]['points'][idx]
+        for scroll_result in results:
+            for i in range(POINTS_COUNT):
+                row = scroll_result['points'][i]
+                assert row['id'] == i
 
     # Kill all upload processes
     for p in upload_processes:

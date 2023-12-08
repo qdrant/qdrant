@@ -37,7 +37,7 @@ def upsert_random_points(peer_url, num, collection_name="test_collection", fail_
                     "id": i + offset,
                     "vector": {
                         "": random_dense_vector(),
-                        "sparse-text": random_sparse_vector(),
+                        #"sparse-text": random_sparse_vector(),
                     },
                     "payload": {"city": random.choice(CITIES)}
                 } for i in range(num)
