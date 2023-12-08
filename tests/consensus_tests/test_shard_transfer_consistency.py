@@ -13,12 +13,12 @@ N_PEERS = 3
 N_SHARDS = 1
 N_REPLICAS = 3
 COLLECTION_NAME = "test_collection"
-POINTS_COUNT = 10000
+POINTS_COUNT = 20000
 
 
 def update_points_in_loop(peer_url, collection_name):
     for i in range(POINTS_COUNT):
-        insert_random_point(peer_url, i, collection_name, wait='false', ordering='strong')
+        insert_random_point(peer_url, i, collection_name, wait='false', ordering='weak')
 
 
 def run_update_points_in_background(peer_url, collection_name):
