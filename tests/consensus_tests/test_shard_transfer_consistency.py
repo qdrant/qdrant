@@ -1,8 +1,7 @@
 import multiprocessing
 import pathlib
-import random
 
-from .fixtures import create_collection, upsert_random_points
+from .fixtures import create_collection, insert_random_point
 from .utils import *
 
 import logging
@@ -14,13 +13,12 @@ N_PEERS = 3
 N_SHARDS = 1
 N_REPLICAS = 3
 COLLECTION_NAME = "test_collection"
-POINTS_COUNT = 1000
+POINTS_COUNT = 10000
 
 
 def update_points_in_loop(peer_url, collection_name):
-    while True:
-        # rewrite all ids at each iteration
-        upsert_random_points(peer_url, POINTS_COUNT, collection_name, offset=0, wait='false', ordering='strong')
+    for i in range(POINTS_COUNT):
+        insert_random_point(peer_url, i, collection_name, wait='false', ordering='strong')
 
 
 def run_update_points_in_background(peer_url, collection_name):
@@ -57,8 +55,8 @@ def test_shard_transfer_consistency(tmp_path: pathlib.Path):
         for i in range(len(peer_api_uris))
     ]
 
-    print("Push points during 5 seconds")
-    time.sleep(5)
+    print("Push points during 10 seconds")
+    time.sleep(10)
 
     # Extract current collection cluster info
     collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")
@@ -79,13 +77,6 @@ def test_shard_transfer_consistency(tmp_path: pathlib.Path):
 
     assert_http_ok(r)
 
-    # Kill all upload processes
-    for p in upload_processes:
-        p.kill()
-
-    # wait for upload to stop
-    time.sleep(2)
-
     # Validate that all peers have the same data
     results = []
     for url in peer_api_uris:
@@ -96,5 +87,12 @@ def test_shard_transfer_consistency(tmp_path: pathlib.Path):
         prev = -1
         for row in scroll_result['points']:
             row_id = row['id']
+            print(row_id)
             assert row_id == prev + 1
             prev = row_id
+
+    # Kill all upload processes
+    for p in upload_processes:
+        p.kill()
+
+    time.sleep(1)

@@ -37,10 +37,29 @@ def upsert_random_points(peer_url, num, collection_name="test_collection", fail_
                     "id": i + offset,
                     "vector": {
                         "": random_dense_vector(),
-                        #"sparse-text": random_sparse_vector(),
+                        "sparse-text": random_sparse_vector(),
                     },
                     "payload": {"city": random.choice(CITIES)}
                 } for i in range(num)
+            ]
+        })
+    if fail_on_error:
+        assert_http_ok(r_batch)
+
+
+def insert_random_point(peer_url, point_id, collection_name="test_collection", fail_on_error=True, wait='true', ordering ='weak'):
+    # Create points in first peer's collection
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection_name}/points?wait={wait}&ordering={ordering}", json={
+            "points": [
+                {
+                    "id": point_id,
+                    "vector": {
+                        "": random_dense_vector(),
+                        #"sparse-text": random_sparse_vector(),
+                    },
+                    "payload": {"city": random.choice(CITIES)}
+                }
             ]
         })
     if fail_on_error:
