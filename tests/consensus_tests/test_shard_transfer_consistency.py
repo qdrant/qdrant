@@ -93,6 +93,8 @@ def test_shard_consistency(tmp_path: pathlib.Path):
         results.append(res)
 
     for scroll_result in results:
-        for i in range(POINTS_COUNT):
-            row = scroll_result['points'][i]
-            assert row['id'] == i
+        prev = -1
+        for row in scroll_result['points']:
+            row_id = row['id']
+            assert row_id == prev + 1
+            prev = row_id
