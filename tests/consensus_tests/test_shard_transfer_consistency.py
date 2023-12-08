@@ -18,10 +18,9 @@ POINTS_COUNT = 1000
 
 
 def update_points_in_loop(peer_url, collection_name):
-    limit = 5
     while True:
-        #offset = random.randint(0, POINTS_COUNT)
-        upsert_random_points(peer_url, limit, collection_name, offset=0, wait='false', ordering='strong')
+        # rewrite all ids at each iteration
+        upsert_random_points(peer_url, POINTS_COUNT, collection_name, offset=0, wait='false', ordering='strong')
 
 
 def run_update_points_in_background(peer_url, collection_name):
