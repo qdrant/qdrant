@@ -54,7 +54,7 @@ def assert_project_root():
 
 def get_qdrant_exec() -> str:
     directory_path = os.getcwd()
-    qdrant_exec = directory_path + "/target/release/qdrant"
+    qdrant_exec = directory_path + "/target/debug/qdrant"
     return qdrant_exec
 
 

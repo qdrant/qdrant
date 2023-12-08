@@ -77,6 +77,9 @@ def create_collection(peer_url, collection="test_collection", shard_number=1, re
             "sparse_vectors": {
                 "sparse-text": {}
             },
+            "optimizers_config": {
+                "default_segment_number": 1,
+            },
             "shard_number": shard_number,
             "replication_factor": replication_factor,
             "write_consistency_factor": write_consistency_factor,
