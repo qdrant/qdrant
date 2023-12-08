@@ -79,7 +79,10 @@ def test_shard_consistency(tmp_path: pathlib.Path):
 
     assert_http_ok(r)
 
-    # make sure replication is done
+    # Kill all upload processes
+    for p in upload_processes:
+        p.kill()
+    # wait for upload to stop
     time.sleep(1)
 
     # Validate that all peers have the same data
@@ -92,10 +95,3 @@ def test_shard_consistency(tmp_path: pathlib.Path):
             for i in range(POINTS_COUNT):
                 row = scroll_result['points'][i]
                 assert row['id'] == i
-
-    # Kill all upload processes
-    for p in upload_processes:
-        p.kill()
-
-    # wait for upload to stop
-    time.sleep(5)
