@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
 N_PEERS = 3
-N_SHARDS = 1
+N_SHARDS = 3
 N_REPLICAS = 3
 COLLECTION_NAME = "test_collection"
 POINTS_COUNT = 20000
