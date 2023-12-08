@@ -82,8 +82,9 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     # Kill all upload processes
     for p in upload_processes:
         p.kill()
+
     # wait for upload to stop
-    time.sleep(1)
+    time.sleep(2)
 
     # Validate that all peers have the same data
     results = []
@@ -91,7 +92,7 @@ def test_shard_consistency(tmp_path: pathlib.Path):
         res = get_all_points(url, COLLECTION_NAME)
         results.append(res)
 
-        for scroll_result in results:
-            for i in range(POINTS_COUNT):
-                row = scroll_result['points'][i]
-                assert row['id'] == i
+    for scroll_result in results:
+        for i in range(POINTS_COUNT):
+            row = scroll_result['points'][i]
+            assert row['id'] == i
