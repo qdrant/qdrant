@@ -345,7 +345,7 @@ pub struct SearchParams {
     /// Using this option allows an upper bound to be set on the cost of searching plain segments
     /// exhaustively when indexing throughput cannot keep up with ingest throughput, but does not
     /// guarantee that all uploaded vectors will be included in search results
-    pub plain_search_limit: Option<usize>
+    pub plain_search_limit: Option<usize>,
 }
 
 /// Vector index configuration

@@ -249,7 +249,11 @@ impl VectorIndex for PlainIndex {
                             is_stopped,
                         )
                         .map(|scorer| {
-                            scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top, maybe_limit)
+                            scorer.peek_top_iter(
+                                &mut filtered_ids_vec.iter().copied(),
+                                top,
+                                maybe_limit,
+                            )
                         })
                     })
                     .collect()

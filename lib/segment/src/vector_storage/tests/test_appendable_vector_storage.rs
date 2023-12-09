@@ -221,8 +221,8 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
-        .unwrap()
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, Some(2));
+    .unwrap()
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, Some(2));
 
     match closest.get(0) {
         Some(scored_point) => assert_eq!(scored_point.idx, 0),

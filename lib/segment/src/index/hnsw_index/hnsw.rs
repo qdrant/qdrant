@@ -334,7 +334,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let search_result = raw_scorer.peek_top_iter(
             &mut filtered_points.iter().copied(),
             oversampled_top,
-            params.and_then(|p| p.plain_search_limit)
+            params.and_then(|p| p.plain_search_limit),
         );
 
         self.postprocess_search_result(search_result, vector, params, top, is_stopped)
@@ -539,7 +539,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                                 id_tracker.deleted_point_bitslice(),
                                 is_stopped,
                             )
-                            .map(|scorer| scorer.peek_top_all(top, params.and_then(|p| p.plain_search_limit)))
+                            .map(|scorer| {
+                                scorer.peek_top_all(top, params.and_then(|p| p.plain_search_limit))
+                            })
                         })
                         .collect()
                 } else {

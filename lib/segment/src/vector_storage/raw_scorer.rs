@@ -77,7 +77,7 @@ pub trait RawScorer {
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
-        limit: Option<usize>
+        limit: Option<usize>,
     ) -> Vec<ScoredPointOffset>;
 
     fn peek_top_all(&self, top: usize, limit: Option<usize>) -> Vec<ScoredPointOffset>;
