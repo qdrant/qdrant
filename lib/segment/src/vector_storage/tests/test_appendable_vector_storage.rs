@@ -60,7 +60,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
-    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
@@ -87,7 +87,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
-    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
     assert_eq!(closest[1].idx, 0);
@@ -113,7 +113,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
-    .peek_top_all(5);
+    .peek_top_all(5, None);
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
 
@@ -172,7 +172,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
-    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
@@ -221,8 +221,21 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         &borrowed_storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
+        .unwrap()
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, Some(2));
+
+    match closest.get(0) {
+        Some(scored_point) => assert_eq!(scored_point.idx, 0),
+        None => panic!("No close vector found!"),
+    };
+
+    let closest = new_raw_scorer(
+        query.clone(),
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
     .unwrap()
-    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, None);
 
     let top_idx = match closest.get(0) {
         Some(scored_point) => {
@@ -242,7 +255,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
-    let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+    let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, None);
 
     let query_points = vec![0, 1, 2, 3, 4];
 

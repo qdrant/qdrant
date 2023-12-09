@@ -80,7 +80,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
-    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
@@ -181,7 +181,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
-    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);

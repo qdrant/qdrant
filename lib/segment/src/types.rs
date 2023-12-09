@@ -340,6 +340,12 @@ pub struct SearchParams {
     /// guarantee that all uploaded vectors will be included in search results
     #[serde(default)]
     pub indexed_only: bool,
+
+    /// If set, the engine will perform truncated searches up to this limit when scanning plain segments.
+    /// Using this option allows an upper bound to be set on the cost of searching plain segments
+    /// exhaustively when indexing throughput cannot keep up with ingest throughput, but does not
+    /// guarantee that all uploaded vectors will be included in search results
+    pub plain_search_limit: Option<usize>
 }
 
 /// Vector index configuration

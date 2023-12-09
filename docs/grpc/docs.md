@@ -3008,6 +3008,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
 | quantization | [QuantizationSearchParams](#qdrant-QuantizationSearchParams) | optional | If set to true, search will ignore quantized vector data |
 | indexed_only | [bool](#bool) | optional | If enabled, the engine will only perform search among indexed or small segments. Using this option prevents slow searches in case of delayed index, but does not guarantee that all uploaded vectors will be included in search results |
+| plain_search_limit | [uint64](#uint64) | optional | If set, the engine will perform truncated searches up to this limit when scanning plain segments. Using this option allows an upper bound to be set on the cost of searching plain segments exhaustively when indexing throughput cannot keep up with ingest throughput, but does not guarantee that all uploaded vectors will be included in search results |
 
 
 

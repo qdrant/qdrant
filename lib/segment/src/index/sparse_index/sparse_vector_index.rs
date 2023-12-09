@@ -188,9 +188,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
-                Ok(raw_scorer.peek_top_iter(&mut filtered_points, top))
+                Ok(raw_scorer.peek_top_iter(&mut filtered_points, top, None))
             }
-            None => Ok(raw_scorer.peek_top_all(top)),
+            None => Ok(raw_scorer.peek_top_all(top, None)),
         }
     }
 

@@ -3598,6 +3598,13 @@ pub struct SearchParams {
     /// guarantee that all uploaded vectors will be included in search results
     #[prost(bool, optional, tag = "4")]
     pub indexed_only: ::core::option::Option<bool>,
+    ///
+    /// If set, the engine will perform truncated searches up to this limit when scanning plain segments.
+    /// Using this option allows an upper bound to be set on the cost of searching plain segments
+    /// exhaustively when indexing throughput cannot keep up with ingest throughput, but does not
+    /// guarantee that all uploaded vectors will be included in search results
+    #[prost(uint64, optional, tag = "5")]
+    pub plain_search_limit: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
