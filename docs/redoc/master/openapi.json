@@ -6672,6 +6672,13 @@
             "description": "If enabled, the engine will only perform search among indexed or small segments. Using this option prevents slow searches in case of delayed index, but does not guarantee that all uploaded vectors will be included in search results",
             "default": false,
             "type": "boolean"
+          },
+          "plain_search_limit": {
+            "description": "If set, the engine will perform truncated searches up to this limit when scanning plain segments. Using this option allows an upper bound to be set on the cost of searching plain segments exhaustively when indexing throughput cannot keep up with ingest throughput, but does not guarantee that all uploaded vectors will be included in search results",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
