@@ -9,6 +9,7 @@ use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
+use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
@@ -62,10 +63,17 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     );
 
     // Check that deleted points are deleted through raw scorer
+    // Because raw scorer for nearest Query is incorrect
+    // (nearest search is processed using inverted index),
+    // use Recommend query to simulate nearest search
     let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)]
         .try_into()
         .unwrap();
-    let query_vector: QueryVector = vector.into();
+    let query_vector = QueryVector::Recommend(RecoQuery {
+        positives: vec![vector.into()],
+        negatives: vec![],
+    });
+    // Because nearest search for raw scorer is incorrect,
     let closest = new_raw_scorer(
         query_vector,
         &borrowed_storage,
@@ -157,10 +165,16 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
     );
 
     // Check that deleted points are deleted through raw scorer
+    // Because raw scorer for nearest Query is incorrect
+    // (nearest search is processed using inverted index),
+    // use Recommend query to simulate nearest search
     let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)]
         .try_into()
         .unwrap();
-    let query_vector: QueryVector = vector.into();
+    let query_vector = QueryVector::Recommend(RecoQuery {
+        positives: vec![vector.into()],
+        negatives: vec![],
+    });
     let closest = new_raw_scorer(
         query_vector,
         &borrowed_storage,

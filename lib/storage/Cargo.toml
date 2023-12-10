@@ -36,7 +36,7 @@ chrono = { version = "~0.4", features = ["serde"] }
 validator = { version = "0.16", features = ["derive"] }
 
 # Consensus related
-atomicwrites = { version = "0.4.1" }
+atomicwrites = { version = "0.4.2" }
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 prost = { version = "0.11.9" } # version of prost used by raft
 protobuf = "2.28.0" # version of protobuf used by raft
@@ -51,8 +51,8 @@ collection = { path = "../collection" }
 api = { path = "../api" }
 futures = "0.3.28"
 anyhow = "1.0.75"
-uuid = "1.5.0"
-url = "2.4.1"
+uuid = "1.6.1"
+url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
 tempfile = "3.8.1"
 

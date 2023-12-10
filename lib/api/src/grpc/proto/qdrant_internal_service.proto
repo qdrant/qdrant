@@ -5,9 +5,21 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 
 service QdrantInternal {
   /*
+  Get current commit and term on the target node.
+   */
+  rpc GetConsensusCommit (GetConsensusCommitRequest) returns (GetConsensusCommitResponse) {}
+
+  /*
   Wait until the target node reached the given commit ID.
    */
   rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
+}
+
+message GetConsensusCommitRequest {}
+
+message GetConsensusCommitResponse {
+  int64 commit = 1; // Raft commit as u64
+  int64 term = 2; // Raft term as u64
 }
 
 message WaitOnConsensusCommitRequest {

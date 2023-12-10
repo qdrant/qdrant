@@ -56,10 +56,10 @@ schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"
 itertools = "0.12"
 anyhow = "1.0.75"
 futures = "0.3.28"
-futures-util = "0.3.27"
+futures-util = "0.3.29"
 clap = { version = "4.4.8", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
-uuid = { version = "1.5", features = ["v4", "serde"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
 sys-info = "0.9.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
 
@@ -78,7 +78,7 @@ tower-layer = "0.3.2"
 num-traits = "0.2.16"
 tar = "0.4.40"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
-rustls = "0.21.8"
+rustls = "0.21.9"
 rustls-pemfile = "1.0.3"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }

@@ -213,6 +213,8 @@
     - [Qdrant](#qdrant-Qdrant)
   
 - [qdrant_internal_service.proto](#qdrant_internal_service-proto)
+    - [GetConsensusCommitRequest](#qdrant-GetConsensusCommitRequest)
+    - [GetConsensusCommitResponse](#qdrant-GetConsensusCommitResponse)
     - [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest)
     - [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse)
   
@@ -385,12 +387,12 @@
 | ----- | ---- | ----- | ----------- |
 | status | [CollectionStatus](#qdrant-CollectionStatus) |  | operating condition of the collection |
 | optimizer_status | [OptimizerStatus](#qdrant-OptimizerStatus) |  | status of collection optimizers |
-| vectors_count | [uint64](#uint64) |  | number of vectors in the collection |
+| vectors_count | [uint64](#uint64) | optional | Approximate number of vectors in the collection |
 | segments_count | [uint64](#uint64) |  | Number of independent segments |
 | config | [CollectionConfig](#qdrant-CollectionConfig) |  | Configuration |
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
-| points_count | [uint64](#uint64) |  | number of points in the collection |
-| indexed_vectors_count | [uint64](#uint64) | optional | number of indexed vectors in the collection. |
+| points_count | [uint64](#uint64) | optional | Approximate number of points in the collection |
+| indexed_vectors_count | [uint64](#uint64) | optional | Approximate number of indexed vectors in the collection. |
 
 
 
@@ -3591,6 +3593,32 @@ When using target (with or without context), the score behaves a little differen
 
 
 
+<a name="qdrant-GetConsensusCommitRequest"></a>
+
+### GetConsensusCommitRequest
+
+
+
+
+
+
+
+<a name="qdrant-GetConsensusCommitResponse"></a>
+
+### GetConsensusCommitResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| commit | [int64](#int64) |  | Raft commit as u64 |
+| term | [int64](#int64) |  | Raft term as u64 |
+
+
+
+
+
+
 <a name="qdrant-WaitOnConsensusCommitRequest"></a>
 
 ### WaitOnConsensusCommitRequest
@@ -3636,6 +3664,7 @@ When using target (with or without context), the score behaves a little differen
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
+| GetConsensusCommit | [GetConsensusCommitRequest](#qdrant-GetConsensusCommitRequest) | [GetConsensusCommitResponse](#qdrant-GetConsensusCommitResponse) | Get current commit and term on the target node. |
 | WaitOnConsensusCommit | [WaitOnConsensusCommitRequest](#qdrant-WaitOnConsensusCommitRequest) | [WaitOnConsensusCommitResponse](#qdrant-WaitOnConsensusCommitResponse) | Wait until the target node reached the given commit ID. |
 
  

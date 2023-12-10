@@ -9,8 +9,8 @@ use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
 use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
-use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::{QueryVector, Vector, VectorType};
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::vectors::{QueryVector, Vector, VectorElementType, VectorType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
@@ -31,7 +31,7 @@ pub fn new<'a>(
         .build()
 }
 
-pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer> {
+pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<[VectorElementType]>> {
     points_count: PointOffsetType,
     query_scorer: TQueryScorer,
     storage: &'a MmapVectors,
@@ -44,7 +44,7 @@ pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer> {
 
 impl<'a, TQueryScorer> AsyncRawScorerImpl<'a, TQueryScorer>
 where
-    TQueryScorer: QueryScorer,
+    TQueryScorer: QueryScorer<[VectorElementType]>,
 {
     fn new(
         points_count: PointOffsetType,
@@ -67,7 +67,7 @@ where
 
 impl<'a, TQueryScorer> RawScorer for AsyncRawScorerImpl<'a, TQueryScorer>
 where
-    TQueryScorer: QueryScorer,
+    TQueryScorer: QueryScorer<[VectorElementType]>,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         if self.is_stopped.load(Ordering::Relaxed) {
@@ -280,7 +280,9 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                             is_stopped.unwrap_or(&DEFAULT_STOPPED),
                         )))
                     }
-                    Vector::Sparse(_sparse_vector) => panic!("Sparse vectors are not supported"), // TODO(sparse)
+                    Vector::Sparse(_sparse_vector) => Err(OperationError::service_error(
+                        "sparse vectors are not supported for async scorer",
+                    )), // TODO(sparse) add support?
                 }
             }
             QueryVector::Recommend(reco_query) => {

@@ -71,10 +71,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -158,10 +155,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -227,10 +221,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/TelemetryData"
@@ -332,10 +323,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/LocksOption"
@@ -388,10 +376,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/LocksOption"
@@ -524,10 +509,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/ClusterStatus"
@@ -581,10 +563,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -659,10 +638,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -717,10 +693,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionsResponse"
@@ -786,10 +759,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionInfo"
@@ -871,10 +841,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -956,10 +923,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -1031,10 +995,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -1108,10 +1069,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -1205,10 +1163,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -1301,10 +1256,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -1371,10 +1323,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionClusterInfo"
@@ -1456,10 +1405,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -1525,10 +1471,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionsAliasesResponse"
@@ -1583,10 +1526,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionsAliasesResponse"
@@ -1687,10 +1627,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -1713,10 +1650,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -1799,10 +1733,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -1825,10 +1756,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -1892,10 +1820,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -1972,10 +1897,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/SnapshotDescription"
@@ -1998,10 +1920,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -2083,10 +2002,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -2109,10 +2025,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -2226,10 +2139,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -2296,10 +2206,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/SnapshotDescription"
@@ -2322,10 +2229,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -2397,10 +2301,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -2423,10 +2324,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -2585,10 +2483,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -2611,10 +2506,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -2706,10 +2598,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -2732,10 +2621,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -2808,10 +2694,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -2897,10 +2780,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/SnapshotDescription"
@@ -2923,10 +2803,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -3017,10 +2894,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "boolean"
@@ -3043,10 +2917,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "accepted"
-                      ]
+                      "type": "string"
                     }
                   }
                 }
@@ -3198,10 +3069,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/Record"
@@ -3286,10 +3154,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -3384,10 +3249,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3481,10 +3343,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3578,10 +3437,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3675,10 +3531,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3772,10 +3625,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3867,10 +3717,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3964,10 +3811,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -4061,10 +3905,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -4158,10 +3999,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -4249,10 +4087,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/ScrollResult"
@@ -4347,10 +4182,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -4448,10 +4280,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -4552,10 +4381,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/GroupsResult"
@@ -4650,10 +4476,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -4751,10 +4574,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -4855,10 +4675,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/GroupsResult"
@@ -4953,10 +4770,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -5054,10 +4868,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "type": "array",
@@ -5139,10 +4950,7 @@
                       "description": "Time spent to process this request"
                     },
                     "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
+                      "type": "string"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CountResult"
@@ -5287,13 +5095,10 @@
         "type": "object",
         "required": [
           "config",
-          "indexed_vectors_count",
           "optimizer_status",
           "payload_schema",
-          "points_count",
           "segments_count",
-          "status",
-          "vectors_count"
+          "status"
         ],
         "properties": {
           "status": {
@@ -5303,22 +5108,25 @@
             "$ref": "#/components/schemas/OptimizersStatus"
           },
           "vectors_count": {
-            "description": "Number of vectors in collection All vectors in collection are available for querying Calculated as `points_count x vectors_per_point` Where `vectors_per_point` is a number of named vectors in schema",
+            "description": "Approximate number of vectors in collection. All vectors in collection are available for querying. Calculated as `points_count x vectors_per_point`. Where `vectors_per_point` is a number of named vectors in schema.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "indexed_vectors_count": {
-            "description": "Number of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in vector index (HNSW)",
+            "description": "Approximate number of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in a specialized vector index.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "points_count": {
-            "description": "Number of points (vectors + payloads) in collection Each point could be accessed by unique id",
+            "description": "Approximate number of points (vectors + payloads) in collection. Each point could be accessed by unique id.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "segments_count": {
             "description": "Number of segments in collection. Each segment has independent vector as payload indexes",
@@ -5706,7 +5514,7 @@
             "description": "Custom params for index. If none - values from collection configuration are used.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SparseIndexConfig"
+                "$ref": "#/components/schemas/SparseIndexParams"
               },
               {
                 "nullable": true
@@ -5715,7 +5523,7 @@
           }
         }
       },
-      "SparseIndexConfig": {
+      "SparseIndexParams": {
         "description": "Configuration for sparse inverted index.",
         "type": "object",
         "properties": {
@@ -9042,21 +8850,61 @@
         ]
       },
       "SparseVectorDataConfig": {
-        "description": "Config of single vector data storage",
+        "description": "Config of single sparse vector data storage",
         "type": "object",
+        "required": [
+          "index"
+        ],
         "properties": {
           "index": {
-            "description": "Type of index used for search",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SparseIndexConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SparseIndexConfig"
           }
         }
+      },
+      "SparseIndexConfig": {
+        "description": "Configuration for sparse inverted index.",
+        "type": "object",
+        "required": [
+          "index_type"
+        ],
+        "properties": {
+          "full_scan_threshold": {
+            "description": "We prefer a full scan search upto (excluding) this number of vectors.\n\nNote: this is number of vectors, not KiloBytes.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "index_type": {
+            "$ref": "#/components/schemas/SparseIndexType"
+          }
+        }
+      },
+      "SparseIndexType": {
+        "description": "Sparse index types",
+        "oneOf": [
+          {
+            "description": "Mutable RAM sparse index",
+            "type": "string",
+            "enum": [
+              "MutableRam"
+            ]
+          },
+          {
+            "description": "Immutable RAM sparse index",
+            "type": "string",
+            "enum": [
+              "ImmutableRam"
+            ]
+          },
+          {
+            "description": "Mmap sparse index",
+            "type": "string",
+            "enum": [
+              "Mmap"
+            ]
+          }
+        ]
       },
       "PayloadStorageType": {
         "description": "Type of payload storage",

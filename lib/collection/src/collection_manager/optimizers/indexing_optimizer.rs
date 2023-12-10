@@ -106,7 +106,7 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let point_count = read_segment.available_point_count();
-                let vector_size = point_count
+                let max_vector_size = point_count
                     * read_segment
                         .vector_dims()
                         .values()
@@ -121,25 +121,70 @@ impl IndexingOptimizer {
                     return None; // Never optimize already optimized segment
                 }
 
-                // Apply indexing to plain segments which have grown too big
-                let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
-                let is_any_on_disk = segment_config.is_any_on_disk();
+                let indexing_threshold_kb = self
+                    .thresholds_config
+                    .indexing_threshold
+                    .saturating_mul(BYTES_IN_KB);
+                let mmap_threshold_kb = self
+                    .thresholds_config
+                    .memmap_threshold
+                    .saturating_mul(BYTES_IN_KB);
+                let mut require_optimization = false;
 
-                let big_for_mmap = vector_size
-                    >= self
-                        .thresholds_config
-                        .memmap_threshold
-                        .saturating_mul(BYTES_IN_KB);
-                let big_for_index = vector_size
-                    >= self
-                        .thresholds_config
-                        .indexing_threshold
-                        .saturating_mul(BYTES_IN_KB);
+                for (vector_name, vector_config) in self.collection_params.vectors.params_iter() {
+                    if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
+                        let is_indexed = vector_data.index.is_indexed();
+                        let is_on_disk = vector_data.storage_type.is_on_disk();
+                        let storage_size = point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
 
-                let require_indexing = (big_for_mmap && !is_any_on_disk)
-                    || (big_for_index && !are_all_vectors_indexed);
+                        let is_big_for_index = storage_size >= indexing_threshold_kb;
+                        let is_big_for_mmap = storage_size >= mmap_threshold_kb;
 
-                require_indexing.then_some((*idx, vector_size))
+                        let optimize_for_index = is_big_for_index && !is_indexed;
+                        let optimize_for_mmap = if let Some(on_disk_config) = vector_config.on_disk
+                        {
+                            on_disk_config && !is_on_disk
+                        } else {
+                            is_big_for_mmap && !is_on_disk
+                        };
+
+                        if optimize_for_index || optimize_for_mmap {
+                            require_optimization = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !require_optimization {
+                    if let Some(sparse_vectors_params) =
+                        self.collection_params.sparse_vectors.as_ref()
+                    {
+                        for sparse_vector_name in sparse_vectors_params.keys() {
+                            if let Some(sparse_vector_data) =
+                                segment_config.sparse_vector_data.get(sparse_vector_name)
+                            {
+                                let vector_dim =
+                                    read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
+
+                                let is_index_immutable = sparse_vector_data.is_index_immutable();
+
+                                let storage_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
+
+                                let is_big_for_index = storage_size >= indexing_threshold_kb;
+                                let is_big_for_mmap = storage_size >= mmap_threshold_kb;
+
+                                let is_big = is_big_for_index || is_big_for_mmap;
+
+                                if is_big && !is_index_immutable {
+                                    require_optimization = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                require_optimization.then_some((*idx, max_vector_size))
             })
             .collect();
 
@@ -248,14 +293,16 @@ mod tests {
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+    use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::types::{Payload, PayloadSchemaType};
+    use segment::types::{Distance, Payload, PayloadSchemaType};
     use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
-    use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+    use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
@@ -638,5 +685,177 @@ mod tests {
             insert_point_ops,
         )
         .unwrap();
+    }
+
+    /// This tests things are as we expect when we define both `on_disk: false` and `memmap_threshold`
+    ///
+    /// Before this PR (<https://github.com/qdrant/qdrant/pull/3167>) such configuration would create an infinite optimization loop.
+    ///
+    /// It tests whether:
+    /// - the on_disk flag is preferred over memmap_threshold
+    /// - the index optimizer and config mismatch optimizer don't conflict with this preference
+    /// - there is no infinite optiization loop with the above configuration
+    ///
+    /// In short, this is what happens in this test:
+    /// - create randomized segment as base with `on_disk: false` and `memmap_threshold`
+    /// - test that indexing optimizer and config mismatch optimizer dont trigger
+    /// - test that current storage is in memory
+    /// - change `on_disk: None`
+    /// - test that indexing optimizer now wants to optimize for `memmap_threshold`
+    /// - optimize with indexing optimizer to put storage on disk
+    /// - test that config mismatch optimizer doesn't try to revert on disk storage
+    #[test]
+    fn test_on_disk_memmap_threshold_conflict() {
+        // Collection configuration
+        let (point_count, dim) = (1000, 10);
+        let thresholds_config = OptimizerThresholds {
+            max_segment_size: std::usize::MAX,
+            memmap_threshold: 10,
+            indexing_threshold: std::usize::MAX,
+        };
+        let mut collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParams {
+                size: dim.try_into().unwrap(),
+                distance: Distance::Dot,
+                hnsw_config: None,
+                quantization_config: None,
+                on_disk: Some(false),
+            }),
+            ..CollectionParams::empty()
+        };
+
+        // Base segment
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+
+        let segment = random_segment(dir.path(), 100, point_count, dim as usize);
+
+        let segment_id = holder.add(segment);
+        let locked_holder: Arc<parking_lot::RwLock<_>> = Arc::new(RwLock::new(holder));
+
+        let hnsw_config = HnswConfig {
+            m: 16,
+            ef_construct: 100,
+            full_scan_threshold: 10,
+            max_indexing_threads: 0,
+            on_disk: None,
+            payload_m: None,
+        };
+
+        {
+            // Optimizers used in test
+            let index_optimizer = IndexingOptimizer::new(
+                thresholds_config.clone(),
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params.clone(),
+                hnsw_config.clone(),
+                Default::default(),
+            );
+            let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
+                thresholds_config.clone(),
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params.clone(),
+                hnsw_config.clone(),
+                Default::default(),
+            );
+
+            // Index optimizer should not optimize and put storage back in memory, nothing changed
+            let suggested_to_optimize =
+                index_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            assert_eq!(
+                suggested_to_optimize.len(),
+                0,
+                "index optimizer should not run for index nor mmap"
+            );
+
+            // Config mismatch optimizer should not try to change the current state
+            let suggested_to_optimize = config_mismatch_optimizer
+                .check_condition(locked_holder.clone(), &Default::default());
+            assert_eq!(
+                suggested_to_optimize.len(),
+                0,
+                "config mismatch optimizer should not change anything"
+            );
+
+            // Ensure segment is not on disk
+            locked_holder
+                .read()
+                .iter()
+                .map(|(_, segment)| match segment {
+                    LockedSegment::Original(s) => s.read(),
+                    LockedSegment::Proxy(_) => unreachable!(),
+                })
+                .filter(|segment| segment.total_point_count() > 0)
+                .for_each(|segment| {
+                    assert!(
+                        !segment.config().vector_data[""].storage_type.is_on_disk(),
+                        "segment must not be on disk with mmap",
+                    );
+                });
+        }
+
+        // Remove explicit on_disk flag and go back to default
+        collection_params
+            .vectors
+            .get_params_mut("")
+            .unwrap()
+            .on_disk
+            .take();
+
+        // Optimizers used in test
+        let index_optimizer = IndexingOptimizer::new(
+            thresholds_config.clone(),
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params.clone(),
+            hnsw_config.clone(),
+            Default::default(),
+        );
+        let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
+            thresholds_config,
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            collection_params,
+            hnsw_config.clone(),
+            Default::default(),
+        );
+
+        // Use indexing optimizer to build mmap
+        let changed = index_optimizer
+            .optimize(locked_holder.clone(), vec![segment_id], &false.into())
+            .unwrap();
+        assert!(
+            changed,
+            "optimizer should have rebuilt this segment for mmap"
+        );
+        assert!(
+            locked_holder.read().get(segment_id).is_none(),
+            "optimized segment should be gone",
+        );
+        assert_eq!(locked_holder.read().len(), 2, "mmap must be built");
+
+        // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
+        let suggested_to_optimize =
+            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        assert_eq!(suggested_to_optimize.len(), 0);
+
+        // Ensure new segment is on disk now
+        locked_holder
+            .read()
+            .iter()
+            .map(|(_, segment)| match segment {
+                LockedSegment::Original(s) => s.read(),
+                LockedSegment::Proxy(_) => unreachable!(),
+            })
+            .filter(|segment| segment.total_point_count() > 0)
+            .for_each(|segment| {
+                assert!(
+                    segment.config().vector_data[""].storage_type.is_on_disk(),
+                    "segment must be on disk with mmap",
+                );
+            });
     }
 }

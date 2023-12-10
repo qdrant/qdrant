@@ -1,4 +1,3 @@
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
@@ -7,6 +6,7 @@ use std::sync::Arc;
 use std::thread;
 
 use arc_swap::ArcSwap;
+use common::panic;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
@@ -34,8 +34,8 @@ use crate::common::file_utils::move_dir;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfo, CollectionResult,
-    CollectionStatus, OptimizersStatus,
+    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
+    CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
@@ -390,16 +390,15 @@ impl LocalShard {
             .collect_vec();
 
         for join_result in join_results {
-            let segment = join_result.map_err(|e| {
-                let error_msg = if let Some(s) = e.downcast_ref::<&str>() {
-                    format!("Segment DB create panicked with:\n{s}")
-                } else if let Some(s) = e.downcast_ref::<String>() {
-                    format!("Segment DB create panicked with:\n{s}")
-                } else {
-                    "Segment DB create failed with unknown reason".to_string()
-                };
-                CollectionError::service_error(error_msg)
+            let segment = join_result.map_err(|err| {
+                let message = panic::downcast_str(&err).unwrap_or("");
+                let separator = if !message.is_empty() { "with:\n" } else { "" };
+
+                CollectionError::service_error(format!(
+                    "Segment DB create panicked{separator}{message}",
+                ))
             })??;
+
             segment_holder.add(segment);
         }
 
@@ -771,7 +770,7 @@ impl LocalShard {
         vector_size * info.points_count
     }
 
-    pub async fn local_shard_info(&self) -> CollectionInfo {
+    pub async fn local_shard_info(&self) -> CollectionInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
         let segments = self.segments().read();
         let mut vectors_count = 0;
@@ -792,14 +791,10 @@ impl LocalShard {
             indexed_vectors_count += segment_info.num_indexed_vectors;
             points_count += segment_info.num_points;
             for (key, val) in segment_info.index_schema {
-                match schema.entry(key) {
-                    Entry::Occupied(o) => {
-                        o.into_mut().points += val.points;
-                    }
-                    Entry::Vacant(v) => {
-                        v.insert(val);
-                    }
-                }
+                schema
+                    .entry(key)
+                    .and_modify(|entry| entry.points += val.points)
+                    .or_insert(val);
             }
         }
         if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
@@ -811,7 +806,7 @@ impl LocalShard {
             Some(error) => OptimizersStatus::Error(error.to_string()),
         };
 
-        CollectionInfo {
+        CollectionInfoInternal {
             status,
             optimizer_status,
             vectors_count,

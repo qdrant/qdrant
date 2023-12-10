@@ -193,7 +193,7 @@ impl ShardOperation for LocalShard {
 
     /// Collect overview information about the shard
     async fn info(&self) -> CollectionResult<CollectionInfo> {
-        Ok(self.local_shard_info().await)
+        Ok(self.local_shard_info().await.into())
     }
 
     async fn core_search(

@@ -31,6 +31,8 @@ pub struct SimpleSparseVectorStorage {
     /// Current number of deleted vectors.
     deleted_count: usize,
     total_vector_count: usize,
+    /// Total number of non-zero elements in all vectors. Used to estimate average vector size.
+    total_sparse_size: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -48,6 +50,7 @@ pub fn open_simple_sparse_vector_storage(
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
 
     let mut total_vector_count = 0;
+    let mut total_sparse_size = 0;
     db_wrapper.lock_db().iter()?;
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
@@ -61,6 +64,7 @@ pub fn open_simple_sparse_vector_storage(
             deleted_count += 1;
         }
         total_vector_count = std::cmp::max(total_vector_count, point_id as usize + 1);
+        total_sparse_size += stored_record.vector.values.len();
     }
 
     Ok(Arc::new(AtomicRefCell::new(
@@ -73,6 +77,7 @@ pub fn open_simple_sparse_vector_storage(
             deleted,
             deleted_count,
             total_vector_count,
+            total_sparse_size,
         }),
     )))
 }
@@ -89,7 +94,7 @@ impl SimpleSparseVectorStorage {
             if !was_deleted {
                 self.deleted_count += 1;
             } else {
-                self.deleted_count -= 1;
+                self.deleted_count = self.deleted_count.saturating_sub(1);
             }
         }
         was_deleted
@@ -105,6 +110,11 @@ impl SimpleSparseVectorStorage {
         let record = &mut self.update_buffer;
         record.deleted = deleted;
         if let Some(vector) = vector {
+            if deleted {
+                self.total_sparse_size = self.total_sparse_size.saturating_sub(vector.values.len());
+            } else {
+                self.total_sparse_size += vector.values.len();
+            }
             record.vector = vector.clone();
         }
 
@@ -116,21 +126,39 @@ impl SimpleSparseVectorStorage {
 
         Ok(())
     }
+
+    /// Estimate average vector size based on total number of non-zero elements in all vectors.
+    ///
+    /// This is needed because the optimizer relies on the vector dimension * size_of_f32 * point_count to
+    /// trigger reindexing and on_disk data move.
+    /// TODO(sparse) get a separate function to get the vector storage instead for the optimizer
+    pub fn get_average_dimension(&self) -> usize {
+        if self.total_vector_count == 0 {
+            // default dimension to play nice with optimizers
+            1
+        } else {
+            // multiply by 2 to account for indices & values
+            (self.total_sparse_size / self.total_vector_count) * 2
+        }
+    }
 }
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> SparseVector {
-        let data = self.db_wrapper.get(bincode::serialize(&key).unwrap());
-        let record: StoredRecord = bincode::deserialize(&data.unwrap())
-            .map_err(|_| OperationError::service_error("Cannot deserialize vector from db"))
-            .unwrap();
-        record.vector
+    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+        let bin_key = bincode::serialize(&key)
+            .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
+        let data = self.db_wrapper.get(bin_key)?;
+        let record: StoredRecord = bincode::deserialize(&data).map_err(|_| {
+            OperationError::service_error("Cannot deserialize sparse vector from db")
+        })?;
+        Ok(record.vector)
     }
 }
 
 impl VectorStorage for SimpleSparseVectorStorage {
     fn vector_dim(&self) -> usize {
-        0 // not applicable
+        // estimate average vector size
+        self.get_average_dimension()
     }
 
     fn distance(&self) -> Distance {
@@ -146,7 +174,12 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_sparse(key).into()
+        self.get_vector_opt(key).expect("Vector must exist")
+    }
+
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        // ignore any error
+        self.get_sparse(key).ok().map(CowVector::from)
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {

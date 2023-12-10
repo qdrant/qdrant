@@ -46,6 +46,12 @@ pub trait VectorStorage {
     /// Get the vector by the given key
     fn get_vector(&self, key: PointOffsetType) -> CowVector;
 
+    /// Get the vector by the given key if it exists
+    /// Blanket implementation - override if necessary
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        Some(self.get_vector(key))
+    }
+
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
 
     fn update_from(
@@ -95,7 +101,7 @@ pub trait DenseVectorStorage: VectorStorage {
 }
 
 pub trait SparseVectorStorage: VectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> SparseVector;
+    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector>;
 }
 
 pub enum VectorStorageEnum {
@@ -148,6 +154,15 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::Memmap(v) => v.get_vector(key),
             VectorStorageEnum::AppendableMemmap(v) => v.get_vector(key),
             VectorStorageEnum::SparseSimple(v) => v.get_vector(key),
+        }
+    }
+
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.get_vector_opt(key),
+            VectorStorageEnum::Memmap(v) => v.get_vector_opt(key),
+            VectorStorageEnum::AppendableMemmap(v) => v.get_vector_opt(key),
+            VectorStorageEnum::SparseSimple(v) => v.get_vector_opt(key),
         }
     }
 

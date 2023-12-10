@@ -14,7 +14,6 @@ use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -25,7 +24,8 @@ use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
     PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
-    SearchGroupsRequestInternal, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
+    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
+    VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -344,9 +344,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     api::grpc::qdrant::OptimizerStatus { ok: false, error }
                 }
             }),
-            vectors_count: vectors_count as u64,
-            indexed_vectors_count: Some(indexed_vectors_count as u64),
-            points_count: points_count as u64,
+            vectors_count: vectors_count.map(|count| count as u64),
+            indexed_vectors_count: indexed_vectors_count.map(|count| count as u64),
+            points_count: points_count.map(|count| count as u64),
             segments_count: segments_count as u64,
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
@@ -565,7 +565,7 @@ impl From<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
         Self {
             index: sparse_vector_params
                 .index
-                .map(|index_config| SparseIndexConfig {
+                .map(|index_config| SparseIndexParams {
                     full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
                     on_disk: index_config.on_disk,
                 }),
@@ -716,11 +716,15 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         }
                     }
                 },
-                vectors_count: collection_info_response.vectors_count as usize,
+                vectors_count: collection_info_response
+                    .vectors_count
+                    .map(|count| count as usize),
                 indexed_vectors_count: collection_info_response
                     .indexed_vectors_count
-                    .unwrap_or_default() as usize,
-                points_count: collection_info_response.points_count as usize,
+                    .map(|count| count as usize),
+                points_count: collection_info_response
+                    .points_count
+                    .map(|count| count as usize),
                 segments_count: collection_info_response.segments_count as usize,
                 config: match collection_info_response.config {
                     None => {

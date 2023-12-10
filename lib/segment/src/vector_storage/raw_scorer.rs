@@ -9,6 +9,7 @@ use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
 use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
+use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::{DenseVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{QueryVector, VectorType};
@@ -18,7 +19,6 @@ use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::sparse_raw_scorer::SparseRawScorer;
 
 /// RawScorer composition:
 ///                                              Metric
@@ -82,7 +82,10 @@ pub trait RawScorer {
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
 }
 
-pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer> {
+pub struct RawScorerImpl<'a, TVector: ?Sized, TQueryScorer>
+where
+    TQueryScorer: QueryScorer<TVector>,
+{
     pub query_scorer: TQueryScorer,
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
@@ -94,6 +97,8 @@ pub struct RawScorerImpl<'a, TQueryScorer: QueryScorer> {
     /// This flag indicates that the search process is stopped externally,
     /// the search result is no longer needed and the search process should be stopped as soon as possible.
     pub is_stopped: &'a AtomicBool,
+
+    vector: std::marker::PhantomData<*const TVector>,
 }
 
 pub fn new_stoppable_raw_scorer<'a>(
@@ -141,17 +146,38 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
-        QueryVector::Nearest(vector) => Ok(raw_sparse_scorer_from_query_scorer(
-            vector.try_into()?,
-            vector_storage,
-            point_deleted,
-            vector_storage.deleted_vector_bitslice(),
-            is_stopped,
+        QueryVector::Nearest(_vector) => Err(OperationError::service_error(
+            "Raw scorer must not be used for nearest queries",
         )),
-        QueryVector::Recommend(_) => Err(OperationError::WrongSparse),
-        QueryVector::Discovery(_) => Err(OperationError::WrongSparse),
-        QueryVector::Context(_) => Err(OperationError::WrongSparse),
+        QueryVector::Recommend(reco_query) => {
+            let reco_query: RecoQuery<SparseVector> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                SparseCustomQueryScorer::<_, _>::new(reco_query, vector_storage),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::Discovery(discovery_query) => {
+            let discovery_query: DiscoveryQuery<SparseVector> = discovery_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                SparseCustomQueryScorer::<_, _>::new(discovery_query, vector_storage),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::Context(context_query) => {
+            let context_query: ContextQuery<SparseVector> = context_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                SparseCustomQueryScorer::<_, _>::new(context_query, vector_storage),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
     }
 }
 
@@ -241,39 +267,29 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
     }
 }
 
-pub fn raw_scorer_from_query_scorer<'a, TQueryScorer: QueryScorer + 'a>(
+pub fn raw_scorer_from_query_scorer<'a, TVector, TQueryScorer>(
     query_scorer: TQueryScorer,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
-) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    Ok(Box::new(RawScorerImpl::<TQueryScorer> {
+) -> OperationResult<Box<dyn RawScorer + 'a>>
+where
+    TVector: ?Sized + 'a,
+    TQueryScorer: QueryScorer<TVector> + 'a,
+{
+    Ok(Box::new(RawScorerImpl::<TVector, TQueryScorer> {
         query_scorer,
         point_deleted,
         vec_deleted,
         is_stopped,
+        vector: std::marker::PhantomData,
     }))
 }
 
-pub fn raw_sparse_scorer_from_query_scorer<'a, TVectorStorage: SparseVectorStorage>(
-    vector: SparseVector,
-    vector_storage: &'a TVectorStorage,
-    point_deleted: &'a BitSlice,
-    vec_deleted: &'a BitSlice,
-    is_stopped: &'a AtomicBool,
-) -> Box<dyn RawScorer + 'a> {
-    Box::new(SparseRawScorer::new(
-        vector,
-        vector_storage,
-        point_deleted,
-        vec_deleted,
-        is_stopped,
-    ))
-}
-
-impl<'a, TQueryScorer> RawScorer for RawScorerImpl<'a, TQueryScorer>
+impl<'a, TVector, TQueryScorer> RawScorer for RawScorerImpl<'a, TVector, TQueryScorer>
 where
-    TQueryScorer: QueryScorer,
+    TVector: ?Sized,
+    TQueryScorer: QueryScorer<TVector>,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         if self.is_stopped.load(Ordering::Relaxed) {
@@ -315,20 +331,7 @@ where
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {
-        // Deleted points propagate to vectors; check vector deletion for possible early return
-        !self
-                .vec_deleted
-                .get(point as usize)
-                .map(|x| *x)
-                // Default to not deleted if our deleted flags failed grow
-                .unwrap_or(false)
-            // Additionally check point deletion for integrity if delete propagation to vector failed
-            && !self
-                .point_deleted
-                .get(point as usize)
-                .map(|x| *x)
-                // Default to deleted if the point mapping was removed from the ID tracker
-                .unwrap_or(true)
+        check_deleted_condition(point, self.vec_deleted, self.point_deleted)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
@@ -367,4 +370,24 @@ where
             });
         peek_top_largest_iterable(scores, top)
     }
+}
+
+#[inline]
+pub fn check_deleted_condition(
+    point: PointOffsetType,
+    vec_deleted: &BitSlice,
+    point_deleted: &BitSlice,
+) -> bool {
+    // Deleted points propagate to vectors; check vector deletion for possible early return
+    !vec_deleted
+            .get(point as usize)
+            .map(|x| *x)
+            // Default to not deleted if our deleted flags failed grow
+            .unwrap_or(false)
+        // Additionally check point deletion for integrity if delete propagation to vector failed
+        && !point_deleted
+            .get(point as usize)
+            .map(|x| *x)
+            // Default to deleted if the point mapping was removed from the ID tracker
+            .unwrap_or(true)
 }
