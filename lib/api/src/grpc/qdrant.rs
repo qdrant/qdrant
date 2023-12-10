@@ -1111,6 +1111,8 @@ impl PayloadSchemaType {
             "UnknownType" => Some(Self::UnknownType),
             "Keyword" => Some(Self::Keyword),
             "Integer" => Some(Self::Integer),
+            "IntegerLookup" => Some(Self::IntegerLookup),
+            "IntegerRange" => Some(Self::IntegerRange),
             "Float" => Some(Self::Float),
             "Geo" => Some(Self::Geo),
             "Text" => Some(Self::Text),
