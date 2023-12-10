@@ -9,13 +9,13 @@ use itertools::Itertools;
 use rand::distributions::Uniform;
 use rand::rngs::ThreadRng;
 use rand::Rng;
-use segment::data_types::vectors::VectorType;
+use segment::data_types::vectors::DenseVector;
 use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
 use serde_json::json;
 
 use crate::common::simple_collection_fixture;
 
-fn rand_vector(rng: &mut ThreadRng, size: usize) -> VectorType {
+fn rand_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
     rng.sample_iter(Uniform::new(0.4, 0.6)).take(size).collect()
 }
 

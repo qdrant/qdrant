@@ -10,7 +10,7 @@ use rand::Rng;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorRef, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::Distance;
@@ -127,7 +127,7 @@ where
         }
     }
 
-    pub fn get_raw_scorer(&self, query: VectorType) -> OperationResult<Box<dyn RawScorer + '_>> {
+    pub fn get_raw_scorer(&self, query: DenseVector) -> OperationResult<Box<dyn RawScorer + '_>> {
         let query = TMetric::preprocess(query).into();
         raw_scorer_impl(
             query,

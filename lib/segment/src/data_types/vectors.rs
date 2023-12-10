@@ -15,7 +15,7 @@ use crate::vector_storage::query::reco_query::RecoQuery;
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
-    Dense(VectorType),
+    Dense(DenseVector),
     Sparse(SparseVector),
 }
 
@@ -84,7 +84,7 @@ impl From<NamedVectorStruct> for Vector {
     }
 }
 
-impl TryFrom<Vector> for VectorType {
+impl TryFrom<Vector> for DenseVector {
     type Error = OperationError;
 
     fn try_from(value: Vector) -> Result<Self, Self::Error> {
@@ -112,8 +112,8 @@ impl<'a> From<&'a [VectorElementType]> for VectorRef<'a> {
     }
 }
 
-impl<'a> From<&'a VectorType> for VectorRef<'a> {
-    fn from(val: &'a VectorType) -> Self {
+impl<'a> From<&'a DenseVector> for VectorRef<'a> {
+    fn from(val: &'a DenseVector) -> Self {
         VectorRef::Dense(val.as_slice())
     }
 }
@@ -124,8 +124,8 @@ impl<'a> From<&'a SparseVector> for VectorRef<'a> {
     }
 }
 
-impl From<VectorType> for Vector {
-    fn from(val: VectorType) -> Self {
+impl From<DenseVector> for Vector {
+    fn from(val: DenseVector) -> Self {
         Vector::Dense(val)
     }
 }
@@ -151,7 +151,7 @@ pub type VectorElementType = f32;
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
 /// Type for dense vector
-pub type VectorType = Vec<VectorElementType>;
+pub type DenseVector = Vec<VectorElementType>;
 
 impl<'a> VectorRef<'a> {
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
@@ -208,7 +208,7 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
-    Single(VectorType),
+    Single(DenseVector),
     Multi(HashMap<String, Vector>),
 }
 
@@ -234,8 +234,8 @@ impl Validate for VectorStruct {
     }
 }
 
-impl From<VectorType> for VectorStruct {
-    fn from(v: VectorType) -> Self {
+impl From<DenseVector> for VectorStruct {
+    fn from(v: DenseVector) -> Self {
         VectorStruct::Single(v)
     }
 }
@@ -280,7 +280,7 @@ pub struct NamedVector {
     /// Name of vector data
     pub name: String,
     /// Vector data
-    pub vector: VectorType,
+    pub vector: DenseVector,
 }
 
 /// Sparse vector data with name
@@ -313,13 +313,13 @@ pub struct NamedSparseVector {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum NamedVectorStruct {
-    Default(VectorType),
+    Default(DenseVector),
     Named(NamedVector),
     Sparse(NamedSparseVector),
 }
 
-impl From<VectorType> for NamedVectorStruct {
-    fn from(v: VectorType) -> Self {
+impl From<DenseVector> for NamedVectorStruct {
+    fn from(v: DenseVector) -> Self {
         NamedVectorStruct::Default(v)
     }
 }
@@ -389,12 +389,12 @@ impl Validate for NamedVectorStruct {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum BatchVectorStruct {
-    Single(Vec<VectorType>),
+    Single(Vec<DenseVector>),
     Multi(HashMap<String, Vec<Vector>>),
 }
 
-impl From<Vec<VectorType>> for BatchVectorStruct {
-    fn from(v: Vec<VectorType>) -> Self {
+impl From<Vec<DenseVector>> for BatchVectorStruct {
+    fn from(v: Vec<DenseVector>) -> Self {
         BatchVectorStruct::Single(v)
     }
 }
@@ -451,8 +451,8 @@ pub enum QueryVector {
     Context(ContextQuery<Vector>),
 }
 
-impl From<VectorType> for QueryVector {
-    fn from(vec: VectorType) -> Self {
+impl From<DenseVector> for QueryVector {
+    fn from(vec: DenseVector) -> Self {
         Self::Nearest(Vector::Dense(vec))
     }
 }

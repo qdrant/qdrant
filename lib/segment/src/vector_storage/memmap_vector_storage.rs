@@ -14,7 +14,7 @@ use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorRef, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;
@@ -139,7 +139,7 @@ impl VectorStorage for MemmapVectorStorage {
         let mut deleted_ids = vec![];
         for id in other_ids {
             check_process_stopped(stopped)?;
-            let vector: VectorType = other.get_vector(id).try_into()?;
+            let vector: DenseVector = other.get_vector(id).try_into()?;
             let raw_bites = mmap_ops::transmute_to_u8_slice(&vector);
             vectors_file.write_all(raw_bites)?;
             end_index += 1;

@@ -1,6 +1,6 @@
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
 
 /// Defines how to compare vectors
@@ -12,7 +12,7 @@ pub trait Metric {
 
     /// Necessary vector transformations performed before adding it to the collection (like normalization)
     /// If no transformation is needed - returns the same vector
-    fn preprocess(vector: VectorType) -> VectorType;
+    fn preprocess(vector: DenseVector) -> DenseVector;
 
     /// correct metric score for displaying
     fn postprocess(score: ScoreType) -> ScoreType;

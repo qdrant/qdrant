@@ -16,8 +16,8 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType, VectorRef,
-    VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
+    DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType,
+    VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
@@ -489,7 +489,7 @@ pub struct PointRequestInternal {
 #[serde(untagged)]
 pub enum RecommendExample {
     PointId(PointIdType),
-    Vector(VectorType),
+    Vector(DenseVector),
     Sparse(SparseVector),
 }
 
