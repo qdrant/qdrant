@@ -6136,14 +6136,14 @@
             }
           },
           {
-            "$ref": "#/components/schemas/NamedVector"
+            "$ref": "#/components/schemas/NamedDenseVector"
           },
           {
             "$ref": "#/components/schemas/NamedSparseVector"
           }
         ]
       },
-      "NamedVector": {
+      "NamedDenseVector": {
         "description": "Vector data with name",
         "type": "object",
         "required": [
