@@ -489,7 +489,7 @@ pub struct PointRequestInternal {
 #[serde(untagged)]
 pub enum RecommendExample {
     PointId(PointIdType),
-    Vector(DenseVector),
+    Dense(DenseVector),
     Sparse(SparseVector),
 }
 
@@ -506,7 +506,7 @@ impl Validate for RecommendExample {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             RecommendExample::PointId(_) => Ok(()),
-            RecommendExample::Vector(_) => Ok(()),
+            RecommendExample::Dense(_) => Ok(()),
             RecommendExample::Sparse(sparse) => sparse.validate(),
         }
     }

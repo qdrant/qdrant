@@ -233,7 +233,7 @@ pub fn convert_to_vectors_owned(
     examples
         .into_iter()
         .filter_map(|example| match example {
-            RecommendExample::Vector(vector) => Some(vector.into()),
+            RecommendExample::Dense(vector) => Some(vector.into()),
             RecommendExample::Sparse(vector) => Some(vector.into()),
             RecommendExample::PointId(vid) => {
                 let rec = all_vectors_records_map.get(&collection_name, vid).unwrap();
@@ -250,7 +250,7 @@ pub fn convert_to_vectors<'a>(
     collection_name: Option<&'a String>,
 ) -> impl Iterator<Item = VectorRef<'a>> + 'a {
     examples.filter_map(move |example| match example {
-        RecommendExample::Vector(vector) => Some(vector.into()),
+        RecommendExample::Dense(vector) => Some(vector.into()),
         RecommendExample::Sparse(vector) => Some(vector.into()),
         RecommendExample::PointId(vid) => {
             let rec = all_vectors_records_map.get(&collection_name, *vid).unwrap();

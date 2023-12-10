@@ -78,7 +78,7 @@ impl From<NamedVectorStruct> for Vector {
     fn from(value: NamedVectorStruct) -> Self {
         match value {
             NamedVectorStruct::Default(v) => Vector::Dense(v),
-            NamedVectorStruct::Named(v) => Vector::Dense(v.vector),
+            NamedVectorStruct::Dense(v) => Vector::Dense(v.vector),
             NamedVectorStruct::Sparse(v) => Vector::Sparse(v.vector),
         }
     }
@@ -276,7 +276,7 @@ impl VectorStruct {
 /// Vector data with name
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct NamedVector {
+pub struct NamedDenseVector {
     /// Name of vector data
     pub name: String,
     /// Vector data
@@ -314,7 +314,7 @@ pub struct NamedSparseVector {
 #[serde(untagged)]
 pub enum NamedVectorStruct {
     Default(DenseVector),
-    Named(NamedVector),
+    Dense(NamedDenseVector),
     Sparse(NamedSparseVector),
 }
 
@@ -324,9 +324,9 @@ impl From<DenseVector> for NamedVectorStruct {
     }
 }
 
-impl From<NamedVector> for NamedVectorStruct {
-    fn from(v: NamedVector) -> Self {
-        NamedVectorStruct::Named(v)
+impl From<NamedDenseVector> for NamedVectorStruct {
+    fn from(v: NamedDenseVector) -> Self {
+        NamedVectorStruct::Dense(v)
     }
 }
 
@@ -344,7 +344,7 @@ impl Named for NamedVectorStruct {
     fn get_name(&self) -> &str {
         match self {
             NamedVectorStruct::Default(_) => DEFAULT_VECTOR_NAME,
-            NamedVectorStruct::Named(v) => &v.name,
+            NamedVectorStruct::Dense(v) => &v.name,
             NamedVectorStruct::Sparse(v) => &v.name,
         }
     }
@@ -353,7 +353,7 @@ impl Named for NamedVectorStruct {
 impl NamedVectorStruct {
     pub fn new_from_vector(vector: Vector, name: String) -> Self {
         match vector {
-            Vector::Dense(vector) => NamedVectorStruct::Named(NamedVector { name, vector }),
+            Vector::Dense(vector) => NamedVectorStruct::Dense(NamedDenseVector { name, vector }),
             Vector::Sparse(vector) => NamedVectorStruct::Sparse(NamedSparseVector { name, vector }),
         }
     }
@@ -361,7 +361,7 @@ impl NamedVectorStruct {
     pub fn get_vector(&self) -> VectorRef {
         match self {
             NamedVectorStruct::Default(v) => v.as_slice().into(),
-            NamedVectorStruct::Named(v) => v.vector.as_slice().into(),
+            NamedVectorStruct::Dense(v) => v.vector.as_slice().into(),
             NamedVectorStruct::Sparse(v) => (&v.vector).into(),
         }
     }
@@ -369,7 +369,7 @@ impl NamedVectorStruct {
     pub fn to_vector(self) -> Vector {
         match self {
             NamedVectorStruct::Default(v) => v.into(),
-            NamedVectorStruct::Named(v) => v.vector.into(),
+            NamedVectorStruct::Dense(v) => v.vector.into(),
             NamedVectorStruct::Sparse(v) => v.vector.into(),
         }
     }
@@ -379,7 +379,7 @@ impl Validate for NamedVectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             NamedVectorStruct::Default(_) => Ok(()),
-            NamedVectorStruct::Named(_) => Ok(()),
+            NamedVectorStruct::Dense(_) => Ok(()),
             NamedVectorStruct::Sparse(v) => v.validate(),
         }
     }
