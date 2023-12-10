@@ -316,7 +316,9 @@ pub fn internal_create_index(
                     segment::types::PayloadSchemaType::Keyword => {
                         api::grpc::qdrant::FieldType::Keyword as i32
                     }
-                    segment::types::PayloadSchemaType::Integer => {
+                    segment::types::PayloadSchemaType::Integer
+                    | segment::types::PayloadSchemaType::IntegerLookup
+                    | segment::types::PayloadSchemaType::IntegerRange => {
                         api::grpc::qdrant::FieldType::Integer as i32
                     }
                     segment::types::PayloadSchemaType::Float => {
@@ -378,10 +380,10 @@ pub fn internal_delete_index(
 pub fn try_scored_point_from_grpc(
     point: api::grpc::qdrant::ScoredPoint,
     with_payload: bool,
-) -> Result<ScoredPoint, tonic::Status> {
+) -> Result<ScoredPoint, Status> {
     let id = point
         .id
-        .ok_or_else(|| tonic::Status::invalid_argument("scored point does not have an ID"))?
+        .ok_or_else(|| Status::invalid_argument("scored point does not have an ID"))?
         .try_into()?;
 
     let payload = if with_payload {

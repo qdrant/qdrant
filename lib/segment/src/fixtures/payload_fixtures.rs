@@ -49,6 +49,7 @@ pub const STR_PROJ_KEY: &str = "kvd_proj";
 pub const STR_ROOT_PROJ_KEY: &str = "kvd_root_proj";
 pub const INT_KEY: &str = "int";
 pub const INT_KEY_2: &str = "int2";
+pub const INT_KEY_3: &str = "int3";
 pub const FLT_KEY: &str = "flt";
 pub const FLICKING_KEY: &str = "flicking";
 pub const GEO_KEY: &str = "geo";
@@ -256,6 +257,7 @@ fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
             STR_KEY: random_keyword_payload(rnd_gen, 1..=3),
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
             INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
+            INT_KEY_3: random_int_payload(rnd_gen, 1..=2),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
             TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),
@@ -266,6 +268,7 @@ fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
             STR_KEY: random_keyword_payload(rnd_gen, 1..=2),
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
             INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
+            INT_KEY_3: random_int_payload(rnd_gen, 1..=2),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
             TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),

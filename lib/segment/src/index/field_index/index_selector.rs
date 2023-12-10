@@ -37,6 +37,18 @@ pub fn index_selector(
                     is_appendable,
                 )),
             ],
+            PayloadSchemaType::IntegerLookup => vec![FieldIndex::IntMapIndex(MapIndex::new(
+                db.clone(),
+                field,
+                is_appendable,
+            ))],
+            PayloadSchemaType::IntegerRange => {
+                vec![FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
+                    db,
+                    field,
+                    is_appendable,
+                ))]
+            }
             PayloadSchemaType::Float => {
                 vec![FieldIndex::FloatIndex(
                     NumericIndex::<FloatPayloadType>::new(db, field, is_appendable),

@@ -209,6 +209,10 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
                 segment::types::PayloadSchemaType::Text => PayloadSchemaType::Text,
                 segment::types::PayloadSchemaType::Bool => PayloadSchemaType::Bool,
+                segment::types::PayloadSchemaType::IntegerLookup => {
+                    PayloadSchemaType::IntegerLookup
+                }
+                segment::types::PayloadSchemaType::IntegerRange => PayloadSchemaType::IntegerRange,
             }
             .into(),
             params: schema.params.map(|params| match params {
@@ -290,6 +294,10 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
             Some(data_type) => match data_type {
                 PayloadSchemaType::Keyword => segment::types::PayloadSchemaType::Keyword,
                 PayloadSchemaType::Integer => segment::types::PayloadSchemaType::Integer,
+                PayloadSchemaType::IntegerLookup => {
+                    segment::types::PayloadSchemaType::IntegerLookup
+                }
+                PayloadSchemaType::IntegerRange => segment::types::PayloadSchemaType::IntegerRange,
                 PayloadSchemaType::Float => segment::types::PayloadSchemaType::Float,
                 PayloadSchemaType::Geo => segment::types::PayloadSchemaType::Geo,
                 PayloadSchemaType::Text => segment::types::PayloadSchemaType::Text,
@@ -602,9 +610,7 @@ impl From<segment::types::ScalarQuantization> for ScalarQuantization {
         let config = value.scalar;
         ScalarQuantization {
             r#type: match config.r#type {
-                segment::types::ScalarType::Int8 => {
-                    crate::grpc::qdrant::QuantizationType::Int8 as i32
-                }
+                segment::types::ScalarType::Int8 => QuantizationType::Int8 as i32,
             },
             quantile: config.quantile,
             always_ram: config.always_ram,
@@ -737,7 +743,7 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
 
 fn conditions_helper_from_grpc(
     conditions: Vec<Condition>,
-) -> Result<Option<Vec<segment::types::Condition>>, tonic::Status> {
+) -> Result<Option<Vec<segment::types::Condition>>, Status> {
     if conditions.is_empty() {
         Ok(None)
     } else {

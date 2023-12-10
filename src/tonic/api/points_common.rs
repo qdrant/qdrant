@@ -691,6 +691,8 @@ fn convert_field_type(
         (Some(v), None | Some(PayloadIndexParams { index_params: None })) => match v {
             FieldType::Keyword => Some(PayloadSchemaType::Keyword.into()),
             FieldType::Integer => Some(PayloadSchemaType::Integer.into()),
+            FieldType::IntegerLookup => Some(PayloadSchemaType::IntegerLookup.into()),
+            FieldType::IntegerRange => Some(PayloadSchemaType::IntegerRange.into()),
             FieldType::Float => Some(PayloadSchemaType::Float.into()),
             FieldType::Geo => Some(PayloadSchemaType::Geo.into()),
             FieldType::Text => Some(PayloadSchemaType::Text.into()),

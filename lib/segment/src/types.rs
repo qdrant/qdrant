@@ -52,7 +52,7 @@ pub enum ExtendedPointId {
     Uuid(Uuid),
 }
 
-impl std::fmt::Display for ExtendedPointId {
+impl Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ExtendedPointId::NumId(idx) => write!(f, "{idx}"),
@@ -1033,6 +1033,8 @@ pub enum PayloadSchemaType {
     Geo,
     Text,
     Bool,
+    IntegerLookup,
+    IntegerRange,
 }
 
 /// Payload type with parameters

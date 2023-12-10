@@ -1084,6 +1084,8 @@ pub enum PayloadSchemaType {
     Geo = 4,
     Text = 5,
     Bool = 6,
+    IntegerLookup = 7,
+    IntegerRange = 8,
 }
 impl PayloadSchemaType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1095,6 +1097,8 @@ impl PayloadSchemaType {
             PayloadSchemaType::UnknownType => "UnknownType",
             PayloadSchemaType::Keyword => "Keyword",
             PayloadSchemaType::Integer => "Integer",
+            PayloadSchemaType::IntegerLookup => "IntegerLookup",
+            PayloadSchemaType::IntegerRange => "IntegerRange",
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
@@ -4832,6 +4836,8 @@ pub enum FieldType {
     Geo = 3,
     Text = 4,
     Bool = 5,
+    IntegerLookup = 6,
+    IntegerRange = 7,
 }
 impl FieldType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -4842,6 +4848,8 @@ impl FieldType {
         match self {
             FieldType::Keyword => "FieldTypeKeyword",
             FieldType::Integer => "FieldTypeInteger",
+            FieldType::IntegerLookup => "FieldTypeIntegerLookup",
+            FieldType::IntegerRange => "FieldTypeIntegerRange",
             FieldType::Float => "FieldTypeFloat",
             FieldType::Geo => "FieldTypeGeo",
             FieldType::Text => "FieldTypeText",
