@@ -7,7 +7,7 @@ use std::{cmp, panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
-use api::grpc::transport_channel_pool::{self, TransportChannelPool};
+use api::grpc::transport_channel_pool::{self, RequestError, TransportChannelPool};
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
 use common::defaults;
@@ -181,6 +181,8 @@ impl Task {
 
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
+        let mut unimplemented_errors_count = 0;
+
         let mut requests = peer_address_by_id
             .iter()
             .filter_map(|(&peer_id, uri)| {
@@ -191,7 +193,15 @@ impl Task {
                 }
             })
             .collect::<FuturesUnordered<_>>()
-            .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
+            .inspect_err(|err| {
+                log::error!("GetCommitIndex request failed: {err}");
+
+                if let RequestError::FromClosure(status) = err {
+                    if status.code() == tonic::Code::Unimplemented {
+                        unimplemented_errors_count += 1;
+                    }
+                }
+            })
             .filter_map(|res| future::ready(res.ok()));
 
         // Example:
@@ -217,6 +227,9 @@ impl Task {
         while let Ok(Some(resp)) = time::timeout(Duration::ZERO, requests.next()).await {
             commit_indices.push(resp);
         }
+
+        let required_commit_indices_count =
+            required_commit_indices_count.saturating_sub(unimplemented_errors_count);
 
         if commit_indices.len() < required_commit_indices_count {
             log::warn!(
