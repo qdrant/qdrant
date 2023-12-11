@@ -90,6 +90,8 @@ enum PayloadSchemaType {
   Geo = 4;
   Text = 5;
   Bool = 6;
+  IntegerLookup = 7;
+  IntegerRange = 8;
 }
 
 enum QuantizationType {
