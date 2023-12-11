@@ -181,6 +181,7 @@ impl Task {
 
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
+        // Endpoint we check is not available before Qdrant 1.7.0, allow checks on nodes with earlier versions to fail by counting them here
         let mut unimplemented_errors_count = 0;
 
         let mut requests = peer_address_by_id
