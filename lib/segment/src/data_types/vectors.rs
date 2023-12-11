@@ -276,7 +276,7 @@ impl VectorStruct {
 /// Vector data with name
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct NamedDenseVector {
+pub struct NamedVector {
     /// Name of vector data
     pub name: String,
     /// Vector data
@@ -314,7 +314,7 @@ pub struct NamedSparseVector {
 #[serde(untagged)]
 pub enum NamedVectorStruct {
     Default(DenseVector),
-    Dense(NamedDenseVector),
+    Dense(NamedVector),
     Sparse(NamedSparseVector),
 }
 
@@ -324,8 +324,8 @@ impl From<DenseVector> for NamedVectorStruct {
     }
 }
 
-impl From<NamedDenseVector> for NamedVectorStruct {
-    fn from(v: NamedDenseVector) -> Self {
+impl From<NamedVector> for NamedVectorStruct {
+    fn from(v: NamedVector) -> Self {
         NamedVectorStruct::Dense(v)
     }
 }
@@ -353,7 +353,7 @@ impl Named for NamedVectorStruct {
 impl NamedVectorStruct {
     pub fn new_from_vector(vector: Vector, name: String) -> Self {
         match vector {
-            Vector::Dense(vector) => NamedVectorStruct::Dense(NamedDenseVector { name, vector }),
+            Vector::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
             Vector::Sparse(vector) => NamedVectorStruct::Sparse(NamedSparseVector { name, vector }),
         }
     }

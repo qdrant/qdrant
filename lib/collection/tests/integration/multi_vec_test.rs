@@ -15,7 +15,7 @@ use collection::operations::types::{
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{NamedDenseVector, VectorStruct};
+use segment::data_types::vectors::{NamedVector, VectorStruct};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
@@ -116,7 +116,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     let query_vector = vec![6.0, 0.0, 0.0, 0.0];
 
     let full_search_request = SearchRequestInternal {
-        vector: NamedDenseVector {
+        vector: NamedVector {
             name: VEC_NAME1.to_string(),
             vector: query_vector,
         }
@@ -178,7 +178,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     );
 
     let full_search_request = SearchRequestInternal {
-        vector: NamedDenseVector {
+        vector: NamedVector {
             name: VEC_NAME2.to_string(),
             vector: query_vector,
         }

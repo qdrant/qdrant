@@ -1231,7 +1231,7 @@ pub fn into_named_vector_struct(
     vector: Vec<VectorElementType>,
     indices: Option<SparseIndices>,
 ) -> Result<segment::data_types::vectors::NamedVectorStruct, Status> {
-    use segment::data_types::vectors::{NamedDenseVector, NamedSparseVector, NamedVectorStruct};
+    use segment::data_types::vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
     use sparse::common::sparse_vector::SparseVector;
     Ok(match indices {
         Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
@@ -1244,7 +1244,7 @@ pub fn into_named_vector_struct(
         }),
         None => {
             if let Some(vector_name) = vector_name {
-                NamedVectorStruct::Dense(NamedDenseVector {
+                NamedVectorStruct::Dense(NamedVector {
                     name: vector_name,
                     vector,
                 })
