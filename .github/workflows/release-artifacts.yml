@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
             brew update-reset
-            brew install gcc cmake protobuf-c rustup
+            brew install gcc cmake protobuf-c
             rustup default stable
             rustup show
             cargo -Vv
