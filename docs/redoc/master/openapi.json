@@ -5715,7 +5715,9 @@
           "float",
           "geo",
           "text",
-          "bool"
+          "bool",
+          "integer_lookup",
+          "integer_range"
         ]
       },
       "PayloadSchemaParams": {
