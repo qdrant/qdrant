@@ -1392,8 +1392,8 @@ Note: 1kB = 1 vector of size 256. |
 | Geo | 4 |  |
 | Text | 5 |  |
 | Bool | 6 |  |
-
-
+| IntegerLookup | 7 |  |
+| IntegerRange | 8 |  |
 
 <a name="qdrant-QuantizationType"></a>
 
@@ -3420,7 +3420,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | FieldTypeGeo | 3 |  |
 | FieldTypeText | 4 |  |
 | FieldTypeBool | 5 |  |
-
+| FieldTypeIntegerLookup | 6 |  |
+| FieldTypeIntegerRange | 7 |  |
 
 
 <a name="qdrant-ReadConsistencyType"></a>
