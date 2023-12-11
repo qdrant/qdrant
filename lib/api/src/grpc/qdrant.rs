@@ -1097,12 +1097,12 @@ impl PayloadSchemaType {
             PayloadSchemaType::UnknownType => "UnknownType",
             PayloadSchemaType::Keyword => "Keyword",
             PayloadSchemaType::Integer => "Integer",
-            PayloadSchemaType::IntegerLookup => "IntegerLookup",
-            PayloadSchemaType::IntegerRange => "IntegerRange",
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
             PayloadSchemaType::Bool => "Bool",
+            PayloadSchemaType::IntegerLookup => "IntegerLookup",
+            PayloadSchemaType::IntegerRange => "IntegerRange",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1111,12 +1111,12 @@ impl PayloadSchemaType {
             "UnknownType" => Some(Self::UnknownType),
             "Keyword" => Some(Self::Keyword),
             "Integer" => Some(Self::Integer),
-            "IntegerLookup" => Some(Self::IntegerLookup),
-            "IntegerRange" => Some(Self::IntegerRange),
             "Float" => Some(Self::Float),
             "Geo" => Some(Self::Geo),
             "Text" => Some(Self::Text),
             "Bool" => Some(Self::Bool),
+            "IntegerLookup" => Some(Self::IntegerLookup),
+            "IntegerRange" => Some(Self::IntegerRange),
             _ => None,
         }
     }
@@ -4850,12 +4850,12 @@ impl FieldType {
         match self {
             FieldType::Keyword => "FieldTypeKeyword",
             FieldType::Integer => "FieldTypeInteger",
-            FieldType::IntegerLookup => "FieldTypeIntegerLookup",
-            FieldType::IntegerRange => "FieldTypeIntegerRange",
             FieldType::Float => "FieldTypeFloat",
             FieldType::Geo => "FieldTypeGeo",
             FieldType::Text => "FieldTypeText",
             FieldType::Bool => "FieldTypeBool",
+            FieldType::IntegerLookup => "FieldTypeIntegerLookup",
+            FieldType::IntegerRange => "FieldTypeIntegerRange",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
