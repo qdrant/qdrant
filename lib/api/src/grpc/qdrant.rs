@@ -4867,6 +4867,8 @@ impl FieldType {
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
             "FieldTypeBool" => Some(Self::Bool),
+            "FieldTypeIntegerLookup" => Some(Self::IntegerLookup),
+            "FieldTypeIntegerRange" => Some(Self::IntegerRange),
             _ => None,
         }
     }
