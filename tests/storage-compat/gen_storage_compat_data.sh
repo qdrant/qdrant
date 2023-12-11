@@ -39,7 +39,7 @@ done
 # run python script to populate db
 IMAGE_NAME=$(docker buildx build --load -q "${SCRIPT_DIR}/populate_db")
 docker run --rm \
-            -e QDRANT_HOST=host.docker.internal:6333 \
+            --network="host" \
             --add-host host.docker.internal:host-gateway \
             $IMAGE_NAME sh -c "python populate_db.py"
 
