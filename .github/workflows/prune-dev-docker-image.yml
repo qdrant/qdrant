@@ -1,0 +1,23 @@
+name: Delete old container images
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # every day at midnight
+
+
+jobs:
+  clean-ghcr:
+    name: Delete old unused container images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete dev branch containers older than a month
+        uses: snok/container-retention-policy@v2
+        with:
+          image-names: qdrant-dev
+          cut-off: A month ago UTC
+          account-type: org
+          org-name: qdrant
+          keep-at-least: 10
+          filter-tags: commit-*
+          token: ${{ secrets.PAT }}
+          dry-run: true
