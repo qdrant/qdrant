@@ -1395,6 +1395,8 @@ Note: 1kB = 1 vector of size 256. |
 | IntegerLookup | 7 |  |
 | IntegerRange | 8 |  |
 
+
+
 <a name="qdrant-QuantizationType"></a>
 
 ### QuantizationType
@@ -3422,6 +3424,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | FieldTypeBool | 5 |  |
 | FieldTypeIntegerLookup | 6 |  |
 | FieldTypeIntegerRange | 7 |  |
+
 
 
 <a name="qdrant-ReadConsistencyType"></a>
