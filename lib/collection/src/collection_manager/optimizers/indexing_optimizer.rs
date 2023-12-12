@@ -853,9 +853,17 @@ mod tests {
             Default::default(),
         );
 
+        let permit_cpu_count = max_rayon_threads(0);
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
         // Use indexing optimizer to build mmap
         let changed = index_optimizer
-            .optimize(locked_holder.clone(), vec![segment_id], &false.into())
+            .optimize(
+                locked_holder.clone(),
+                vec![segment_id],
+                permit,
+                &false.into(),
+            )
             .unwrap();
         assert!(
             changed,
