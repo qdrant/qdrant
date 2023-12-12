@@ -210,13 +210,17 @@ impl Task {
             commit_indices.push(resp);
         }
 
-        let cluster_commit_index = commit_indices
-            .into_iter()
-            .map(|resp| resp.into_inner().commit)
-            .max()
-            .unwrap_or(0);
+        if commit_indices.len() >= required_commit_indices_count {
+            let cluster_commit_index = commit_indices
+                .into_iter()
+                .map(|resp| resp.into_inner().commit)
+                .max()
+                .unwrap_or(0);
 
-        Some(cluster_commit_index as _)
+            Some(cluster_commit_index as _)
+        } else {
+            Some(0)
+        }
     }
 
     fn commit_index(&self) -> u64 {
