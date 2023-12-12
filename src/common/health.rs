@@ -7,7 +7,7 @@ use std::{cmp, panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
-use api::grpc::transport_channel_pool::{self, RequestError, TransportChannelPool};
+use api::grpc::transport_channel_pool::{self, TransportChannelPool};
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
 use common::defaults;
@@ -159,23 +159,15 @@ impl Task {
     }
 
     async fn cluster_commit_index(&self) -> Option<u64> {
-        loop {
-            // Wait for `/readyz` signal
-            self.check_ready_signal.notified().await;
+        // Wait for `/readyz` signal
+        self.check_ready_signal.notified().await;
 
-            // Check if there is only 1 node in the cluster
-            if self.consensus_state.peer_count() <= 1 {
-                return None;
-            }
-
-            // Get *cluster* commit index
-            if let Some(consensus_commit_index) = self.cluster_commit_index_impl().await {
-                return Some(consensus_commit_index);
-            }
+        // Check if there is only 1 node in the cluster
+        if self.consensus_state.peer_count() <= 1 {
+            return None;
         }
-    }
 
-    async fn cluster_commit_index_impl(&self) -> Option<u64> {
+        // Get *cluster* commit index
         let this_peer_id = self.toc.this_peer_id;
         let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
 
