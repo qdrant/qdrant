@@ -20,6 +20,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
             rustup default stable
+            rustup update
             rustup show
             cargo -Vv
       - uses: actions/checkout@v4
@@ -45,6 +46,7 @@ jobs:
             brew update-reset
             brew install gcc cmake protobuf-c
             rustup default stable
+            rustup update
             rustup show
             cargo -Vv
       - uses: actions/checkout@v4
