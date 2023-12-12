@@ -181,9 +181,6 @@ impl Task {
 
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
 
-        // Endpoint we check is not available before Qdrant 1.7.0, allow checks on nodes with earlier versions to fail by counting them here
-        let mut unimplemented_errors_count = 0;
-
         let mut requests = peer_address_by_id
             .iter()
             .filter_map(|(&peer_id, uri)| {
@@ -194,15 +191,7 @@ impl Task {
                 }
             })
             .collect::<FuturesUnordered<_>>()
-            .inspect_err(|err| {
-                log::error!("GetCommitIndex request failed: {err}");
-
-                if let RequestError::FromClosure(status) = err {
-                    if status.code() == tonic::Code::Unimplemented {
-                        unimplemented_errors_count += 1;
-                    }
-                }
-            })
+            .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
             .filter_map(|res| future::ready(res.ok()));
 
         // Example:
@@ -227,21 +216,6 @@ impl Task {
 
         while let Ok(Some(resp)) = time::timeout(Duration::ZERO, requests.next()).await {
             commit_indices.push(resp);
-        }
-
-        let required_commit_indices_count =
-            required_commit_indices_count.saturating_sub(unimplemented_errors_count);
-
-        if commit_indices.len() < required_commit_indices_count {
-            log::warn!(
-                "Not enough cluster nodes responded to GetConsensusCommit request: \
-                 required {required_commit_indices_count},
-                 responded {} out of {}",
-                commit_indices.len(),
-                peer_address_by_id.len(),
-            );
-
-            return None;
         }
 
         let cluster_commit_index = commit_indices
