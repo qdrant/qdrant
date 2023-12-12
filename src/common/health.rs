@@ -183,7 +183,7 @@ impl Task {
                 }
             })
             .collect::<FuturesUnordered<_>>()
-            .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
+            .inspect_err(|err| log::error!("GetConsensusCommit request failed: {err}"))
             .filter_map(|res| future::ready(res.ok()));
 
         // Example:
