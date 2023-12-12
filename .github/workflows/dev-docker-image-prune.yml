@@ -13,11 +13,11 @@ jobs:
       - name: Delete dev branch containers older than a month
         uses: snok/container-retention-policy@v2
         with:
-          image-names: qdrant-dev
+          image-names: qdrant
           cut-off: A month ago UTC
           account-type: org
           org-name: qdrant
           keep-at-least: 10
-          filter-tags: commit-*
+          filter-tags: dev-*
           token: ${{ secrets.PAT }}
           dry-run: true

@@ -53,18 +53,3 @@ jobs:
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
-
-        # Continue only if the base branch is dev:
-        if [ "${{ github.ref_name }}"!= "dev" ]; then
-          exit 0
-        fi
-
-        # Build image for the latest commit of the dev branch:
-        DEV_CONTAINER_TAG="qdrant/qdrant-dev:commit-${{ github.sha }}"
-        GITHUB_DEV_TAG="docker.pkg.github.com/qdrant/$DEV_CONTAINER_TAG"
-
-        # Pull, retag and push to GitHub packages
-        docker buildx build --platform='linux/amd64,linux/arm64' -t $DEV_CONTAINER_TAG --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
-        docker pull $GITHUB_DEV_TAG
-        docker tag $GITHUB_DEV_TAG
-        docker push $GITHUB_DEV_TAG
