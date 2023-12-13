@@ -108,7 +108,7 @@ pub fn new_stoppable_raw_scorer<'a>(
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
-        VectorStorageEnum::Simple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
+        VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
 
         VectorStorageEnum::Memmap(vs) => {
             if vs.has_async_reader() {

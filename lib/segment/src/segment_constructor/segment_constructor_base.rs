@@ -34,8 +34,8 @@ use crate::types::{
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorage;
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
