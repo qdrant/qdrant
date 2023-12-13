@@ -2,9 +2,12 @@ from typing import List
 
 import requests
 import random
+import uuid
 import os
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
+
+POINTS_COUNT = 100
 
 
 def drop_collection(name: str):
@@ -45,13 +48,46 @@ def create_payload_indexes(name: str):
     # Create some payload indexes
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "city", "field_type": "keyword"},
+        json={"field_name": "keyword_field", "field_type": "keyword"},
     )
     assert response.ok
 
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "count", "field_type": "integer"},
+        json={"field_name": "float_field", "field_type": "float"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={"field_name": "integer_field", "field_type": "integer"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={"field_name": "boolean_field", "field_type": "bool"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={"field_name": "geo_field", "field_type": "geo"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "text_field",
+            "field_schema": {
+                "type": "text",
+                "tokenizer": "word",
+                "min_token_len": 2,
+                "max_token_len": 20,
+                "lowercase": True
+            }
+        }
     )
     assert response.ok
 
@@ -73,787 +109,73 @@ def rand_sparse_vec(size: int = 1000, density: float = 0.1):
     return sparse
 
 
+def rand_point(num: int, use_uuid: bool):
+    id = None
+    if use_uuid:
+        id = str(uuid.uuid1())
+    else:
+        id = num
+
+    vec_draw = random.random()
+    vec = {}
+    if vec_draw < 0.3:
+        # dense vector
+        vec = {"image": rand_dense_vec()}
+    elif vec_draw < 0.6:
+        # sparse vector
+        vec = {"text": rand_sparse_vec()}
+    else:
+        # mixed vector
+        vec = {
+            "image": rand_dense_vec(),
+            "text": rand_sparse_vec(),
+        }
+
+    payload = {}
+    if random.random() < 0.5:
+        payload["keyword_field"] = ["Berlin", "London"]
+
+    if random.random() < 0.5:
+        payload["count_field"] = random.randint(0, 100)
+
+    if random.random() < 0.5:
+        payload["float_field"] = random.random()
+
+    if random.random() < 0.5:
+        payload["integer_field"] = random.randint(0, 100)
+
+    if random.random() < 0.5:
+        payload["boolean_field"] = random.random() < 0.5
+
+    if random.random() < 0.5:
+        payload["geo_field"] = {"lat": random.random(), "lon": random.random()}
+
+    if random.random() < 0.5:
+        payload["text_field"] = " ".join([random.choice(["hello", "world", "foo", "bar"]) for _ in range(10)])
+
+    point = {
+        "id": id,
+        "vector": vec,
+        "payload": payload,
+    }
+    return point
+
+
 def upload_points(name: str):
     random.seed(42)
+
+    points = []
+    for i in range(POINTS_COUNT):
+        # Use uuid as id for half of the points
+        use_uuid = i > POINTS_COUNT / 2
+        point = rand_point(i, use_uuid)
+        points.append(point)
 
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/points?wait=true",
         headers={"Content-Type": "application/json"},
         json={
-            "points": [
-                {
-                    "id": 1,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {
-                        "city": "Berlin",
-                        "country": "Germany",
-                        "count": 1000000,
-                        "square": 12.5,
-                        "coords": {"lat": 1.0, "lon": 2.0},
-                    },
-                },
-                {
-                    "id": 2,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 3,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 4,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 5,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 8,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 9,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 10,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 11,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 12,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 13,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 14,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 15,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 16,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 17,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 18,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 19,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 20,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 21,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 22,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 23,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 24,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 25,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 26,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 27,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 28,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 29,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 30,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 31,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 32,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 33,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 34,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 35,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 36,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 37,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 38,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 39,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 40,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 41,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 42,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 43,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 44,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 45,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 46,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 47,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 48,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 49,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 50,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 51,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 52,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 53,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 54,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 55,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 56,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 57,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 58,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 59,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 60,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 61,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 62,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 63,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 64,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 65,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 66,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 67,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 68,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 69,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 70,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 71,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 72,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 73,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 74,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 75,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 76,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 77,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 78,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 79,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 80,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 81,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 82,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 83,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 84,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 85,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 86,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 87,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 88,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 89,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 90,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 91,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 92,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 93,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 94,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 95,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 96,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                },
-                {
-                    "id": 97,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 98,
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": "98a9a4b1-4ef2-46fb-8315-a97d874fe1d7",
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": "f0e09527-b096-42a8-94e9-ea94d342b925",
-                    "vector": {
-                        "image": rand_dense_vec(),
-                        "text": rand_sparse_vec(),
-                    },
-                    "payload": {"count": [0]},
-                },
-            ]
+            "points": points,
         },
     )
 
