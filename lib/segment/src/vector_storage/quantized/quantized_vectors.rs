@@ -109,7 +109,7 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
         match vector_storage {
-            VectorStorageEnum::Simple(v) => {
+            VectorStorageEnum::DenseSimple(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
             VectorStorageEnum::Memmap(v) => {

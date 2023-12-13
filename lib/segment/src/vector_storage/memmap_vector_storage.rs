@@ -227,7 +227,7 @@ mod tests {
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::new_raw_scorer;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-    use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+    use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 
     #[test]
     fn test_basic_persistence() {
