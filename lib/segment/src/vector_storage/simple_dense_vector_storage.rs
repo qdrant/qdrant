@@ -23,7 +23,7 @@ use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 
 /// In-memory vector storage with on-update persistence using `store`
-pub struct SimpleVectorStorage {
+pub struct SimpleDenseVectorStorage {
     dim: usize,
     distance: Distance,
     vectors: ChunkedVectors<VectorElementType>,
@@ -72,8 +72,8 @@ pub fn open_simple_vector_storage(
         vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
     );
 
-    Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Simple(
-        SimpleVectorStorage {
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseSimple(SimpleDenseVectorStorage {
             dim,
             distance,
             vectors,
@@ -84,11 +84,11 @@ pub fn open_simple_vector_storage(
             },
             deleted,
             deleted_count,
-        },
-    ))))
+        }),
+    )))
 }
 
-impl SimpleVectorStorage {
+impl SimpleDenseVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
@@ -129,13 +129,13 @@ impl SimpleVectorStorage {
     }
 }
 
-impl DenseVectorStorage for SimpleVectorStorage {
+impl DenseVectorStorage for SimpleDenseVectorStorage {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }
 }
 
-impl VectorStorage for SimpleVectorStorage {
+impl VectorStorage for SimpleDenseVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
     }

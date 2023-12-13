@@ -208,7 +208,7 @@ impl Segment {
                 None => {
                     let dim = vector_storage.vector_dim();
                     let vector: Vector = match *vector_storage {
-                        VectorStorageEnum::Simple(_)
+                        VectorStorageEnum::DenseSimple(_)
                         | VectorStorageEnum::Memmap(_)
                         | VectorStorageEnum::AppendableMemmap(_) => vec![1.0; dim].into(),
                         VectorStorageEnum::SparseSimple(_) => SparseVector::default().into(),
