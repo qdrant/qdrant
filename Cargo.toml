@@ -78,7 +78,7 @@ tower-layer = "0.3.2"
 num-traits = "0.2.16"
 tar = "0.4.40"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
-rustls = "0.21.9"
+rustls = "0.21.10"
 rustls-pemfile = "1.0.3"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
