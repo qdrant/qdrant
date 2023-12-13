@@ -833,28 +833,10 @@
 | ----- | ---- | ----- | ----------- |
 | deleted_threshold | [double](#double) | optional | The minimal fraction of deleted vectors in a segment, required to perform segment optimization |
 | vacuum_min_vector_number | [uint64](#uint64) | optional | The minimal number of vectors in a segment, required to perform segment optimization |
-| default_segment_number | [uint64](#uint64) | optional | Target amount of segments the optimizer will try to keep. Real amount of segments may vary depending on multiple parameters:
-
-- Amount of stored points. - Current write RPS.
-
-It is recommended to select the default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
-| max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
-
-If indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs. |
-| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.
-
-Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
-
-To disable memmap storage, set this to `0`.
-
-Note: 1Kb = 1 vector of size 256 |
-| indexing_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
-
-Default value is 20,000, based on &lt;https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md&gt;.
-
-To disable vector indexing, set to `0`.
-
-Note: 1kB = 1 vector of size 256. |
+| default_segment_number | [uint64](#uint64) | optional | Target amount of segments the optimizer will try to keep. Real amount of segments may vary depending on multiple parameters:<ul><li>Amount of stored points</li><li>Current write RPS</li></ul> It is recommended to select the default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
+| max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments. <br>If indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. <br>Note: 1Kb = 1 vector of size 256. <br>If not set, will be automatically selected considering the number of available CPUs. |
+| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. <br>Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value. <br>To disable memmap storage, set this to `0`. <br>Note: 1Kb = 1 vector of size 256 |
+| indexing_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing. <br>Default value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>. <br>To disable vector indexing, set to `0`. <br>Note: 1kB = 1 vector of size 256. |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
 | max_optimization_threads | [uint64](#uint64) | optional | Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used |
 
@@ -2630,11 +2612,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | ignore | [bool](#bool) | optional | If set to true, search will ignore quantized vector data |
 | rescore | [bool](#bool) | optional | If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not. |
-| oversampling | [double](#double) | optional | Oversampling factor for quantization.
-
-Defines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.
-
-For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring. |
+| oversampling | [double](#double) | optional | Oversampling factor for quantization. <br><br>Defines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors. <br><br>For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring. |
 
 
 
@@ -3519,13 +3497,7 @@ How to use positive and negative vectors to find the results, default is `Averag
 | Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | RecommendBatch | [RecommendBatchPoints](#qdrant-RecommendBatchPoints) | [RecommendBatchResponse](#qdrant-RecommendBatchResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | RecommendGroups | [RecommendPointGroups](#qdrant-RecommendPointGroups) | [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field |
-| Discover | [DiscoverPoints](#qdrant-DiscoverPoints) | [DiscoverResponse](#qdrant-DiscoverResponse) | Use context and a target to find the most similar points to the target, constrained by the context.
-
-When using only the context (without a target), a special search - called context search - is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair.
-
-Since the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have a score of 0.0.
-
-When using target (with or without context), the score behaves a little different: The integer part of the score represents the rank with respect to the context, while the decimal part of the score relates to the distance to the target. The context part of the score for each pair is calculated &#43;1 if the point is closer to a positive than to a negative part of a pair, and -1 otherwise. |
+| Discover | [DiscoverPoints](#qdrant-DiscoverPoints) | [DiscoverResponse](#qdrant-DiscoverResponse) | Use context and a target to find the most similar points to the target, constrained by the context. <br><br>When using only the context (without a target), a special search - called context search - is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair. <br><br>Since the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have a score of 0.0. <br><br>When using target (with or without context), the score behaves a little different: The integer part of the score represents the rank with respect to the context, while the decimal part of the score relates to the distance to the target. The context part of the score for each pair is calculated &#43;1 if the point is closer to a positive than to a negative part of a pair, and -1 otherwise. |
 | DiscoverBatch | [DiscoverBatchPoints](#qdrant-DiscoverBatchPoints) | [DiscoverBatchResponse](#qdrant-DiscoverBatchResponse) | Batch request points based on { positive, negative } pairs of examples, and/or a target |
 | Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
 | UpdateBatch | [UpdateBatchPoints](#qdrant-UpdateBatchPoints) | [UpdateBatchResponse](#qdrant-UpdateBatchResponse) | Perform multiple update operations in one request |
