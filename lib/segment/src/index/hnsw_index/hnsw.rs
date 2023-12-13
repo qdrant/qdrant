@@ -56,7 +56,7 @@ const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+    pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
