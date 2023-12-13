@@ -418,14 +418,14 @@ fn test_build_hnsw_using_quantization() {
 
     builder.update_from(&segment1, &stopped).unwrap();
 
-    let builded_segment: Segment = builder.build(&stopped).unwrap();
+    let built_segment: Segment = builder.build(&stopped).unwrap();
 
-    // check if builded segment has quantization and index
-    assert!(builded_segment.vector_data[DEFAULT_VECTOR_NAME]
+    // check if built segment has quantization and index
+    assert!(built_segment.vector_data[DEFAULT_VECTOR_NAME]
         .quantized_vectors
         .borrow()
         .is_some());
-    let borrowed_index = builded_segment.vector_data[DEFAULT_VECTOR_NAME]
+    let borrowed_index = built_segment.vector_data[DEFAULT_VECTOR_NAME]
         .vector_index
         .borrow();
     match borrowed_index.deref() {
