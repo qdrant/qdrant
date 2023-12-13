@@ -26,7 +26,7 @@ use crate::common::utils::{
     MultiValue,
 };
 use crate::data_types::text_index::TextIndexParams;
-use crate::data_types::vectors::{VectorElementType, VectorStruct, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -129,7 +129,7 @@ pub enum Distance {
 }
 
 impl Distance {
-    pub fn preprocess_vector(&self, vector: VectorType) -> VectorType {
+    pub fn preprocess_vector(&self, vector: DenseVector) -> DenseVector {
         match self {
             Distance::Cosine => CosineMetric::preprocess(vector),
             Distance::Euclid => EuclidMetric::preprocess(vector),

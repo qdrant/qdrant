@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef, VectorType,
+    DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef,
     DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
@@ -28,7 +28,7 @@ use crate::operations::types::{
 };
 
 fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
-    let mut avg_dense = VectorType::default();
+    let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
     let mut dense_count = 0;
     let mut sparse_count = 0;
@@ -79,7 +79,7 @@ fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionRe
 fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> CollectionResult<Vector> {
     match (positive, negative) {
         (Vector::Dense(positive), Vector::Dense(negative)) => {
-            let vector: VectorType = positive
+            let vector: DenseVector = positive
                 .iter()
                 .zip(negative.iter())
                 .map(|(pos, neg)| pos + pos - neg)

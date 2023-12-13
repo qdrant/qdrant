@@ -1,6 +1,6 @@
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -10,7 +10,7 @@ pub struct QuantizedCustomQueryScorer<
     TEncodedQuery,
     TEncodedVectors,
     TQuery: Query<TEncodedQuery>,
-    TOriginalQuery: Query<VectorType>,
+    TOriginalQuery: Query<DenseVector>,
 > where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
@@ -26,10 +26,10 @@ impl<
         TEncodedQuery,
         TEncodedVectors,
         TQuery: Query<TEncodedQuery>,
-        TOriginalQuery: Query<VectorType>
+        TOriginalQuery: Query<DenseVector>
             + Clone
             + TransformInto<TOriginalQuery>
-            + TransformInto<TQuery, VectorType, TEncodedQuery>,
+            + TransformInto<TQuery, DenseVector, TEncodedQuery>,
     > QuantizedCustomQueryScorer<'a, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
@@ -44,7 +44,7 @@ where
             .unwrap();
         let query = original_query
             .clone()
-            .transform(|v: VectorType| Ok(quantized_storage.encode_query(&v)))
+            .transform(|v: DenseVector| Ok(quantized_storage.encode_query(&v)))
             .unwrap();
 
         Self {
@@ -60,7 +60,7 @@ where
 impl<
         TEncodedQuery,
         TEncodedVectors,
-        TOriginalQuery: Query<VectorType>,
+        TOriginalQuery: Query<DenseVector>,
         TQuery: Query<TEncodedQuery>,
     > QueryScorer<[VectorElementType]>
     for QuantizedCustomQueryScorer<'_, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>

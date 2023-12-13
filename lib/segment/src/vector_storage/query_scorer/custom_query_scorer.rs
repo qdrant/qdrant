@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -12,7 +12,7 @@ pub struct CustomQueryScorer<
     'a,
     TMetric: Metric,
     TVectorStorage: DenseVectorStorage,
-    TQuery: Query<VectorType>,
+    TQuery: Query<DenseVector>,
 > {
     vector_storage: &'a TVectorStorage,
     query: TQuery,
@@ -23,7 +23,7 @@ impl<
         'a,
         TMetric: Metric,
         TVectorStorage: DenseVectorStorage,
-        TQuery: Query<VectorType> + TransformInto<TQuery>,
+        TQuery: Query<DenseVector> + TransformInto<TQuery>,
     > CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
     pub fn new(query: TQuery, vector_storage: &'a TVectorStorage) -> Self {
@@ -39,7 +39,7 @@ impl<
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage, TQuery: Query<VectorType>>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage, TQuery: Query<DenseVector>>
     QueryScorer<[VectorElementType]> for CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
