@@ -152,7 +152,7 @@ fn create_segment(
             );
         }
 
-        let quantized_vectors = if config.quantization_config(vector_name).is_some() {
+        let quantized_vectors = sp(if config.quantization_config(vector_name).is_some() {
             let quantized_data_path = vector_storage_path;
             if QuantizedVectors::config_exists(&quantized_data_path) {
                 let quantized_vectors =
@@ -163,7 +163,7 @@ fn create_segment(
             }
         } else {
             None
-        };
+        });
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &vector_config.index {
             Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
@@ -243,7 +243,7 @@ fn create_segment(
             VectorData {
                 vector_storage,
                 vector_index,
-                quantized_vectors: None,
+                quantized_vectors: sp(None),
             },
         );
     }

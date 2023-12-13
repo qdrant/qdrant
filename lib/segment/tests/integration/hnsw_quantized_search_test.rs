@@ -1,6 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -103,7 +105,7 @@ fn hnsw_quantized_search_test(
             &stopped,
         )
         .unwrap();
-        vector_storage.quantized_vectors = Some(quantized_vectors);
+        vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
     });
 
     let hnsw_config = HnswConfig {

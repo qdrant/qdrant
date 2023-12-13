@@ -233,7 +233,6 @@ fn scoring_equivalency(
     } else {
         None
     };
-    let quantized_vectors = quantized_vectors.as_ref().map(|q| q.borrow());
 
     let attempts = 50;
     for i in 0..attempts {
