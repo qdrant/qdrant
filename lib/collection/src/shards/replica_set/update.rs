@@ -199,6 +199,12 @@ impl ShardReplicaSet {
         // 1. There is at least one success, otherwise it might be a problem of sending node
         // 2. ???
 
+        let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
+            format!("Failed peer: {}, error: {}", peer_id, collection_error)
+        } else {
+            "".to_string()
+        };
+
         if successes.len() >= minimal_success_count {
             let wait_for_deactivation =
                 self.handle_failed_replicas(&failures, &self.replica_state.read());
@@ -230,7 +236,7 @@ impl ShardReplicaSet {
                 if !shards_disabled {
                     return Err(CollectionError::service_error(format!(
                         "Some replica of shard {} failed to apply operation and deactivation \
-                         timed out after {} seconds. Consistency of this update is not guaranteed. Please retry.",
+                         timed out after {} seconds. Consistency of this update is not guaranteed. Please retry. {failure_error}",
                         self.shard_id, timeout.as_secs()
                     )));
                 }
@@ -247,10 +253,10 @@ impl ShardReplicaSet {
             .iter()
             .any(|(peer_id, _)| self.peer_is_active(peer_id))
         {
-            return Err(CollectionError::service_error(
+            return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \
-                 Consistency of this update is not guaranteed. Please retry.",
-            ));
+                 Consistency of this update is not guaranteed. Please retry. {failure_error}"
+            )));
         }
 
         // there are enough successes, return the first one
