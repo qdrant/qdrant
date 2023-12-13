@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::tiny_map;
-use super::vectors::{Vector, VectorElementType, VectorRef, VectorType};
+use super::vectors::{DenseVector, Vector, VectorElementType, VectorRef};
 use crate::common::operation_error::OperationError;
 use crate::types::Distance;
 
@@ -60,8 +60,8 @@ impl<'a> From<SparseVector> for CowVector<'a> {
     }
 }
 
-impl<'a> From<VectorType> for CowVector<'a> {
-    fn from(v: VectorType) -> Self {
+impl<'a> From<DenseVector> for CowVector<'a> {
+    fn from(v: DenseVector) -> Self {
         CowVector::Dense(Cow::Owned(v))
     }
 }
@@ -89,7 +89,7 @@ impl<'a> TryFrom<CowVector<'a>> for SparseVector {
     }
 }
 
-impl<'a> TryFrom<CowVector<'a>> for VectorType {
+impl<'a> TryFrom<CowVector<'a>> for DenseVector {
     type Error = OperationError;
 
     fn try_from(value: CowVector<'a>) -> Result<Self, Self::Error> {

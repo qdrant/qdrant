@@ -1,13 +1,13 @@
 use common::types::ScoreType;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::VectorType;
+use crate::data_types::vectors::DenseVector;
 
 pub mod context_query;
 pub mod discovery_query;
 pub mod reco_query;
 
-pub trait TransformInto<Output, T = VectorType, U = VectorType> {
+pub trait TransformInto<Output, T = DenseVector, U = DenseVector> {
     /// Change the underlying type of the query, or just process it in some way.
     fn transform<F>(self, f: F) -> OperationResult<Output>
     where

@@ -7,7 +7,7 @@ use super::simple_avx::*;
 use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::simple_sse::*;
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
 
 #[cfg(target_arch = "x86_64")]
@@ -65,7 +65,7 @@ impl Metric for EuclidMetric {
         euclid_similarity(v1, v2)
     }
 
-    fn preprocess(vector: VectorType) -> VectorType {
+    fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
 
@@ -107,7 +107,7 @@ impl Metric for ManhattanMetric {
         manhattan_similarity(v1, v2)
     }
 
-    fn preprocess(vector: VectorType) -> VectorType {
+    fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
 
@@ -149,7 +149,7 @@ impl Metric for DotProductMetric {
         dot_similarity(v1, v2)
     }
 
-    fn preprocess(vector: VectorType) -> VectorType {
+    fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
 
@@ -191,7 +191,7 @@ impl Metric for CosineMetric {
         dot_similarity(v1, v2)
     }
 
-    fn preprocess(vector: VectorType) -> VectorType {
+    fn preprocess(vector: DenseVector) -> DenseVector {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -239,7 +239,7 @@ pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) 
         .sum::<ScoreType>()
 }
 
-pub fn cosine_preprocess(vector: VectorType) -> VectorType {
+pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
     let mut length: f32 = vector.iter().map(|x| x * x).sum();
     if length < f32::EPSILON {
         return vector;

@@ -2,7 +2,7 @@ use std::arch::x86_64::*;
 
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
@@ -110,7 +110,7 @@ pub(crate) unsafe fn manhattan_similarity_avx(
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub(crate) unsafe fn cosine_preprocess_avx(vector: VectorType) -> VectorType {
+pub(crate) unsafe fn cosine_preprocess_avx(vector: DenseVector) -> DenseVector {
     let n = vector.len();
     let m = n - (n % 32);
     let mut ptr: *const f32 = vector.as_ptr();
