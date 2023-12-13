@@ -164,7 +164,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CreateFieldIndexCollection.field_name", "length(min = 1)"),
             ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
-            // TODO(sparse) validate sparse vector for `SearchPoints`
             ("SearchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchPoints.filter", ""),
             ("SearchPoints.limit", "range(min = 1)"),
@@ -173,7 +172,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
             ("SearchBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
-            // TODO(sparse) validate sparse vector for `SearchPointGroups`
             ("SearchPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("SearchPointGroups.group_by", "length(min = 1)"),
             ("SearchPointGroups.filter", ""),

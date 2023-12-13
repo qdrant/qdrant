@@ -18,6 +18,7 @@ use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
+use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
@@ -912,6 +913,12 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             sparse_indices,
         } = value;
 
+        if let Some(sparse_indices) = &sparse_indices {
+            validate_sparse_vector_impl(&sparse_indices.data, &vector).map_err(|_| {
+                Status::invalid_argument("Sparse_indices does not match sparse vector conditions")
+            })?;
+        }
+
         let vector_struct =
             api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
 
@@ -1214,6 +1221,16 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             shard_key_selector: None,
             sparse_indices: value.sparse_indices,
         };
+
+        if let Some(sparse_indices) = &search_points.sparse_indices {
+            validate_sparse_vector_impl(&sparse_indices.data, &search_points.vector).map_err(
+                |_| {
+                    Status::invalid_argument(
+                        "Sparse_indices does not match sparse vector conditions",
+                    )
+                },
+            )?;
+        }
 
         let SearchRequestInternal {
             vector,
