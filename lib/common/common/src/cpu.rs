@@ -21,6 +21,9 @@ pub fn get_num_cpus() -> usize {
 }
 
 /// Get available CPU budget to use for optimizations.
+///
+/// Utilize all but one CPU if possible to leave room for other tasks.
+// TODO: make this configurable?
 pub fn get_cpu_budget() -> usize {
     (get_num_cpus() - 1).max(1)
 }

@@ -682,11 +682,8 @@ impl CpuBudget {
 
 impl Default for CpuBudget {
     fn default() -> Self {
-        // Utilize all but one CPU for optimization tasks
-        // TODO: Make configurable? Or reserve bigger number on big CPUs?
-        let utilize_cpus = (common::cpu::get_num_cpus() - 1).max(1);
         Self {
-            semaphore: Arc::new(Semaphore::new(utilize_cpus)),
+            semaphore: Arc::new(Semaphore::new(common::cpu::get_cpu_budget())),
         }
     }
 }
