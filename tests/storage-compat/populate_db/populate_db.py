@@ -1,9 +1,9 @@
+import os
+import random
+import uuid
 from typing import List
 
 import requests
-import random
-import uuid
-import os
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
@@ -21,12 +21,7 @@ def create_collection(name: str, quantization_config: dict = None):
         f"http://{QDRANT_HOST}/collections/{name}",
         headers={"Content-Type": "application/json"},
         json={
-            "vectors": {
-                "image": {
-                    "size": 256,
-                    "distance": "Dot"
-                }
-            },
+            "vectors": {"image": {"size": 256, "distance": "Dot"}},
             "sparse_vectors": {
                 "text": {
                     "index": {
@@ -85,9 +80,9 @@ def create_payload_indexes(name: str):
                 "tokenizer": "word",
                 "min_token_len": 2,
                 "max_token_len": 20,
-                "lowercase": True
-            }
-        }
+                "lowercase": True,
+            },
+        },
     )
     assert response.ok
 
@@ -239,18 +234,8 @@ if __name__ == "__main__":
     # Create collection
     populate_collection("test_collection")
     populate_collection("test_collection_scalar_int8", {"scalar": {"type": "int8"}})
-    populate_collection(
-        "test_collection_product_x64", {"product": {"compression": "x64"}}
-    )
-    populate_collection(
-        "test_collection_product_x32", {"product": {"compression": "x32"}}
-    )
-    populate_collection(
-        "test_collection_product_x16", {"product": {"compression": "x16"}}
-    )
-    populate_collection(
-        "test_collection_product_x8", {"product": {"compression": "x8"}}
-    )
-    populate_collection(
-        "test_collection_binary",  {"binary": { "always_ram": True } }
-    )
+    populate_collection("test_collection_product_x64", {"product": {"compression": "x64"}})
+    populate_collection("test_collection_product_x32", {"product": {"compression": "x32"}})
+    populate_collection("test_collection_product_x16", {"product": {"compression": "x16"}})
+    populate_collection("test_collection_product_x8", {"product": {"compression": "x8"}})
+    populate_collection("test_collection_binary", {"binary": {"always_ram": True}})
