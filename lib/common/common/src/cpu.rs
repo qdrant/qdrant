@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::num::NonZeroIsize;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -9,10 +9,6 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
-
-/// Global CPU budget in number of cores for all optimization tasks.
-/// Assigns CPU permits to tasks to limit overall resource utilization.
-pub static OPTIMIZER_CPU_BUDGET: OnceLock<CpuBudget> = OnceLock::new();
 
 /// Try to read number of CPUs from environment variable `QDRANT_NUM_CPUS`.
 /// If it is not set, use `num_cpus::get()`.
@@ -79,7 +75,7 @@ pub fn get_cpu_budget(cpu_budget_param: isize) -> usize {
 ///
 /// Assigns CPU permits to tasks to limit overall resource utilization, making optimization
 /// workloads more predictable and efficient.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CpuBudget {
     semaphore: Arc<Semaphore>,
 }
@@ -123,6 +119,8 @@ impl CpuBudget {
             return;
         }
 
+        // TODO: log::trace!("Blocking optimization check, waiting for CPU budget to be available");
+
         // Wait for CPU budget to be available with exponential backoff
         // TODO: find better way, don't busy wait
         let mut delay = Duration::from_micros(100);
@@ -130,6 +128,8 @@ impl CpuBudget {
             thread::sleep(delay);
             delay = (delay * 2).min(Duration::from_secs(10));
         }
+
+        // TODO: log::trace!("Continue with optimizations, new CPU budget available");
     }
 }
 

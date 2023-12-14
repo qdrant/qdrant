@@ -3,6 +3,7 @@ use std::sync::Weak;
 use collection::operations::types::{CollectionError, CollectionResult};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 use collection::shards::CollectionId;
+use common::cpu::CpuBudget;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::{
@@ -32,6 +33,17 @@ impl ShardTransferDispatcher {
 }
 
 impl ShardTransferConsensus for ShardTransferDispatcher {
+    /// Get current CPU budget.
+    fn cpu_budget(&self) -> CollectionResult<CpuBudget> {
+        let Some(toc) = self.toc.upgrade() else {
+            return Err(CollectionError::service_error(
+                "Table of contents is dropped",
+            ));
+        };
+
+        Ok(toc.cpu_budget.clone())
+    }
+
     fn consensus_commit_term(&self) -> (u64, u64) {
         let state = self.consensus_state.hard_state();
         (state.commit, state.term)

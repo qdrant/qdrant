@@ -1,7 +1,7 @@
 use std::num::NonZeroU64;
 use std::sync::Arc;
 
-use common::cpu::{CpuBudget, OPTIMIZER_CPU_BUDGET};
+use common::cpu::CpuBudget;
 use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -115,8 +115,6 @@ async fn test_delete_from_indexed_payload() {
 
     let current_runtime: Handle = Handle::current();
 
-    let _ = OPTIMIZER_CPU_BUDGET.set(CpuBudget::default());
-
     let shard = LocalShard::build(
         0,
         collection_name.clone(),
@@ -124,6 +122,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         current_runtime.clone(),
+        CpuBudget::default(),
     )
     .await
     .unwrap();
@@ -152,6 +151,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         current_runtime.clone(),
+        CpuBudget::default(),
     )
     .await
     .unwrap();
@@ -171,6 +171,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config)),
         Arc::new(Default::default()),
         current_runtime,
+        CpuBudget::default(),
     )
     .await
     .unwrap();
