@@ -93,6 +93,12 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> (QueryVec
     (sparse_query, dense_query)
 }
 
+fn random_nearest_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> (QueryVector, QueryVector) {
+    let dense_target = random_vector(rnd, dim);
+    let sparse_target = convert_to_sparse_vector(&dense_target);
+    (sparse_target.into(), dense_target.into())
+}
+
 #[test]
 fn sparse_index_discover_test() {
     let stopped = AtomicBool::new(false);
@@ -168,7 +174,8 @@ fn sparse_index_discover_test() {
 
     let top = 3;
     let attempts = 100;
-    for _i in 0..attempts {
+    for i in 0..attempts {
+        // do discovery search
         let (sparse_query, dense_query) = random_discovery_query(&mut rnd, dim);
 
         let sparse_discovery_result = sparse_index
@@ -191,6 +198,28 @@ fn sparse_index_discover_test() {
                 .iter()
                 .map(|r| r.idx)
                 .collect_vec(),
+        );
+
+        // do regular nearest search
+        let (sparse_query, dense_query) = random_nearest_query(&mut rnd, dim);
+        let sparse_search_result = sparse_index
+            .search(&[&sparse_query], None, top, None, &false.into())
+            .unwrap();
+
+        let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
+            .vector_index
+            .borrow()
+            .search(&[&dense_query], None, top, None, &false.into())
+            .unwrap();
+
+        // check that nearest search uses sparse index
+        let telemetry = sparse_index.get_telemetry_data();
+        assert_eq!(telemetry.unfiltered_sparse.count, i + 1);
+
+        // check id only because scores can be epsilon-size different
+        assert_eq!(
+            sparse_search_result[0].iter().map(|r| r.idx).collect_vec(),
+            dense_search_result[0].iter().map(|r| r.idx).collect_vec(),
         );
     }
 }
