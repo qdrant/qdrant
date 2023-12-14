@@ -18,6 +18,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use ::common::cpu::{get_cpu_budget, CpuBudget, OPTIMIZER_CPU_BUDGET};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -193,6 +194,12 @@ fn main() -> anyhow::Result<()> {
     let general_runtime =
         create_general_purpose_runtime().expect("Can't optimizer general purpose runtime.");
     let runtime_handle = general_runtime.handle().clone();
+
+    // Set global CPU budget for optimizations based on settings
+    let cpu_budget = CpuBudget::new(get_cpu_budget(settings.storage.performance.cpu_budget));
+    OPTIMIZER_CPU_BUDGET
+        .set(cpu_budget)
+        .expect("Failed to set CPU budget, already set");
 
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();

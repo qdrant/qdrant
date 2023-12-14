@@ -2,9 +2,8 @@ use std::cmp::min;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use std::thread;
 
-use common::cpu::CpuPermit;
+use common::cpu::OPTIMIZER_CPU_BUDGET;
 use common::panic;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
@@ -14,7 +13,7 @@ use segment::index::hnsw_index::max_rayon_threads;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{oneshot, Mutex as TokioMutex, Semaphore, TryAcquireError};
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
@@ -29,12 +28,6 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
-
-lazy_static::lazy_static! {
-    /// Global CPU budget in number of cores for all optimization tasks.
-    /// Assigns CPU permits to tasks to limit overall resource utilization.
-    static ref OPTIMIZER_CPU_BUDGET: CpuBudget = Default::default();
-}
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
@@ -257,7 +250,10 @@ impl UpdateHandler {
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = max_rayon_threads(max_indexing_threads);
-                let permit = match OPTIMIZER_CPU_BUDGET.try_acquire(desired_cpus) {
+                let cpu_budget = OPTIMIZER_CPU_BUDGET
+                    .get()
+                    .expect("CPU budget is not initialized");
+                let permit = match cpu_budget.try_acquire(desired_cpus) {
                     Some(permit) => permit,
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
@@ -453,7 +449,10 @@ impl UpdateHandler {
                     }
 
                     // Block optimization until CPU budget is available for it
-                    OPTIMIZER_CPU_BUDGET.block_until_budget();
+                    let cpu_budget = OPTIMIZER_CPU_BUDGET
+                        .get()
+                        .expect("CPU budget is not initialized");
+                    cpu_budget.block_until_budget();
 
                     // Determine optimization handle limit based on max handles we allow
                     // Skip if we reached limit, an ongoing optimization that finishes will trigger this loop again
@@ -622,68 +621,5 @@ impl UpdateHandler {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
         })
-    }
-}
-
-/// Structure managing global CPU budget for optimization tasks.
-///
-/// Assigns CPU permits to tasks to limit overall resource utilization, making optimization
-/// workloads more predictable and efficient.
-struct CpuBudget {
-    semaphore: Arc<Semaphore>,
-}
-
-impl CpuBudget {
-    /// Try to acquire CPU permit for optimization task from global CPU budget.
-    pub fn try_acquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
-        // Determine what number of CPUs to acquire based on available budget
-        let num_cpus = self.semaphore.available_permits().min(desired_cpus) as u32;
-        if num_cpus == 0 {
-            return None;
-        }
-
-        // Try to acquire selected number of CPUs
-        let result = Semaphore::try_acquire_many_owned(self.semaphore.clone(), num_cpus);
-        let permit = match result {
-            Ok(permit) => permit,
-            Err(TryAcquireError::NoPermits) => return None,
-            Err(TryAcquireError::Closed) => unreachable!("Cannot acquire CPU permit because CPU budget semaphore is closed, this should never happen"),
-        };
-
-        Some(CpuPermit::new(num_cpus, permit))
-    }
-
-    /// Check if there is any available CPU in this budget.
-    pub fn has_budget(&self) -> bool {
-        self.semaphore.available_permits() > 0
-    }
-
-    /// Block until we have any CPU budget available.
-    ///
-    /// Uses an exponential backoff strategy to avoid busy waiting.
-    pub fn block_until_budget(&self) {
-        if self.has_budget() {
-            return;
-        }
-
-        log::trace!("Blocking optimization check, waiting for CPU budget to be available");
-
-        // Wait for CPU budget to be available with exponential backoff
-        // TODO: find better way, don't busy wait
-        let mut delay = Duration::from_micros(100);
-        while !self.has_budget() {
-            thread::sleep(delay);
-            delay = (delay * 2).min(Duration::from_secs(10));
-        }
-
-        log::trace!("Continue with optimizations, new CPU budget available");
-    }
-}
-
-impl Default for CpuBudget {
-    fn default() -> Self {
-        Self {
-            semaphore: Arc::new(Semaphore::new(common::cpu::get_cpu_budget())),
-        }
     }
 }

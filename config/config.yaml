@@ -45,6 +45,12 @@ storage:
     # Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
     max_optimization_threads: 0
 
+    # CPU budget, how many CPUs (threads) to allocate for optimizations.
+    # If 0 - auto selection, keep 1 to 1/16th of CPUs unallocated.
+    # If negative - subtract this number of CPUs from the available CPUs.
+    # If positive - use this exact number of CPUs.
+    cpu_budget: 0
+
     # Prevent DDoS of too many concurrent updates in distributed mode.
     # One external update usually triggers multiple internal updates, which breaks internal
     # timings. For example, the health check timing and consensus timing.

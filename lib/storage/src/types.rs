@@ -26,6 +26,12 @@ pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default)]
     pub max_optimization_threads: usize,
+    /// CPU budget, how many CPUs (threads) to allocate for optimizations.
+    /// If 0 - auto selection, keep at least one CPU free when possible.
+    /// If negative - subtract this number of CPUs from the available CPUs.
+    /// If positive - use this exact number of CPUs.
+    #[serde(default)]
+    pub cpu_budget: isize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_rate_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

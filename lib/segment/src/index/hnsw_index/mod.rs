@@ -19,6 +19,7 @@ mod tests;
 /// Even on high-CPU systems, a value higher than 16 is discouraged. It will most likely not
 /// improve performance and is more likely to cause disconnected HNSW graphs.
 /// Will be less if currently available CPU budget is lower.
+#[inline(always)]
 const fn thread_count_for_cpu(num_cpu: usize) -> usize {
     if num_cpu <= 48 {
         8
