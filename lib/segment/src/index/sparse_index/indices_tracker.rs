@@ -13,7 +13,6 @@ const INDICES_TRACKER_FILE_NAME: &str = "indices_tracker.json";
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct IndicesTracker {
     pub map: HashMap<DimId, DimId>,
-    pub max_index: DimId,
 }
 
 impl IndicesTracker {
@@ -23,7 +22,6 @@ impl IndicesTracker {
             let max_index = max_index_fn();
             Ok(IndicesTracker {
                 map: (0..max_index).map(|i| (i, i)).collect(),
-                max_index,
             })
         } else {
             Ok(read_json(&path)?)
@@ -42,10 +40,7 @@ impl IndicesTracker {
     pub fn register_indices(&mut self, vector: &SparseVector) {
         for index in &vector.indices {
             if !self.map.contains_key(index) {
-                self.max_index = std::cmp::max(self.max_index, *index);
-
-                let new_index = self.map.len() as DimId;
-                self.map.insert(*index, new_index);
+                self.map.insert(*index, self.map.len() as DimId);
             }
         }
     }
@@ -55,7 +50,7 @@ impl IndicesTracker {
     }
 
     pub fn remap_vector(&self, mut vector: SparseVector) -> SparseVector {
-        let mut placeholder_indices = self.max_index + 1;
+        let mut placeholder_indices = self.map.len() as DimId;
         vector.indices.iter_mut().for_each(|index| {
             *index = if let Some(index) = self.remap_index(*index) {
                 index
