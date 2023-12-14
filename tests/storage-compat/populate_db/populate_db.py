@@ -109,12 +109,42 @@ def rand_sparse_vec(size: int = 1000, density: float = 0.1):
     return sparse
 
 
-def rand_point(num: int, use_uuid: bool):
-    id = None
-    if use_uuid:
-        id = str(uuid.uuid1())
+def rand_string():
+    return random.choice(["hello", "world", "foo", "bar"])
+
+
+def rand_int():
+    return random.randint(0, 100)
+
+
+def rand_bool():
+    return random.random() < 0.5
+
+
+def rand_text():
+    return " ".join([rand_string() for _ in range(10)])
+
+
+def rand_geo():
+    return {
+        "lat": random.random(),
+        "lon": random.random(),
+    }
+
+
+def single_or_multi_value(generator):
+    if random.random() < 0.5:
+        return generator()
     else:
-        id = num
+        return [generator() for _ in range(random.randint(1, 3))]
+
+
+def rand_point(num: int, use_uuid: bool):
+    point_id = None
+    if use_uuid:
+        point_id = str(uuid.uuid1())
+    else:
+        point_id = num
 
     vec_draw = random.random()
     vec = {}
@@ -133,28 +163,28 @@ def rand_point(num: int, use_uuid: bool):
 
     payload = {}
     if random.random() < 0.5:
-        payload["keyword_field"] = ["Berlin", "London"]
+        payload["keyword_field"] = single_or_multi_value(rand_string)
 
     if random.random() < 0.5:
-        payload["count_field"] = random.randint(0, 100)
+        payload["count_field"] = single_or_multi_value(rand_int)
 
     if random.random() < 0.5:
-        payload["float_field"] = random.random()
+        payload["float_field"] = single_or_multi_value(random.random)
 
     if random.random() < 0.5:
-        payload["integer_field"] = random.randint(0, 100)
+        payload["integer_field"] = single_or_multi_value(rand_int)
 
     if random.random() < 0.5:
-        payload["boolean_field"] = random.random() < 0.5
+        payload["boolean_field"] = single_or_multi_value(rand_bool)
 
     if random.random() < 0.5:
-        payload["geo_field"] = {"lat": random.random(), "lon": random.random()}
+        payload["geo_field"] = single_or_multi_value(rand_geo)
 
     if random.random() < 0.5:
-        payload["text_field"] = " ".join([random.choice(["hello", "world", "foo", "bar"]) for _ in range(10)])
+        payload["text_field"] = single_or_multi_value(rand_text)
 
     point = {
-        "id": id,
+        "id": point_id,
         "vector": vec,
         "payload": payload,
     }
