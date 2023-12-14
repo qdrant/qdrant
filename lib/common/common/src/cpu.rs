@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::num::NonZeroIsize;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -9,6 +8,8 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
+
+use crate::defaults::default_cpu_budget;
 
 /// Try to read number of CPUs from environment variable `QDRANT_NUM_CPUS`.
 /// If it is not set, use `num_cpus::get()`.
@@ -24,30 +25,6 @@ pub fn get_num_cpus() -> usize {
         }
         Err(_) => num_cpus::get(),
     }
-}
-
-/// Default value of CPU budget.
-///
-/// Dynamic based on CPU size.
-///
-/// On low CPU systems, we want to reserve the minimal amount of CPUs for other tasks to allow
-/// efficient optimization. On high CPU systems we want to reserve more CPUs.
-#[inline(always)]
-fn default_cpu_budget(num_cpu: usize) -> NonZeroIsize {
-    let cpu_budget = if num_cpu <= 32 {
-        -1
-    } else if num_cpu <= 48 {
-        -2
-    } else if num_cpu <= 64 {
-        -3
-    } else if num_cpu <= 96 {
-        -4
-    } else if num_cpu <= 128 {
-        -6
-    } else {
-        -(num_cpu as isize / 16)
-    };
-    NonZeroIsize::new(cpu_budget).unwrap()
 }
 
 /// Get available CPU budget to use for optimizations as number of CPUs (threads).
