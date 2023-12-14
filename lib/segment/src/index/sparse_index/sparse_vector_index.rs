@@ -125,6 +125,22 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 }
                 Some(vector) => {
                     let vector: &SparseVector = vector.as_vec_ref().try_into()?;
+                    indices_tracker.register_indices(vector);
+                }
+            }
+        }
+
+        let mut ram_index = InvertedIndexRam::empty();
+        let mut index_point_count: usize = 0;
+        for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
+            check_process_stopped(stopped)?;
+            match borrowed_vector_storage.get_vector_opt(id) {
+                None => {
+                    // the vector was lost in a crash but will be recovered by the WAL
+                    log::debug!("Sparse vector with id {} is not found", id)
+                }
+                Some(vector) => {
+                    let vector: &SparseVector = vector.as_vec_ref().try_into()?;
                     // do not index empty vectors
                     if vector.is_empty() {
                         continue;
