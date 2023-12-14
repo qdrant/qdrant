@@ -9,6 +9,7 @@ use std::time::Duration;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
+use segment::index::hnsw_index::max_rayon_threads;
 use tempfile::Builder;
 use tokio::time::{sleep, Instant};
 
@@ -58,21 +59,36 @@ async fn test_optimization_process() {
         None,
     );
 
-    assert_eq!(handles.len(), 2);
+    // We expect a total of 2 optimizations for the above segments
+    let mut total_optimizations = 2;
+
+    // The optimizers try to saturate the CPU, as number of optimizat tasks we should therefore
+    // expect the amount that would fit within our CPU budget
+    let expected_optimization_count = common::cpu::get_cpu_budget()
+        .div_ceil(max_rayon_threads(0))
+        .clamp(1, 2);
+
+    assert_eq!(handles.len(), expected_optimization_count);
+    total_optimizations -= expected_optimization_count;
 
     let join_res = join_all(handles.into_iter().map(|x| x.join_handle).collect_vec()).await;
 
     // Assert optimizer statuses are tracked properly
     {
         let log = optimizers_log.lock().to_telemetry();
-        assert_eq!(log.len(), 2);
-        assert!(["indexing", "merge"].contains(&log[0].name.as_str()));
-        assert_eq!(log[0].status, TrackerStatus::Done);
-        assert!(["indexing", "merge"].contains(&log[1].name.as_str()));
-        assert_eq!(log[1].status, TrackerStatus::Done);
+        assert_eq!(log.len(), expected_optimization_count);
+        log.iter().for_each(|entry| {
+            assert!(["indexing", "merge"].contains(&entry.name.as_str()));
+            assert_eq!(entry.status, TrackerStatus::Done);
+        });
     }
 
-    let handles_2 = UpdateHandler::launch_optimization(
+    for res in join_res {
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), Some(true));
+    }
+
+    let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
         segments.clone(),
@@ -80,7 +96,14 @@ async fn test_optimization_process() {
         None,
     );
 
-    assert_eq!(handles_2.len(), 0);
+    // Because we may not have completed all optimizations due to limited CPU budget, we may expect
+    // another round of optimizations here
+    assert_eq!(
+        handles.len(),
+        expected_optimization_count.min(total_optimizations),
+    );
+
+    let join_res = join_all(handles.into_iter().map(|x| x.join_handle).collect_vec()).await;
 
     for res in join_res {
         assert!(res.is_ok());
@@ -140,9 +163,15 @@ async fn test_cancel_optimization() {
     }
 
     // Assert optimizer statuses are tracked properly
+    // The optimizers try to saturate the CPU, as number of optimizat tasks we should therefore
+    // expect the amount that would fit within our CPU budget
     {
+        let expected_optimization_count = common::cpu::get_cpu_budget()
+            .div_ceil(max_rayon_threads(0))
+            .clamp(1, 3);
+
         let log = optimizers_log.lock().to_telemetry();
-        assert_eq!(log.len(), 3);
+        assert_eq!(log.len(), expected_optimization_count);
         for status in log {
             assert_eq!(status.name, "indexing");
             assert!(matches!(status.status, TrackerStatus::Cancelled(_)));

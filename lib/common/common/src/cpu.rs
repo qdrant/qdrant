@@ -20,6 +20,11 @@ pub fn get_num_cpus() -> usize {
     }
 }
 
+/// Get available CPU budget to use for optimizations.
+pub fn get_cpu_budget() -> usize {
+    (get_num_cpus() - 1).max(1)
+}
+
 /// CPU permit, used to limit number of concurrent CPU-intensive operations
 ///
 /// This permit represents the number of CPUs allocated for an operation, so that the operation can
