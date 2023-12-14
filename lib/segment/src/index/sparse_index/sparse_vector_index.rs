@@ -40,7 +40,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     pub inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
     is_appendable: bool,
-    indices_tracker: IndicesTracker,
+    pub indices_tracker: IndicesTracker,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {

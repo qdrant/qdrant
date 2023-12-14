@@ -136,6 +136,9 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
         // assuming no deleted points
         let vector = borrowed_vector_storage.get_vector(id);
         let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
+        let vector = sparse_vector_index
+            .indices_tracker
+            .remap_vector(vector.to_owned());
         // check posting lists are consistent with storage
         for (dim_id, dim_value) in vector.indices.iter().zip(vector.values.iter()) {
             let posting_list = sparse_vector_index.inverted_index.get(dim_id).unwrap();
@@ -151,7 +154,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
                 .any(|e| e.record_id == id && e.weight == *dim_value));
         }
         // check the vector can be found via search using large top
-        let top = sparse_vector_index.max_result_count(vector);
+        let top = sparse_vector_index.max_result_count(&vector);
         let query_vector: QueryVector = vector.to_owned().into();
         let results = sparse_vector_index
             .search(&[&query_vector], None, top, None, &false.into())
