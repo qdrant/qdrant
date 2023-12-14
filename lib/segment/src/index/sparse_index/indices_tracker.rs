@@ -18,14 +18,14 @@ pub struct IndicesTracker {
 
 impl IndicesTracker {
     pub fn open(path: &Path, max_index_fn: impl Fn() -> DimId) -> std::io::Result<Self> {
-        if !Path::new(path).exists() {
+        let path = Self::file_path(path);
+        if !path.exists() {
             let max_index = max_index_fn();
             Ok(IndicesTracker {
                 map: (0..max_index).map(|i| (i, i)).collect(),
                 max_index,
             })
         } else {
-            let path = Self::file_path(path);
             Ok(read_json(&path)?)
         }
     }
