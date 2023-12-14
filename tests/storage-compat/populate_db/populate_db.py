@@ -7,7 +7,7 @@ import os
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
-POINTS_COUNT = 100
+POINTS_COUNT = 1000
 
 
 def drop_collection(name: str):
@@ -250,4 +250,7 @@ if __name__ == "__main__":
     )
     populate_collection(
         "test_collection_product_x8", {"product": {"compression": "x8"}}
+    )
+    populate_collection(
+        "test_collection_binary",  {"binary": { "always_ram": True } }
     )

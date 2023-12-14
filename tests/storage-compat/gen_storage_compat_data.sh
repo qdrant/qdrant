@@ -36,8 +36,9 @@ until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collecti
   fi
 done
 
-# run python script to populate db
+# Run python script to populate db
 IMAGE_NAME=$(docker buildx build --load -q "${SCRIPT_DIR}/populate_db")
+# For osx users, add the replace `--network="host"` with `-e QDRANT_HOST=host.docker.internal:6333`
 docker run --rm \
             --network="host" \
             --add-host host.docker.internal:host-gateway \
