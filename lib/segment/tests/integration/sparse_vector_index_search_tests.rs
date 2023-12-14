@@ -136,13 +136,17 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
         // assuming no deleted points
         let vector = borrowed_vector_storage.get_vector(id);
         let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
-        let vector = sparse_vector_index
+        let remapped_vector = sparse_vector_index
             .indices_tracker
             .remap_vector(vector.to_owned());
         // check posting lists are consistent with storage
-        for (dim_id, dim_value) in vector.indices.iter().zip(vector.values.iter()) {
+        for (dim_id, dim_value) in remapped_vector
+            .indices
+            .iter()
+            .zip(remapped_vector.values.iter())
+        {
             let posting_list = sparse_vector_index.inverted_index.get(dim_id).unwrap();
-            // assert posting list sorted  by record id
+            // assert posting list sorted by record id
             assert!(posting_list
                 .elements
                 .windows(2)
@@ -739,11 +743,13 @@ fn sparse_vector_index_files() {
 
     // files for immutable RAM index
     let ram_files = sparse_vector_ram_index.files();
-    assert_eq!(ram_files.len(), 3); // only the sparse index config file
+    // sparse index config + inverted index config + inverted index data + tracker
+    assert_eq!(ram_files.len(), 4);
 
     // files for mmap index
     let mmap_files = sparse_vector_mmap_index.files();
-    assert_eq!(mmap_files.len(), 3); // sparse index config + inverted index config + inverted index data
+    // sparse index config + inverted index config + inverted index data + tracker
+    assert_eq!(mmap_files.len(), 4);
 
     // create mutable RAM sparse vector index
     let mutable_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
@@ -767,5 +773,5 @@ fn sparse_vector_index_files() {
 
     // files for mutable index
     let mutable_index_files = sparse_vector_mutable_index.files();
-    assert_eq!(mutable_index_files.len(), 1);
+    assert_eq!(mutable_index_files.len(), 1); // only the sparse index config file
 }
