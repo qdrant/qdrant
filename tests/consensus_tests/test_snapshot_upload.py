@@ -153,7 +153,7 @@ def recover_from_uploaded_snapshot(tmp_path: pathlib.Path, n_replicas):
     assert len(new_sparse_search_result) == len(sparse_search_result)
     for i in range(len(new_sparse_search_result)):
         # skip score check because it is not deterministic
-        new_sparse_search_result[i].score = sparse_search_result[i].score
+        new_sparse_search_result[i]["score"] = sparse_search_result[i]["score"]
         assert new_sparse_search_result[i] == sparse_search_result[i]
 
     peer_0_remote_shards_new = get_remote_shards(peer_api_uris[0])
