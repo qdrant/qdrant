@@ -1,3 +1,4 @@
 tests/storage-compat/storage.tar.bz2 filter=lfs diff=lfs merge=lfs -text
 tests/storage-compat/collection.snapshot.gz filter=lfs diff=lfs merge=lfs -text
 tests/low-ram/storage.tar.xz filter=lfs diff=lfs merge=lfs -text
+tests/storage-compat/full-snapshot.snapshot.gz filter=lfs diff=lfs merge=lfs -text
