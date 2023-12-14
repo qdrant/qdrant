@@ -25,17 +25,17 @@ impl IndicesTracker {
                 max_index,
             })
         } else {
-            let path = Self::index_file_path(path);
+            let path = Self::file_path(path);
             Ok(read_json(&path)?)
         }
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
-        let path = Self::index_file_path(path);
+        let path = Self::file_path(path);
         Ok(atomic_save_json(&path, self)?)
     }
 
-    pub fn index_file_path(path: &Path) -> PathBuf {
+    pub fn file_path(path: &Path) -> PathBuf {
         path.join(INDICES_TRACKER_FILE_NAME)
     }
 

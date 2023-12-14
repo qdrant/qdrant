@@ -410,6 +410,12 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
 
         let mut all_files = vec![];
+
+        let indices_tracker_file = IndicesTracker::file_path(&self.path);
+        if !indices_tracker_file.exists() {
+            all_files.push(indices_tracker_file);
+        }
+
         all_files.push(config_file);
         all_files.extend_from_slice(&TInvertedIndex::files(&self.path));
         all_files
