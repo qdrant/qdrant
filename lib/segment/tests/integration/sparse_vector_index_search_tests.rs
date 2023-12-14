@@ -159,7 +159,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
                 .any(|e| e.record_id == id && e.weight == *dim_value));
         }
         // check the vector can be found via search using large top
-        let top = sparse_vector_index.max_result_count(&vector);
+        let top = sparse_vector_index.max_result_count(vector);
         let query_vector: QueryVector = vector.to_owned().into();
         let results = sparse_vector_index
             .search(&[&query_vector], None, top, None, &false.into())
