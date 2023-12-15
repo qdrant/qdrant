@@ -45,7 +45,7 @@ storage:
     # Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
     max_optimization_threads: 0
 
-    # CPU budget, how many CPUs (threads) to allocate for optimizations.
+    # CPU budget, how many CPUs (threads) to allocate for an optimization job.
     # If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
     # If negative - subtract this number of CPUs from the available CPUs.
     # If positive - use this exact number of CPUs.

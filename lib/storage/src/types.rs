@@ -26,16 +26,16 @@ pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default)]
     pub max_optimization_threads: usize,
-    /// CPU budget, how many CPUs (threads) to allocate for optimizations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_rate_limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_timeout_sec: Option<usize>,
+    /// CPU budget, how many CPUs (threads) to allocate for an optimization job.
     /// If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
     /// If negative - subtract this number of CPUs from the available CPUs.
     /// If positive - use this exact number of CPUs.
     #[serde(default)]
     pub cpu_budget: isize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub update_rate_limit: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub search_timeout_sec: Option<usize>,
     #[serde(default = "default_io_shard_transfers_limit")]
     pub incoming_shard_transfers_limit: Option<usize>,
     #[serde(default = "default_io_shard_transfers_limit")]
