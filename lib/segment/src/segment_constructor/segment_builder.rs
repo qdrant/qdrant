@@ -238,7 +238,7 @@ impl SegmentBuilder {
 
                 let vector_storage = vector_data.vector_storage.borrow();
 
-                let quantized_vectors_arc = QuantizedVectors::create(
+                let quantized_vectors = QuantizedVectors::create(
                     &vector_storage,
                     quantization,
                     &vector_storage_path,
@@ -246,11 +246,7 @@ impl SegmentBuilder {
                     stopped,
                 )?;
 
-                vector_data.quantized_vectors = Some(quantized_vectors_arc.clone());
-                vector_data
-                    .vector_index
-                    .borrow_mut()
-                    .set_quantized_vectors(Some(quantized_vectors_arc));
+                *vector_data.quantized_vectors.borrow_mut() = Some(quantized_vectors);
             }
         }
         Ok(())
