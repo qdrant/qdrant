@@ -61,7 +61,7 @@ impl<'a> SearchContext<'a> {
         let mut sorted_ids = ids.to_vec();
         sorted_ids.sort_unstable();
 
-        for id in ids {
+        for id in sorted_ids {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
                 break;
@@ -72,7 +72,7 @@ impl<'a> SearchContext<'a> {
             // collect indices and values for the current record id from the query's posting lists *only*
             for posting_iterator in self.postings_iterators.iter_mut() {
                 // rely on underlying binary search as the posting lists are sorted by record id
-                match posting_iterator.posting_list_iterator.skip_to(*id) {
+                match posting_iterator.posting_list_iterator.skip_to(id) {
                     None => {} // no match for posting list
                     Some(element) => {
                         // match for posting list
@@ -85,7 +85,7 @@ impl<'a> SearchContext<'a> {
             let sparse_vector = SparseVector { indices, values };
             self.result_queue.push(ScoredPointOffset {
                 score: sparse_vector.score(&self.query).unwrap_or(0.0),
-                idx: *id,
+                idx: id,
             });
         }
         let queue = std::mem::take(&mut self.result_queue);
@@ -1023,7 +1023,7 @@ mod tests {
             &is_stopped,
         );
 
-        let scores = search_context.plain_search(&[1, 2, 3]);
+        let scores = search_context.plain_search(&[1, 3, 2]);
         assert_eq!(
             scores,
             vec![
