@@ -56,7 +56,7 @@ const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
@@ -132,6 +132,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     #[cfg(test)]
     pub(super) fn graph(&self) -> Option<&GraphLayers<TGraphLinks>> {
         self.graph.as_ref()
+    }
+
+    pub fn get_quantized_vectors(&self) -> Arc<AtomicRefCell<Option<QuantizedVectors>>> {
+        self.quantized_vectors.clone()
     }
 
     fn save_config(&self) -> OperationResult<()> {

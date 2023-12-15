@@ -430,7 +430,7 @@ fn test_build_hnsw_using_quantization() {
         .borrow();
     match borrowed_index.deref() {
         VectorIndexEnum::HnswRam(hnsw_index) => {
-            assert!(hnsw_index.quantized_vectors.borrow().is_some())
+            assert!(hnsw_index.get_quantized_vectors().borrow().is_some())
         }
         _ => panic!("unexpected vector index type"),
     }
