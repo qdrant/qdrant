@@ -75,7 +75,7 @@ fn test_graph_connectivity() {
         segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .clone(),
-        None,
+        Default::default(),
         payload_index_ptr.clone(),
         hnsw_config,
     )

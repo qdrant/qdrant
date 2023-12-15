@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use bitvec::slice::BitSlice;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
@@ -107,7 +105,7 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
-    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+    ) -> OperationResult<Self> {
         match vector_storage {
             VectorStorageEnum::DenseSimple(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
@@ -128,7 +126,7 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
-    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+    ) -> OperationResult<Self> {
         let count = vector_storage.total_vector_count();
         let vectors = (0..count as PointOffsetType).map(|i| vector_storage.get_dense(i));
         let on_disk_vector_storage = vector_storage.is_on_disk();
@@ -185,17 +183,14 @@ impl QuantizedVectors {
 
         quantized_vectors.save_to(path)?;
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
-        Ok(Arc::new(AtomicRefCell::new(quantized_vectors)))
+        Ok(quantized_vectors)
     }
 
     pub fn config_exists(path: &Path) -> bool {
         path.join(QUANTIZED_CONFIG_PATH).exists()
     }
 
-    pub fn load(
-        vector_storage: &VectorStorageEnum,
-        path: &Path,
-    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
+    pub fn load(vector_storage: &VectorStorageEnum, path: &Path) -> OperationResult<Self> {
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
 
@@ -257,12 +252,12 @@ impl QuantizedVectors {
             }
         };
 
-        Ok(Arc::new(AtomicRefCell::new(QuantizedVectors {
+        Ok(QuantizedVectors {
             storage_impl: quantized_store,
             config,
             path: path.to_path_buf(),
             distance,
-        })))
+        })
     }
 
     fn create_scalar<'a>(
