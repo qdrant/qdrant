@@ -57,7 +57,11 @@ impl<'a> SearchContext<'a> {
 
     /// Plain search against the given ids without any pruning
     pub fn plain_search(&mut self, ids: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
-        for id in ids {
+        // sort ids to fully leverage posting list iterator traversal
+        let mut sorted_ids = ids.to_vec();
+        sorted_ids.sort_unstable();
+
+        for id in sorted_ids {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
                 break;
@@ -66,18 +70,12 @@ impl<'a> SearchContext<'a> {
             let mut indices = Vec::with_capacity(self.query.indices.len());
             let mut values = Vec::with_capacity(self.query.values.len());
             // collect indices and values for the current record id from the query's posting lists *only*
-            for posting_iterator in &self.postings_iterators {
-                // rely on binary search as the posting lists are sorted by record id
-                match posting_iterator
-                    .posting_list_iterator
-                    .elements
-                    .binary_search_by(|element| element.record_id.cmp(id))
-                {
-                    Err(_missing) => {} // no match for posting list
-                    Ok(element_index) => {
+            for posting_iterator in self.postings_iterators.iter_mut() {
+                // rely on underlying binary search as the posting lists are sorted by record id
+                match posting_iterator.posting_list_iterator.skip_to(id) {
+                    None => {} // no match for posting list
+                    Some(element) => {
                         // match for posting list
-                        let element =
-                            &posting_iterator.posting_list_iterator.elements[element_index];
                         indices.push(self.query.indices[posting_iterator.query_weight_offset]);
                         values.push(element.weight);
                     }
@@ -87,7 +85,7 @@ impl<'a> SearchContext<'a> {
             let sparse_vector = SparseVector { indices, values };
             self.result_queue.push(ScoredPointOffset {
                 score: sparse_vector.score(&self.query).unwrap_or(0.0),
-                idx: *id,
+                idx: id,
             });
         }
         let queue = std::mem::take(&mut self.result_queue);
@@ -1025,7 +1023,7 @@ mod tests {
             &is_stopped,
         );
 
-        let scores = search_context.plain_search(&[1, 2, 3]);
+        let scores = search_context.plain_search(&[1, 3, 2]);
         assert_eq!(
             scores,
             vec![
