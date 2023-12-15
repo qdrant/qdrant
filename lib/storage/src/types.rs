@@ -32,8 +32,8 @@ pub struct PerformanceConfig {
     pub search_timeout_sec: Option<usize>,
     /// CPU budget, how many CPUs (threads) to allocate for an optimization job.
     /// If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
-    /// If negative - subtract this number of CPUs from the available CPUs.
-    /// If positive - use this exact number of CPUs.
+    /// If negative - subtract this relative number of CPUs from the available CPUs.
+    /// If positive - use this absolute number of CPUs.
     #[serde(default)]
     pub cpu_budget: isize,
     #[serde(default = "default_io_shard_transfers_limit")]

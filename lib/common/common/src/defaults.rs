@@ -36,7 +36,7 @@ pub fn default_cpu_budget_param(num_cpu: usize) -> NonZeroIsize {
 /// improve performance and is more likely to cause disconnected HNSW graphs.
 /// Will be less if currently available CPU budget is lower.
 #[inline(always)]
-pub const fn thread_count_for_hnsw_cpu(num_cpu: usize) -> usize {
+pub const fn thread_count_for_hnsw(num_cpu: usize) -> usize {
     if num_cpu <= 48 {
         8
     } else if num_cpu <= 64 {
