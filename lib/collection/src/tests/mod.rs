@@ -64,7 +64,7 @@ async fn test_optimization_process() {
     // We expect a total of 2 optimizations for the above segments
     let mut total_optimizations = 2;
 
-    // The optimizers try to saturate the CPU, as number of optimizat tasks we should therefore
+    // The optimizers try to saturate the CPU, as number of optimizations tasks we should therefore
     // expect the amount that would fit within our CPU budget
     let expected_optimization_count = common::cpu::get_cpu_budget(0)
         .div_ceil(max_rayon_threads(0))
@@ -167,7 +167,7 @@ async fn test_cancel_optimization() {
     }
 
     // Assert optimizer statuses are tracked properly
-    // The optimizers try to saturate the CPU, as number of optimizat tasks we should therefore
+    // The optimizers try to saturate the CPU, as number of optimizations tasks we should therefore
     // expect the amount that would fit within our CPU budget
     {
         let expected_optimization_count = common::cpu::get_cpu_budget(0)

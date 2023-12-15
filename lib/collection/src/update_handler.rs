@@ -456,7 +456,11 @@ impl UpdateHandler {
                     }
 
                     // Block optimization until CPU budget is available for it
+                    log::trace!(
+                        "Blocking optimization check, waiting for CPU budget to be available"
+                    );
                     cpu_budget.block_until_budget();
+                    log::trace!("Continue with optimizations, new CPU budget available");
 
                     // Determine optimization handle limit based on max handles we allow
                     // Skip if we reached limit, an ongoing optimization that finishes will trigger this loop again
