@@ -1,4 +1,3 @@
-use std::num::NonZeroIsize;
 use std::time::Duration;
 
 /// Default timeout for consensus meta operations.
@@ -11,16 +10,16 @@ pub const CONSENSUS_META_OP_WAIT: Duration = Duration::from_secs(10);
 /// On low CPU systems, we want to reserve the minimal amount of CPUs for other tasks to allow
 /// efficient optimization. On high CPU systems we want to reserve more CPUs.
 #[inline(always)]
-pub fn default_cpu_budget_param(num_cpu: usize) -> NonZeroIsize {
-    let cpu_budget = match num_cpu {
-        0..=32 => -1,
+pub fn default_cpu_budget_unallocated(num_cpu: usize) -> isize {
+    match num_cpu {
+        0..=2 => 0,
+        3..=32 => -1,
         33..=48 => -2,
         49..=64 => -3,
         65..=96 => -4,
         97..=128 => -6,
         num_cpu => -(num_cpu as isize / 16),
-    };
-    NonZeroIsize::new(cpu_budget).unwrap()
+    }
 }
 
 /// Default number of CPUs for HNSW graph building and optimization tasks in general.

@@ -9,7 +9,7 @@ use thiserror::Error;
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
 
-use crate::defaults::default_cpu_budget_param;
+use crate::defaults::default_cpu_budget_unallocated;
 
 /// Try to read number of CPUs from environment variable `QDRANT_NUM_CPUS`.
 /// If it is not set, use `num_cpus::get()`.
@@ -42,7 +42,9 @@ pub fn get_cpu_budget(cpu_budget_param: isize) -> usize {
             .saturating_sub(-cpu_budget_param as usize)
             .max(1),
         // If zero, use automatic selection
-        Ordering::Equal => get_cpu_budget(default_cpu_budget_param(get_num_cpus()).get()),
+        Ordering::Equal => get_num_cpus()
+            .saturating_sub(-default_cpu_budget_unallocated(get_num_cpus()) as usize)
+            .max(1),
         // If greater than zero, use exact number
         Ordering::Greater => cpu_budget_param as usize,
     }
