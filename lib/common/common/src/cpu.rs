@@ -16,14 +16,14 @@ pub enum ThreadPriorityError {
 #[cfg(target_os = "linux")]
 pub fn linux_low_thread_priority() -> Result<(), ThreadPriorityError> {
     // 25% corresponds to a nice value of 10
-    current_thread_renice(25)
+    set_linux_thread_priority(25)
 }
 
 /// On Linux, make current thread high priority (nice: -10).
 #[cfg(target_os = "linux")]
 pub fn linux_high_thread_priority() -> Result<(), ThreadPriorityError> {
     // 75% corresponds to a nice value of 10
-    current_thread_renice(75)
+    set_linux_thread_priority(75)
 }
 
 /// On Linux, update priority of current thread.
@@ -33,7 +33,7 @@ pub fn linux_high_thread_priority() -> Result<(), ThreadPriorityError> {
 /// - <https://linux.die.net/man/7/pthreads>
 /// - <https://linux.die.net/man/2/setpriority>
 #[cfg(target_os = "linux")]
-fn current_thread_renice(priority: u8) -> Result<(), ThreadPriorityError> {
+fn set_linux_thread_priority(priority: u8) -> Result<(), ThreadPriorityError> {
     let new_priority = ThreadPriority::Crossplatform(
         ThreadPriorityValue::try_from(priority).map_err(ThreadPriorityError::ParseNice)?,
     );
