@@ -10,6 +10,10 @@ edition = "2021"
 publish = false
 
 [dependencies]
+num_cpus = "1.16"
 ordered-float = "4.1"
 serde = { version = "~1.0", features = ["derive"] }
+thiserror = "1.0"
+thread-priority = "0.15"
+tokio = {version = "~1.35", features = ["full"]}
 validator = { version = "0.16", features = ["derive"] }

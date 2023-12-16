@@ -1128,8 +1128,12 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "num_cpus",
  "ordered-float 4.1.1",
  "serde",
+ "thiserror",
+ "thread-priority",
+ "tokio",
  "validator",
 ]
 
@@ -5071,6 +5075,20 @@ checksum = "5fdfe0627923f7411a43ec9ec9c39c3a9b4151be313e0922042581fb6c9b717f"
 dependencies = [
  "libc",
  "redox_syscall 0.2.16",
+ "winapi",
+]
+
+[[package]]
+name = "thread-priority"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b72cb4958060ee2d9540cef68bb3871fd1e547037772c7fe7650d5d1cbec53b3"
+dependencies = [
+ "bitflags 1.3.2",
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
  "winapi",
 ]
 
