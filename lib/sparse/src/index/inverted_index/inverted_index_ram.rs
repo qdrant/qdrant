@@ -78,6 +78,13 @@ impl InvertedIndex for InvertedIndexRam {
     fn vector_count(&self) -> usize {
         self.vector_count
     }
+
+    fn max_index(&self) -> Option<DimId> {
+        match self.postings.len() {
+            0 => None,
+            len => Some(len as DimId - 1),
+        }
+    }
 }
 
 impl InvertedIndexRam {

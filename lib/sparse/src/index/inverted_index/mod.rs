@@ -34,4 +34,7 @@ pub trait InvertedIndex: Sized {
 
     /// Number of indexed vectors
     fn vector_count(&self) -> usize;
+
+    // Get max existed index
+    fn max_index(&self) -> Option<DimId>;
 }

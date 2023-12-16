@@ -76,6 +76,13 @@ impl InvertedIndex for InvertedIndexMmap {
     fn vector_count(&self) -> usize {
         self.file_header.vector_count
     }
+
+    fn max_index(&self) -> Option<DimId> {
+        match self.file_header.posting_count {
+            0 => None,
+            len => Some(len as DimId - 1),
+        }
+    }
 }
 
 impl InvertedIndexMmap {
