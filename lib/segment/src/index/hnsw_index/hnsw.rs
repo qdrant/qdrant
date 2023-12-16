@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::thread;
 
 use atomic_refcell::AtomicRefCell;
-use common::cpu::current_thread_lower_priority;
+#[cfg(target_os = "linux")]
+use common::cpu::linux_low_thread_priority;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use log::debug;
 use memory::mmap_ops;
@@ -672,10 +673,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     b = b.stack_size(stack_size);
                 }
                 b.spawn(|| {
-                    // Use lower thread priority so we don't interfere with serving traffic
-                    if let Err(err) = current_thread_lower_priority() {
+                    // On Linux, use lower thread priority so we don't interfere with serving traffic
+                    #[cfg(target_os = "linux")]
+                    if let Err(err) = linux_low_thread_priority() {
                         log::warn!(
-                            "Failed to decrease HNSW build thread priority, ignoring: {err}"
+                            "Failed to set low thread priority for HNSW building, ignoring: {err}"
                         );
                     }
 

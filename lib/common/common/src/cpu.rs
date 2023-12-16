@@ -1,71 +1,39 @@
 use thiserror::Error;
-use thread_priority::{
-    get_current_thread_priority, set_current_thread_priority, ThreadPriority, ThreadPriorityValue,
-};
+use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 
 #[derive(Error, Debug)]
+#[cfg(target_os = "linux")]
 pub enum ThreadPriorityError {
-    #[error("Failed to get thread priority: {0:?}")]
-    GetThreadPriority(thread_priority::Error),
     #[error("Failed to set thread priority: {0:?}")]
     SetThreadPriority(thread_priority::Error),
-    #[error("Got unexpected thread priority type, cannot change: {0:?}")]
-    UnexpectedThreadPriorityType(ThreadPriority),
-    #[error("Thread priority is left unchanged to keep it in bounds")]
-    UnchangedNice,
-    #[error("Failed to parse niceness value: {0}")]
+    #[error("Failed to parse thread priority value: {0}")]
     ParseNice(&'static str),
 }
 
-/// Make current thread lower priority (renice=+1).
-///
-/// Only has an effect on Unix platforms, ignored on other platforms.
-pub fn current_thread_lower_priority() -> Result<(), ThreadPriorityError> {
-    current_thread_renice(1)
+/// On Linux, make current thread lower priority (nice: 10).
+#[cfg(target_os = "linux")]
+pub fn linux_low_thread_priority() -> Result<(), ThreadPriorityError> {
+    // 25% corresponds to a nice value of 10
+    current_thread_renice(25)
 }
 
-/// Make current thread high priority (renice=-10).
-///
-/// Only has an effect on Unix platforms, ignored on other platforms.
-pub fn current_thread_high_priority() -> Result<(), ThreadPriorityError> {
-    current_thread_renice(-10)
+/// On Linux, make current thread high priority (nice: -10).
+#[cfg(target_os = "linux")]
+pub fn linux_high_thread_priority() -> Result<(), ThreadPriorityError> {
+    // 75% corresponds to a nice value of 10
+    current_thread_renice(75)
 }
 
-/// Update thread priority and niceness.
+/// On Linux, update priority of current thread.
 ///
-/// Only has an effect on Unix platforms, ignored on other platforms.
-fn current_thread_renice(relative_nice: i8) -> Result<(), ThreadPriorityError> {
-    #[cfg(not(unix))]
-    {
-        return Ok(());
-    }
-
-    #[cfg(unix)]
-    {
-        // Get thread priority value
-        let current =
-            match get_current_thread_priority().map_err(ThreadPriorityError::GetThreadPriority)? {
-                ThreadPriority::Crossplatform(current) => current,
-                thread_priority => {
-                    return Err(ThreadPriorityError::UnexpectedThreadPriorityType(
-                        thread_priority,
-                    ))
-                }
-            };
-
-        // Calculate new niceness, but stay within bounds
-        let old_nice: u8 = current.into();
-        let new_nice = (old_nice as i8).saturating_add(relative_nice).clamp(
-            ThreadPriorityValue::MIN as i8,
-            ThreadPriorityValue::MAX as i8,
-        ) as u8;
-        if old_nice == new_nice {
-            return Err(ThreadPriorityError::UnchangedNice);
-        }
-
-        let new_priority = ThreadPriority::Crossplatform(
-            ThreadPriorityValue::try_from(new_nice).map_err(ThreadPriorityError::ParseNice)?,
-        );
-        set_current_thread_priority(new_priority).map_err(ThreadPriorityError::SetThreadPriority)
-    }
+/// Only works on Linux because POSIX threads share their priority/nice value with all process
+/// threads. Linux breaks this behaviour though and uses a per-thread priority/nice value.
+/// - <https://linux.die.net/man/7/pthreads>
+/// - <https://linux.die.net/man/2/setpriority>
+#[cfg(target_os = "linux")]
+fn current_thread_renice(priority: u8) -> Result<(), ThreadPriorityError> {
+    let new_priority = ThreadPriority::Crossplatform(
+        ThreadPriorityValue::try_from(priority).map_err(ThreadPriorityError::ParseNice)?,
+    );
+    set_current_thread_priority(new_priority).map_err(ThreadPriorityError::SetThreadPriority)
 }
