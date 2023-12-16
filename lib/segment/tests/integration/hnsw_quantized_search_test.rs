@@ -419,11 +419,14 @@ fn test_build_hnsw_using_quantization() {
         payload_m: None,
     });
 
+    let permit_cpu_count = max_rayon_threads(0);
+    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
     let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &config).unwrap();
 
     builder.update_from(&segment1, &stopped).unwrap();
 
-    let built_segment: Segment = builder.build(&stopped).unwrap();
+    let built_segment: Segment = builder.build(permit, &stopped).unwrap();
 
     // check if built segment has quantization and index
     assert!(built_segment.vector_data[DEFAULT_VECTOR_NAME]
