@@ -1,4 +1,6 @@
+#[cfg(target_os = "linux")]
 use thiserror::Error;
+#[cfg(target_os = "linux")]
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 
 #[derive(Error, Debug)]
