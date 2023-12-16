@@ -12,18 +12,13 @@ pub const CONSENSUS_META_OP_WAIT: Duration = Duration::from_secs(10);
 /// efficient optimization. On high CPU systems we want to reserve more CPUs.
 #[inline(always)]
 pub fn default_cpu_budget_param(num_cpu: usize) -> NonZeroIsize {
-    let cpu_budget = if num_cpu <= 32 {
-        -1
-    } else if num_cpu <= 48 {
-        -2
-    } else if num_cpu <= 64 {
-        -3
-    } else if num_cpu <= 96 {
-        -4
-    } else if num_cpu <= 128 {
-        -6
-    } else {
-        -(num_cpu as isize / 16)
+    let cpu_budget = match num_cpu {
+        0..=32 => -1,
+        33..=48 => -2,
+        49..=64 => -3,
+        65..=96 => -4,
+        97..=128 => -6,
+        num_cpu => -(num_cpu as isize / 16),
     };
     NonZeroIsize::new(cpu_budget).unwrap()
 }
@@ -36,12 +31,10 @@ pub fn default_cpu_budget_param(num_cpu: usize) -> NonZeroIsize {
 /// improve performance and is more likely to cause disconnected HNSW graphs.
 /// Will be less if currently available CPU budget is lower.
 #[inline(always)]
-pub const fn thread_count_for_hnsw(num_cpu: usize) -> usize {
-    if num_cpu <= 48 {
-        8
-    } else if num_cpu <= 64 {
-        12
-    } else {
-        16
+pub fn thread_count_for_hnsw(num_cpu: usize) -> usize {
+    match num_cpu {
+        0..=48 => 8.min(num_cpu).max(1),
+        49..=64 => 12,
+        _ => 16,
     }
 }
