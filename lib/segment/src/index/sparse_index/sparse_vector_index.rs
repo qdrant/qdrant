@@ -12,6 +12,7 @@ use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
 
+use super::indices_tracker::IndicesTracker;
 use super::sparse_index_config::SparseIndexType;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
@@ -25,7 +26,6 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
 };
@@ -39,6 +39,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     pub inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
     is_appendable: bool,
+    pub indices_tracker: IndicesTracker,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -55,24 +56,27 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let is_appendable = config.index_type == SparseIndexType::MutableRam;
 
         let config_path = SparseIndexConfig::get_config_path(path);
-        let (config, inverted_index) = if is_appendable {
+        let (config, inverted_index, indices_tracker) = if is_appendable {
             // RAM mutable case - build inverted index from scratch and use provided config
-            let inverted_index = Self::build_inverted_index(
+            let (inverted_index, indices_tracker) = Self::build_inverted_index(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 path,
                 &AtomicBool::new(false),
             )?;
-            (config, inverted_index)
+            (config, inverted_index, indices_tracker)
         } else if config_path.exists() {
             // Load inverted index and config
             let loaded_config = SparseIndexConfig::load(&config_path)?;
             let inverted_index = TInvertedIndex::open(path)?;
-            (loaded_config, inverted_index)
+            let indices_tracker =
+                IndicesTracker::open(path, || inverted_index.max_index().unwrap_or_default())?;
+            (loaded_config, inverted_index, indices_tracker)
         } else {
             // Inverted index and config are not presented - initialize empty inverted index
             let inverted_index = TInvertedIndex::from_ram_index(InvertedIndexRam::empty(), path)?;
-            (config, inverted_index)
+            let indices_tracker = Default::default();
+            (config, inverted_index, indices_tracker)
         };
 
         let searches_telemetry = SparseSearchesTelemetry::new();
@@ -86,6 +90,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             inverted_index,
             searches_telemetry,
             is_appendable,
+            indices_tracker,
         })
     }
 
@@ -99,12 +104,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         path: &Path,
         stopped: &AtomicBool,
-    ) -> OperationResult<TInvertedIndex> {
+    ) -> OperationResult<(TInvertedIndex, IndicesTracker)> {
         let borrowed_vector_storage = vector_storage.borrow();
         let borrowed_id_tracker = id_tracker.borrow();
         let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
+
         let mut ram_index = InvertedIndexRam::empty();
         let mut index_point_count: usize = 0;
+        let mut indices_tracker = IndicesTracker::default();
         for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             // It is possible that the vector is not present in the storage in case of crash.
@@ -122,7 +129,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     if vector.is_empty() {
                         continue;
                     }
-                    ram_index.upsert(id, vector.to_owned());
+                    indices_tracker.register_indices(vector);
+                    let vector = indices_tracker.remap_vector(vector.to_owned());
+                    ram_index.upsert(id, vector);
                     index_point_count += 1;
                 }
             }
@@ -130,7 +139,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         // the underlying upsert operation does not guarantee that the indexed vector count is correct
         // so we set the indexed vector count to the number of points we have seen
         ram_index.vector_count = index_point_count;
-        Ok(TInvertedIndex::from_ram_index(ram_index, path)?)
+        Ok((
+            TInvertedIndex::from_ram_index(ram_index, path)?,
+            indices_tracker,
+        ))
     }
 
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector
@@ -138,9 +150,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     pub fn max_result_count(&self, query_vector: &SparseVector) -> usize {
         let mut unique_record_ids = HashSet::new();
         for dim_id in query_vector.indices.iter() {
-            if let Some(posting_list) = self.inverted_index.get(dim_id) {
-                for element in posting_list.elements.iter() {
-                    unique_record_ids.insert(element.record_id);
+            if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
+                if let Some(posting_list) = self.inverted_index.get(&dim_id) {
+                    for element in posting_list.elements.iter() {
+                        unique_record_ids.insert(element.record_id);
+                    }
                 }
             }
         }
@@ -221,12 +235,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         .filter(|&idx| check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice))
         .collect_vec();
 
-        let mut search_context = SearchContext::new(
-            sparse_vector.to_owned(),
-            top,
-            &self.inverted_index,
-            is_stopped,
-        );
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
+        let mut search_context =
+            SearchContext::new(sparse_vector, top, &self.inverted_index, is_stopped);
         Ok(search_context.plain_search(&ids))
     }
 
@@ -246,12 +257,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let not_deleted_condition = |idx: PointOffsetType| -> bool {
             check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice)
         };
-        let mut search_context = SearchContext::new(
-            sparse_vector.to_owned(),
-            top,
-            &self.inverted_index,
-            is_stopped,
-        );
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
+        let mut search_context =
+            SearchContext::new(sparse_vector, top, &self.inverted_index, is_stopped);
 
         match filter {
             Some(filter) => {
@@ -355,15 +363,19 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
-        self.inverted_index = Self::build_inverted_index(
+        let (inverted_index, indices_tracker) = Self::build_inverted_index(
             self.id_tracker.clone(),
             self.vector_storage.clone(),
             &self.path,
             stopped,
         )?;
 
+        self.inverted_index = inverted_index;
+        self.indices_tracker = indices_tracker;
+
         // save inverted index
         if !self.is_appendable {
+            self.indices_tracker.save(&self.path)?;
             self.inverted_index.save(&self.path)?;
         }
 
@@ -384,6 +396,12 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
 
         let mut all_files = vec![];
+
+        let indices_tracker_file = IndicesTracker::file_path(&self.path);
+        if indices_tracker_file.exists() {
+            all_files.push(indices_tracker_file);
+        }
+
         all_files.push(config_file);
         all_files.extend_from_slice(&TInvertedIndex::files(&self.path));
         all_files
@@ -403,18 +421,10 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let vector: &SparseVector = vector.try_into()?;
         // do not upsert empty vectors into the index
         if !vector.is_empty() {
-            self.inverted_index.upsert(id, vector.clone());
+            self.indices_tracker.register_indices(vector);
+            let vector = self.indices_tracker.remap_vector(vector.to_owned());
+            self.inverted_index.upsert(id, vector);
         }
         Ok(())
-    }
-
-    fn set_quantized_vectors(
-        &mut self,
-        quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
-    ) {
-        debug_assert!(
-            quantized_vectors.is_none(),
-            "Sparse index does not support quantization"
-        );
     }
 }

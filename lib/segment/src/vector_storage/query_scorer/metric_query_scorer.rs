@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::DenseVectorStorage;
@@ -16,7 +16,7 @@ pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: DenseVectorSto
 impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
     MetricQueryScorer<'a, TMetric, TVectorStorage>
 {
-    pub fn new(query: VectorType, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(query: DenseVector, vector_storage: &'a TVectorStorage) -> Self {
         Self {
             query: TMetric::preprocess(query),
             vector_storage,

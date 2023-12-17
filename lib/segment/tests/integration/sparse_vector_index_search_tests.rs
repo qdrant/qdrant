@@ -13,7 +13,7 @@ use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
-use segment::index::{PayloadIndex, VectorIndex};
+use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
@@ -25,6 +25,7 @@ use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
+use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
@@ -136,10 +137,17 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
         // assuming no deleted points
         let vector = borrowed_vector_storage.get_vector(id);
         let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
+        let remapped_vector = sparse_vector_index
+            .indices_tracker
+            .remap_vector(vector.to_owned());
         // check posting lists are consistent with storage
-        for (dim_id, dim_value) in vector.indices.iter().zip(vector.values.iter()) {
+        for (dim_id, dim_value) in remapped_vector
+            .indices
+            .iter()
+            .zip(remapped_vector.values.iter())
+        {
             let posting_list = sparse_vector_index.inverted_index.get(dim_id).unwrap();
-            // assert posting list sorted  by record id
+            // assert posting list sorted by record id
             assert!(posting_list
                 .elements
                 .windows(2)
@@ -736,11 +744,13 @@ fn sparse_vector_index_files() {
 
     // files for immutable RAM index
     let ram_files = sparse_vector_ram_index.files();
-    assert_eq!(ram_files.len(), 3); // only the sparse index config file
+    // sparse index config + inverted index config + inverted index data + tracker
+    assert_eq!(ram_files.len(), 4);
 
     // files for mmap index
     let mmap_files = sparse_vector_mmap_index.files();
-    assert_eq!(mmap_files.len(), 3); // sparse index config + inverted index config + inverted index data
+    // sparse index config + inverted index config + inverted index data + tracker
+    assert_eq!(mmap_files.len(), 4);
 
     // create mutable RAM sparse vector index
     let mutable_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
@@ -764,5 +774,50 @@ fn sparse_vector_index_files() {
 
     // files for mutable index
     let mutable_index_files = sparse_vector_mutable_index.files();
-    assert_eq!(mutable_index_files.len(), 1);
+    assert_eq!(mutable_index_files.len(), 1); // only the sparse index config file
+}
+
+#[test]
+fn sparse_vector_test_large_index() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let config = SegmentConfig {
+        vector_data: Default::default(),
+        sparse_vector_data: HashMap::from([(
+            SPARSE_VECTOR_NAME.to_owned(),
+            SparseVectorDataConfig {
+                index: SparseIndexConfig {
+                    full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                    index_type: SparseIndexType::MutableRam,
+                },
+            },
+        )]),
+        payload_storage_type: Default::default(),
+    };
+    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+    let vector: Vector = SparseVector {
+        indices: vec![DimId::MAX],
+        values: vec![0.0],
+    }
+    .into();
+    let mut named_vector = NamedVectors::default();
+    named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
+    let idx = 0.into();
+    segment
+        .upsert_point(0 as SeqNumberType, idx, named_vector)
+        .unwrap();
+
+    let borrowed_vector_index = segment.vector_data[SPARSE_VECTOR_NAME]
+        .vector_index
+        .borrow();
+    match &*borrowed_vector_index {
+        VectorIndexEnum::SparseRam(sparse_vector_index) => {
+            assert!(sparse_vector_index
+                .indices_tracker
+                .remap_index(DimId::MAX)
+                .is_some());
+            assert_eq!(sparse_vector_index.inverted_index.max_index().unwrap(), 0);
+        }
+        _ => panic!("unexpected vector index type"),
+    }
 }

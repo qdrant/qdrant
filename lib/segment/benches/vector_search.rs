@@ -11,7 +11,7 @@ use segment::data_types::vectors::{Vector, VectorElementType};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
-use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
+use segment::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 

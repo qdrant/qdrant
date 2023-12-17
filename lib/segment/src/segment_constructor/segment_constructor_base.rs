@@ -34,8 +34,8 @@ use crate::types::{
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorage;
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
@@ -152,7 +152,7 @@ fn create_segment(
             );
         }
 
-        let quantized_vectors = if config.quantization_config(vector_name).is_some() {
+        let quantized_vectors = sp(if config.quantization_config(vector_name).is_some() {
             let quantized_data_path = vector_storage_path;
             if QuantizedVectors::config_exists(&quantized_data_path) {
                 let quantized_vectors =
@@ -163,7 +163,7 @@ fn create_segment(
             }
         } else {
             None
-        };
+        });
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &vector_config.index {
             Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
@@ -243,7 +243,7 @@ fn create_segment(
             VectorData {
                 vector_storage,
                 vector_index,
-                quantized_vectors: None,
+                quantized_vectors: sp(None),
             },
         );
     }

@@ -159,23 +159,15 @@ impl Task {
     }
 
     async fn cluster_commit_index(&self) -> Option<u64> {
-        loop {
-            // Wait for `/readyz` signal
-            self.check_ready_signal.notified().await;
+        // Wait for `/readyz` signal
+        self.check_ready_signal.notified().await;
 
-            // Check if there is only 1 node in the cluster
-            if self.consensus_state.peer_count() <= 1 {
-                return None;
-            }
-
-            // Get *cluster* commit index
-            if let Some(consensus_commit_index) = self.cluster_commit_index_impl().await {
-                return Some(consensus_commit_index);
-            }
+        // Check if there is only 1 node in the cluster
+        if self.consensus_state.peer_count() <= 1 {
+            return None;
         }
-    }
 
-    async fn cluster_commit_index_impl(&self) -> Option<u64> {
+        // Get *cluster* commit index
         let this_peer_id = self.toc.this_peer_id;
         let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
 
@@ -191,7 +183,7 @@ impl Task {
                 }
             })
             .collect::<FuturesUnordered<_>>()
-            .inspect_err(|err| log::error!("GetCommitIndex request failed: {err}"))
+            .inspect_err(|err| log::error!("GetConsensusCommit request failed: {err}"))
             .filter_map(|res| future::ready(res.ok()));
 
         // Example:
@@ -218,25 +210,17 @@ impl Task {
             commit_indices.push(resp);
         }
 
-        if commit_indices.len() < required_commit_indices_count {
-            log::warn!(
-                "Not enough cluster nodes responded to GetConsensusCommit request: \
-                 required {required_commit_indices_count},
-                 responded {} out of {}",
-                commit_indices.len(),
-                peer_address_by_id.len(),
-            );
+        if commit_indices.len() >= required_commit_indices_count {
+            let cluster_commit_index = commit_indices
+                .into_iter()
+                .map(|resp| resp.into_inner().commit)
+                .max()
+                .unwrap_or(0);
 
-            return None;
+            Some(cluster_commit_index as _)
+        } else {
+            Some(0)
         }
-
-        let cluster_commit_index = commit_indices
-            .into_iter()
-            .map(|resp| resp.into_inner().commit)
-            .max()
-            .unwrap_or(0);
-
-        Some(cluster_commit_index as _)
     }
 
     fn commit_index(&self) -> u64 {

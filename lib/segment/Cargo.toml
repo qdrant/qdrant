@@ -45,7 +45,7 @@ atomicwrites = "0.4.2"
 memmap2 = "0.9.0"
 schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
 log = "0.4"
-geo = "0.26.0"
+geo = "0.27.0"
 geohash = "0.13.0"
 num-traits = "0.2.16"
 num-derive = "0.4.1"
@@ -54,7 +54,7 @@ bitvec = "1.0.1"
 seahash = "4.1.0"
 tar = "0.4.40"
 fs_extra = "1.3.0"
-semver = "1.0.18"
+semver = "1.0.20"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
@@ -63,7 +63,7 @@ smol_str = "0.2.0"
 lazy_static = "1.4"
 
 sysinfo = "0.29"
-futures = "0.3.28"
+futures = "0.3.29"
 charabia = { version = "0.8.5", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 common = { path = "../common/common" }

@@ -10,7 +10,7 @@ use super::query::reco_query::RecoQuery;
 use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{QueryVector, Vector, VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, QueryVector, Vector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
@@ -286,7 +286,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 }
             }
             QueryVector::Recommend(reco_query) => {
-                let reco_query: RecoQuery<VectorType> = reco_query.transform_into()?;
+                let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(reco_query, storage);
                 Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,
@@ -298,7 +298,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 )))
             }
             QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<VectorType> =
+                let discovery_query: DiscoveryQuery<DenseVector> =
                     discovery_query.transform_into()?;
                 let query_scorer =
                     CustomQueryScorer::<TMetric, _, _>::new(discovery_query, storage);
@@ -312,7 +312,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 )))
             }
             QueryVector::Context(context_query) => {
-                let context_query: ContextQuery<VectorType> = context_query.transform_into()?;
+                let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<TMetric, _, _>::new(context_query, storage);
                 Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,

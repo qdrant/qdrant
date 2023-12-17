@@ -49,7 +49,7 @@ pub async fn index() -> impl Responder {
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
-    ready: Option<Arc<health::HealthChecker>>,
+    health_checker: Option<Arc<health::HealthChecker>>,
     settings: Settings,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
@@ -62,7 +62,7 @@ pub fn init(
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
-        let ready = web::Data::new(ready);
+        let health_checker = web::Data::new(health_checker);
         let auth_keys = AuthKeys::try_create(&settings.service);
         let static_folder = settings
             .service
@@ -132,7 +132,7 @@ pub fn init(
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
                 .app_data(http_client.clone())
-                .app_data(ready.clone())
+                .app_data(health_checker.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)

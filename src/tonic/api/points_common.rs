@@ -1060,7 +1060,7 @@ pub async fn recommend(
         .collect::<Result<Vec<RecommendExample>, Status>>()?;
     let negative_vectors = negative_vectors
         .into_iter()
-        .map(|v| RecommendExample::Vector(v.data))
+        .map(|v| RecommendExample::Dense(v.data))
         .collect();
     let negative = [negative_ids, negative_vectors].concat();
 

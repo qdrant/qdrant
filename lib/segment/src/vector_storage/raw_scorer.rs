@@ -12,7 +12,7 @@ use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::{DenseVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{QueryVector, VectorType};
+use crate::data_types::vectors::{DenseVector, QueryVector};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -108,7 +108,7 @@ pub fn new_stoppable_raw_scorer<'a>(
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
-        VectorStorageEnum::Simple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
+        VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
 
         VectorStorageEnum::Memmap(vs) => {
             if vs.has_async_reader() {
@@ -238,7 +238,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             is_stopped,
         ),
         QueryVector::Recommend(reco_query) => {
-            let reco_query: RecoQuery<VectorType> = reco_query.transform_into()?;
+            let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
                 point_deleted,
@@ -247,7 +247,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             )
         }
         QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<VectorType> = discovery_query.transform_into()?;
+            let discovery_query: DiscoveryQuery<DenseVector> = discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<TMetric, _, _>::new(discovery_query, vector_storage),
                 point_deleted,
@@ -256,7 +256,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             )
         }
         QueryVector::Context(context_query) => {
-            let context_query: ContextQuery<VectorType> = context_query.transform_into()?;
+            let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<TMetric, _, _>::new(context_query, vector_storage),
                 point_deleted,

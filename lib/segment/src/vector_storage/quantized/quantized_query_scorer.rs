@@ -1,6 +1,6 @@
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{VectorElementType, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -8,7 +8,7 @@ pub struct QuantizedQueryScorer<'a, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
-    original_query: VectorType,
+    original_query: DenseVector,
     query: TEncodedQuery,
     quantized_data: &'a TEncodedVectors,
     distance: Distance,
@@ -19,7 +19,7 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     pub fn new(
-        raw_query: VectorType,
+        raw_query: DenseVector,
         quantized_data: &'a TEncodedVectors,
         distance: Distance,
     ) -> Self {

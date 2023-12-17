@@ -14,7 +14,7 @@ use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorRef, VectorType};
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::mmap_vectors::MmapVectors;
@@ -139,7 +139,7 @@ impl VectorStorage for MemmapVectorStorage {
         let mut deleted_ids = vec![];
         for id in other_ids {
             check_process_stopped(stopped)?;
-            let vector: VectorType = other.get_vector(id).try_into()?;
+            let vector: DenseVector = other.get_vector(id).try_into()?;
             let raw_bites = mmap_ops::transmute_to_u8_slice(&vector);
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
@@ -227,7 +227,7 @@ mod tests {
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::new_raw_scorer;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-    use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+    use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 
     #[test]
     fn test_basic_persistence() {
@@ -659,42 +659,38 @@ mod tests {
 
         let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
-        {
-            let borrowed_quantized_vectors = quantized_vectors.borrow();
-            let scorer_quant = borrowed_quantized_vectors
-                .raw_scorer(
-                    query.clone(),
-                    borrowed_id_tracker.deleted_point_bitslice(),
-                    borrowed_storage.deleted_vector_bitslice(),
-                    &stopped,
-                )
-                .unwrap();
-            let scorer_orig = new_raw_scorer(
+        let scorer_quant = quantized_vectors
+            .raw_scorer(
                 query.clone(),
-                &borrowed_storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
+                borrowed_storage.deleted_vector_bitslice(),
+                &stopped,
             )
             .unwrap();
-            for i in 0..5 {
-                let quant = scorer_quant.score_point(i);
-                let orig = scorer_orig.score_point(i);
-                assert!((orig - quant).abs() < 0.15);
+        let scorer_orig = new_raw_scorer(
+            query.clone(),
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_point_bitslice(),
+        )
+        .unwrap();
+        for i in 0..5 {
+            let quant = scorer_quant.score_point(i);
+            let orig = scorer_orig.score_point(i);
+            assert!((orig - quant).abs() < 0.15);
 
-                let quant = scorer_quant.score_internal(0, i);
-                let orig = scorer_orig.score_internal(0, i);
-                assert!((orig - quant).abs() < 0.15);
-            }
+            let quant = scorer_quant.score_internal(0, i);
+            let orig = scorer_orig.score_internal(0, i);
+            assert!((orig - quant).abs() < 0.15);
         }
         let files = borrowed_storage.files();
-        let quantization_files = quantized_vectors.borrow().files();
+        let quantization_files = quantized_vectors.files();
 
         // test save-load
         let quantized_vectors = QuantizedVectors::load(&borrowed_storage, dir.path()).unwrap();
         assert_eq!(files, borrowed_storage.files());
-        assert_eq!(quantization_files, quantized_vectors.borrow().files());
+        assert_eq!(quantization_files, quantized_vectors.files());
 
-        let borrowed_quantized_vectors = quantized_vectors.borrow();
-        let scorer_quant = borrowed_quantized_vectors
+        let scorer_quant = quantized_vectors
             .raw_scorer(
                 query.clone(),
                 borrowed_id_tracker.deleted_point_bitslice(),

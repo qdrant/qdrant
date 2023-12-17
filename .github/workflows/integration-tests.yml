@@ -41,7 +41,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
         run: sudo apt-get install clang protobuf-compiler
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install pytest
@@ -68,7 +68,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install requests python lib

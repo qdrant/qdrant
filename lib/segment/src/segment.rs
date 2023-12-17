@@ -93,7 +93,7 @@ pub struct Segment {
 pub struct VectorData {
     pub vector_index: Arc<AtomicRefCell<VectorIndexEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    pub quantized_vectors: Option<Arc<AtomicRefCell<QuantizedVectors>>>,
+    pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
 }
 
 impl VectorData {
@@ -208,7 +208,7 @@ impl Segment {
                 None => {
                     let dim = vector_storage.vector_dim();
                     let vector: Vector = match *vector_storage {
-                        VectorStorageEnum::Simple(_)
+                        VectorStorageEnum::DenseSimple(_)
                         | VectorStorageEnum::Memmap(_)
                         | VectorStorageEnum::AppendableMemmap(_) => vec![1.0; dim].into(),
                         VectorStorageEnum::SparseSimple(_) => SparseVector::default().into(),
@@ -1492,8 +1492,8 @@ impl SegmentEntry for Segment {
                 )?;
             }
 
-            if let Some(quantized_vectors) = &vector_data.quantized_vectors {
-                for file in quantized_vectors.borrow().files() {
+            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
+                for file in quantized_vectors.files() {
                     utils::tar::append_file_relative_to_base(
                         &mut builder,
                         &self.current_path,

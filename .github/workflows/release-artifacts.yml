@@ -19,6 +19,10 @@ jobs:
         run: |
             sudo apt-get update
             sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
+            rustup default stable
+            rustup update
+            rustup show
+            cargo -Vv
       - uses: actions/checkout@v4
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
@@ -41,6 +45,10 @@ jobs:
         run: |
             brew update-reset
             brew install gcc cmake protobuf-c
+            rustup default stable
+            rustup update
+            rustup show
+            cargo -Vv
       - uses: actions/checkout@v4
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
@@ -57,7 +65,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install Protoc

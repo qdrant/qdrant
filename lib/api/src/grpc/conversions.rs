@@ -1250,7 +1250,7 @@ pub fn into_named_vector_struct(
         }),
         None => {
             if let Some(vector_name) = vector_name {
-                NamedVectorStruct::Named(NamedVector {
+                NamedVectorStruct::Dense(NamedVector {
                     name: vector_name,
                     vector,
                 })

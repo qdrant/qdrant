@@ -1,8 +1,13 @@
-import requests
-import random
 import os
+import random
+import uuid
+from typing import List
+
+import requests
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
+
+POINTS_COUNT = 1000
 
 
 def drop_collection(name: str):
@@ -16,7 +21,14 @@ def create_collection(name: str, quantization_config: dict = None):
         f"http://{QDRANT_HOST}/collections/{name}",
         headers={"Content-Type": "application/json"},
         json={
-            "vectors": {"size": 256, "distance": "Dot"},
+            "vectors": {"image": {"size": 256, "distance": "Dot"}},
+            "sparse_vectors": {
+                "text": {
+                    "index": {
+                        "on_disk": True,
+                    }
+                }
+            },
             "optimizers_config": {
                 "default_segment_number": 2,
                 "indexing_threshold_kb": 10,
@@ -31,508 +43,164 @@ def create_payload_indexes(name: str):
     # Create some payload indexes
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "city", "field_type": "keyword"},
+        json={"field_name": "keyword_field", "field_type": "keyword"},
     )
     assert response.ok
 
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "count", "field_type": "integer"},
+        json={"field_name": "float_field", "field_type": "float"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={"field_name": "integer_field", "field_type": "integer"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={"field_name": "boolean_field", "field_type": "bool"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={"field_name": "geo_field", "field_type": "geo"},
+    )
+    assert response.ok
+
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "text_field",
+            "field_schema": {
+                "type": "text",
+                "tokenizer": "word",
+                "min_token_len": 2,
+                "max_token_len": 20,
+                "lowercase": True,
+            },
+        },
     )
     assert response.ok
 
 
-def rand_vec(dims: int = 256):
+def rand_dense_vec(dims: int = 256):
     return [(random.random() * 20) - 10 for _ in range(dims)]
+
+
+# Generate random sparse vector with given size and density
+# The density is the probability of non-zero value over the whole vector
+def rand_sparse_vec(size: int = 1000, density: float = 0.1):
+    num_non_zero = int(size * density)
+    indices: List[int] = random.sample(range(size), num_non_zero)
+    values: List[float] = [round(random.random(), 6) for _ in range(num_non_zero)]
+    sparse = {
+        "indices": indices,
+        "values": values,
+    }
+    return sparse
+
+
+def rand_string():
+    return random.choice(["hello", "world", "foo", "bar"])
+
+
+def rand_int():
+    return random.randint(0, 100)
+
+
+def rand_bool():
+    return random.random() < 0.5
+
+
+def rand_text():
+    return " ".join([rand_string() for _ in range(10)])
+
+
+def rand_geo():
+    return {
+        "lat": random.random(),
+        "lon": random.random(),
+    }
+
+
+def single_or_multi_value(generator):
+    if random.random() < 0.5:
+        return generator()
+    else:
+        return [generator() for _ in range(random.randint(1, 3))]
+
+
+def rand_point(num: int, use_uuid: bool):
+    point_id = None
+    if use_uuid:
+        point_id = str(uuid.uuid1())
+    else:
+        point_id = num
+
+    vec_draw = random.random()
+    vec = {}
+    if vec_draw < 0.3:
+        # dense vector
+        vec = {"image": rand_dense_vec()}
+    elif vec_draw < 0.6:
+        # sparse vector
+        vec = {"text": rand_sparse_vec()}
+    else:
+        # mixed vector
+        vec = {
+            "image": rand_dense_vec(),
+            "text": rand_sparse_vec(),
+        }
+
+    payload = {}
+    if random.random() < 0.5:
+        payload["keyword_field"] = single_or_multi_value(rand_string)
+
+    if random.random() < 0.5:
+        payload["count_field"] = single_or_multi_value(rand_int)
+
+    if random.random() < 0.5:
+        payload["float_field"] = single_or_multi_value(random.random)
+
+    if random.random() < 0.5:
+        payload["integer_field"] = single_or_multi_value(rand_int)
+
+    if random.random() < 0.5:
+        payload["boolean_field"] = single_or_multi_value(rand_bool)
+
+    if random.random() < 0.5:
+        payload["geo_field"] = single_or_multi_value(rand_geo)
+
+    if random.random() < 0.5:
+        payload["text_field"] = single_or_multi_value(rand_text)
+
+    point = {
+        "id": point_id,
+        "vector": vec,
+        "payload": payload,
+    }
+    return point
 
 
 def upload_points(name: str):
     random.seed(42)
 
+    points = []
+    for i in range(POINTS_COUNT):
+        # Use uuid as id for half of the points
+        use_uuid = i > POINTS_COUNT / 2
+        point = rand_point(i, use_uuid)
+        points.append(point)
+
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/points?wait=true",
         headers={"Content-Type": "application/json"},
         json={
-            "points": [
-                {
-                    "id": 1,
-                    "vector": rand_vec(),
-                    "payload": {
-                        "city": "Berlin",
-                        "country": "Germany",
-                        "count": 1000000,
-                        "square": 12.5,
-                        "coords": {"lat": 1.0, "lon": 2.0},
-                    },
-                },
-                {
-                    "id": 2,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 3,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 4,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 5,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 8,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 9,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 10,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 11,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 12,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 13,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 14,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 15,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 16,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 17,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 18,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 19,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 20,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 21,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 22,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 23,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 24,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 25,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 26,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 27,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 28,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 29,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 30,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 31,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 32,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 33,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 34,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 35,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 36,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 37,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 38,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 39,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 40,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 41,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 42,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 43,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 44,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 45,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 46,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 47,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 48,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 49,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 50,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 51,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 52,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 53,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 54,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 55,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 56,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 57,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 58,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 59,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 60,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 61,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 62,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 63,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 64,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 65,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 66,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 67,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 68,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 69,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 70,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 71,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 72,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 73,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 74,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 75,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 76,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 77,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 78,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 79,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 80,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 81,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 82,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 83,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 84,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 85,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 86,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 87,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 88,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 89,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 90,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 91,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 92,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 93,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": 94,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": 95,
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-                {
-                    "id": 96,
-                    "vector": rand_vec(),
-                },
-                {
-                    "id": 97,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "London"]},
-                },
-                {
-                    "id": 98,
-                    "vector": rand_vec(),
-                    "payload": {"city": ["Berlin", "Moscow"]},
-                },
-                {
-                    "id": "98a9a4b1-4ef2-46fb-8315-a97d874fe1d7",
-                    "vector": rand_vec(),
-                    "payload": {"city": ["London", "Moscow"]},
-                },
-                {
-                    "id": "f0e09527-b096-42a8-94e9-ea94d342b925",
-                    "vector": rand_vec(),
-                    "payload": {"count": [0]},
-                },
-            ]
+            "points": points,
         },
     )
 
@@ -566,15 +234,8 @@ if __name__ == "__main__":
     # Create collection
     populate_collection("test_collection")
     populate_collection("test_collection_scalar_int8", {"scalar": {"type": "int8"}})
-    populate_collection(
-        "test_collection_product_x64", {"product": {"compression": "x64"}}
-    )
-    populate_collection(
-        "test_collection_product_x32", {"product": {"compression": "x32"}}
-    )
-    populate_collection(
-        "test_collection_product_x16", {"product": {"compression": "x16"}}
-    )
-    populate_collection(
-        "test_collection_product_x8", {"product": {"compression": "x8"}}
-    )
+    populate_collection("test_collection_product_x64", {"product": {"compression": "x64"}})
+    populate_collection("test_collection_product_x32", {"product": {"compression": "x32"}})
+    populate_collection("test_collection_product_x16", {"product": {"compression": "x16"}})
+    populate_collection("test_collection_product_x8", {"product": {"compression": "x8"}})
+    populate_collection("test_collection_binary", {"binary": {"always_ram": True}})
