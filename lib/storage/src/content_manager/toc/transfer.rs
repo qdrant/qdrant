@@ -33,7 +33,7 @@ impl ShardTransferDispatcher {
 }
 
 impl ShardTransferConsensus for ShardTransferDispatcher {
-    /// Get current CPU budget.
+    /// Get current CPU budget for optimization tasks.
     fn cpu_budget(&self) -> CollectionResult<CpuBudget> {
         let Some(toc) = self.toc.upgrade() else {
             return Err(CollectionError::service_error(
