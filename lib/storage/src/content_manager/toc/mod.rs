@@ -61,7 +61,7 @@ pub struct TableOfContent {
     general_runtime: Runtime,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
-    cpu_budget: CpuBudget,
+    optimizer_cpu_budget: CpuBudget,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
@@ -90,7 +90,7 @@ impl TableOfContent {
         search_runtime: Runtime,
         update_runtime: Runtime,
         general_runtime: Runtime,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
@@ -157,7 +157,7 @@ impl TableOfContent {
                 ),
                 Some(search_runtime.handle().clone()),
                 Some(update_runtime.handle().clone()),
-                cpu_budget.clone(),
+                optimizer_cpu_budget.clone(),
             ));
 
             collections.insert(collection_name, collection);
@@ -190,7 +190,7 @@ impl TableOfContent {
             search_runtime,
             update_runtime,
             general_runtime,
-            cpu_budget,
+            optimizer_cpu_budget,
             alias_persistence: RwLock::new(alias_persistence),
             this_peer_id,
             channel_service,

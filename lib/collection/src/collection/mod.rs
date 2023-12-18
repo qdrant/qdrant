@@ -67,7 +67,7 @@ pub struct Collection {
     update_runtime: Handle,
     // Search runtime handle.
     search_runtime: Handle,
-    cpu_budget: CpuBudget,
+    optimizer_cpu_budget: CpuBudget,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -91,7 +91,7 @@ impl Collection {
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
@@ -115,7 +115,7 @@ impl Collection {
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
-                cpu_budget.clone(),
+                optimizer_cpu_budget.clone(),
                 None,
             )
             .await?;
@@ -150,7 +150,7 @@ impl Collection {
             updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
-            cpu_budget,
+            optimizer_cpu_budget,
         })
     }
 
@@ -167,7 +167,7 @@ impl Collection {
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -219,7 +219,7 @@ impl Collection {
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
-                cpu_budget.clone(),
+                optimizer_cpu_budget.clone(),
             )
             .await;
 
@@ -247,7 +247,7 @@ impl Collection {
             updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
-            cpu_budget,
+            optimizer_cpu_budget,
         }
     }
 

@@ -41,7 +41,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             ));
         };
 
-        Ok(toc.cpu_budget.clone())
+        Ok(toc.optimizer_cpu_budget.clone())
     }
 
     fn consensus_commit_term(&self) -> (u64, u64) {

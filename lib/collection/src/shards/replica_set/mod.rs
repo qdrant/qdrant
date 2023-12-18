@@ -91,7 +91,7 @@ pub struct ShardReplicaSet {
     shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
     search_runtime: Handle,
-    cpu_budget: CpuBudget,
+    optimizer_cpu_budget: CpuBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
 }
@@ -118,7 +118,7 @@ impl ShardReplicaSet {
         channel_service: ChannelService,
         update_runtime: Handle,
         search_runtime: Handle,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
         init_state: Option<ReplicaState>,
     ) -> CollectionResult<Self> {
         let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
@@ -130,7 +130,7 @@ impl ShardReplicaSet {
                 collection_config.clone(),
                 shared_storage_config.clone(),
                 update_runtime.clone(),
-                cpu_budget.clone(),
+                optimizer_cpu_budget.clone(),
             )
             .await?;
             Some(Shard::Local(shard))
@@ -179,7 +179,7 @@ impl ShardReplicaSet {
             shared_storage_config,
             update_runtime,
             search_runtime,
-            cpu_budget,
+            optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
         })
     }
@@ -202,7 +202,7 @@ impl ShardReplicaSet {
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -242,7 +242,7 @@ impl ShardReplicaSet {
                     collection_config.clone(),
                     shared_storage_config.clone(),
                     update_runtime.clone(),
-                    cpu_budget.clone(),
+                    optimizer_cpu_budget.clone(),
                 )
                 .await;
 
@@ -289,7 +289,7 @@ impl ShardReplicaSet {
             shared_storage_config,
             update_runtime,
             search_runtime,
-            cpu_budget,
+            optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
         };
 
@@ -442,7 +442,7 @@ impl ShardReplicaSet {
             self.collection_config.clone(),
             self.shared_storage_config.clone(),
             self.update_runtime.clone(),
-            self.cpu_budget.clone(),
+            self.optimizer_cpu_budget.clone(),
         )
         .await;
 
@@ -623,7 +623,7 @@ impl ShardReplicaSet {
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
-                    self.cpu_budget.clone(),
+                    self.optimizer_cpu_budget.clone(),
                 )
                 .await?;
                 match state {

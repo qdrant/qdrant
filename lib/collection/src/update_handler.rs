@@ -82,7 +82,7 @@ pub struct UpdateHandler {
     optimizers_log: Arc<Mutex<TrackerLog>>,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
-    cpu_budget: CpuBudget,
+    optimizer_cpu_budget: CpuBudget,
     /// How frequent can we flush data
     pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
@@ -113,7 +113,7 @@ impl UpdateHandler {
         shared_storage_config: Arc<SharedStorageConfig>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: LockedWal,
@@ -127,7 +127,7 @@ impl UpdateHandler {
             update_worker: None,
             optimizer_worker: None,
             optimizers_log,
-            cpu_budget,
+            optimizer_cpu_budget,
             flush_worker: None,
             flush_stop: None,
             runtime_handle,
@@ -149,7 +149,7 @@ impl UpdateHandler {
             self.wal.clone(),
             self.optimization_handles.clone(),
             self.optimizers_log.clone(),
-            self.cpu_budget.clone(),
+            self.optimizer_cpu_budget.clone(),
             self.max_optimization_threads,
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
@@ -230,7 +230,7 @@ impl UpdateHandler {
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
-        cpu_budget: &CpuBudget,
+        optimizer_cpu_budget: &CpuBudget,
         segments: LockedSegmentHolder,
         callback: F,
         limit: Option<usize>,
@@ -257,7 +257,7 @@ impl UpdateHandler {
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = max_rayon_threads(max_indexing_threads);
-                let permit = match cpu_budget.try_acquire(desired_cpus) {
+                let permit = match optimizer_cpu_budget.try_acquire(desired_cpus) {
                     Some(permit) => permit,
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
@@ -364,14 +364,14 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
-        cpu_budget: &CpuBudget,
+        optimizer_cpu_budget: &CpuBudget,
         sender: Sender<OptimizerSignal>,
         limit: usize,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
             optimizers_log,
-            cpu_budget,
+            optimizer_cpu_budget,
             segments.clone(),
             move |_optimization_result| {
                 // After optimization is finished, we still need to check if there are
@@ -422,7 +422,7 @@ impl UpdateHandler {
         wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
         max_handles: Option<usize>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
@@ -459,7 +459,7 @@ impl UpdateHandler {
                     log::trace!(
                         "Blocking optimization check, waiting for CPU budget to be available"
                     );
-                    cpu_budget.block_until_budget();
+                    optimizer_cpu_budget.block_until_budget();
                     log::trace!("Continue with optimizations, new CPU budget available");
 
                     // Determine optimization handle limit based on max handles we allow
@@ -477,7 +477,7 @@ impl UpdateHandler {
                         segments.clone(),
                         optimization_handles.clone(),
                         optimizers_log.clone(),
-                        &cpu_budget,
+                        &optimizer_cpu_budget,
                         sender.clone(),
                         limit,
                     )

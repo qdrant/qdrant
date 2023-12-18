@@ -37,7 +37,7 @@ impl Collection {
             self.channel_service.clone(),
             self.update_runtime.clone(),
             self.search_runtime.clone(),
-            self.cpu_budget.clone(),
+            self.optimizer_cpu_budget.clone(),
             Some(ReplicaState::Active),
         )
         .await

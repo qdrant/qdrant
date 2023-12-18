@@ -113,7 +113,7 @@ impl ShardReplicaSet {
                 self.collection_config.clone(),
                 self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
-                self.cpu_budget.clone(),
+                self.optimizer_cpu_budget.clone(),
             )
             .await
         };

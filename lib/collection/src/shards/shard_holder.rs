@@ -426,7 +426,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
-        cpu_budget: CpuBudget,
+        optimizer_cpu_budget: CpuBudget,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
@@ -470,7 +470,7 @@ impl ShardHolder {
                     this_peer_id,
                     update_runtime.clone(),
                     search_runtime.clone(),
-                    cpu_budget.clone(),
+                    optimizer_cpu_budget.clone(),
                 )
                 .await;
 
@@ -485,7 +485,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             shared_storage_config.clone(),
                             update_runtime.clone(),
-                            cpu_budget.clone(),
+                            optimizer_cpu_budget.clone(),
                         )
                         .await
                         .unwrap();
@@ -510,7 +510,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             shared_storage_config.clone(),
                             update_runtime.clone(),
-                            cpu_budget.clone(),
+                            optimizer_cpu_budget.clone(),
                         )
                         .await
                         .unwrap();
