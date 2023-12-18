@@ -20,9 +20,15 @@ pub fn linux_low_thread_priority() -> Result<(), ThreadPriorityError> {
 }
 
 /// On Linux, make current thread high priority (nice: -10).
+///
+/// # Warning
+///
+/// This is very likely to fail because decreasing the nice value requires special privileges. It
+/// is therefore recommended to soft-fail.
+/// See: <https://manned.org/renice.1#head6>
 #[cfg(target_os = "linux")]
 pub fn linux_high_thread_priority() -> Result<(), ThreadPriorityError> {
-    // 75% corresponds to a nice value of 10
+    // 75% corresponds to a nice value of -10
     set_linux_thread_priority(75)
 }
 
