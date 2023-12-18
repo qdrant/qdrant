@@ -55,7 +55,7 @@ jobs:
         run: pytest ./tests/consensus_tests
         timeout-minutes: 60
       - name: upload logs in case of failure
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
           name: consensus-test-logs

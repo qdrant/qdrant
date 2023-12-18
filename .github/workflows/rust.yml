@@ -35,7 +35,7 @@ jobs:
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci
     - name: Upload test report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
