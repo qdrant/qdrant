@@ -855,13 +855,17 @@ pub trait PayloadContainer {
     /// Return value from payload by path if it is present in the payload.
     /// If value is not present in the payload, returns `None`.
     ///
-    /// WARN: Absence of value and value `null` is NOT the same in this function.
+    /// # Warning
+    ///
+    /// Absence of value and value `null` is NOT the same in this function.
     fn get_value_opt(&self, path: &str) -> Option<MultiValue<&Value>>;
 
     /// Return value from payload by path.
     /// If value is not present in the payload, returns empty value.
     ///
-    /// WARN: Absence of value and value `null` is considered same in this function.
+    /// # Warning
+    ///
+    /// Absence of value and value `null` is considered same in this function.
     fn get_value(&self, path: &str) -> MultiValue<&Value>;
 }
 
