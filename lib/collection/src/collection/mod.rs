@@ -403,7 +403,7 @@ impl Collection {
                     from: transfer_from,
                     to: self.this_peer_id,
                     sync: true,
-                    method: None,
+                    method: self.shared_storage_config.default_shard_transfer_method,
                 })
             } else {
                 log::warn!("No alive replicas to recover shard {shard_id}");
@@ -534,7 +534,7 @@ impl Collection {
                     to: *this_peer_id,
                     shard_id,
                     sync: true,
-                    method: None,
+                    method: self.shared_storage_config.default_shard_transfer_method,
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {

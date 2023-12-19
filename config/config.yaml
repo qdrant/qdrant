@@ -119,6 +119,11 @@ storage:
     # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     payload_m: null
 
+  # Default shard transfer method, if none is defined
+  # Choose from: null, stream_records, snapshot
+  # If null - choose automatically.
+  # More info: https://qdrant.tech/documentation/guides/distributed_deployment/#shard-transfer-method
+  shard_transfer_method: null
 
 service:
 

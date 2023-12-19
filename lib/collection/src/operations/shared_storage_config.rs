@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use crate::operations::types::NodeType;
+use crate::shards::transfer::ShardTransferMethod;
 
 /// Default timeout for search requests.
 /// In cluster mode, this should be aligned with collection timeout.
@@ -21,6 +22,7 @@ pub struct SharedStorageConfig {
     pub search_timeout: Duration,
     pub update_concurrency: Option<NonZeroUsize>,
     pub is_distributed: bool,
+    pub default_shard_transfer_method: Option<ShardTransferMethod>,
 }
 
 impl Default for SharedStorageConfig {
@@ -33,11 +35,13 @@ impl Default for SharedStorageConfig {
             search_timeout: DEFAULT_SEARCH_TIMEOUT,
             update_concurrency: None,
             is_distributed: false,
+            default_shard_transfer_method: None,
         }
     }
 }
 
 impl SharedStorageConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         update_queue_size: Option<usize>,
         node_type: NodeType,
@@ -46,6 +50,7 @@ impl SharedStorageConfig {
         search_timeout: Option<Duration>,
         update_concurrency: Option<NonZeroUsize>,
         is_distributed: bool,
+        default_shard_transfer_method: Option<ShardTransferMethod>,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -59,6 +64,7 @@ impl SharedStorageConfig {
             search_timeout: search_timeout.unwrap_or(DEFAULT_SEARCH_TIMEOUT),
             update_concurrency,
             is_distributed,
+            default_shard_transfer_method,
         }
     }
 }
