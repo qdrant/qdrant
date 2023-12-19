@@ -132,3 +132,68 @@ def test_boolean_index():
     )
     assert response.ok
     assert len(response.json()['result']['payload_schema']) == 0
+
+
+def test_update_payload_on_indexed_field():
+    keyword_field = "city"
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": keyword_field,
+            "field_schema": "keyword"
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "optimizers_config": {
+                "indexing_threshold": 100
+            }
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "with_vector": False,
+            "filter": {
+                "must": [
+                    {"key": "city", "match": {"value": "Berlin"} }
+                ]
+            }
+        }
+    )
+    assert response.ok
+    assert [p['id'] for p in response.json()['result']['points']] == [1, 2, 3]
+
+    # 2: city: [Berlin, London]
+    # 4: city: [London, Moscow]
+    set_payload({"foo": "bar"}, [2, 4])
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "with_vector": False,
+            "filter": {
+                "must": [
+                    {"key": "city", "match": {"value": "Berlin"} }
+                ]
+            }
+        }
+    )
+    assert response.ok
+    assert [p['id'] for p in response.json()['result']['points']] == [1, 2, 3]
+
