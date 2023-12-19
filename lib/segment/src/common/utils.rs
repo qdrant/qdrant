@@ -203,10 +203,7 @@ pub fn get_value_from_json_map_opt<'a>(
                     // no array notation
                     match json_map.get(element) {
                         Some(Value::Object(map)) => get_value_from_json_map_opt(rest_path, map),
-                        Some(value) => match rest_path.is_empty() {
-                            true => Some(MultiValue::one(value)),
-                            false => None,
-                        },
+                        Some(value) => rest_path.is_empty().then_some(MultiValue::one(value)),
                         None => None,
                     }
                 }
