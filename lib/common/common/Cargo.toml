@@ -10,6 +10,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-ordered-float = "4.1"
+ordered-float = "4.2"
 serde = { version = "~1.0", features = ["derive"] }
 validator = { version = "0.16", features = ["derive"] }
