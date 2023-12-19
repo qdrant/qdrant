@@ -152,7 +152,7 @@ fn focus_array_path<'a>(
     array_index: Option<u32>,
     rest_of_path: Option<&str>,
     json_map: &'a serde_json::Map<String, Value>,
-) -> MultiValue<&'a Value> {
+) -> Option<MultiValue<&'a Value>> {
     match json_map.get(array_path) {
         Some(Value::Array(array)) => {
             let mut values: MultiValue<_> = MultiValue::default();
@@ -181,9 +181,43 @@ fn focus_array_path<'a>(
                     }
                 }
             }
-            values
+            Some(values)
         }
-        _ => MultiValue::default(),
+        _ => None,
+    }
+}
+
+pub fn get_value_from_json_map_opt<'a>(
+    path: &str,
+    json_map: &'a serde_json::Map<String, Value>,
+) -> Option<MultiValue<&'a Value>> {
+    // check if leaf path element
+    match path.split_once('.') {
+        Some((element, rest_path)) => {
+            // check if targeting array
+            match parse_array_path(element) {
+                Some((array_element_path, array_index)) => {
+                    focus_array_path(array_element_path, array_index, Some(rest_path), json_map)
+                }
+                None => {
+                    // no array notation
+                    match json_map.get(element) {
+                        Some(Value::Object(map)) => get_value_from_json_map_opt(rest_path, map),
+                        Some(value) => match rest_path.is_empty() {
+                            true => Some(MultiValue::one(value)),
+                            false => None,
+                        },
+                        None => None,
+                    }
+                }
+            }
+        }
+        None => match parse_array_path(path) {
+            Some((array_element_path, array_index)) => {
+                focus_array_path(array_element_path, array_index, None, json_map)
+            }
+            None => json_map.get(path).map(MultiValue::one),
+        },
     }
 }
 
@@ -206,37 +240,7 @@ pub fn get_value_from_json_map<'a>(
     path: &str,
     json_map: &'a serde_json::Map<String, Value>,
 ) -> MultiValue<&'a Value> {
-    // check if leaf path element
-    match path.split_once('.') {
-        Some((element, rest_path)) => {
-            // check if targeting array
-            match parse_array_path(element) {
-                Some((array_element_path, array_index)) => {
-                    focus_array_path(array_element_path, array_index, Some(rest_path), json_map)
-                }
-                None => {
-                    // no array notation
-                    match json_map.get(element) {
-                        Some(Value::Object(map)) => get_value_from_json_map(rest_path, map),
-                        Some(value) => match rest_path.is_empty() {
-                            true => MultiValue::one(value),
-                            false => MultiValue::default(),
-                        },
-                        None => MultiValue::default(),
-                    }
-                }
-            }
-        }
-        None => match parse_array_path(path) {
-            Some((array_element_path, array_index)) => {
-                focus_array_path(array_element_path, array_index, None, json_map)
-            }
-            None => match json_map.get(path) {
-                Some(value) => MultiValue::one(value),
-                None => MultiValue::default(),
-            },
-        },
-    }
+    get_value_from_json_map_opt(path, json_map).unwrap_or_default()
 }
 
 /// Delete array values according to array path
