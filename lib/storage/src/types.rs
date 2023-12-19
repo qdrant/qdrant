@@ -75,7 +75,7 @@ pub struct StorageConfig {
     pub update_concurrency: Option<NonZeroUsize>,
     /// Default method used for transferring shards.
     #[serde(default)]
-    shard_transfer_method: Option<ShardTransferMethod>,
+    pub shard_transfer_method: Option<ShardTransferMethod>,
 }
 
 impl StorageConfig {
