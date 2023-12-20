@@ -35,7 +35,7 @@ use crate::types::{
     PeerInfo, RaftInfo,
 };
 
-type ConsensusChannelType = Result<bool, StorageError>;
+type ConsensusResult = Result<bool, StorageError>;
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
@@ -81,7 +81,7 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Signal is changed on change proposal and triggered if the change was applied by consensus on this peer.
     /// Also sends the result of the operation.
     on_consensus_op_apply:
-        Mutex<HashMap<ConsensusOperations, watch::Sender<Option<ConsensusChannelType>>>>,
+        Mutex<HashMap<ConsensusOperations, watch::Sender<Option<ConsensusResult>>>>,
     /// Propose operation to the consensus.
     /// Sends messages to the consensus thread, which is defined externally, outside of the state.
     /// (e.g. in the `src/consensus.rs`)
@@ -232,7 +232,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// 3. Report to the listeners
     ///
     /// Return if consensus should be stopped.
-    pub fn on_peer_remove(&self, peer_id: PeerId) -> ConsensusChannelType {
+    pub fn on_peer_remove(&self, peer_id: PeerId) -> ConsensusResult {
         let mut stop_consensus: bool = false;
 
         let report = match self.remove_peer(peer_id) {
@@ -356,7 +356,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         &self,
         entry: &RaftEntry,
         raw_node: &mut RawNode<T>,
-    ) -> ConsensusChannelType {
+    ) -> ConsensusResult {
         let change: ConfChangeV2 = prost::Message::decode(entry.get_data())?;
 
         let conf_state = raw_node.apply_conf_change(&change)?;
@@ -429,7 +429,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// - Shards operations (transfer, remove, sync)
     /// - e.t.c
     ///
-    pub fn apply_normal_entry(&self, entry: &RaftEntry) -> ConsensusChannelType {
+    pub fn apply_normal_entry(&self, entry: &RaftEntry) -> ConsensusResult {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
         let result = match operation {
@@ -524,9 +524,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     async fn await_receiver(
-        mut receiver: Receiver<Option<ConsensusChannelType>>,
+        mut receiver: Receiver<Option<ConsensusResult>>,
         wait_timeout: Duration,
-    ) -> ConsensusChannelType {
+    ) -> ConsensusResult {
         let timeout_res = tokio::time::timeout(wait_timeout, async {
             receiver
                 .wait_for(Option::is_some)
@@ -651,7 +651,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         &self,
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
-    ) -> ConsensusChannelType {
+    ) -> ConsensusResult {
         let wait_timeout = wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT);
 
         let is_leader_established = self.is_leader_established.clone();
