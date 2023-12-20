@@ -531,14 +531,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .map_err(|_: Elapsed| {
                 StorageError::service_error(format!(
                     "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                    wait_timeout.as_secs_f64()
+                    wait_timeout.as_secs_f64(),
                 ))
             })?;
         // 2 possible errors to forward: channel sender dropped OR operation failed
         timeout_res.map_err(|err| {
             StorageError::service_error(format!(
-                "Error occurred while waiting for consensus operation. Channel sender dropped ({})",
-                err
+                "Error occurred while waiting for consensus operation. Channel sender dropped ({err})",
             ))
         })?
     }
@@ -636,7 +635,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ///
     /// * `operation` - operation to propose
     /// * `wait_timeout` - How long do we need to wait for the confirmation
-    ///
     pub async fn propose_consensus_op_with_await(
         &self,
         operation: ConsensusOperations,
@@ -657,7 +655,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         if !is_leader_established {
             return Err(StorageError::service_error(format!(
                 "Failed to propose operation: leader is not established within {} secs",
-                wait_timeout.as_secs()
+                wait_timeout.as_secs(),
             )));
         }
 
