@@ -124,7 +124,13 @@ pub fn init(
                     ApiKey::new(auth_keys.clone(), api_key_whitelist.clone()),
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
-                .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests
+                // Set up logger, but avoid logging health checks, metrics and telemetry
+                .wrap(
+                    Logger::default()
+                        .exclude("/")
+                        .exclude("/metrics")
+                        .exclude("/telemetry"),
+                )
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
                     actix_telemetry_collector.clone(),
                 ))
