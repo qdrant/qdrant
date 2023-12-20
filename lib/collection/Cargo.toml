@@ -57,7 +57,7 @@ sparse = { path = "../sparse" }
 api = {path = "../api"}
 
 itertools = "0.12"
-indicatif = "0.17.6"
+indicatif = "0.17.7"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url"] }
 num_cpus = "1.16.0"
