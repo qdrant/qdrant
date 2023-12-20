@@ -80,6 +80,8 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Fires a signal if some specific operation is applied to the state machine.
     /// Signal is changed on change proposal and triggered if the change was applied by consensus on this peer.
     /// Also sends the result of the operation.
+    // We use a watch channel here because we also want to handle result values if the operation
+    // was already resolved
     on_consensus_op_apply:
         Mutex<HashMap<ConsensusOperations, watch::Sender<Option<ConsensusResult>>>>,
     /// Propose operation to the consensus.
@@ -556,7 +558,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> impl Future<Output = Result<Result<(), StorageError>, Elapsed>> {
         let mut receivers = vec![];
         for operation in operations {
-            // one-shot broadcast channel
+            // one-shot watch channel
             let (sender, mut receiver) = watch::channel(None);
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
             // check that the exact same operation is not already in-flight
@@ -671,7 +673,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             )));
         }
 
-        // one-shot broadcast channel
+        // one-shot watch channel
         let (sender, mut receiver) = watch::channel(None);
         {
             // acquire lock to insert new operation to apply
