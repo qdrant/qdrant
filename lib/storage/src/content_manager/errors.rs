@@ -175,10 +175,10 @@ impl From<tokio::sync::oneshot::error::RecvError> for StorageError {
     }
 }
 
-impl From<tokio::sync::broadcast::error::RecvError> for StorageError {
-    fn from(err: tokio::sync::broadcast::error::RecvError) -> Self {
+impl From<tokio::sync::watch::error::RecvError> for StorageError {
+    fn from(err: tokio::sync::watch::error::RecvError) -> Self {
         StorageError::ServiceError {
-            description: format!("Broadcast channel sender dropped: {err}"),
+            description: format!("Watch channel sender dropped: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }

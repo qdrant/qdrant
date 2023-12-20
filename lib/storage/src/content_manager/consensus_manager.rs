@@ -18,8 +18,7 @@ use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::watch::{self, Receiver};
 use tokio::time::error::Elapsed;
 use tonic::transport::Uri;
 
@@ -35,6 +34,8 @@ use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
     PeerInfo, RaftInfo,
 };
+
+type ConsensusChannelType = Result<bool, StorageError>;
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
@@ -80,7 +81,7 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Signal is changed on change proposal and triggered if the change was applied by consensus on this peer.
     /// Also sends the result of the operation.
     on_consensus_op_apply:
-        Mutex<HashMap<ConsensusOperations, broadcast::Sender<Result<bool, StorageError>>>>,
+        Mutex<HashMap<ConsensusOperations, watch::Sender<Option<ConsensusChannelType>>>>,
     /// Propose operation to the consensus.
     /// Sends messages to the consensus thread, which is defined externally, outside of the state.
     /// (e.g. in the `src/consensus.rs`)
@@ -231,7 +232,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// 3. Report to the listeners
     ///
     /// Return if consensus should be stopped.
-    pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
+    pub fn on_peer_remove(&self, peer_id: PeerId) -> ConsensusChannelType {
         let mut stop_consensus: bool = false;
 
         let report = match self.remove_peer(peer_id) {
@@ -251,7 +252,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let operation = ConsensusOperations::RemovePeer(peer_id);
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
         if let Some(on_apply) = on_apply {
-            if on_apply.send(report).is_err() {
+            if on_apply.send(Some(report)).is_err() {
                 log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
             }
         }
@@ -355,7 +356,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         &self,
         entry: &RaftEntry,
         raw_node: &mut RawNode<T>,
-    ) -> Result<bool, StorageError> {
+    ) -> ConsensusChannelType {
         let change: ConfChangeV2 = prost::Message::decode(entry.get_data())?;
 
         let conf_state = raw_node.apply_conf_change(&change)?;
@@ -397,7 +398,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                             };
                             let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
                             if let Some(on_apply) = on_apply {
-                                if on_apply.send(Ok(true)).is_err() {
+                                if on_apply.send(Some(Ok(true))).is_err() {
                                     log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
                                 }
                             }
@@ -428,7 +429,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// - Shards operations (transfer, remove, sync)
     /// - e.t.c
     ///
-    pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
+    pub fn apply_normal_entry(&self, entry: &RaftEntry) -> ConsensusChannelType {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
         let result = match operation {
@@ -454,7 +455,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         };
 
         if let Some(on_apply) = on_apply {
-            if on_apply.send(result.clone()).is_err() {
+            if on_apply.send(Some(result.clone())).is_err() {
                 log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
             }
         }
@@ -523,17 +524,23 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     async fn await_receiver(
-        mut receiver: Receiver<Result<bool, StorageError>>,
+        mut receiver: Receiver<Option<ConsensusChannelType>>,
         wait_timeout: Duration,
-    ) -> Result<bool, StorageError> {
-        let timeout_res = tokio::time::timeout(wait_timeout, receiver.recv())
-            .await
-            .map_err(|_: Elapsed| {
-                StorageError::service_error(format!(
-                    "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                    wait_timeout.as_secs_f64(),
-                ))
-            })?;
+    ) -> ConsensusChannelType {
+        let timeout_res = tokio::time::timeout(wait_timeout, async {
+            receiver
+                .wait_for(Option::is_some)
+                .await
+                .map(|val| val.clone().unwrap())
+        })
+        .await
+        .map_err(|_: Elapsed| {
+            StorageError::service_error(format!(
+                "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
+                wait_timeout.as_secs_f64(),
+            ))
+        })?;
+
         // 2 possible errors to forward: channel sender dropped OR operation failed
         timeout_res.map_err(|err| {
             StorageError::service_error(format!(
@@ -550,7 +557,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let mut receivers = vec![];
         for operation in operations {
             // one-shot broadcast channel
-            let (sender, mut receiver) = broadcast::channel(1);
+            let (sender, mut receiver) = watch::channel(None);
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
             // check that the exact same operation is not already in-flight
             match on_apply_lock.get(&operation) {
@@ -567,7 +574,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
 
         async move {
-            let await_for_all = join_all(receivers.iter_mut().map(|receiver| receiver.recv()));
+            let await_for_all = join_all(receivers.iter_mut().map(|receiver| async {
+                receiver
+                    .wait_for(Option::is_some)
+                    .await
+                    .map(|val| val.clone().unwrap())
+            }));
             let results = tokio::time::timeout(
                 wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
                 await_for_all,
@@ -639,7 +651,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         &self,
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
-    ) -> Result<bool, StorageError> {
+    ) -> ConsensusChannelType {
         let wait_timeout = wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT);
 
         let is_leader_established = self.is_leader_established.clone();
@@ -660,7 +672,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
 
         // one-shot broadcast channel
-        let (sender, mut receiver) = broadcast::channel(1);
+        let (sender, mut receiver) = watch::channel(None);
         {
             // acquire lock to insert new operation to apply
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
@@ -679,8 +691,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             };
         }
 
-        let res = Self::await_receiver(receiver, wait_timeout).await?;
-        Ok(res)
+        Self::await_receiver(receiver, wait_timeout).await
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
