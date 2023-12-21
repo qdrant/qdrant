@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use std::fs::File;
+use std::io::{self, Read};
 
 use api::grpc::conversions::date_time_to_proto;
 use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 use url::Url;
 use validator::Validate;
 
@@ -77,6 +80,7 @@ pub struct SnapshotDescription {
     pub name: String,
     pub creation_time: Option<NaiveDateTime>,
     pub size: u64,
+    pub checksum: String,
 }
 
 impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
@@ -87,6 +91,28 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
             size: value.size as i64,
         }
     }
+}
+
+// Function to calculate the checksum of a file
+pub async fn calculate_checksum(path: &Path) -> io::Result<String> {
+    calculate_checksum_with_buffer(path, None).await
+}
+async fn calculate_checksum_with_buffer(path: &Path, buffer_size_opt: Option<usize>) -> io::Result<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let buffer_size = buffer_size_opt.unwrap_or(1024);
+    let mut buffer = vec![0; buffer_size]; // Adjust buffer size as needed
+
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    let checksum = hasher.finalize();
+    Ok(format!("{:x}", checksum)) // Return checksum as a hex string
 }
 
 pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotDescription> {
@@ -101,10 +127,20 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
             })
     });
     let size = file_meta.len();
+    let buffer_size = if size < 10_000 {
+        1024 // smaller buffer for small files
+    } else {
+        8192 // larger buffer for larger files
+    };
+
+    // Calculate the checksum of the file
+    let checksum = calculate_checksum_with_buffer(path, Some(buffer_size)).await?;
+
     Ok(SnapshotDescription {
         name: name.to_string(),
         creation_time,
         size,
+        checksum
     })
 }
 
