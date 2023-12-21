@@ -1,13 +1,13 @@
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 use std::fs::File;
 use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use api::grpc::conversions::date_time_to_proto;
 use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use url::Url;
 use validator::Validate;
 
@@ -97,7 +97,10 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
 pub async fn calculate_checksum(path: &Path) -> io::Result<String> {
     calculate_checksum_with_buffer(path, None).await
 }
-async fn calculate_checksum_with_buffer(path: &Path, buffer_size_opt: Option<usize>) -> io::Result<String> {
+async fn calculate_checksum_with_buffer(
+    path: &Path,
+    buffer_size_opt: Option<usize>,
+) -> io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
     let buffer_size = buffer_size_opt.unwrap_or(1024);
@@ -140,7 +143,7 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
         name: name.to_string(),
         creation_time,
         size,
-        checksum
+        checksum,
     })
 }
 
