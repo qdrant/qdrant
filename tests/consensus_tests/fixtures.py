@@ -38,19 +38,23 @@ def upsert_random_points(
         ordering ='weak',
         with_sparse_vector=True,
 ):
-    # Create points in first peer's collection
-    vector = {
-        "": random_dense_vector(),
-    }
-    if with_sparse_vector:
-        vector["sparse-text"] = random_sparse_vector()
+
+    def get_vector():
+        # Create points in first peer's collection
+        vector = {
+            "": random_dense_vector(),
+        }
+        if with_sparse_vector:
+            vector["sparse-text"] = random_sparse_vector()
+
+        return vector
 
     r_batch = requests.put(
         f"{peer_url}/collections/{collection_name}/points?wait={wait}&ordering={ordering}", json={
             "points": [
                 {
                     "id": i + offset,
-                    "vector": vector,
+                    "vector": get_vector(),
                     "payload": {"city": random.choice(CITIES)}
                 } for i in range(num)
             ]
