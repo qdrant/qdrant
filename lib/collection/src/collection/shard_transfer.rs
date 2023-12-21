@@ -45,7 +45,10 @@ impl Collection {
     {
         // Select transfer method
         if shard_transfer.method.is_none() {
-            let method = ShardTransferMethod::default();
+            let method = self
+                .shared_storage_config
+                .default_shard_transfer_method
+                .unwrap_or_default();
             log::warn!("No shard transfer method selected, defaulting to {method:?}");
             shard_transfer.method.replace(method);
         }

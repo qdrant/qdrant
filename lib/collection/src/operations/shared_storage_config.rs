@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use crate::operations::types::NodeType;
+use crate::shards::transfer::ShardTransferMethod;
 
 /// Default timeout for search requests.
 /// In cluster mode, this should be aligned with collection timeout.
@@ -24,6 +25,7 @@ pub struct SharedStorageConfig {
     pub is_distributed: bool,
     pub incoming_shard_transfers_limit: Option<usize>,
     pub outgoing_shard_transfers_limit: Option<usize>,
+    pub default_shard_transfer_method: Option<ShardTransferMethod>,
 }
 
 impl Default for SharedStorageConfig {
@@ -38,6 +40,7 @@ impl Default for SharedStorageConfig {
             is_distributed: false,
             incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
             outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+            default_shard_transfer_method: None,
         }
     }
 }
@@ -54,6 +57,7 @@ impl SharedStorageConfig {
         is_distributed: bool,
         incoming_shard_transfers_limit: Option<usize>,
         outgoing_shard_transfers_limit: Option<usize>,
+        default_shard_transfer_method: Option<ShardTransferMethod>,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -69,6 +73,7 @@ impl SharedStorageConfig {
             is_distributed,
             incoming_shard_transfers_limit,
             outgoing_shard_transfers_limit,
+            default_shard_transfer_method,
         }
     }
 }

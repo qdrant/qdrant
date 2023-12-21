@@ -10,6 +10,7 @@ use collection::operations::shared_storage_config::{
 use collection::operations::types::NodeType;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
+use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -82,6 +83,9 @@ pub struct StorageConfig {
     pub recovery_mode: Option<String>,
     #[serde(default)]
     pub update_concurrency: Option<NonZeroUsize>,
+    /// Default method used for transferring shards.
+    #[serde(default)]
+    pub shard_transfer_method: Option<ShardTransferMethod>,
 }
 
 impl StorageConfig {
@@ -98,6 +102,7 @@ impl StorageConfig {
             is_distributed,
             self.performance.incoming_shard_transfers_limit,
             self.performance.outgoing_shard_transfers_limit,
+            self.shard_transfer_method,
         )
     }
 }
