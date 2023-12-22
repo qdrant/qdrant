@@ -378,10 +378,10 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
 }
 
 fn minimum_bounding_rectangle_for_boundary(boundary: &LineString) -> GeoBoundingBox {
-    let mut min_lon = std::f64::MAX;
-    let mut max_lon = std::f64::MIN;
-    let mut min_lat = std::f64::MAX;
-    let mut max_lat = std::f64::MIN;
+    let mut min_lon = f64::MAX;
+    let mut max_lon = f64::MIN;
+    let mut min_lat = f64::MAX;
+    let mut max_lat = f64::MIN;
 
     for point in boundary.coords() {
         if point.x < min_lon {

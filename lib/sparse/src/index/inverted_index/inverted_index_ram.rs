@@ -201,7 +201,7 @@ mod tests {
             let posting_list = inverted_index_ram.get(&i).unwrap();
             let posting_list = posting_list.elements.as_slice();
             assert_eq!(posting_list.len(), 4);
-            assert_eq!(posting_list.get(0).unwrap().weight, 10.0);
+            assert_eq!(posting_list.first().unwrap().weight, 10.0);
             assert_eq!(posting_list.get(1).unwrap().weight, 20.0);
             assert_eq!(posting_list.get(2).unwrap().weight, 30.0);
             assert_eq!(posting_list.get(3).unwrap().weight, 40.0);
@@ -234,7 +234,7 @@ mod tests {
             let posting_list = inverted_index_ram.get(&i).unwrap();
             let posting_list = posting_list.elements.as_slice();
             assert_eq!(posting_list.len(), 4);
-            assert_eq!(posting_list.get(0).unwrap().weight, 10.0);
+            assert_eq!(posting_list.first().unwrap().weight, 10.0);
             assert_eq!(posting_list.get(1).unwrap().weight, 20.0);
             assert_eq!(posting_list.get(2).unwrap().weight, 30.0);
             assert_eq!(posting_list.get(3).unwrap().weight, 40.0);
@@ -244,7 +244,7 @@ mod tests {
         let postings = inverted_index_ram.get(&30).unwrap();
         let postings = postings.elements.as_slice();
         assert_eq!(postings.len(), 1);
-        let posting = postings.get(0).unwrap();
+        let posting = postings.first().unwrap();
         assert_eq!(posting.record_id, 4);
         assert_eq!(posting.weight, 40.0);
     }

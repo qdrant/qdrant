@@ -709,9 +709,9 @@ mod tests {
         // Collection configuration
         let (point_count, dim) = (1000, 10);
         let thresholds_config = OptimizerThresholds {
-            max_segment_size: std::usize::MAX,
+            max_segment_size: usize::MAX,
             memmap_threshold: 10,
-            indexing_threshold: std::usize::MAX,
+            indexing_threshold: usize::MAX,
         };
         let mut collection_params = CollectionParams {
             vectors: VectorsConfig::Single(VectorParams {

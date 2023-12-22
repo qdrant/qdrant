@@ -224,7 +224,7 @@ mod tests {
 
         assert_eq!(res.len(), 3);
 
-        match res.get(0) {
+        match res.first() {
             None => panic!(),
             Some(r) => match &r.payload {
                 None => panic!("No payload assigned"),

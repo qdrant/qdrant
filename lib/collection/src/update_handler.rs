@@ -505,7 +505,7 @@ impl UpdateHandler {
                     debug!("Stopping flush worker.");
                     return;
                 }
-            };
+            }
 
             trace!("Attempting flushing");
             let wal_flash_job = wal.lock().flush_async();

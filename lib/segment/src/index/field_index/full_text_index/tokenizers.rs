@@ -145,7 +145,7 @@ mod tests {
         let mut tokens = Vec::new();
         WhiteSpaceTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens.get(0), Some(&"hello".to_owned()));
+        assert_eq!(tokens.first(), Some(&"hello".to_owned()));
         assert_eq!(tokens.get(1), Some(&"world".to_owned()));
     }
 
@@ -155,7 +155,7 @@ mod tests {
         let mut tokens = Vec::new();
         WordTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens.get(0), Some(&"hello".to_owned()));
+        assert_eq!(tokens.first(), Some(&"hello".to_owned()));
         assert_eq!(tokens.get(1), Some(&"world".to_owned()));
         assert_eq!(tokens.get(2), Some(&"Привет".to_owned()));
         assert_eq!(tokens.get(3), Some(&"мир".to_owned()));
@@ -168,7 +168,7 @@ mod tests {
         PrefixTokenizer::tokenize(text, 1, 4, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
-        assert_eq!(tokens.get(0), Some(&"h".to_owned()));
+        assert_eq!(tokens.first(), Some(&"h".to_owned()));
         assert_eq!(tokens.get(1), Some(&"he".to_owned()));
         assert_eq!(tokens.get(2), Some(&"hel".to_owned()));
         assert_eq!(tokens.get(3), Some(&"hell".to_owned()));
@@ -184,7 +184,7 @@ mod tests {
         PrefixTokenizer::tokenize_query(text, 4, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens.get(0), Some(&"hell".to_owned()));
+        assert_eq!(tokens.first(), Some(&"hell".to_owned()));
         assert_eq!(tokens.get(1), Some(&"мир".to_owned()));
     }
 
@@ -196,7 +196,7 @@ mod tests {
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens.get(0), Some(&"本日".to_owned()));
+        assert_eq!(tokens.first(), Some(&"本日".to_owned()));
         assert_eq!(tokens.get(1), Some(&"の".to_owned()));
         assert_eq!(tokens.get(2), Some(&"日付".to_owned()));
         assert_eq!(tokens.get(3), Some(&"は".to_owned()));
@@ -210,7 +210,7 @@ mod tests {
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
-        assert_eq!(tokens.get(0), Some(&"jīntiān".to_owned()));
+        assert_eq!(tokens.first(), Some(&"jīntiān".to_owned()));
         assert_eq!(tokens.get(1), Some(&"shì".to_owned()));
         assert_eq!(tokens.get(2), Some(&"xīngqīyī".to_owned()));
     }
@@ -222,7 +222,7 @@ mod tests {
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens.get(0), Some(&"มา".to_owned()));
+        assert_eq!(tokens.first(), Some(&"มา".to_owned()));
         assert_eq!(tokens.get(1), Some(&"ทางาน".to_owned()));
         assert_eq!(tokens.get(2), Some(&"กน".to_owned()));
         assert_eq!(tokens.get(3), Some(&"เถอะ".to_owned()));
@@ -235,7 +235,7 @@ mod tests {
         MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 5);
-        assert_eq!(tokens.get(0), Some(&"what".to_owned()));
+        assert_eq!(tokens.first(), Some(&"what".to_owned()));
         assert_eq!(tokens.get(1), Some(&"are".to_owned()));
         assert_eq!(tokens.get(2), Some(&"you".to_owned()));
         assert_eq!(tokens.get(3), Some(&"waiting".to_owned()));
@@ -259,7 +259,7 @@ mod tests {
         );
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
-        assert_eq!(tokens.get(0), Some(&"h".to_owned()));
+        assert_eq!(tokens.first(), Some(&"h".to_owned()));
         assert_eq!(tokens.get(1), Some(&"he".to_owned()));
         assert_eq!(tokens.get(2), Some(&"hel".to_owned()));
         assert_eq!(tokens.get(3), Some(&"hell".to_owned()));
