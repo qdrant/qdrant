@@ -149,8 +149,10 @@ inherits = "release"
 lto = false
 opt-level = 0
 
+# Inherits by default from release
 [profile.bench]
 lto = false
+debug = true
 
 # Profile for performance testing, which is faster to build than release.
 [profile.perf]
