@@ -221,15 +221,15 @@ impl ShardHolder {
         shard_keys_selection: &Option<ShardKey>,
     ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
         let Some(hashring) = self.rings.get(shard_keys_selection) else {
-            if let Some(shard_key) = shard_keys_selection {
-                return Err(CollectionError::bad_input(format!(
+            return if let Some(shard_key) = shard_keys_selection {
+                Err(CollectionError::bad_input(format!(
                     "Shard key {shard_key} not found"
-                )));
+                )))
             } else {
-                return Err(CollectionError::bad_input(
+                Err(CollectionError::bad_input(
                     "Shard key not specified".to_string(),
-                ));
-            }
+                ))
+            };
         };
 
         if hashring.is_empty() {

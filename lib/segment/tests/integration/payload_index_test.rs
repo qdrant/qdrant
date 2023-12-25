@@ -823,7 +823,7 @@ fn test_any_matcher_cardinality_estimation() {
         .estimate_cardinality(&filter);
 
     assert_eq!(estimation.primary_clauses.len(), 1);
-    for (_, clause) in estimation.primary_clauses.iter().enumerate() {
+    for clause in estimation.primary_clauses.iter() {
         let expected_primary_clause = any_match.clone();
 
         match clause {

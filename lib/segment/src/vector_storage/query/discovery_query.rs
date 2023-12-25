@@ -191,7 +191,7 @@ mod test {
             let context_part1 = score1.floor();
             let context_part2 = score2.floor();
 
-            assert!(context_part1 == context_part2, "Context part of score isn't equal, score1: {score1}, score2: {score2}");
+            assert_eq!(context_part1, context_part2,"Context part of score isn't equal, score1: {score1}, score2: {score2}");
         }
     }
 }

@@ -556,10 +556,10 @@ mod tests {
 
         // assert
         assert_eq!(groups.len(), 2);
-        assert_eq!(groups.get(0).unwrap().hits.len(), 2);
+        assert_eq!(groups.first().unwrap().hits.len(), 2);
         assert_eq!(groups.get(1).unwrap().hits.len(), 2);
 
-        let a = groups.get(0).unwrap();
+        let a = groups.first().unwrap();
         let b = groups.get(1).unwrap();
 
         assert!(a
