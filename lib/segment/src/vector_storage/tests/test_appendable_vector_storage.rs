@@ -224,7 +224,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     .unwrap()
     .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
-    let top_idx = match closest.get(0) {
+    let top_idx = match closest.first() {
         Some(scored_point) => {
             assert_eq!(scored_point.idx, 2);
             scored_point.idx
@@ -256,7 +256,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     assert_eq!(raw_res1, raw_res2);
 
-    match closest.get(0) {
+    match closest.first() {
         Some(scored_point) => {
             assert_ne!(scored_point.idx, 2);
             assert_eq!(&raw_res1[scored_point.idx as usize], scored_point);

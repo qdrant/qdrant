@@ -386,8 +386,8 @@ mod tests {
         // Collection configuration
         let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
         let thresholds_config = OptimizerThresholds {
-            max_segment_size: std::usize::MAX,
-            memmap_threshold: std::usize::MAX,
+            max_segment_size: usize::MAX,
+            memmap_threshold: usize::MAX,
             indexing_threshold: 10,
         };
         let collection_params = CollectionParams {

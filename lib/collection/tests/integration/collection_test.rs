@@ -502,7 +502,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 
     // check if we only have 3 out of 5 points left and that the point id were really deleted
     assert_eq!(result.points.len(), 3);
-    assert_eq!(result.points.get(0).unwrap().id, 1.into());
+    assert_eq!(result.points.first().unwrap().id, 1.into());
     assert_eq!(result.points.get(1).unwrap().id, 2.into());
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
 }

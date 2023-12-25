@@ -39,7 +39,7 @@ fn test_point_exclusion() {
         )
         .unwrap();
 
-    let best_match = res.get(0).expect("Non-empty result");
+    let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 
     let ids: HashSet<_> = HashSet::from_iter([3.into()]);
@@ -63,7 +63,7 @@ fn test_point_exclusion() {
         )
         .unwrap();
 
-    let best_match = res.get(0).expect("Non-empty result");
+    let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
 
     let point_ids1: Vec<_> = segment.iter_points().collect();
@@ -98,7 +98,7 @@ fn test_named_vector_search() {
         )
         .unwrap();
 
-    let best_match = res.get(0).expect("Non-empty result");
+    let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 
     let ids: HashSet<_> = HashSet::from_iter([3.into()]);
@@ -122,7 +122,7 @@ fn test_named_vector_search() {
         )
         .unwrap();
 
-    let best_match = res.get(0).expect("Non-empty result");
+    let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
 
     let point_ids1: Vec<_> = segment.iter_points().collect();
@@ -181,7 +181,7 @@ fn test_vector_name_not_exists() {
     );
 
     if let Err(OperationError::VectorNameNotExists { received_name }) = result {
-        assert!(received_name == "vector4");
+        assert_eq!(received_name, "vector4");
     } else {
         panic!("wrong upsert result")
     }
@@ -214,7 +214,7 @@ fn ordered_deletion_test() {
             &false.into(),
         )
         .unwrap();
-    let best_match = res.get(0).expect("Non-empty result");
+    let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 }
 
@@ -279,7 +279,7 @@ fn test_update_named_vector() {
             &false.into(),
         )
         .unwrap();
-    let nearest_upsert = nearest_upsert.get(0).unwrap();
+    let nearest_upsert = nearest_upsert.first().unwrap();
 
     let sqrt_distance = |v: &[f32]| -> f32 { v.iter().map(|x| x * x).sum::<f32>().sqrt() };
 
@@ -317,7 +317,7 @@ fn test_update_named_vector() {
             &false.into(),
         )
         .unwrap();
-    let nearest_update = nearest_update.get(0).unwrap();
+    let nearest_update = nearest_update.first().unwrap();
 
     // check that nearest_upsert is normalized
     match &nearest_update.vector {

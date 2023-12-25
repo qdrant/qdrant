@@ -2287,7 +2287,7 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.get(0) {
+        let c = match should.first() {
             Some(Condition::Field(c)) => c,
             _ => panic!("Condition::Field expected"),
         };
@@ -2392,7 +2392,7 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.get(0) {
+        let c = match should.first() {
             Some(Condition::IsEmpty(c)) => c,
             _ => panic!("Condition::IsEmpty expected"),
         };
@@ -2418,7 +2418,7 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.get(0) {
+        let c = match should.first() {
             Some(Condition::IsNull(c)) => c,
             _ => panic!("Condition::IsNull expected"),
         };
@@ -2458,13 +2458,13 @@ mod tests {
         let filter: Filter = serde_json::from_str(query).unwrap();
         let musts = filter.must.unwrap();
         assert_eq!(musts.len(), 1);
-        match musts.get(0) {
+        match musts.first() {
             Some(Condition::Nested(nested_condition)) => {
                 assert_eq!(nested_condition.raw_key(), "country.cities");
                 assert_eq!(nested_condition.array_key(), "country.cities[]");
                 let nested_musts = nested_condition.filter().must.as_ref().unwrap();
                 assert_eq!(nested_musts.len(), 2);
-                let first_must = nested_musts.get(0).unwrap();
+                let first_must = nested_musts.first().unwrap();
                 match first_must {
                     Condition::Field(c) => {
                         assert_eq!(c.key, "population");

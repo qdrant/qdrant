@@ -7,6 +7,8 @@ use crate::data_types::vectors::Vector;
 use crate::index::field_index::FieldIndex;
 use crate::types::PayloadKeyType;
 
+pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
+
 /// Avoids allocating Vec with a single element
 #[derive(Debug)]
 pub enum MultiValue<T> {
@@ -779,5 +781,3 @@ mod tests {
         );
     }
 }
-
-pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
