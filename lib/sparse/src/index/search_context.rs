@@ -132,9 +132,10 @@ impl<'a> SearchContext<'a> {
             if let Some(element) = posting_iterator.posting_list_iterator.peek() {
                 // accumulate score for the current record id
                 if element.record_id == min_record_id {
-                    let element = posting_iterator.posting_list_iterator.next().unwrap();
                     score +=
                         element.weight * self.query.values[posting_iterator.query_weight_offset];
+                    // advance posting list iterator to next element
+                    posting_iterator.posting_list_iterator.advance();
                 }
             }
         }

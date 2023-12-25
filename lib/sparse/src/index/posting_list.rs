@@ -176,25 +176,18 @@ pub struct PostingListIterator<'a> {
     pub current_index: usize,
 }
 
-impl<'a> Iterator for PostingListIterator<'a> {
-    type Item = &'a PostingElement;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_index < self.elements.len() {
-            let element = &self.elements[self.current_index];
-            self.current_index += 1;
-            Some(element)
-        } else {
-            None
-        }
-    }
-}
-
 impl<'a> PostingListIterator<'a> {
     pub fn new(elements: &'a [PostingElement]) -> PostingListIterator<'a> {
         PostingListIterator {
             elements,
             current_index: 0,
+        }
+    }
+
+    /// Advances the iterator to the next element.
+    pub fn advance(&mut self) {
+        if self.current_index < self.elements.len() {
+            self.current_index += 1;
         }
     }
 
@@ -265,10 +258,9 @@ mod tests {
         let mut iter = PostingListIterator::new(&posting_list.elements);
 
         assert_eq!(iter.peek().unwrap().record_id, 1);
-
-        assert_eq!(iter.next().unwrap().record_id, 1);
+        iter.advance();
         assert_eq!(iter.peek().unwrap().record_id, 2);
-        assert_eq!(iter.next().unwrap().record_id, 2);
+        iter.advance();
         assert_eq!(iter.peek().unwrap().record_id, 3);
 
         assert_eq!(iter.skip_to(7).unwrap().record_id, 7);
