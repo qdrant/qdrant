@@ -172,11 +172,11 @@ For faster production-tier searches, Qdrant also provides a gRPC interface. You 
 
 ### Filtering and Payload
 
-Qdrant offers the capability to attach JSON payloads to vectors, allowing for both the storage and filtering of data based on the values in these payloads.
+Qdrant can attach any JSON payloads to vectors, allowing for both the storage and filtering of data based on the values in these payloads.
 Payload supports a wide range of data types and query conditions, including keyword matching, full-text filtering, numerical ranges, geo-locations, and more.
 
-Filtering conditions can be combined in various ways, including `should`, `must`, and `must_not` clauses, 
-ensuring that any desired business logic can be implemented on top of similarity matching.
+Filtering conditions can be combined in various ways, including `should`, `must`, and `must_not` clauses,
+ensuring that you can implement any desired business logic on top of similarity matching.
 
 
 ### Hybrid Search with Sparse Vectors
@@ -185,13 +185,13 @@ To address the limitations of vector embeddings when searching for specific keyw
 Qdrant introduces support for sparse vectors in addition to the regular dense ones.
 
 Sparse vectors can be viewed as an extension of BM25 or TF-IDF searches.
-However, they also allow to harness the capabilities of transformer-based neural networks to effectively weigh individual tokens.
+However, they also harness the capabilities of transformer-based neural networks to weigh individual tokens effectively.
 
 
 ### Vector Quantization and On-Disk Storage
 
-Qdrant provides a set of options to make vector search cheaper and more resource-efficient.
-Built-in vector quantization allows to reduce RAM usage up to 97% and dynamically manage the trade-off between search speed and precision.
+Qdrant provides multiple options to make vector search cheaper and more resource-efficient.
+Built-in vector quantization reduces RAM usage by up to 97% and dynamically manages the trade-off between search speed and precision.
 
 
 ### Distributed Deployment
