@@ -66,15 +66,18 @@ qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant inst
 
 Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
 
-- Official: [Go client](https://github.com/qdrant/go-client)
-- Official: [Rust client](https://github.com/qdrant/rust-client)
-- Official: [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
-- Official: [Python client](https://github.com/qdrant/qdrant-client)
-- Official: [.NET/C# client](https://github.com/qdrant/qdrant-dotnet)
-- Community: [Elixir](https://hexdocs.pm/qdrant/readme.html)
-- Community: [PHP](https://github.com/hkulekci/qdrant-php)
-- Community: [Ruby](https://github.com/andreibondarev/qdrant-ruby)
-- Community: [Java](https://github.com/metaloom/qdrant-java-client)
+- Official:
+  - [Go client](https://github.com/qdrant/go-client)
+  - [Rust client](https://github.com/qdrant/rust-client)
+  - [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
+  - [Python client](https://github.com/qdrant/qdrant-client)
+  - [.NET/C# client](https://github.com/qdrant/qdrant-dotnet)
+  - [Java client](https://github.com/qdrant/java-client)
+- Community:
+  - [Elixir](https://hexdocs.pm/qdrant/readme.html)
+  - [PHP](https://github.com/hkulekci/qdrant-php)
+  - [Ruby](https://github.com/andreibondarev/qdrant-ruby)
+  - [Java](https://github.com/metaloom/qdrant-java-client)
 
 ### Where do I go from here?
 
@@ -169,31 +172,43 @@ For faster production-tier searches, Qdrant also provides a gRPC interface. You 
 
 ### Filtering and Payload
 
-Qdrant enables JSON payloads to be associated with vectors, providing both storage and filtering based on payload values. It supports various combinations of `should`, `must`, and `must_not` conditions, ensuring retrieval of all relevant vectors unlike `ElasticSearch` post-filtering.
+Qdrant offers the capability to attach JSON payloads to vectors, allowing for both the storage and filtering of data based on the values in these payloads.
+Payload supports a wide range of data types and query conditions, including keyword matching, full-text filtering, numerical ranges, geo-locations, and more.
 
-### Rich Data Types
+Filtering conditions can be combined in various ways, including `should`, `must`, and `must_not` clauses, 
+ensuring that any desired business logic can be implemented on top of similarity matching.
 
-The vector payload accommodates diverse data types and query conditions, including string matching, numerical ranges, geo-locations, and more. These filtering conditions empower you to create custom business logic on top of similarity matching.
 
-### Query Planning and Payload Indexes
+### Hybrid Search with Sparse Vectors
 
-The _query planner_ leverages stored payload information to optimize query execution. For instance, smaller search spaces limited by filters might benefit from full brute force over an index.
+To address the limitations of vector embeddings when searching for specific keywords,
+Qdrant introduces support for sparse vectors in addition to the regular dense ones.
 
-### SIMD Hardware Acceleration
+Sparse vectors can be viewed as an extension of BM25 or TF-IDF searches.
+However, they also allow to harness the capabilities of transformer-based neural networks to effectively weigh individual tokens.
 
-Utilizing modern CPU x86-x64 architectures, Qdrant delivers faster search performance on modern hardware.
 
-### Write-Ahead Logging
+### Vector Quantization and On-Disk Storage
 
-Qdrant ensures data persistence with update confirmation, even during power outages. The update journal stores all operations, enabling effortless reconstruction of the latest database state.
+Qdrant provides a set of options to make vector search cheaper and more resource-efficient.
+Built-in vector quantization allows to reduce RAM usage up to 97% and dynamically manage the trade-off between search speed and precision.
+
 
 ### Distributed Deployment
 
-As of [v0.8.0](https://github.com/qdrant/qdrant/releases/tag/v0.8.0), Qdrant supports distributed deployment. Multiple Qdrant machines form a cluster for horizontal scaling, coordinated through the [Raft](https://raft.github.io/) protocol.
+Qdrant offers comprehensive horizontal scaling support through two key mechanisms:
+size expansion via sharding and throughput enhancement via replication.
 
-### Stand-alone
+It enables zero-downtime rolling updates and seamless dynamic scaling of the collections.
 
-Qdrant operates independently, without reliance on external databases or orchestration controllers, simplifying configuration.
+
+### And more
+
+* **Query Planning and Payload Indexes** - leverages stored payload information to optimize query execution strategy.
+* **SIMD Hardware Acceleration** - utilizes modern CPU x86-x64 and Neon architectures to deliver better performance.
+* **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on a network-attached storage.
+* **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages. 
+
 
 # Integrations
 
