@@ -24,4 +24,4 @@ jobs:
             GITHUB_TAG="-t docker.pkg.github.com/qdrant/qdrant/qdrant:dev-${{ github.sha }}"
 
             # Pull, retag and push to GitHub packages
-            docker buildx build --platform='linux/amd64,linux/arm64' GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
+            docker buildx build --platform='linux/amd64,linux/arm64' $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
