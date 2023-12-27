@@ -1,0 +1,28 @@
+name: Docker Build and Push dev branch images
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+
+jobs:
+  dev-build-and-push:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+        - uses: actions/checkout@v4
+        - uses: Swatinem/rust-cache@v2
+        - name: Build the Docker image
+          run: |
+            # Create build container
+            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+            docker buildx create --use
+
+            # Authenticate on registries
+            docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
+
+            # Build regular image for Github Registry
+            GITHUB_TAG="-t docker.pkg.github.com/qdrant/qdrant/qdrant:dev-${{ github.sha }}"
+
+            # Pull, retag and push to GitHub packages
+            docker buildx build --platform='linux/amd64,linux/arm64' $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
