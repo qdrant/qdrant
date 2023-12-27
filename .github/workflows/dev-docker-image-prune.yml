@@ -8,7 +8,7 @@ on:
 
 jobs:
   dev-clean-ghcr:
-    name: Delete old unused container images
+    name: Delete old unused dev container images
     runs-on: ubuntu-latest
     steps:
       - name: Delete dev branch containers older than a month
