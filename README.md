@@ -195,9 +195,8 @@ Built-in vector quantization reduces RAM usage by up to 97% and dynamically mana
 ### Distributed Deployment
 
 Qdrant offers comprehensive horizontal scaling support through two key mechanisms:
-size expansion via sharding and throughput enhancement via replication.
-
-It enables zero-downtime rolling updates and seamless dynamic scaling of the collections.
+1. Size expansion via sharding and throughput enhancement via replication
+2. Zero-downtime rolling updates and seamless dynamic scaling of the collections
 
 
 ### And more
