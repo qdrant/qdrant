@@ -199,7 +199,7 @@ Qdrant offers comprehensive horizontal scaling support through two key mechanism
 2. Zero-downtime rolling updates and seamless dynamic scaling of the collections
 
 
-### And more
+### Highlighted Features
 
 * **Query Planning and Payload Indexes** - leverages stored payload information to optimize query execution strategy.
 * **SIMD Hardware Acceleration** - utilizes modern CPU x86-x64 and Neon architectures to deliver better performance.
