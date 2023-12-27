@@ -1,6 +1,7 @@
 name: Delete old container images
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "0 0 * * *"  # every day at midnight
 

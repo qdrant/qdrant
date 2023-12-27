@@ -7,7 +7,7 @@ on:
 
 jobs:
   dev-build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
         - uses: actions/checkout@v4
         - uses: Swatinem/rust-cache@v2
@@ -18,17 +18,10 @@ jobs:
             docker buildx create --use
 
             # Authenticate on registries
-            docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
             docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
 
-            # Build regular image for Docker Hub
-            DOCKERHUB_TAG="qdrant/qdrant:dev-${{ github.sha }}"
-            DOCKERHUB_TAG_LATEST="qdrant/qdrant:dev"
-            TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST}"
-            GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:dev-${{ github.sha }}"
+            # Build regular image for Github Registry
+            GITHUB_TAG="-t docker.pkg.github.com/qdrant/qdrant/qdrant:dev-${{ github.sha }}"
 
             # Pull, retag and push to GitHub packages
-            docker buildx build --platform='linux/amd64,linux/arm64' $TAGS --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
-            docker pull $DOCKERHUB_TAG
-            docker tag $DOCKERHUB_TAG $GITHUB_TAG
-            docker push $GITHUB_TAG
+            docker buildx build --platform='linux/amd64,linux/arm64' GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
