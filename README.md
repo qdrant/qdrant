@@ -181,8 +181,7 @@ ensuring that you can implement any desired business logic on top of similarity 
 
 ### Hybrid Search with Sparse Vectors
 
-To address the limitations of vector embeddings when searching for specific keywords,
-Qdrant introduces support for sparse vectors in addition to the regular dense ones.
+To address the limitations of vector embeddings when searching for specific keywords, Qdrant introduces support for sparse vectors in addition to the regular dense ones.
 
 Sparse vectors can be viewed as an generalisation of BM25 or TF-IDF ranking. They enable you to harness the capabilities of transformer-based neural networks to weigh individual tokens effectively.
 
