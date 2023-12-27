@@ -6,17 +6,12 @@ on:
       - dev
 
 jobs:
-  build-and-push:
+  dev-build-and-push:
     runs-on: ubuntu-latest
     steps:
         - uses: actions/checkout@v4
         - uses: Swatinem/rust-cache@v2
-        - name: Get current tag
-          id: vars
-          run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
         - name: Build the Docker image
-          env:
-            RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
           run: |
             # Create build container
             docker run --rm --privileged multiarch/qemu-user-static --reset -p yes

@@ -6,7 +6,7 @@ on:
 
 
 jobs:
-  clean-ghcr:
+  dev-clean-ghcr:
     name: Delete old unused container images
     runs-on: ubuntu-latest
     steps:
