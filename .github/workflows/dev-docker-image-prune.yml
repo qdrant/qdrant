@@ -20,5 +20,6 @@ jobs:
           org-name: qdrant
           keep-at-least: 10
           filter-tags: dev-*
-          token: ${{ secrets.PAT }}
+          token-type: github-token
+          token: ${{ secrets.GITHUB_TOKEN }}
           dry-run: true
