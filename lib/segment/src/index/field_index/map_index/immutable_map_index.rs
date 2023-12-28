@@ -14,12 +14,12 @@ use super::mutable_map_index::MutableMapIndex;
 use super::MapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
-pub struct ImmutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
+pub struct ImmutableMapIndex<N: Hash + Eq + Clone + Display + FromStr + Default> {
     value_to_points: HashMap<N, Range<u32>>,
     value_to_points_container: Vec<PointOffsetType>,
-    point_to_values: Vec<Range<u32>>,
-    point_to_values_container: Vec<N>,
+    point_to_values: ImmutablePointToValues<N>,
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
     values_count: usize,
@@ -34,7 +34,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
             value_to_points: Default::default(),
             value_to_points_container: Default::default(),
             point_to_values: Default::default(),
-            point_to_values_container: Default::default(),
             indexed_points: 0,
             values_count: 0,
             db_wrapper,
@@ -42,11 +41,15 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
     }
 
     /// Return mutable slice of a container which holds point_ids for given value.
-    fn get_mut_point_ids_slice(&mut self, value: &N) -> Option<&mut [PointOffsetType]> {
-        match self.value_to_points.get(value) {
+    fn get_mut_point_ids_slice<'a>(
+        value_to_points: &mut HashMap<N, Range<u32>>,
+        value_to_points_container: &'a mut Vec<PointOffsetType>,
+        value: &N,
+    ) -> Option<&'a mut [PointOffsetType]> {
+        match value_to_points.get(value) {
             Some(vals_range) if vals_range.start < vals_range.end => {
                 let range = vals_range.start as usize..vals_range.end as usize;
-                let vals = &mut self.value_to_points_container[range];
+                let vals = &mut value_to_points_container[range];
                 Some(vals)
             }
             _ => None,
@@ -55,8 +58,8 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
 
     /// Shrinks the range of values-to-points by one.
     /// Returns true if the last element was removed.
-    fn shrink_value_range(&mut self, value: &N) -> bool {
-        if let Some(range) = self.value_to_points.get_mut(value) {
+    fn shrink_value_range(value_to_points: &mut HashMap<N, Range<u32>>, value: &N) -> bool {
+        if let Some(range) = value_to_points.get_mut(value) {
             range.end -= 1;
             return range.start == range.end; // true if the last element was removed
         }
@@ -90,8 +93,15 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
     /// }
     ///
     /// value_to_points_container -> [0, 1, 2, 4, (3), 5, 6, 7, 8, 9]
-    fn remove_idx_from_value_list(&mut self, value: &N, idx: PointOffsetType) {
-        let values = if let Some(values) = self.get_mut_point_ids_slice(value) {
+    fn remove_idx_from_value_list(
+        value_to_points: &mut HashMap<N, Range<u32>>,
+        value_to_points_container: &mut Vec<PointOffsetType>,
+        value: &N,
+        idx: PointOffsetType,
+    ) {
+        let values = if let Some(values) =
+            Self::get_mut_point_ids_slice(value_to_points, value_to_points_container, value)
+        {
             values
         } else {
             debug_assert!(false, "value {} not found in value_to_points", value);
@@ -105,39 +115,26 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
             values.swap(pos, values.len() - 1);
         }
 
-        if self.shrink_value_range(value) {
-            self.value_to_points.remove(value);
+        if Self::shrink_value_range(value_to_points, value) {
+            value_to_points.remove(value);
         }
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if self.point_to_values.len() <= idx as usize {
-            return Ok(());
+        if let Some(removed_values) = self.point_to_values.get_values(idx) {
+            for value in removed_values {
+                Self::remove_idx_from_value_list(
+                    &mut self.value_to_points,
+                    &mut self.value_to_points_container,
+                    value,
+                    idx,
+                );
+                // update db
+                let key = MapIndex::encode_db_record(value, idx);
+                self.db_wrapper.remove(key)?;
+            }
         }
-
-        // Point removing has to remove `idx` from both maps: points-to-values and values-to-points.
-        // The first one is easy: we just remove the entry from the map.
-        // The second one is more complicated: we have to remove all mentions of `idx` in values-to-points map.
-        // To deal with it, take old values from points-to-values map, witch contains all values with `idx` in values-to-points map.
-
-        let removed_values_range = self.point_to_values[idx as usize].clone();
-        self.point_to_values[idx as usize] = Default::default();
-
-        if !removed_values_range.is_empty() {
-            self.indexed_points -= 1;
-        }
-        self.values_count -= removed_values_range.len();
-
-        // Iterate over all values which were removed from points-to-values map
-        for value_index in removed_values_range {
-            // Actually remove value from container and get it
-            let value = std::mem::take(&mut self.point_to_values_container[value_index as usize]);
-            self.remove_idx_from_value_list(&value, idx);
-            // update db
-            let key = MapIndex::encode_db_record(&value, idx);
-            self.db_wrapper.remove(key)?;
-        }
-
+        self.point_to_values.remove_point(idx);
         Ok(())
     }
 
@@ -169,8 +166,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
         self.values_count = values_count;
         self.value_to_points.clear();
         self.value_to_points_container.clear();
-        self.point_to_values.clear();
-        self.point_to_values_container.clear();
 
         // flatten values-to-points map
         for (value, points) in map {
@@ -181,22 +176,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
             self.value_to_points_container.extend(points);
         }
 
-        // flatten points-to-values map
-        for values in point_to_values {
-            let values = values.into_iter().collect::<Vec<_>>();
-            let container_len = self.point_to_values_container.len() as u32;
-            let range = container_len..container_len + values.len() as u32;
-            self.point_to_values.push(range.clone());
-            self.point_to_values_container.extend(values);
-        }
+        self.point_to_values = ImmutablePointToValues::new(point_to_values);
 
         Ok(result)
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&[N]> {
-        let range = self.point_to_values.get(idx as usize)?.clone();
-        let range = range.start as usize..range.end as usize;
-        Some(&self.point_to_values_container[range])
+        self.point_to_values.get_values(idx)
     }
 
     pub fn get_indexed_points(&self) -> usize {
