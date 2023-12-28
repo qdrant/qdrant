@@ -794,7 +794,7 @@ pub struct SegmentState {
 }
 
 /// Geo point payload schema
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
 #[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
     pub lon: f64,
