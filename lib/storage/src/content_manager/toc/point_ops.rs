@@ -11,6 +11,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::{discovery, recommendations};
 use futures::future::try_join_all;
 use segment::types::{ScoredPoint, ShardKey};
+use tracing::Instrument as _;
 
 use super::TableOfContent;
 use crate::content_manager::errors::StorageError;
@@ -269,6 +270,7 @@ impl TableOfContent {
         Ok(results.into_iter().next().unwrap())
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     pub async fn update(
         &self,
         collection_name: &str,
@@ -277,7 +279,14 @@ impl TableOfContent {
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
     ) -> Result<UpdateResult, StorageError> {
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self
+            .get_collection(collection_name)
+            .instrument(tracing::debug_span!(
+                "get_collection",
+                collection_name,
+                internal = true
+            ))
+            .await?;
 
         // Ordered operation flow:
         //
@@ -308,7 +317,15 @@ impl TableOfContent {
             Some(rate_limiter) => {
                 // We only want to rate limit the first node in the chain
                 if !shard_selector.is_shard_id() {
-                    Some(rate_limiter.acquire().await)
+                    let permit = rate_limiter
+                        .acquire()
+                        .instrument(tracing::debug_span!(
+                            "rate_limiter.acquire()",
+                            internal = true
+                        ))
+                        .await;
+
+                    Some(permit)
                 } else {
                     None
                 }

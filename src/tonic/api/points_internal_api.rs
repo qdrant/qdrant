@@ -35,6 +35,7 @@ impl PointsInternalService {
 
 #[tonic::async_trait]
 impl PointsInternal for PointsInternalService {
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     async fn upsert(
         &self,
         request: Request<UpsertPointsInternal>,

@@ -9,6 +9,7 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
+use tracing::Instrument as _;
 
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
@@ -162,12 +163,17 @@ impl ForwardProxyShard {
 #[async_trait]
 impl ShardOperation for ForwardProxyShard {
     /// Update `wrapped_shard` while keeping track of the changed points
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let _update_lock = self.update_lock.lock().await;
+        let _update_lock = self
+            .update_lock
+            .lock()
+            .instrument(tracing::debug_span!("update_lock.lock()", internal = true))
+            .await;
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.

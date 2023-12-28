@@ -3810,6 +3810,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tracing",
+ "tracing-forest",
  "tracing-log",
  "tracing-subscriber",
  "tracing-tracy",

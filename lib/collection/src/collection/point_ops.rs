@@ -3,6 +3,7 @@ use std::sync::Arc;
 use futures::{future, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools as _;
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
+use tracing::Instrument as _;
 use validator::Validate as _;
 
 use super::Collection;
@@ -46,8 +47,19 @@ impl Collection {
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
-        let _update_lock = self.updates_lock.read().await;
-        let shard_holder_guard = self.shards_holder.read().await;
+        let _update_lock = self
+            .updates_lock
+            .read()
+            .instrument(tracing::debug_span!("updates_lock.read()", internal = true))
+            .await;
+        let shard_holder_guard = self
+            .shards_holder
+            .read()
+            .instrument(tracing::debug_span!(
+                "shards_holder.read()",
+                internal = true
+            ))
+            .await;
 
         let res = match shard_holder_guard.get_shard(&shard_selection) {
             None => None,

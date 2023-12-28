@@ -9,6 +9,7 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
+use tracing::Instrument as _;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
@@ -101,11 +102,13 @@ impl LocalShard {
         Ok(top_results)
     }
 }
+
 #[async_trait]
 impl ShardOperation for LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
@@ -120,9 +123,22 @@ impl ShardOperation for LocalShard {
 
         let operation_id = {
             let update_sender = self.update_sender.load();
-            let channel_permit = update_sender.reserve().await?;
+            let channel_permit = update_sender
+                .reserve()
+                .instrument(tracing::debug_span!(
+                    "update_sender.reserve()",
+                    internal = true
+                ))
+                .await?;
+
+            let span = tracing::debug_span!("wal.lock()", internal = true).entered();
             let mut wal_lock = self.wal.lock();
+            drop(span);
+
+            let span = tracing::debug_span!("wal.write()", internal = true).entered();
             let operation_id = wal_lock.write(&operation)?;
+            drop(span);
+
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
                 operation,
@@ -133,7 +149,12 @@ impl ShardOperation for LocalShard {
         };
 
         if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
+            let _res = receiver
+                .instrument(tracing::debug_span!(
+                    "callback_receiver.await",
+                    internal = true
+                ))
+                .await??;
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,

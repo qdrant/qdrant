@@ -4,6 +4,7 @@ use std::time::Duration;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
+use tracing::Instrument as _;
 
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::point_ops::WriteOrdering;
@@ -16,12 +17,18 @@ const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl ShardReplicaSet {
     /// Update local shard if any without forwarding to remote shards
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     pub async fn update_local(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
-        if let Some(local_shard) = &*self.local.read().await {
+        if let Some(local_shard) = &*self
+            .local
+            .read()
+            .instrument(tracing::debug_span!("local.read()", internal = true))
+            .await
+        {
             match self.peer_state(&self.this_peer_id()) {
                 Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
@@ -102,6 +109,7 @@ impl ShardReplicaSet {
         self.replica_state.read().peers.keys().max().cloned()
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
@@ -165,6 +173,12 @@ impl ShardReplicaSet {
                         .map(|ok| (remote.peer_id, ok))
                         .map_err(|err| (remote.peer_id, err))
                 };
+
+                let remote_update = remote_update.instrument(tracing::debug_span!(
+                    "remote update",
+                    remote.peer_id,
+                    internal = true
+                ));
 
                 update_futures.push(remote_update.right_future());
             }

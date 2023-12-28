@@ -9,7 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"]
+tracing = ["api/tracing", "collection/tracing", "segment/tracing"]
 
 [dev-dependencies]
 tempfile = "3.8.1"
@@ -56,4 +56,4 @@ url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
 tempfile = "3.8.1"
 
-tracing = { version = "0.1", features = ["async-await"], optional = true }
+tracing = { version = "0.1", features = ["async-await"] }

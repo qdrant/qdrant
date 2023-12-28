@@ -429,6 +429,8 @@ impl UpdateHandler {
                     wait,
                 }) => {
                     let flush_res = if wait {
+                        let _span =
+                            tracing::debug_span!("wal.lock().flush()", internal = true).entered();
                         wal.lock().flush().map_err(|err| {
                             CollectionError::service_error(format!(
                                 "Can't flush WAL before operation {} - {}",

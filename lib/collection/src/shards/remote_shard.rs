@@ -28,6 +28,7 @@ use tokio::runtime::Handle;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
+use tracing::Instrument as _;
 use url::Url;
 
 use super::conversions::{
@@ -217,6 +218,7 @@ impl RemoteShard {
         .await
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     pub async fn execute_update_operation(
         &self,
         shard_id: Option<ShardId>,
@@ -239,8 +241,12 @@ impl RemoteShard {
                         ordering,
                     )?;
                     self.with_points_client(|mut client| async move {
-                        client.upsert(tonic::Request::new(request.clone())).await
+                        client
+                            .upsert(tonic::Request::new(request.clone()))
+                            .instrument(tracing::debug_span!("upsert"))
+                            .await
                     })
+                    .instrument(tracing::debug_span!("with_points_client"))
                     .await?
                     .into_inner()
                 }
@@ -538,6 +544,7 @@ pub struct CollectionCoreSearchRequest<'a>(pub(crate) (CollectionId, &'a CoreSea
 #[async_trait]
 #[allow(unused_variables)]
 impl ShardOperation for RemoteShard {
+    #[tracing::instrument(skip_all, level = "debug", fields(internal = true))]
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
