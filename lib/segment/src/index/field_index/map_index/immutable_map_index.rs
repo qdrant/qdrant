@@ -43,7 +43,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
     /// Return mutable slice of a container which holds point_ids for given value.
     fn get_mut_point_ids_slice<'a>(
         value_to_points: &mut HashMap<N, Range<u32>>,
-        value_to_points_container: &'a mut Vec<PointOffsetType>,
+        value_to_points_container: &'a mut [PointOffsetType],
         value: &N,
     ) -> Option<&'a mut [PointOffsetType]> {
         match value_to_points.get(value) {
@@ -95,7 +95,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
     /// value_to_points_container -> [0, 1, 2, 4, (3), 5, 6, 7, 8, 9]
     fn remove_idx_from_value_list(
         value_to_points: &mut HashMap<N, Range<u32>>,
-        value_to_points_container: &mut Vec<PointOffsetType>,
+        value_to_points_container: &mut [PointOffsetType],
         value: &N,
         idx: PointOffsetType,
     ) {

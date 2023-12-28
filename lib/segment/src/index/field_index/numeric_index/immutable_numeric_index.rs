@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
+use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
-use std::ops::{Bound, Range};
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -12,15 +12,15 @@ use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECIS
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
+use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
-pub struct ImmutableNumericIndex<T: Encodable + Numericable> {
+pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
     map: NumericKeySortedVec<T>,
     db_wrapper: DatabaseColumnWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
     pub(super) max_values_per_point: usize,
-    point_to_values: Vec<Range<u32>>,
-    point_to_values_container: Vec<T>,
+    point_to_values: ImmutablePointToValues<T>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -193,7 +193,7 @@ impl<'a, T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVec
     }
 }
 
-impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
+impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
     pub(super) fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
         let store_cf_name = NumericIndex::<T>::storage_cf_name(field);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
@@ -207,7 +207,6 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
             points_count: 0,
             max_values_per_point: 1,
             point_to_values: Default::default(),
-            point_to_values_container: Default::default(),
         }
     }
 
@@ -216,9 +215,7 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
     }
 
     pub(super) fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
-        let range = self.point_to_values.get(idx as usize)?.clone();
-        let range = range.start as usize..range.end as usize;
-        Some(&self.point_to_values_container[range])
+        self.point_to_values.get_values(idx)
     }
 
     pub(super) fn get_values_count(&self) -> usize {
@@ -259,40 +256,23 @@ impl<T: Encodable + Numericable> ImmutableNumericIndex<T> {
         self.points_count = points_count;
         self.max_values_per_point = max_values_per_point;
 
-        // flatten points-to-values map
-        for values in point_to_values {
-            let values = values.into_iter().collect::<Vec<_>>();
-            let container_len = self.point_to_values_container.len() as u32;
-            let range = container_len..container_len + values.len() as u32;
-            self.point_to_values.push(range.clone());
-            self.point_to_values_container.extend(values);
-        }
+        self.point_to_values = ImmutablePointToValues::new(point_to_values);
 
         Ok(true)
     }
 
     pub(super) fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if self.point_to_values.len() <= idx as usize {
-            return Ok(());
+        if let Some(removed_values) = self.point_to_values.get_values(idx) {
+            for value in removed_values {
+                let key = NumericIndexKey::new(*value, idx);
+                Self::remove_from_map(&mut self.map, &mut self.histogram, key);
+
+                // update db
+                let encoded = value.encode_key(idx);
+                self.db_wrapper.remove(encoded)?;
+            }
         }
-
-        let removed_values_range = self.point_to_values[idx as usize].clone();
-        self.point_to_values[idx as usize] = Default::default();
-
-        if !removed_values_range.is_empty() {
-            self.points_count -= 1;
-        }
-
-        for value_index in removed_values_range {
-            let value = self.point_to_values_container[value_index as usize];
-            let key = NumericIndexKey::new(value, idx);
-            Self::remove_from_map(&mut self.map, &mut self.histogram, key);
-
-            // update db
-            let encoded = value.encode_key(idx);
-            self.db_wrapper.remove(encoded)?;
-        }
-
+        self.point_to_values.remove_point(idx);
         Ok(())
     }
 
