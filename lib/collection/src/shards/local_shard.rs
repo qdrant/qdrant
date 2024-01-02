@@ -452,6 +452,15 @@ impl LocalShard {
         bar.set_message(format!("Recovering collection {collection_id}"));
         let segments = self.segments();
 
+        // Fall back to basic text output if the progress bar is hidden (e.g. not a tty)
+        let show_progress_bar = !bar.is_hidden();
+        if !show_progress_bar {
+            eprintln!(
+                "Recovering collection {collection_id}: 0/{} (0%)",
+                wal.len(),
+            );
+        }
+
         // When `Segment`s are flushed, WAL is truncated up to the index of the last operation
         // that has been applied and flushed.
         //
@@ -465,7 +474,7 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (op_num, update) in wal.read_all() {
+        for (i, (op_num, update)) in wal.read_all().enumerate() {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
@@ -492,11 +501,29 @@ impl LocalShard {
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
             }
-            bar.inc(1);
+
+            // Update progress bar or show text progress every 100 operations
+            let progress = i as u64 + 1;
+            bar.set_position(progress);
+            if !show_progress_bar && progress % 100 == 0 {
+                eprintln!(
+                    "{}/{} ({}%)",
+                    progress,
+                    wal.len(),
+                    (progress as f32 / wal.len() as f32 * 100.0) as usize,
+                );
+            }
         }
 
         self.segments.read().flush_all(true)?;
+
         bar.finish();
+        if !show_progress_bar {
+            eprintln!(
+                "Recovered collection {collection_id}: {0}/{0} (100%)",
+                wal.len(),
+            );
+        }
 
         Ok(())
     }
