@@ -12,6 +12,7 @@ categories = [
 ]
 license = "MIT"
 repository = "https://github.com/QnnOkabayashi/tracing-forest"
+publish = false
 
 [features]
 default = ["smallvec"]
