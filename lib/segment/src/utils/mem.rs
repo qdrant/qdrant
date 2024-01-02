@@ -142,10 +142,9 @@ mod sysinfo_mem {
 
     impl SysinfoMem {
         pub fn new() -> Self {
-            let mut system = System::new_with_specifics(
+            let system = System::new_with_specifics(
                 RefreshKind::new().with_memory(MemoryRefreshKind::everything()),
             );
-            system.refresh_memory();
             Self { system }
         }
 
