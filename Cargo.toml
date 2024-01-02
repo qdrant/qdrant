@@ -79,7 +79,7 @@ num-traits = "0.2.17"
 tar = "0.4.40"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
 rustls = "0.21.10"
-rustls-pemfile = "1.0.3"
+rustls-pemfile = "2.0.0"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
