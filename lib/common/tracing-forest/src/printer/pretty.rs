@@ -1,17 +1,14 @@
+use std::fmt::{self, Write as _};
+use std::time::Duration;
+
 use crate::printer::Formatter;
-use crate::tree::{Event, Shared, Span, Tree};
+use crate::tree::{Event, Field, Shared, Span, Tree};
 use crate::Tag;
-use std::fmt::{self, Write};
 
 #[cfg(feature = "smallvec")]
 type IndentVec = smallvec::SmallVec<[Indent; 32]>;
 #[cfg(not(feature = "smallvec"))]
 type IndentVec = Vec<Indent>;
-
-#[cfg(feature = "ansi")]
-use ansi_term::Color;
-#[cfg(feature = "ansi")]
-use tracing::Level;
 
 /// Format logs for pretty printing.
 ///
@@ -59,7 +56,16 @@ use tracing::Level;
 /// TRACE    ┕━ 📍 [trace]: Finished!
 /// ```
 #[derive(Debug)]
-pub struct Pretty;
+pub struct Pretty {
+    ansi: bool,
+}
+
+impl Pretty {
+    #[allow(missing_docs)]
+    pub const fn new(ansi: bool) -> Self {
+        Self { ansi }
+    }
+}
 
 impl Formatter for Pretty {
     type Error = fmt::Error;
@@ -67,55 +73,62 @@ impl Formatter for Pretty {
     fn fmt(&self, tree: &Tree) -> Result<String, fmt::Error> {
         let mut writer = String::with_capacity(256);
 
-        Pretty::format_tree(tree, None, &mut IndentVec::new(), &mut writer)?;
+        self.format_tree(tree, &mut IndentVec::new(), &mut writer)?;
 
         Ok(writer)
     }
 }
 
 impl Pretty {
-    fn format_tree(
-        tree: &Tree,
-        duration_root: Option<f64>,
-        indent: &mut IndentVec,
-        writer: &mut String,
-    ) -> fmt::Result {
+    fn format_tree(&self, tree: &Tree, indent: &mut IndentVec, writer: &mut String) -> fmt::Result {
         match tree {
             Tree::Event(event) => {
-                Pretty::format_shared(&event.shared, writer)?;
-                Pretty::format_indent(indent, writer)?;
-                Pretty::format_event(event, writer)
+                self.format_shared(&event.shared, writer)?;
+                self.format_indent(indent, writer)?;
+                self.format_event(event, writer)?;
             }
+
             Tree::Span(span) => {
-                Pretty::format_shared(&span.shared, writer)?;
-                Pretty::format_indent(indent, writer)?;
-                Pretty::format_span(span, duration_root, indent, writer)
+                self.format_shared(&span.shared, writer)?;
+                self.format_indent(indent, writer)?;
+                self.format_span(span, indent, writer)?;
             }
         }
+
+        Ok(())
     }
 
-    fn format_shared(shared: &Shared, writer: &mut String) -> fmt::Result {
+    fn format_shared(&self, shared: &Shared, writer: &mut String) -> fmt::Result {
         #[cfg(feature = "uuid")]
         write!(writer, "{} ", shared.uuid)?;
 
         #[cfg(feature = "chrono")]
-        write!(writer, "{:<36} ", shared.timestamp.to_rfc3339())?;
+        write!(
+            writer,
+            "{:<26} ",
+            shared
+                .timestamp
+                .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+        )?;
 
-        #[cfg(feature = "ansi")]
-        return write!(writer, "{:<8} ", ColorLevel(shared.level));
-
-        #[cfg(not(feature = "ansi"))]
-        return write!(writer, "{:<8} ", shared.level);
-    }
-
-    fn format_indent(indent: &[Indent], writer: &mut String) -> fmt::Result {
-        for indent in indent {
-            writer.write_str(indent.repr())?;
+        if self.ansi {
+            write!(writer, "{:<8} ", ColorLevel(shared.level))?;
+        } else {
+            write!(writer, "{:<8} ", shared.level)?;
         }
+
         Ok(())
     }
 
-    fn format_event(event: &Event, writer: &mut String) -> fmt::Result {
+    fn format_indent(&self, indent: &[Indent], writer: &mut String) -> fmt::Result {
+        for indent in indent {
+            writer.write_str(indent.repr())?;
+        }
+
+        Ok(())
+    }
+
+    fn format_event(&self, event: &Event, writer: &mut String) -> fmt::Result {
         let tag = event.tag().unwrap_or_else(|| Tag::from(event.level()));
 
         write!(writer, "{} [{}]: ", tag.icon(), tag)?;
@@ -124,48 +137,36 @@ impl Pretty {
             writer.write_str(message)?;
         }
 
-        for field in event.fields().iter() {
-            write!(writer, " | {}: {}", field.key(), field.value())?;
-        }
+        self.format_fields(event.fields(), writer)?;
+        writeln!(writer)?;
 
-        writeln!(writer)
+        Ok(())
     }
 
-    fn format_span(
-        span: &Span,
-        duration_root: Option<f64>,
-        indent: &mut IndentVec,
-        writer: &mut String,
-    ) -> fmt::Result {
-        let total_duration = span.total_duration().as_nanos() as f64;
-        let inner_duration = span.inner_duration().as_nanos() as f64;
-        let root_duration = duration_root.unwrap_or(total_duration);
-        let percent_total_of_root_duration = 100.0 * total_duration / root_duration;
+    fn format_span(&self, span: &Span, indent: &mut IndentVec, writer: &mut String) -> fmt::Result {
+        let total_duration = span.total_duration();
+        let busy_duration = span.busy_duration();
+        let idle_duration = span.idle_duration();
 
-        write!(
-            writer,
-            "{} [ {} | ",
-            span.name(),
-            DurationDisplay(total_duration)
-        )?;
-
-        if inner_duration > 0.0 {
-            let base_duration = span.base_duration().as_nanos() as f64;
-            let percent_base_of_root_duration = 100.0 * base_duration / root_duration;
-            write!(writer, "{:.2}% / ", percent_base_of_root_duration)?;
-        }
-
-        write!(writer, "{:.2}% ]", percent_total_of_root_duration)?;
-
-        for (n, field) in span.shared.fields.iter().enumerate() {
+        // Don't print idle duration if it's insignificantly small
+        if busy_duration > idle_duration && idle_duration < Duration::from_millis(10) {
             write!(
                 writer,
-                "{} {}: {}",
-                if n == 0 { "" } else { " |" },
-                field.key(),
-                field.value()
+                "{} [ time = {} ]",
+                span.name(),
+                DurationDisplay(total_duration as _),
+            )?;
+        } else {
+            write!(
+                writer,
+                "{} [ time.busy = {}, time.idle = {} ]",
+                span.name(),
+                DurationDisplay(busy_duration as _),
+                DurationDisplay(idle_duration as _),
             )?;
         }
+
+        self.format_fields(span.fields(), writer)?;
         writeln!(writer)?;
 
         if let Some((last, remaining)) = span.nodes().split_last() {
@@ -181,15 +182,44 @@ impl Pretty {
                 if let Some(edge) = indent.last_mut() {
                     *edge = Indent::Fork;
                 }
-                Pretty::format_tree(tree, Some(root_duration), indent, writer)?;
+
+                self.format_tree(tree, indent, writer)?;
             }
 
             if let Some(edge) = indent.last_mut() {
                 *edge = Indent::Turn;
             }
-            Pretty::format_tree(last, Some(root_duration), indent, writer)?;
+
+            self.format_tree(last, indent, writer)?;
 
             indent.pop();
+        }
+
+        Ok(())
+    }
+
+    fn format_fields(&self, fields: &[Field], writer: &mut String) -> fmt::Result {
+        let mut first_field_printed = false;
+
+        for field in fields {
+            // Skip `internal = true` field
+            if field.key() == "internal" && field.value() == "true" {
+                continue;
+            }
+
+            write!(
+                writer,
+                "{}{}: {}",
+                if !first_field_printed { " { " } else { ", " },
+                field.key(),
+                field.value()
+            )?;
+
+            first_field_printed = true;
+        }
+
+        if first_field_printed {
+            write!(writer, " }}")?;
         }
 
         Ok(())
@@ -214,12 +244,12 @@ impl Indent {
     }
 }
 
-struct DurationDisplay(f64);
+struct DurationDisplay(Duration);
 
-// Taken from chrono
 impl fmt::Display for DurationDisplay {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut t = self.0;
+        let mut t = self.0.as_nanos() as f64;
+
         for unit in ["ns", "µs", "ms", "s"] {
             if t < 10.0 {
                 return write!(f, "{:.2}{}", t, unit);
@@ -228,29 +258,34 @@ impl fmt::Display for DurationDisplay {
             } else if t < 1000.0 {
                 return write!(f, "{:.0}{}", t, unit);
             }
+
             t /= 1000.0;
         }
-        write!(f, "{:.0}s", t * 1000.0)
+
+        write!(f, "{:.0}s", t * 1000.0)?;
+
+        Ok(())
     }
 }
 
-// From tracing-tree
-#[cfg(feature = "ansi")]
-struct ColorLevel(Level);
+struct ColorLevel(tracing::Level);
 
-#[cfg(feature = "ansi")]
 impl fmt::Display for ColorLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let color = match self.0 {
-            Level::TRACE => Color::Purple,
-            Level::DEBUG => Color::Blue,
-            Level::INFO => Color::Green,
-            Level::WARN => Color::RGB(252, 234, 160), // orange
-            Level::ERROR => Color::Red,
+            tracing::Level::TRACE => ansi_term::Color::Purple,
+            tracing::Level::DEBUG => ansi_term::Color::Blue,
+            tracing::Level::INFO => ansi_term::Color::Green,
+            tracing::Level::WARN => ansi_term::Color::Yellow,
+            tracing::Level::ERROR => ansi_term::Color::Red,
         };
+
         let style = color.bold();
+
         write!(f, "{}", style.prefix())?;
         f.pad(self.0.as_str())?;
-        write!(f, "{}", style.suffix())
+        write!(f, "{}", style.suffix())?;
+
+        Ok(())
     }
 }

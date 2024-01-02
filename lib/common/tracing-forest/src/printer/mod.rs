@@ -114,7 +114,7 @@ impl PrettyPrinter {
     /// Use [`Printer::formatter`] and [`Printer::writer`] for custom configuration.
     pub const fn new() -> Self {
         Printer {
-            formatter: Pretty,
+            formatter: Pretty::new(true),
             make_writer: MakeStdout,
         }
     }
@@ -185,7 +185,9 @@ impl TestCapturePrinter<Pretty> {
     /// Construct a new test capturing printer with the default `Pretty` formatter. This printer
     /// is intented for use in tests only as it works with the default rust stdout capture mechanism
     pub const fn new() -> Self {
-        TestCapturePrinter { formatter: Pretty }
+        TestCapturePrinter {
+            formatter: Pretty::new(true),
+        }
     }
 }
 

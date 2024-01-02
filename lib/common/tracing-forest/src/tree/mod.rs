@@ -68,19 +68,19 @@ pub struct Span {
     /// The name of the span.
     pub(crate) name: &'static str,
 
-    /// The total duration the span was open for.
+    /// The duration the span was alive for.
     #[cfg_attr(
         feature = "serde",
         serde(rename = "nanos_total", serialize_with = "ser::nanos")
     )]
     pub(crate) total_duration: Duration,
 
-    /// The total duration inner spans were open for.
+    /// The duration the span was open for.
     #[cfg_attr(
         feature = "serde",
-        serde(rename = "nanos_nested", serialize_with = "ser::nanos")
+        serde(rename = "nanos_busy", serialize_with = "ser::nanos")
     )]
-    pub(crate) inner_duration: Duration,
+    pub(crate) busy_duration: Duration,
 
     /// Events and spans collected while the span was open.
     pub(crate) nodes: Vec<Tree>,
@@ -242,7 +242,7 @@ impl Span {
             shared,
             name,
             total_duration: Duration::ZERO,
-            inner_duration: Duration::ZERO,
+            busy_duration: Duration::ZERO,
             nodes: Vec::new(),
         }
     }
@@ -279,22 +279,18 @@ impl Span {
         &self.nodes
     }
 
-    /// Returns the total duration the span was entered for.
-    ///
-    /// If the span was used to instrument a `Future`, this only accounts for the
-    /// time spent polling the `Future`. For example, time spent sleeping will
-    /// not be accounted for.
+    /// Returns the total duration the span was alive for.
     pub fn total_duration(&self) -> Duration {
         self.total_duration
     }
 
-    /// Returns the duration that inner spans were opened for.
-    pub fn inner_duration(&self) -> Duration {
-        self.inner_duration
+    /// Returns the duration the span was open for.
+    pub fn busy_duration(&self) -> Duration {
+        self.busy_duration
     }
 
-    /// Returns the duration this span was entered, but not in any child spans.
-    pub fn base_duration(&self) -> Duration {
-        self.total_duration - self.inner_duration
+    /// Returns the duration this span was idle (i.e., alive but not open) for.
+    pub fn idle_duration(&self) -> Duration {
+        self.total_duration.saturating_sub(self.busy_duration)
     }
 }

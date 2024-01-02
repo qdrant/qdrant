@@ -16,14 +16,17 @@ publish = false
 
 [features]
 default = ["smallvec"]
-full = ["uuid", "chrono", "smallvec", "tokio", "serde", "env-filter", "ansi"]
+full = ["uuid", "chrono", "smallvec", "tokio", "serde", "env-filter"]
 env-filter = ["tracing-subscriber/env-filter"]
-ansi = ["ansi_term"]
 
 [dependencies]
 tracing = "0.1"
 tracing-subscriber = "0.3"
 thiserror = "1.0.31"
+
+[dependencies.ansi_term]
+version = "0.12"
+default-features = false
 
 [dependencies.uuid]
 version = "1"
@@ -32,6 +35,7 @@ optional = true
 
 [dependencies.chrono]
 version = "0.4"
+default-features = false
 optional = true
 
 [dependencies.smallvec]
@@ -47,10 +51,6 @@ optional = true
 [dependencies.serde]
 version = "1.0"
 features = ["derive"]
-optional = true
-
-[dependencies.ansi_term]
-version = "0.12"
 optional = true
 
 [dev-dependencies]

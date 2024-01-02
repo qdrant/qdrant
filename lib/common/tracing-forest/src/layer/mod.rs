@@ -22,7 +22,8 @@ pub(crate) mod id;
 
 pub(crate) struct OpenedSpan {
     span: tree::Span,
-    start: Instant,
+    new: Instant,
+    enter: Instant,
 }
 
 impl OpenedSpan {
@@ -73,19 +74,21 @@ impl OpenedSpan {
 
         OpenedSpan {
             span: tree::Span::new(shared, attrs.metadata().name()),
-            start: Instant::now(),
+            new: Instant::now(),
+            enter: Instant::now(),
         }
     }
 
     fn enter(&mut self) {
-        self.start = Instant::now();
+        self.enter = Instant::now();
     }
 
     fn exit(&mut self) {
-        self.span.total_duration += self.start.elapsed();
+        self.span.busy_duration += self.enter.elapsed();
     }
 
-    fn close(self) -> tree::Span {
+    fn close(mut self) -> tree::Span {
+        self.span.total_duration = self.new.elapsed();
         self.span
     }
 
@@ -101,7 +104,6 @@ impl OpenedSpan {
     }
 
     fn record_span(&mut self, span: tree::Span) {
-        self.span.inner_duration += span.total_duration();
         self.span.nodes.push(Tree::Span(span));
     }
 
@@ -255,15 +257,9 @@ where
             .expect(fail::OPENED_SPAN_NOT_IN_EXTENSIONS)
             .close();
 
-        // Ensure that the total duration is at least as much as the inner
-        // duration. This is caused by when a child span is manually passed
-        // a parent span and then enters without entering the parent span. Also
-        // when a child span is created within a parent, and then stored and
-        // entered again when the parent isn't opened.
-        //
-        // Issue: https://github.com/QnnOkabayashi/tracing-forest/issues/11
-        if span.total_duration < span.inner_duration {
-            span.total_duration = span.inner_duration;
+        // Ensure that the total duration is at least as much as the busy duration.
+        if span.total_duration < span.busy_duration {
+            span.total_duration = span.busy_duration;
         }
 
         match span_ref.parent() {
