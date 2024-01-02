@@ -35,7 +35,7 @@ tinyvec = { version = "1.6.0", features = ["alloc"] }
 
 tokio = {version = "~1.35", features = ["full"]}
 tokio-util = "0.7"
-futures = "0.3.29"
+futures = "0.3.30"
 atomicwrites = "0.4.2"
 log = "0.4"
 env_logger = "0.10.1"

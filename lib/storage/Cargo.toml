@@ -49,7 +49,7 @@ memory = { path = "../common/memory" }
 segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }
-futures = "0.3.29"
+futures = "0.3.30"
 anyhow = "1.0.75"
 uuid = "1.6.1"
 url = "2.5.0"
