@@ -455,7 +455,7 @@ impl LocalShard {
         // Fall back to basic text output if the progress bar is hidden (e.g. not a tty)
         let show_progress_bar = !bar.is_hidden();
         if !show_progress_bar {
-            eprintln!(
+            log::info!(
                 "Recovering collection {collection_id}: 0/{} (0%)",
                 wal.len(),
             );
@@ -506,7 +506,7 @@ impl LocalShard {
             let progress = i as u64 + 1;
             bar.set_position(progress);
             if !show_progress_bar && progress % 100 == 0 {
-                eprintln!(
+                log::info!(
                     "{}/{} ({}%)",
                     progress,
                     wal.len(),
@@ -519,7 +519,7 @@ impl LocalShard {
 
         bar.finish();
         if !show_progress_bar {
-            eprintln!(
+            log::info!(
                 "Recovered collection {collection_id}: {0}/{0} (100%)",
                 wal.len(),
             );
