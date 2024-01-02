@@ -1,0 +1,62 @@
+[package]
+name = "tracing-forest"
+version = "0.1.6"
+authors = ["Quinn Okabayashi"]
+edition = "2018"
+description = "Preserving contextual coherence among trace data from concurrent tasks"
+keywords = ["tracing", "async", "tokio", "tracing-subscriber", "logging"]
+categories = [
+	"asynchronous",
+	"development-tools::debugging",
+	"development-tools::profiling",
+]
+license = "MIT"
+repository = "https://github.com/QnnOkabayashi/tracing-forest"
+
+[features]
+default = ["smallvec"]
+full = ["uuid", "chrono", "smallvec", "tokio", "serde", "env-filter", "ansi"]
+env-filter = ["tracing-subscriber/env-filter"]
+ansi = ["ansi_term"]
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = "0.3"
+thiserror = "1.0.31"
+
+[dependencies.uuid]
+version = "1"
+features = ["v4", "serde"]
+optional = true
+
+[dependencies.chrono]
+version = "0.4"
+optional = true
+
+[dependencies.smallvec]
+version = "1.7"
+features = ["write"]
+optional = true
+
+[dependencies.tokio]
+version = "1"
+features = ["sync", "rt", "macros", "time"]
+optional = true
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+optional = true
+
+[dependencies.ansi_term]
+version = "0.12"
+optional = true
+
+[dev-dependencies]
+tracing-forest = { path = ".", features = ["full"] }
+rand = "0.8.4"
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"
+
+[package.metadata.docs.rs]
+all-features = true
