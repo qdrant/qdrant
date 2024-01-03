@@ -125,11 +125,14 @@ pub fn init(
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(
-                    // Set up logger, but avoid logging health checks, metrics and telemetry
+                    // Set up logger, but avoid logging hot status endpoints
                     Logger::default()
                         .exclude("/")
                         .exclude("/metrics")
-                        .exclude("/telemetry"),
+                        .exclude("/telemetry")
+                        .exclude("/healthz")
+                        .exclude("/readyz")
+                        .exclude("/livez"),
                 )
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
                     actix_telemetry_collector.clone(),
