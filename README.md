@@ -213,6 +213,7 @@ Examples and/or documentation of Qdrant integrations:
 
 - [Cohere](https://docs.cohere.com/docs/integrations#qdrant) ([blogpost on building a QA app with Cohere and Qdrant](https://qdrant.tech/articles/qa-with-cohere-and-qdrant/)) - Use Cohere embeddings with Qdrant
 - [DocArray](https://docarray.jina.ai/advanced/document-store/qdrant/) - Use Qdrant as a document store in DocArray
+- [Haystack](https://haystack.deepset.ai/integrations/qdrant-document-store) - Use Qdrant as a document store with Haystack ([blogpost](https://haystack.deepset.ai/blog/qdrant-integration)).
 - [LangChain](https://python.langchain.com/en/latest/modules/indexes/vectorstores/examples/qdrant.html) ([blogpost](https://qdrant.tech/articles/langchain-integration/)) - Use Qdrant as a memory backend for LangChain.
 - [LlamaIndex](https://gpt-index.readthedocs.io/en/latest/examples/vector_stores/QdrantIndexDemo.html) - Use Qdrant as a Vector Store with LlamaIndex.
 - [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
