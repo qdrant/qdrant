@@ -4841,7 +4841,6 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "api",
- "async-trait",
  "atomicwrites",
  "cancel",
  "chrono",
