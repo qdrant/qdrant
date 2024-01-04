@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use collection::config::ShardingMethod;
 use common::defaults::CONSENSUS_META_OP_WAIT;
@@ -50,6 +50,8 @@ impl Dispatcher {
     ) -> Result<bool, StorageError> {
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
+            let start = Instant::now();
+
             // List of operations to await for collection to be operational
             let mut expect_operations: Vec<ConsensusOperations> = vec![];
 
@@ -128,6 +130,13 @@ impl Dispatcher {
                     }
                     Err(err) => log::warn!("Awaiting for expected operations timed out: {}", err),
                 }
+            }
+
+            // Synchronize all nodes, so that all are ready for follow-up operations
+            let remaining_timeout =
+                wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
+            if let Err(err) = self.await_consensus_sync(remaining_timeout).await {
+                log::warn!("Failed to synchronize all nodes after collection operation in time, some nodes may not be ready: {err}");
             }
 
             Ok(res)
