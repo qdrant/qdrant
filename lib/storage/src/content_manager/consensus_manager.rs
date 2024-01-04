@@ -79,8 +79,7 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Fires a signal if some specific operation is applied to the state machine.
     /// Signal is changed on change proposal and triggered if the change was applied by consensus on this peer.
     /// Also sends the result of the operation.
-    on_consensus_op_apply:
-        Mutex<HashMap<ConsensusOperations, broadcast::Sender<Result<bool, StorageError>>>>,
+    on_consensus_op_apply: Mutex<HashMap<ConsensusOperations, ConsensusOnApply>>,
     /// Propose operation to the consensus.
     /// Sends messages to the consensus thread, which is defined externally, outside of the state.
     /// (e.g. in the `src/consensus.rs`)
@@ -250,8 +249,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         };
         let operation = ConsensusOperations::RemovePeer(peer_id);
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-        if let Some(on_apply) = on_apply {
-            if on_apply.send(report).is_err() {
+        if let Some(listener) = on_apply {
+            if listener.on_apply.send(report).is_err() {
                 log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
             }
         }
@@ -396,8 +395,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                                 uri: peer_uri.to_string(),
                             };
                             let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-                            if let Some(on_apply) = on_apply {
-                                if on_apply.send(Ok(true)).is_err() {
+                            if let Some(listener) = on_apply {
+                                if listener.on_apply.send(Ok(true)).is_err() {
                                     log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
                                 }
                             }
@@ -453,8 +452,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         };
 
-        if let Some(on_apply) = on_apply {
-            if on_apply.send(result.clone()).is_err() {
+        if let Some(listener) = on_apply {
+            if listener.on_apply.send(result.clone()).is_err() {
                 log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
             }
         }
@@ -555,13 +554,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
             // check that the exact same operation is not already in-flight
             match on_apply_lock.get(&operation) {
-                Some(existing_sender) => {
+                Some(listener) => {
                     // subscribe to existing sender for faster feedback
-                    receiver = existing_sender.subscribe()
+                    receiver = listener.on_apply.subscribe()
                 }
                 None => {
-                    // insert new sender
-                    on_apply_lock.insert(operation, sender);
+                    // insert new listener
+                    on_apply_lock.insert(operation, ConsensusOnApply::listen(sender));
                 }
             };
             receivers.push(receiver);
@@ -667,16 +666,22 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             // acquire lock to insert new operation to apply
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
             // check that the exact same operation is not already in-flight
-            match on_apply_lock.get(&operation) {
-                Some(existing_sender) => {
+            match on_apply_lock.get_mut(&operation) {
+                Some(listener) => {
+                    // If not proposed yet, propose operation to consensus thread now
+                    if !listener.is_proposed {
+                        self.propose_sender.send(operation.clone())?;
+                        listener.is_proposed = true;
+                    }
+
                     // subscribe to existing sender for faster feedback
-                    receiver = existing_sender.subscribe()
+                    receiver = listener.on_apply.subscribe()
                 }
                 None => {
                     // propose operation to consensus thread
                     self.propose_sender.send(operation.clone())?;
                     // insert new sender
-                    on_apply_lock.insert(operation, sender);
+                    on_apply_lock.insert(operation, ConsensusOnApply::proposed(sender));
                 }
             };
         }
@@ -833,6 +838,32 @@ impl Storage for ConsensusStateRef {
 
     fn snapshot(&self, request_index: u64, to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
         self.0.snapshot(request_index, to)
+    }
+}
+
+/// Cata structure holding broadcast channel for consensus operation application notifications.
+struct ConsensusOnApply {
+    /// Whether this operation was ever actually proposed to consensus, or just listened to.
+    is_proposed: bool,
+    /// Channel sender to trigger when consensus operation is applied.
+    on_apply: broadcast::Sender<Result<bool, StorageError>>,
+}
+
+impl ConsensusOnApply {
+    /// Create on-apply listener for operation we did just propose ourselves.
+    pub fn proposed(on_apply: broadcast::Sender<Result<bool, StorageError>>) -> Self {
+        Self {
+            is_proposed: true,
+            on_apply,
+        }
+    }
+
+    /// Create on-apply listener for operation we did not propose ourselves.
+    pub fn listen(on_apply: broadcast::Sender<Result<bool, StorageError>>) -> Self {
+        Self {
+            is_proposed: false,
+            on_apply,
+        }
     }
 }
 
