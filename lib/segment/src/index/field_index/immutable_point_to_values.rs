@@ -32,25 +32,25 @@ impl<N: Default> ImmutablePointToValues<N> {
         Some(&self.point_to_values_container[range])
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> usize {
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> Vec<N> {
         if self.point_to_values.len() <= idx as usize {
-            return 0;
+            return Default::default();
         }
 
         // Point removing has to remove `idx` from both maps: points-to-values and values-to-points.
         // The first one is easy: we just remove the entry from the map.
         // The second one is more complicated: we have to remove all mentions of `idx` in values-to-points map.
         // To deal with it, take old values from points-to-values map, witch contains all values with `idx` in values-to-points map.
-
         let removed_values_range = self.point_to_values[idx as usize].clone();
-        let removed_values_count = removed_values_range.len();
         self.point_to_values[idx as usize] = Default::default();
 
         // Iterate over all values which were removed from points-to-values map
+        let mut result = Vec::with_capacity(removed_values_range.len());
         for value_index in removed_values_range {
-            self.point_to_values_container[value_index as usize] = Default::default();
+            let value = std::mem::take(&mut self.point_to_values_container[value_index as usize]);
+            result.push(value);
         }
 
-        removed_values_count
+        result
     }
 }
