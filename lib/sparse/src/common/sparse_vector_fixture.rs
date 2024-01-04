@@ -5,7 +5,7 @@ use rand::Rng;
 use crate::common::sparse_vector::SparseVector;
 
 const VALUE_RANGE: Range<f64> = -100.0..100.0;
-// Realistic sizing based on experiences with Splade
+// Realistic sizing based on experiences with SPLADE
 const MAX_VALUES_PER_VECTOR: usize = 300;
 
 /// Generates a non empty sparse vector
@@ -19,8 +19,8 @@ pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_dim_size: usiz
             break;
         }
         // high probability of skipping a dimension to make the vectors more sparse
-        let no_skip = rnd_gen.gen_bool(0.01);
-        if no_skip {
+        let skip = rnd_gen.gen_bool(0.98);
+        if !skip {
             tuples.push((i as u32, rnd_gen.gen_range(VALUE_RANGE) as f32));
         }
     }
