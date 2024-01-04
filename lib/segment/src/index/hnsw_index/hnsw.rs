@@ -3,8 +3,11 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::thread;
 
 use atomic_refcell::AtomicRefCell;
+#[cfg(target_os = "linux")]
+use common::cpu::linux_low_thread_priority;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use log::debug;
 use memory::mmap_ops;
@@ -661,6 +664,27 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
             .num_threads(max_rayon_threads(self.config.max_indexing_threads))
+            .spawn_handler(|thread| {
+                let mut b = thread::Builder::new();
+                if let Some(name) = thread.name() {
+                    b = b.name(name.to_owned());
+                }
+                if let Some(stack_size) = thread.stack_size() {
+                    b = b.stack_size(stack_size);
+                }
+                b.spawn(|| {
+                    // On Linux, use lower thread priority so we don't interfere with serving traffic
+                    #[cfg(target_os = "linux")]
+                    if let Err(err) = linux_low_thread_priority() {
+                        log::warn!(
+                            "Failed to set low thread priority for HNSW building, ignoring: {err}"
+                        );
+                    }
+
+                    thread.run()
+                })?;
+                Ok(())
+            })
             .build()?;
 
         for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {

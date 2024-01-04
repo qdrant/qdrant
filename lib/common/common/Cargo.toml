@@ -13,3 +13,7 @@ publish = false
 ordered-float = "4.2"
 serde = { version = "~1.0", features = ["derive"] }
 validator = { version = "0.16", features = ["derive"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+thiserror = "1.0"
+thread-priority = "0.15"
