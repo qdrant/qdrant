@@ -263,6 +263,10 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
 
     pub(super) fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
+            if !removed_values.is_empty() {
+                self.points_count -= 1;
+            }
+
             for value in removed_values {
                 let key = NumericIndexKey::new(*value, idx);
                 Self::remove_from_map(&mut self.map, &mut self.histogram, key);

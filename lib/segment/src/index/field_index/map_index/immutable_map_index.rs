@@ -122,6 +122,11 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
+            if !removed_values.is_empty() {
+                self.indexed_points -= 1;
+            }
+            self.values_count -= removed_values.len();
+
             for value in removed_values {
                 Self::remove_idx_from_value_list(
                     &mut self.value_to_points,
