@@ -3,9 +3,16 @@ use std::ops::Range;
 use common::types::PointOffsetType;
 
 // Flatten points-to-values map
+// It's an analogue of `Vec<Vec<N>>` but more RAM efficient because it stores values in a single Vec.
+// This structure doesn't support adding new values, only removing.
+// It's used in immutable field indices like ImmutableMapIndex, ImmutableNumericIndex, ect to store points-to-values map.
 #[derive(Debug, Clone, Default)]
 pub struct ImmutablePointToValues<N: Default> {
+    // ranges in `point_to_values_container` which contains values for each point
+    // `u32` is used instead of `usize` because it's more RAM efficient
+    // We can expect that we will never have more than 4 billion values per segment
     point_to_values: Vec<Range<u32>>,
+    // flattened values
     point_to_values_container: Vec<N>,
 }
 
@@ -37,16 +44,12 @@ impl<N: Default> ImmutablePointToValues<N> {
             return Default::default();
         }
 
-        // Point removing has to remove `idx` from both maps: points-to-values and values-to-points.
-        // The first one is easy: we just remove the entry from the map.
-        // The second one is more complicated: we have to remove all mentions of `idx` in values-to-points map.
-        // To deal with it, take old values from points-to-values map, witch contains all values with `idx` in values-to-points map.
         let removed_values_range = self.point_to_values[idx as usize].clone();
         self.point_to_values[idx as usize] = Default::default();
 
-        // Iterate over all values which were removed from points-to-values map
         let mut result = Vec::with_capacity(removed_values_range.len());
         for value_index in removed_values_range {
+            // deleted values still use RAM, but it's not a problem because optimizers will actually reduce RAM usage
             let value = std::mem::take(&mut self.point_to_values_container[value_index as usize]);
             result.push(value);
         }
