@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 // Flatten points-to-values map
 // It's an analogue of `Vec<Vec<N>>` but more RAM efficient because it stores values in a single Vec.
 // This structure doesn't support adding new values, only removing.
-// It's used in immutable field indices like ImmutableMapIndex, ImmutableNumericIndex, ect to store points-to-values map.
+// It's used in immutable field indices like ImmutableMapIndex, ImmutableNumericIndex, etc to store points-to-values map.
 #[derive(Debug, Clone, Default)]
 pub struct ImmutablePointToValues<N: Default> {
     // ranges in `point_to_values_container` which contains values for each point
