@@ -556,7 +556,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             match on_apply_lock.get(&operation) {
                 Some(listener) => {
                     // subscribe to existing sender for faster feedback
-                    receiver = listener.on_apply.subscribe()
+                    receiver = listener.on_apply.subscribe();
                 }
                 None => {
                     // insert new listener
@@ -675,7 +675,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     }
 
                     // subscribe to existing sender for faster feedback
-                    receiver = listener.on_apply.subscribe()
+                    receiver = listener.on_apply.subscribe();
                 }
                 None => {
                     // propose operation to consensus thread
@@ -686,8 +686,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             };
         }
 
-        let res = Self::await_receiver(receiver, wait_timeout).await?;
-        Ok(res)
+        Self::await_receiver(receiver, wait_timeout).await
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
