@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 // Flatten points-to-values map
 // It's an analogue of `Vec<Vec<N>>` but more RAM efficient because it stores values in a single Vec.
 // This structure doesn't support adding new values, only removing.
-// It's used in immutable field indices like ImmutableMapIndex, ImmutableNumericIndex, etc to store points-to-values map.
+// It's used in immutable field indices like `ImmutableMapIndex`, `ImmutableNumericIndex`, etc to store points-to-values map.
 #[derive(Debug, Clone, Default)]
 pub struct ImmutablePointToValues<N: Default> {
     // ranges in `point_to_values_container` which contains values for each point
@@ -55,5 +55,47 @@ impl<N: Default> ImmutablePointToValues<N> {
         }
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_immutable_point_to_values_remove() {
+        let mut values = vec![
+            vec![0, 1, 2, 3, 4],
+            vec![5, 6, 7, 8, 9],
+            vec![0, 1, 2, 3, 4],
+            vec![5, 6, 7, 8, 9],
+            vec![10, 11, 12],
+            vec![],
+            vec![13],
+            vec![14, 15],
+        ];
+
+        let mut point_to_values = ImmutablePointToValues::new(values.clone());
+
+        let check = |point_to_values: &ImmutablePointToValues<_>, values: &[Vec<_>]| {
+            for (idx, values) in values.iter().enumerate() {
+                assert_eq!(
+                    point_to_values.get_values(idx as PointOffsetType),
+                    Some(values.as_slice()),
+                );
+            }
+        };
+
+        check(&point_to_values, &values);
+
+        point_to_values.remove_point(0);
+        values[0].clear();
+
+        check(&point_to_values, &values);
+
+        point_to_values.remove_point(3);
+        values[3].clear();
+
+        check(&point_to_values, &values);
     }
 }
