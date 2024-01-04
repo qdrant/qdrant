@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use collection::collection::Collection;
 use collection::shards::CollectionId;
 
@@ -8,7 +7,6 @@ use crate::content_manager::errors::StorageError;
 
 pub type Collections = HashMap<CollectionId, Collection>;
 
-#[async_trait]
 pub trait Checker {
     fn is_collection_exists(&self, collection_name: &str) -> bool;
 

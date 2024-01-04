@@ -26,7 +26,6 @@ serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.12"
-async-trait = "0.1.75"
 log = "0.4"
 tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 http = "0.2"
