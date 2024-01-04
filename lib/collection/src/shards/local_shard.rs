@@ -4,6 +4,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use common::panic;
@@ -47,6 +48,9 @@ use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
 pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
+
+/// If rendering WAL load progression in basic text form, report progression every 60 seconds.
+const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
 
 /// LocalShard
 ///
@@ -452,6 +456,16 @@ impl LocalShard {
         bar.set_message(format!("Recovering collection {collection_id}"));
         let segments = self.segments();
 
+        // Fall back to basic text output if the progress bar is hidden (e.g. not a tty)
+        let show_progress_bar = !bar.is_hidden();
+        let mut last_progress_report = Instant::now();
+        if !show_progress_bar {
+            log::info!(
+                "Recovering collection {collection_id}: 0/{} (0%)",
+                wal.len(),
+            );
+        }
+
         // When `Segment`s are flushed, WAL is truncated up to the index of the last operation
         // that has been applied and flushed.
         //
@@ -492,11 +506,29 @@ impl LocalShard {
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
             }
+
+            // Update progress bar or show text progress every WAL_LOAD_REPORT_EVERY
             bar.inc(1);
+            if !show_progress_bar && last_progress_report.elapsed() >= WAL_LOAD_REPORT_EVERY {
+                let progress = bar.position();
+                log::info!(
+                    "{progress}/{} ({}%)",
+                    wal.len(),
+                    (progress as f32 / wal.len() as f32 * 100.0) as usize,
+                );
+                last_progress_report = Instant::now();
+            }
         }
 
         self.segments.read().flush_all(true)?;
+
         bar.finish();
+        if !show_progress_bar {
+            log::info!(
+                "Recovered collection {collection_id}: {0}/{0} (100%)",
+                wal.len(),
+            );
+        }
 
         Ok(())
     }
