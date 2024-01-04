@@ -479,7 +479,7 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (i, (op_num, update)) in wal.read_all().enumerate() {
+        for (op_num, update) in wal.read_all() {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
@@ -508,12 +508,11 @@ impl LocalShard {
             }
 
             // Update progress bar or show text progress every WAL_LOAD_REPORT_EVERY
-            let progress = i as u64 + 1;
-            bar.set_position(progress);
+            bar.inc(1);
             if !show_progress_bar && last_progress_report.elapsed() >= WAL_LOAD_REPORT_EVERY {
+                let progress = bar.position();
                 log::info!(
-                    "{}/{} ({}%)",
-                    progress,
+                    "{progress}/{} ({}%)",
                     wal.len(),
                     (progress as f32 / wal.len() as f32 * 100.0) as usize,
                 );
