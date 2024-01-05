@@ -1,5 +1,6 @@
 use std::env;
 use std::io::{stdout, IsTerminal};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use colored::{Color, ColoredString, Colorize};
 
@@ -11,6 +12,33 @@ fn paint(text: &str, true_color: bool) -> ColoredString {
     } else {
         text.bold().color(Color::Red)
     }
+}
+
+/// Check whether the given IP will be reachable from `localhost`
+///
+/// This is a static analysis based on (very) common defaults and doesn't probe the current
+/// routing table.
+fn is_localhost_ip(host: &str) -> bool {
+    let Ok(ip) = host.parse::<IpAddr>() else {
+        return false;
+    };
+
+    // Unspecified IPs bind to all interfaces, so `localhost` always points to it
+    if ip == IpAddr::V4(Ipv4Addr::UNSPECIFIED) || ip == IpAddr::V6(Ipv6Addr::UNSPECIFIED) {
+        return true;
+    }
+
+    // On all tested OSes IPv4 localhost points to `localhost`
+    if ip == IpAddr::V4(Ipv4Addr::LOCALHOST) {
+        return true;
+    }
+
+    // On macOS IPv6 localhost points to `localhost`, on Linux it is `ip6-localhost`
+    if cfg!(target_os = "macos") && ip == IpAddr::V6(Ipv6Addr::LOCALHOST) {
+        return true;
+    }
+
+    false
 }
 
 /// Prints welcome message
@@ -40,7 +68,11 @@ pub fn welcome(settings: &Settings) {
     let ui_link = format!(
         "http{}://{}:{}/dashboard",
         if settings.service.enable_tls { "s" } else { "" },
-        settings.service.host,
+        if is_localhost_ip(&settings.service.host) {
+            "localhost"
+        } else {
+            &settings.service.host
+        },
         settings.service.http_port
     );
 
