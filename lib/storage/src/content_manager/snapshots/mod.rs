@@ -64,10 +64,15 @@ async fn _do_delete_full_snapshot(
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
     let (delete_snapshot, delete_checksum) = tokio::join!(
         tokio::fs::remove_file(snapshot_dir),
-        tokio::fs::remove_file(checksum_path)
+        tokio::fs::remove_file(checksum_path),
     );
     delete_snapshot?;
-    delete_checksum?;
+
+    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
+    if let Err(err) = delete_checksum {
+        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
+    }
+
     Ok(true)
 }
 
@@ -106,7 +111,12 @@ async fn _do_delete_collection_snapshot(
         tokio::fs::remove_file(checksum_path)
     );
     delete_snapshot?;
-    delete_checksum?;
+
+    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
+    if let Err(err) = delete_checksum {
+        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
+    }
+
     Ok(true)
 }
 
@@ -196,9 +206,12 @@ async fn _do_create_full_snapshot(
                 .join(&snapshot_details.name);
             builder.append_path_with_name(&snapshot_path, &snapshot_details.name)?;
             std::fs::remove_file(&snapshot_path)?;
-            // remove associated checksum
+
+            // Remove associated checksum if there is one
             let snapshot_checksum = get_checksum_path(snapshot_path.as_path());
-            std::fs::remove_file(snapshot_checksum)?;
+            if let Err(err) = std::fs::remove_file(snapshot_checksum) {
+                log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
+            }
         }
         builder.append_path_with_name(&config_path_clone, "config.json")?;
 
@@ -207,7 +220,7 @@ async fn _do_create_full_snapshot(
     });
     archiving.await??;
 
-    // compute and store the file's checksum
+    // Compute and store the file's checksum
     let checksum_path = get_checksum_path(full_snapshot_path.as_path());
     let checksum = hash_file(full_snapshot_path.as_path()).await?;
     let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
