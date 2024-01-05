@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 
 pub async fn hash_file(file_path: &Path) -> std::io::Result<String> {
-    const ONE_MB: usize = 1048576;
+    const ONE_MB: usize = 1024 * 1024;
     let input_file = tokio::fs::File::open(file_path).await?;
     let mut reader = tokio::io::BufReader::new(input_file);
     let mut sha = Sha256::new();
@@ -19,5 +19,5 @@ pub async fn hash_file(file_path: &Path) -> std::io::Result<String> {
         sha.update(&buf[0..len]);
     }
     let hash = sha.finalize();
-    Ok(hex::encode(hash))
+    Ok(format!("{hash:x}"))
 }

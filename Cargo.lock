@@ -1075,7 +1075,6 @@ dependencies = [
  "fs_extra",
  "futures",
  "hashring",
- "hex",
  "indicatif",
  "io",
  "itertools 0.12.0",
