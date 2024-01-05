@@ -77,6 +77,7 @@ pub struct SnapshotDescription {
     pub name: String,
     pub creation_time: Option<NaiveDateTime>,
     pub size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
 }
 
