@@ -1,4 +1,4 @@
-name: Docker Build and Push dev branch images
+name: Build and push dev branch image to gcr
 
 on:
   workflow_dispatch:
