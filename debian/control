@@ -1,0 +1,26 @@
+Source: qdrant
+Section: utils
+Priority: optional
+Maintainer: Your Name <your.email@example.com> #please add your mail id
+
+Package: qdrant
+Architecture: amd64
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         libc6 (>= 2.31),
+         libssl-dev,    # Add any other runtime dependencies here
+         libgcc-s1,
+         libstdc++6
+
+Build-Depends: debhelper (>= 12),
+               cargo,
+               libssl-dev,   # Add any other build dependencies here
+               libgcc-s1,
+               libstdc++6
+
+Description: Qdrant - High-performance, massive-scale Vector Database for the next generation of AI.
+ Qdrant is a vector similarity search engine and database designed for the next generation of AI applications.
+ It provides a production-ready service with a convenient API to store, search, and manage vectors with an additional payload.
+ Qdrant is tailored to extended filtering support, making it useful for all sorts of neural network or semantic-based matching, faceted search, and other applications.
+ Qdrant is written in Rust 🦀, ensuring fast and reliable performance even under high load.
+ See benchmarks and documentation for more details.

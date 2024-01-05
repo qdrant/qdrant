@@ -34,6 +34,8 @@ jobs:
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci
+    - name: Build Debian package
+      run: dpkg-buildpackage -us -uc -b
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
