@@ -128,11 +128,12 @@ jobs:
           sudo chmod +x /usr/local/bin/appimagetool
           cargo install cargo-appimage
           cargo appimage
+          mv target/appimage/qdrant.AppImage target/appimage/qdrant-x86_64.AppImage
       - name: Upload AppImage
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: "target/appimage/qdrant.AppImage"
+          file: "target/appimage/qdrant-x86_64.AppImage"
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
