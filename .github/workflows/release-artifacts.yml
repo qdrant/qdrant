@@ -81,3 +81,31 @@ jobs:
         with:
           bin: qdrant
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-app-image:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Correct Toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build App Image
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libfuse2
+          sudo wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$(uname -m).AppImage -O /usr/local/bin/appimagetool
+          sudo chmod +x /usr/local/bin/appimagetool
+          cargo install cargo-appimage
+          cargo appimage
+      - name: Upload AppImage
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: "target/appimage/qdrant.AppImage"
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
