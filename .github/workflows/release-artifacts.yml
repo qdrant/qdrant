@@ -30,7 +30,27 @@ jobs:
           bin: qdrant
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
-
+      
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --version <version>
+        
+      - name: Build Debian package
+        run: |
+          if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            cargo deb --no-strip --target x86_64-unknown-linux-gnu
+          else
+            echo "Skipping Debian package build as it's not on a Linux environment."
+          fi
+      
+      - name: Upload Debian package
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/x86_64-unknown-linux-gnu/debian/*.deb
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
+        
   build-mac-binaries:
     strategy:
       matrix:
