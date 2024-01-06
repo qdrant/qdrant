@@ -17,12 +17,12 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-            sudo apt-get update
-            sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
-            rustup default stable
-            rustup update
-            rustup show
-            cargo -Vv
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
+          rustup default stable
+          rustup update
+          rustup show
+          cargo -Vv
       - uses: actions/checkout@v4
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
@@ -43,12 +43,12 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-            brew update-reset
-            brew install gcc cmake protobuf-c
-            rustup default stable
-            rustup update
-            rustup show
-            cargo -Vv
+          brew update-reset
+          brew install gcc cmake protobuf-c
+          rustup default stable
+          rustup update
+          rustup show
+          cargo -Vv
       - uses: actions/checkout@v4
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
