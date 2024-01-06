@@ -30,6 +30,18 @@ jobs:
           bin: qdrant
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Debian package
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-strip --target x86_64-unknown-linux-gnu
+      - name: Upload Debian package
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/x86_64-unknown-linux-gnu/debian/*.deb
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
 
   build-mac-binaries:
     strategy:
@@ -56,15 +68,6 @@ jobs:
           bin: qdrant
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build Debian package
-        run: |
-          cargo install cargo-deb
-          cargo deb --no-build
-      - name: Upload Debian package
-        uses: actions/upload-artifact@v2
-        with:
-          name:  ${{ matrix.target }}-debian
-          path: target/debian/*.deb
 
   build-windows-binaries:
     strategy:
