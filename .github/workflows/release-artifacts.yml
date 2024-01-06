@@ -13,6 +13,12 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install dependencies
@@ -24,6 +30,13 @@ jobs:
             rustup show
             cargo -Vv
       - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cross-compilation tools
+        with:
+          target: ${{ matrix.target }}
+        if: startsWith(matrix.os, 'ubuntu') && contains(matrix.target, '-musl')
+        uses: taiki-e/setup-cross-toolchain-action@v1
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
         with:
