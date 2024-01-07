@@ -162,8 +162,6 @@ jobs:
               -i qdrant.svg \
               --output appimage
 
-          chmod +x qdrant-x86_64.AppImage
-
       - name: Upload AppImage
         uses: svenstaro/upload-release-action@v2
         with:
