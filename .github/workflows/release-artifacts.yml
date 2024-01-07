@@ -115,25 +115,60 @@ jobs:
         include:
           - os: ubuntu-latest
     runs-on: ${{ matrix.os }}
-
     steps:
       - uses: actions/checkout@v4
-      - name: Install Correct Toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Build App Image
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler libfuse2
-          sudo wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$(uname -m).AppImage -O /usr/local/bin/appimagetool
-          sudo chmod +x /usr/local/bin/appimagetool
-          cargo install cargo-appimage
-          cargo appimage
-          mv target/appimage/qdrant.AppImage target/appimage/qdrant-x86_64.AppImage
+          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler libfuse2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Build AppImage
+        shell: bash
+        run: |
+          mkdir -p AppDir
+          cp docs/logo.svg qdrant.svg
+          cp target/release/qdrant .
+
+          cat << EOF > "qdrant.desktop"
+          [Desktop Entry]
+          Name=qdrant
+          GenericName=Vector Database
+          Comment=Advanced and High-Performant Vector Search Technology
+          TryExec=qdrant
+          Exec=qdrant %F
+          Terminal=true
+          Type=Application
+          Keywords=Database;
+          Icon=qdrant
+          Categories=Utility;
+          StartupNotify=false
+          EOF
+
+          curl -Lo linuxdeploy-x86_64.AppImage \
+              https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+          ./linuxdeploy-x86_64.AppImage \
+              --appdir AppDir \
+              --executable qdrant \
+              -d qdrant.desktop \
+              -i qdrant.svg \
+              --output appimage
+
+          chmod +x qdrant-x86_64.AppImage
+
       - name: Upload AppImage
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: "target/appimage/qdrant-x86_64.AppImage"
+          file: "qdrant-x86_64.AppImage"
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true

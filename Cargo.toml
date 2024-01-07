@@ -129,12 +129,6 @@ path = "src/wal_inspector.rs"
 test = false
 bench = false
 
-[[bin]]
-name = "qdrant"
-path = "src/main.rs"
-test = false
-bench = false
-
 [workspace]
 members = [
     "lib/api",
