@@ -153,6 +153,7 @@ impl From<VersionInfo> for HealthCheckReply {
         HealthCheckReply {
             title: info.title,
             version: info.version,
+            commit_id: info.commit_id,
         }
     }
 }

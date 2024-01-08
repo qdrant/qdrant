@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct VersionInfo {
     pub title: String,
     pub version: String,
+    pub commit_id: String,
 }
 
 impl Default for VersionInfo {
@@ -15,6 +16,7 @@ impl Default for VersionInfo {
         VersionInfo {
             title: "qdrant - vector search engine".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            commit_id: env!("GIT_COMMIT_ID").to_string(),
         }
     }
 }
