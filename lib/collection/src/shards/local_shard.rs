@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::sync::atomic::AtomicBool;
 
 use arc_swap::ArcSwap;
 use common::panic;
@@ -199,7 +200,7 @@ impl LocalShard {
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
-                        let mut res = load_segment(&segments_path, None)?;
+                        let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
                         } else {

@@ -271,7 +271,7 @@ fn create_segment(
     })
 }
 
-pub fn load_segment(path: &Path, stopped: Option<&AtomicBool>) -> OperationResult<Option<Segment>> {
+pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -296,9 +296,7 @@ pub fn load_segment(path: &Path, stopped: Option<&AtomicBool>) -> OperationResul
     let stored_version: Version = SegmentVersion::load(path)?.parse()?;
     let app_version: Version = SegmentVersion::current().parse()?;
 
-    if let Some(stop) = stopped {
-        check_process_stopped(stop)?;
-    }
+    check_process_stopped(stopped)?;
 
     if stored_version != app_version {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
