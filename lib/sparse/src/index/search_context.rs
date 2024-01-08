@@ -208,13 +208,13 @@ impl<'a> SearchContext<'a> {
         }
         let mut best_min_score = f32::MIN;
         while let Some(candidate) = self.advance() {
-            // check for cancellation
-            if self.is_stopped.load(Relaxed) {
-                break;
-            }
             // check filter condition
             if !filter_condition(candidate.idx) {
                 continue;
+            }
+            // check for cancellation
+            if self.is_stopped.load(Relaxed) {
+                break;
             }
             // push candidate to result queue
             self.result_queue.push(candidate);
