@@ -2,10 +2,10 @@ use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use std::sync::atomic::AtomicBool;
 
 use arc_swap::ArcSwap;
 use common::panic;
