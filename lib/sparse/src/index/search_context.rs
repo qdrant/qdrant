@@ -24,6 +24,7 @@ pub struct SearchContext<'a> {
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
     use_pruning: bool,
+    min_record_id: Option<u32>, // min record id across all posting lists
 }
 
 impl<'a> SearchContext<'a> {
@@ -51,6 +52,7 @@ impl<'a> SearchContext<'a> {
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
+        let min_record_id = Self::next_min_id(&postings_iterators);
         SearchContext {
             postings_iterators,
             query,
@@ -58,6 +60,7 @@ impl<'a> SearchContext<'a> {
             is_stopped,
             result_queue,
             use_pruning,
+            min_record_id,
         }
     }
 
@@ -130,24 +133,54 @@ impl<'a> SearchContext<'a> {
     /// b,  21, 34, 60, 200
     /// b,  30, 34, 60, 230
     fn advance(&mut self) -> Option<ScoredPointOffset> {
-        let min_record_id = Self::next_min_id(&self.postings_iterators)?;
+        let current_min_record_id = self.min_record_id?;
+        // look-ahead to find next min record id
+        let mut next_min_record_id = None;
         let mut score = 0.0;
 
-        // Iterate second time to advance posting iterators
+        // Iterate to advance matching posting iterators
         for posting_iterator in self.postings_iterators.iter_mut() {
             if let Some(element) = posting_iterator.posting_list_iterator.peek() {
                 // accumulate score for the current record id
-                if element.record_id == min_record_id {
+                if element.record_id == current_min_record_id {
                     score += element.weight * posting_iterator.query_weight;
                     // advance posting list iterator to next element
                     posting_iterator.posting_list_iterator.advance();
+                    // look-ahead to find next min record id
+                    if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
+                        // update next min record id
+                        match next_min_record_id {
+                            None => {
+                                next_min_record_id = Some(next_element.record_id);
+                            }
+                            Some(next) => {
+                                if next_element.record_id < next {
+                                    next_min_record_id = Some(next_element.record_id);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // update next min record id
+                    match next_min_record_id {
+                        None => {
+                            next_min_record_id = Some(element.record_id);
+                        }
+                        Some(next) => {
+                            if element.record_id < next {
+                                next_min_record_id = Some(element.record_id);
+                            }
+                        }
+                    }
                 }
             }
         }
+        // update next min record id for next iteration
+        self.min_record_id = next_min_record_id;
 
         Some(ScoredPointOffset {
             score,
-            idx: min_record_id,
+            idx: current_min_record_id,
         })
     }
 
@@ -234,7 +267,11 @@ impl<'a> SearchContext<'a> {
                 self.promote_longest_posting_lists_to_the_front();
 
                 // prune posting list that cannot possibly contribute to the top results
-                self.prune_longest_posting_list(new_min_score);
+                let pruned = self.prune_longest_posting_list(new_min_score);
+                if pruned {
+                    // recompute new min record id for next iteration
+                    self.min_record_id = Self::next_min_id(&self.postings_iterators)
+                }
             }
         }
         // posting iterators exhausted, return result queue
