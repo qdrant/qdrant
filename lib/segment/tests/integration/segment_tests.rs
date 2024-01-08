@@ -199,7 +199,7 @@ fn ordered_deletion_test() {
         segment.current_path.clone()
     };
 
-    let segment = load_segment(&path).unwrap().unwrap();
+    let segment = load_segment(&path, None).unwrap().unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment
@@ -233,7 +233,7 @@ fn skip_deleted_segment() {
     let new_path = path.with_extension("deleted");
     std::fs::rename(&path, new_path).unwrap();
 
-    let segment = load_segment(&path).unwrap();
+    let segment = load_segment(&path, None).unwrap();
 
     assert!(segment.is_none());
 }

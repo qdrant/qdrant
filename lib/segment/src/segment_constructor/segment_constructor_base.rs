@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -11,7 +12,7 @@ use semver::Version;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::common::version::StorageVersion;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -270,7 +271,7 @@ fn create_segment(
     })
 }
 
-pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
+pub fn load_segment(path: &Path, stopped: Option<&AtomicBool>) -> OperationResult<Option<Segment>> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -295,6 +296,10 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
     let stored_version: Version = SegmentVersion::load(path)?.parse()?;
     let app_version: Version = SegmentVersion::current().parse()?;
 
+    if let Some(stop) = stopped {
+        check_process_stopped(stop)?;
+    }
+
     if stored_version != app_version {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
 
@@ -310,7 +315,6 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
                 "Segment version({stored_version}) is not compatible with current version({app_version})"
             )));
         }
-
         if stored_version.major == 0 && stored_version.minor == 3 {
             let segment_state = load_segment_state_v3(path)?;
             Segment::save_state(&segment_state, path)?;
@@ -323,7 +327,6 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
     }
 
     let segment_state = Segment::load_state(path)?;
-
     let segment = create_segment(segment_state.version, path, &segment_state.config)?;
 
     Ok(Some(segment))

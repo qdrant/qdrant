@@ -580,7 +580,7 @@ fn sparse_vector_index_persistence_test() {
 
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
-    let segment = load_segment(&path).unwrap().unwrap();
+    let segment = load_segment(&path, None).unwrap().unwrap();
     let search_after_reload_result = segment
         .search(
             SPARSE_VECTOR_NAME,

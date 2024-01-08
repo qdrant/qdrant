@@ -1830,7 +1830,7 @@ mod tests {
         // restore snapshot
         Segment::restore_snapshot(&archive, segment_id).unwrap();
 
-        let restored_segment = load_segment(&snapshot_dir.path().join(segment_id))
+        let restored_segment = load_segment(&snapshot_dir.path().join(segment_id), None)
             .unwrap()
             .unwrap();
 
