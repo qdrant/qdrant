@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use collection::config::ShardingMethod;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 
+use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
@@ -114,6 +115,28 @@ impl Dispatcher {
                     None
                 };
 
+            let do_sync_nodes = match &op {
+                // Sync nodes after collection or shard key creation
+                CollectionMetaOperations::CreateCollection(_)
+                | CollectionMetaOperations::CreateShardKey(_) => true,
+                // Sync nodes when creating or renaming collection aliases
+                CollectionMetaOperations::ChangeAliases(changes) => {
+                    changes.actions.iter().any(|change| match change {
+                        AliasOperations::CreateAlias(_) | AliasOperations::RenameAlias(_) => true,
+                        AliasOperations::DeleteAlias(_) => false,
+                    })
+                }
+                // Do not sync nodes for other operations
+                CollectionMetaOperations::UpdateCollection(_)
+                | CollectionMetaOperations::DeleteCollection(_)
+                | CollectionMetaOperations::TransferShard(_, _)
+                | CollectionMetaOperations::SetShardReplicaState(_)
+                | CollectionMetaOperations::DropShardKey(_)
+                | CollectionMetaOperations::CreatePayloadIndex(_)
+                | CollectionMetaOperations::DropPayloadIndex(_)
+                | CollectionMetaOperations::Nop { .. } => false,
+            };
+
             let res = state
                 .propose_consensus_op_with_await(
                     ConsensusOperations::CollectionMeta(Box::new(op)),
@@ -132,11 +155,13 @@ impl Dispatcher {
                 }
             }
 
-            // Synchronize all nodes, so that all are ready for point operations on this collection
-            let remaining_timeout =
-                wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
-            if let Err(err) = self.await_consensus_sync(remaining_timeout).await {
-                log::warn!("Failed to synchronize all nodes after collection operation in time, some nodes may not be ready: {err}");
+            // On create operations, synchronize all nodes to ensure all are ready for point operations
+            if do_sync_nodes {
+                let remaining_timeout =
+                    wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
+                if let Err(err) = self.await_consensus_sync(remaining_timeout).await {
+                    log::warn!("Failed to synchronize all nodes after collection operation in time, some nodes may not be ready: {err}");
+                }
             }
 
             Ok(res)
