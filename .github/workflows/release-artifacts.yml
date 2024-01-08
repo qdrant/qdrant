@@ -43,6 +43,20 @@ jobs:
           bin: qdrant
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Debian Package
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-strip --target ${{ matrix.target }}
+      - name: Upload Debian package
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/${{ matrix.target }}/debian/*.deb
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
 
   build-mac-binaries:
     strategy:
