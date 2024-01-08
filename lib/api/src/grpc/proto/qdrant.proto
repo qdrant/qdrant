@@ -22,5 +22,5 @@ message HealthCheckRequest {}
 message HealthCheckReply {
   string title = 1;
   string version = 2;
-  string commit_id = 3;
+  optional string commit_id = 3;
 }

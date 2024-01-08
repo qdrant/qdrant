@@ -3551,7 +3551,7 @@ When using target (with or without context), the score behaves a little differen
 | ----- | ---- | ----- | ----------- |
 | title | [string](#string) |  |  |
 | version | [string](#string) |  |  |
-| commit_id | [string](#string) |  |  |
+| commit_id | [string](#string) | optional |  |
 
 
 

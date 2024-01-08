@@ -10535,7 +10535,6 @@
       "VersionInfo": {
         "type": "object",
         "required": [
-          "commit_id",
           "title",
           "version"
         ],
@@ -10547,7 +10546,8 @@
             "type": "string"
           },
           "commit_id": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         }
       }

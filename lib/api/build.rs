@@ -1,6 +1,6 @@
-use std::env;
 use std::path::PathBuf;
 use std::process::Command;
+use std::{env, str};
 
 use tonic_build::Builder;
 
@@ -25,12 +25,13 @@ fn main() -> std::io::Result<()> {
     append_to_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
 
     // Fetch git commit ID and pass it to the compiler
-    let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .unwrap();
-    let git_commit_id = String::from_utf8(output.stdout).unwrap();
-    println!("cargo:rustc-env=GIT_COMMIT_ID={}", git_commit_id);
+    match Command::new("git").args(["rev-parse", "HEAD"]).output() {
+        Ok(output) => {
+            let git_commit_id = str::from_utf8(&output.stdout).unwrap().trim();
+            println!("cargo:rustc-env=GIT_COMMIT_ID={git_commit_id}");
+        }
+        Err(_) => println!("cargo:warning=current git commit hash could not be determined"),
+    }
 
     Ok(())
 }
