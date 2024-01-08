@@ -168,6 +168,61 @@
         }
       }
     },
+    "/": {
+      "get": {
+        "summary": "Ping for Qdrant version information",
+        "description": "Returns information about the running Qdrant instance like version and commit id",
+        "operationId": "ping",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/VersionInfo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/telemetry": {
       "get": {
         "summary": "Collect telemetry data",
@@ -10474,6 +10529,25 @@
             "items": {
               "$ref": "#/components/schemas/DiscoverRequest"
             }
+          }
+        }
+      },
+      "VersionInfo": {
+        "type": "object",
+        "required": [
+          "commit_id",
+          "title",
+          "version"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "commit_id": {
+            "type": "string"
           }
         }
       }

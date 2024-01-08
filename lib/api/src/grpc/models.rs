@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct VersionInfo {
     pub title: String,
     pub version: String,
