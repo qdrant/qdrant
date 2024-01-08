@@ -132,7 +132,7 @@ impl Dispatcher {
                 }
             }
 
-            // Synchronize all nodes, so that all are ready for follow-up operations
+            // Synchronize all nodes, so that all are ready for point operations on this collection
             let remaining_timeout =
                 wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
             if let Err(err) = self.await_consensus_sync(remaining_timeout).await {
