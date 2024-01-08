@@ -60,7 +60,7 @@ async fn _do_delete_full_snapshot(
     snapshot_name: &str,
 ) -> Result<bool, StorageError> {
     let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
-    let checksum_path = get_checksum_path(snapshot_dir.as_path());
+    let checksum_path = get_checksum_path(&snapshot_dir);
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
     let (delete_snapshot, delete_checksum) = tokio::join!(
         tokio::fs::remove_file(snapshot_dir),
@@ -104,7 +104,7 @@ async fn _do_delete_collection_snapshot(
 ) -> Result<bool, StorageError> {
     let collection = dispatcher.get_collection(collection_name).await?;
     let file_name = collection.get_snapshot_path(snapshot_name).await?;
-    let checksum_path = get_checksum_path(file_name.as_path());
+    let checksum_path = get_checksum_path(&file_name);
     log::info!("Deleting collection snapshot {:?}", file_name);
     let (delete_snapshot, delete_checksum) = tokio::join!(
         tokio::fs::remove_file(file_name),
@@ -209,7 +209,7 @@ async fn _do_create_full_snapshot(
             std::fs::remove_file(&snapshot_path)?;
 
             // Remove associated checksum if there is one
-            let snapshot_checksum = get_checksum_path(snapshot_path.as_path());
+            let snapshot_checksum = get_checksum_path(&snapshot_path);
             if let Err(err) = std::fs::remove_file(snapshot_checksum) {
                 log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
             }
@@ -223,7 +223,7 @@ async fn _do_create_full_snapshot(
 
     // Compute and store the file's checksum
     log::debug!("Computing checksum for snapshot: {full_snapshot_path:?}");
-    let checksum_path = get_checksum_path(full_snapshot_path.as_path());
+    let checksum_path = get_checksum_path(&full_snapshot_path);
     let checksum = hash_file(full_snapshot_path.as_path()).await?;
     let checksum_file = tempfile::TempPath::from_path(&checksum_path);
     let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;

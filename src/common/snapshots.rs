@@ -57,7 +57,7 @@ pub async fn delete_shard_snapshot(
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
         .await?;
-    let checksum_path = get_checksum_path(snapshot_path.as_path());
+    let checksum_path = get_checksum_path(&snapshot_path);
 
     check_shard_snapshot_file_exists(&snapshot_path)?;
     let (delete_snapshot, delete_checksum) = tokio::join!(

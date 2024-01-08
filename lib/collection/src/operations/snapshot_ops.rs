@@ -114,13 +114,13 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
     })
 }
 
-async fn read_checksum_for_snapshot(snapshot_path: &Path) -> Option<String> {
+async fn read_checksum_for_snapshot(snapshot_path: impl Into<PathBuf>) -> Option<String> {
     let checksum_path = get_checksum_path(snapshot_path);
     tokio::fs::read_to_string(&checksum_path).await.ok()
 }
 
-pub fn get_checksum_path(snapshot_path: &Path) -> PathBuf {
-    let mut checksum_path = snapshot_path.to_path_buf().into_os_string();
+pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
+    let mut checksum_path = snapshot_path.into().into_os_string();
     checksum_path.push(".checksum");
     checksum_path.into()
 }
