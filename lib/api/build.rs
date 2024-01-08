@@ -26,7 +26,7 @@ fn main() -> std::io::Result<()> {
 
     // Fetch git commit ID and pass it to the compiler
     let output = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()
         .unwrap();
     let git_commit_id = String::from_utf8(output.stdout).unwrap();
