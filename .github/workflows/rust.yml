@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ self-hosted ]
 
     steps:
     - name: Install minimal stable
@@ -39,19 +39,19 @@ jobs:
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
-        
+
   # After tests are run, this hacky script will process the JUnit output of nextest
-  # and will create a GH Issue if there is a test marked as flaky, 
+  # and will create a GH Issue if there is a test marked as flaky,
   # Failure of updating an issue is ignored because it fails for external contributors.
   process-results:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: test
     permissions:
       contents: read
-      issues: write 
+      issues: write
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest  ]
+        os: [ self-hosted  ]
     steps:
       - name: Download test report
         uses: actions/download-artifact@v4
@@ -69,7 +69,7 @@ jobs:
         run: |
           echo "Flaky tests found"
           echo test=$(jq '.["@name"]' flaky_tests.json -r ) >> $GITHUB_OUTPUT
-          delimiter="###r###" 
+          delimiter="###r###"
           echo "content<<$delimiter" >> $GITHUB_OUTPUT
           echo "$(jq '[.flakyFailure] | flatten | .[0]["system-err"]' flaky_tests.json -r)" >> $GITHUB_OUTPUT
           echo $delimiter >> $GITHUB_OUTPUT

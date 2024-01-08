@@ -12,11 +12,11 @@ env:
 jobs:
   test:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
@@ -32,7 +32,7 @@ jobs:
 
   test-consensus:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Install minimal stable
@@ -64,7 +64,7 @@ jobs:
 
   test-consensus-compose:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +95,7 @@ jobs:
 
     name: "Basic TLS/HTTPS tests"
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
@@ -123,11 +123,11 @@ jobs:
 
   test-consistency:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - name: Set up Docker Buildx
@@ -157,7 +157,7 @@ jobs:
 
 
   test-low-ram:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Install dependencies
@@ -165,7 +165,7 @@ jobs:
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
@@ -188,7 +188,7 @@ jobs:
         run: ./low-ram.sh
 
   test-snapshot-operations:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Install dependencies
@@ -219,7 +219,7 @@ jobs:
         run: ./snapshots-recovery.sh
 
   test-shard-snapshot-api:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Install minimal stable
