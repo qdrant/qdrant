@@ -126,7 +126,7 @@ impl Dispatcher {
                         AliasOperations::DeleteAlias(_) => false,
                     })
                 }
-                // Do not sync nodes for other operations
+                // No need to sync nodes for other operations
                 CollectionMetaOperations::UpdateCollection(_)
                 | CollectionMetaOperations::DeleteCollection(_)
                 | CollectionMetaOperations::TransferShard(_, _)
@@ -155,7 +155,7 @@ impl Dispatcher {
                 }
             }
 
-            // On create operations, synchronize all nodes to ensure all are ready for point operations
+            // On some operations, synchronize all nodes to ensure all are ready for point operations
             if do_sync_nodes {
                 let remaining_timeout =
                     wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
