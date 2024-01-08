@@ -756,7 +756,7 @@ impl ShardHolder {
         }
 
         // Compute and store the file's checksum
-        let checksum_path = get_checksum_path(temp_file.path());
+        let checksum_path = get_checksum_path(&snapshot_path);
         let checksum = hash_file(temp_file.path()).await?;
         let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
